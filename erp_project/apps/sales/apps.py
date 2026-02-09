@@ -8,3 +8,5 @@ class SalesConfig(AppConfig):
 
 
 
+
+

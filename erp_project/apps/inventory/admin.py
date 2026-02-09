@@ -41,3 +41,5 @@ class StockMovementAdmin(admin.ModelAdmin):
 
 
 
+
+

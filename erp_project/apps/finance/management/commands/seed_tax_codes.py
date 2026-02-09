@@ -140,3 +140,5 @@ class Command(BaseCommand):
         self.stdout.write('  3. VAT rate is READ-ONLY (computed from Tax Code)')
         self.stdout.write('  4. VAT reports differentiate: Standard, Zero, Exempt, Out of Scope')
 
+
+

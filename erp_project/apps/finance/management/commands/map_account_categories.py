@@ -249,3 +249,5 @@ class Command(BaseCommand):
         if unmapped_count:
             self.stdout.write(self.style.WARNING(f'! {unmapped_count} accounts unmapped'))
 
+
+
