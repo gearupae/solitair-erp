@@ -1,0 +1,123 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-center">
+    <div>
+        <h4 class="mb-0 fw-bold">{{ title }}</h4>
+        <small class="text-muted">Create FY 2025 opening balance entry with pre-defined data</small>
+    </div>
+    <a href="{% url 'finance:openingbalance_list' %}" class="btn btn-outline-dark">
+        <i class="fas fa-arrow-left me-2"></i>Back
+    </a>
+</div>
+
+{% if existing %}
+<div class="alert alert-warning">
+    <i class="fas fa-exclamation-triangle me-2"></i>
+    <strong>Opening balance already exists!</strong>
+    Entry <strong>{{ existing.entry_number }}</strong> ({{ existing.get_status_display }}) already exists for FY 2025.
+    <a href="{% url 'finance:openingbalance_detail' pk=existing.pk %}" class="alert-link">View it here</a>.
+</div>
+{% else %}
+
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white py-3">
+        <h6 class="mb-0 fw-bold">
+            <i class="fas fa-file-invoice-dollar me-2 text-primary"></i>
+            Opening Balance Entry - FY 2025
+        </h6>
+    </div>
+    <div class="card-body">
+        <div class="row mb-3">
+            <div class="col-md-3">
+                <strong>Fiscal Year:</strong><br>
+                <span class="text-muted">FY 2025 (Jan 1 – Dec 31, 2025)</span>
+            </div>
+            <div class="col-md-3">
+                <strong>Entry Date:</strong><br>
+                <span class="text-muted">01/01/2025</span>
+            </div>
+            <div class="col-md-3">
+                <strong>Reference Date:</strong><br>
+                <span class="text-muted">31/12/2024</span>
+            </div>
+            <div class="col-md-3">
+                <strong>Entry Type:</strong><br>
+                <span class="text-muted">General Ledger</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white py-3">
+        <h6 class="mb-0 fw-bold">Opening Balance Lines</h6>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="bg-light">
+                    <tr>
+                        <th>#</th>
+                        <th>Account</th>
+                        <th>Reference</th>
+                        <th class="text-end">Debit (AED)</th>
+                        <th class="text-end">Credit (AED)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for line in lines %}
+                    <tr>
+                        <td>{{ forloop.counter }}</td>
+                        <td><strong>{{ line.account }}</strong></td>
+                        <td><span class="badge bg-light text-dark">{{ line.ref }}</span></td>
+                        <td class="text-end {% if line.debit != '0.00' %}text-success fw-bold{% else %}text-muted{% endif %}">{{ line.debit }}</td>
+                        <td class="text-end {% if line.credit != '0.00' %}text-danger fw-bold{% else %}text-muted{% endif %}">{{ line.credit }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot class="bg-light">
+                    <tr class="fw-bold">
+                        <td colspan="3" class="text-end">Totals:</td>
+                        <td class="text-end text-success">135,000.00</td>
+                        <td class="text-end text-danger">135,000.00</td>
+                    </tr>
+                    <tr>
+                        <td colspan="3" class="text-end fw-bold">Difference:</td>
+                        <td colspan="2" class="text-center">
+                            <span class="badge bg-success">0.00 ✅ Balanced</span>
+                        </td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white py-3">
+        <h6 class="mb-0 fw-bold"><i class="fas fa-info-circle me-2 text-info"></i>What this will do</h6>
+    </div>
+    <div class="card-body">
+        <ul class="mb-0">
+            <li>Create <strong>FY 2025</strong> fiscal year (if not exists)</li>
+            <li>Set up GL accounts: <strong>1101</strong> (Cash), <strong>1102</strong> (ADCB Current), <strong>1103</strong> (ADCB Fixed Deposit), <strong>3201</strong> (Retained Earnings)</li>
+            <li>Create bank accounts: <strong>ADCB Current Account</strong> & <strong>ADCB Fixed Deposit</strong></li>
+            <li>Create a <strong>Draft</strong> opening balance entry with 4 balanced lines (135,000 AED)</li>
+        </ul>
+    </div>
+</div>
+
+<form method="post">
+    {% csrf_token %}
+    <div class="d-flex justify-content-end gap-2">
+        <a href="{% url 'finance:openingbalance_list' %}" class="btn btn-outline-secondary">Cancel</a>
+        <button type="submit" class="btn btn-dark btn-lg">
+            <i class="fas fa-bolt me-2"></i>Create FY 2025 Opening Balance
+        </button>
+    </div>
+</form>
+
+{% endif %}
+{% endblock %}
+

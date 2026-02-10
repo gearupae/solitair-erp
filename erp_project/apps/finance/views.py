@@ -6113,6 +6113,179 @@ def system_opening_balance_delete_line(request, line_id):
         return JsonResponse({'success': False, 'error': str(e)})
 
 
+@login_required
+def seed_fy2025_opening_balance(request):
+    """
+    Web-accessible endpoint to seed FY 2025 opening balance.
+    Superuser only. Runs the same logic as the management command.
+    GET shows confirmation page, POST executes.
+    """
+    if not request.user.is_superuser:
+        messages.error(request, 'Only superusers can seed opening balances.')
+        return redirect('finance:openingbalance_list')
+    
+    if request.method == 'POST':
+        from django.db import transaction as db_transaction
+        
+        try:
+            with db_transaction.atomic():
+                # Step 1: Get or create FY 2025
+                fy, fy_created = FiscalYear.objects.get_or_create(
+                    start_date=date(2025, 1, 1),
+                    defaults={
+                        'name': 'FY 2025',
+                        'end_date': date(2025, 12, 31),
+                        'is_active': True,
+                        'is_closed': False,
+                    }
+                )
+                if not fy_created:
+                    # Also try by name
+                    fy2 = FiscalYear.objects.filter(name__icontains='2025', is_active=True).first()
+                    if fy2:
+                        fy = fy2
+                
+                # Step 2: Check for existing entry
+                existing = OpeningBalanceEntry.objects.filter(
+                    fiscal_year=fy, entry_type='gl'
+                ).first()
+                if existing:
+                    messages.warning(request, f'Opening balance entry already exists: {existing.entry_number}')
+                    return redirect('finance:openingbalance_detail', pk=existing.pk)
+                
+                # Step 3: Account definitions
+                account_defs = [
+                    {'code': '1101', 'name': 'Cash on Hand', 'type': AccountType.ASSET,
+                     'is_cash': True, 'is_fd': False},
+                    {'code': '1102', 'name': 'Bank - ADCB Current Account', 'type': AccountType.ASSET,
+                     'is_cash': True, 'is_fd': False},
+                    {'code': '1103', 'name': 'Bank - ADCB Fixed Deposit', 'type': AccountType.ASSET,
+                     'is_cash': False, 'is_fd': True},
+                    {'code': '3201', 'name': 'Retained Earnings', 'type': AccountType.EQUITY,
+                     'is_cash': False, 'is_fd': False},
+                ]
+                
+                accounts = {}
+                for ad in account_defs:
+                    acc = Account.objects.filter(code=ad['code'], is_active=True).first()
+                    if acc:
+                        # Update name if different
+                        if acc.name != ad['name']:
+                            acc.name = ad['name']
+                            acc.account_type = ad['type']
+                            acc.is_cash_account = ad['is_cash']
+                            acc.is_fixed_deposit = ad['is_fd']
+                            acc.save()
+                    else:
+                        acc = Account.objects.create(
+                            code=ad['code'], name=ad['name'],
+                            account_type=ad['type'],
+                            is_cash_account=ad['is_cash'],
+                            is_fixed_deposit=ad['is_fd'],
+                            is_system=True,
+                        )
+                    accounts[ad['code']] = acc
+                
+                # Step 4: Bank accounts
+                bank_defs = [
+                    {'name': 'ADCB Bank - Current Account', 'acct_num': 'ADCB-CURR-001',
+                     'bank': 'Abu Dhabi Commercial Bank', 'gl': '1102'},
+                    {'name': 'ADCB Bank - Fixed Deposit', 'acct_num': 'ADCB-FD-001',
+                     'bank': 'Abu Dhabi Commercial Bank', 'gl': '1103'},
+                ]
+                bank_accounts = {}
+                for bd in bank_defs:
+                    ba = BankAccount.objects.filter(name=bd['name'], is_active=True).first()
+                    if not ba:
+                        ba = BankAccount.objects.create(
+                            name=bd['name'], account_number=bd['acct_num'],
+                            bank_name=bd['bank'], gl_account=accounts[bd['gl']],
+                            currency='AED',
+                        )
+                    bank_accounts[bd['name']] = ba
+                
+                # Step 5: Create the opening balance entry
+                entry = OpeningBalanceEntry(
+                    entry_type='gl', fiscal_year=fy,
+                    entry_date=date(2025, 1, 1),
+                    description='Opening Balance Entry - Beginning of Fiscal Year 2025',
+                    notes=(
+                        'FY 2025 Opening Balances:\n'
+                        '- Cash on Hand: 37,000 AED (Main Safe: 6,000 + Petty Cash: 4,000 + General Cash: 27,000)\n'
+                        '- ADCB Current Account: 50,000 AED\n'
+                        '- ADCB Fixed Deposit: 48,000 AED\n'
+                        '- Retained Earnings: 135,000 AED (Credit - accumulated profits from FY 2024)\n'
+                        '\nTotal Cash & Bank: 135,000 AED\n'
+                        'Entry Date: 01/01/2025 | Reference Date: 31/12/2024'
+                    ),
+                )
+                entry.save()
+                
+                # Step 6: Create lines
+                lines_data = [
+                    {'code': '1101', 'bank': None, 'ref': 'OB-2025-001',
+                     'debit': Decimal('37000.00'), 'credit': Decimal('0.00'),
+                     'desc': 'Opening Balance - Cash on Hand (Main Safe: 6,000 + Petty Cash: 4,000 + General Cash: 27,000)'},
+                    {'code': '1102', 'bank': 'ADCB Bank - Current Account', 'ref': 'STMT-DEC-2024',
+                     'debit': Decimal('50000.00'), 'credit': Decimal('0.00'),
+                     'desc': 'Opening Balance - ADCB Current Account'},
+                    {'code': '1103', 'bank': 'ADCB Bank - Fixed Deposit', 'ref': 'FD-CERT-2024',
+                     'debit': Decimal('48000.00'), 'credit': Decimal('0.00'),
+                     'desc': 'Opening Balance - ADCB Fixed Deposit'},
+                    {'code': '3201', 'bank': None, 'ref': 'YE-2024',
+                     'debit': Decimal('0.00'), 'credit': Decimal('135000.00'),
+                     'desc': 'Opening Balance - Retained Earnings (Accumulated profits from FY 2024)'},
+                ]
+                
+                for ld in lines_data:
+                    OpeningBalanceLine.objects.create(
+                        opening_balance_entry=entry,
+                        account=accounts[ld['code']],
+                        description=ld['desc'],
+                        bank_account=bank_accounts.get(ld['bank']),
+                        debit=ld['debit'], credit=ld['credit'],
+                        reference_number=ld['ref'],
+                        reference_date=date(2024, 12, 31),
+                    )
+                
+                entry.calculate_totals()
+                
+                messages.success(
+                    request,
+                    f'✅ FY 2025 Opening Balance created successfully! '
+                    f'Entry: {entry.entry_number} | '
+                    f'Dr: AED {entry.total_debit:,.2f} = Cr: AED {entry.total_credit:,.2f}'
+                )
+                return redirect('finance:openingbalance_detail', pk=entry.pk)
+        
+        except Exception as e:
+            messages.error(request, f'Error creating opening balance: {str(e)}')
+            return redirect('finance:openingbalance_list')
+    
+    # GET - show confirmation
+    existing = None
+    fy = FiscalYear.objects.filter(
+        Q(start_date__year=2025) | Q(name__icontains='2025'),
+        is_active=True
+    ).first()
+    if fy:
+        existing = OpeningBalanceEntry.objects.filter(
+            fiscal_year=fy, entry_type='gl'
+        ).first()
+    
+    context = {
+        'title': 'Seed FY 2025 Opening Balance',
+        'existing': existing,
+        'lines': [
+            {'account': '1101 - Cash on Hand', 'debit': '37,000.00', 'credit': '0.00', 'ref': 'OB-2025-001'},
+            {'account': '1102 - Bank - ADCB Current Account', 'debit': '50,000.00', 'credit': '0.00', 'ref': 'STMT-DEC-2024'},
+            {'account': '1103 - Bank - ADCB Fixed Deposit', 'debit': '48,000.00', 'credit': '0.00', 'ref': 'FD-CERT-2024'},
+            {'account': '3201 - Retained Earnings', 'debit': '0.00', 'credit': '135,000.00', 'ref': 'YE-2024'},
+        ],
+    }
+    return render(request, 'finance/seed_fy2025_opening_balance.html', context)
+
+
 # ============ WRITE-OFF VIEWS ============
 
 class WriteOffListView(PermissionRequiredMixin, ListView):

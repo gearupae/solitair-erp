@@ -139,6 +139,9 @@ urlpatterns = [
     path('opening-balances/system/add-line/', views.system_opening_balance_add_line, name='system_opening_balance_add_line'),
     path('opening-balances/system/delete-line/<int:line_id>/', views.system_opening_balance_delete_line, name='system_opening_balance_delete_line'),
     
+    # Seed FY 2025 Opening Balance (web trigger)
+    path('opening-balances/seed-fy2025/', views.seed_fy2025_opening_balance, name='seed_fy2025_opening_balance'),
+    
     # ============ WRITE-OFFS / ADJUSTMENTS ============
     path('write-offs/', views.WriteOffListView.as_view(), name='writeoff_list'),
     path('write-offs/create/', views.WriteOffCreateView.as_view(), name='writeoff_create'),
