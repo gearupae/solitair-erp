@@ -429,18 +429,20 @@ class PDCCreateView(LoginRequiredMixin, CreateView):
         
         try:
             tenant = Tenant.objects.get(pk=tenant_id, is_active=True)
-            pdc = PDCCheque.objects.create(
-                tenant=tenant,
-                cheque_number=cheque_number,
-                bank_name=bank_name,
-                cheque_date=cheque_date,
-                amount=Decimal(amount),
-                drawer_name=request.POST.get('drawer_name', tenant.name),
-                purpose=request.POST.get('purpose', 'rent'),
-                received_by=request.user,
-                created_by=request.user
-            )
-            messages.success(request, f'PDC {pdc.pdc_number} created successfully.')
+            with transaction.atomic():
+                pdc = PDCCheque.objects.create(
+                    tenant=tenant,
+                    cheque_number=cheque_number,
+                    bank_name=bank_name,
+                    cheque_date=cheque_date,
+                    amount=Decimal(amount),
+                    drawer_name=request.POST.get('drawer_name', tenant.name),
+                    purpose=request.POST.get('purpose', 'rent'),
+                    received_by=request.user,
+                    created_by=request.user
+                )
+                journal = pdc.post_received_journal(request.user)
+            messages.success(request, f'PDC {pdc.pdc_number} created. Journal: {journal.entry_number}')
         except Tenant.DoesNotExist:
             messages.error(request, 'Selected tenant not found.')
         except Exception as e:
@@ -451,8 +453,11 @@ class PDCCreateView(LoginRequiredMixin, CreateView):
     def form_valid(self, form):
         form.instance.received_by = self.request.user
         form.instance.created_by = self.request.user
-        messages.success(self.request, 'PDC cheque created successfully.')
-        return super().form_valid(form)
+        with transaction.atomic():
+            response = super().form_valid(form)
+            journal = self.object.post_received_journal(self.request.user)
+        messages.success(self.request, f'PDC created. Journal: {journal.entry_number}')
+        return response
 
 
 class PDCDetailView(LoginRequiredMixin, DetailView):
@@ -473,25 +478,24 @@ class PDCDetailView(LoginRequiredMixin, DetailView):
 
 @login_required
 def pdc_deposit(request, pk):
-    """Deposit PDC to bank."""
+    """Submit PDC to bank for clearing. Status change only — GL was posted on receipt."""
     pdc = get_object_or_404(PDCCheque, pk=pk, is_active=True)
-    
+
     if request.method == 'POST':
         form = PDCDepositForm(request.POST)
         if form.is_valid():
             try:
-                with transaction.atomic():
-                    journal = pdc.deposit(
-                        bank_account=form.cleaned_data['bank_account'],
-                        user=request.user,
-                        deposit_date=form.cleaned_data['deposit_date']
-                    )
-                    messages.success(request, f'PDC {pdc.pdc_number} deposited successfully. Journal: {journal.entry_number}')
+                pdc.deposit(
+                    bank_account=form.cleaned_data['bank_account'],
+                    user=request.user,
+                    deposit_date=form.cleaned_data['deposit_date'],
+                )
+                messages.success(request, f'PDC {pdc.pdc_number} submitted to bank for clearing.')
             except Exception as e:
                 messages.error(request, f'Error depositing PDC: {str(e)}')
         else:
             messages.error(request, 'Invalid form data.')
-    
+
     return redirect('property:pdc_detail', pk=pk)
 
 
@@ -600,6 +604,7 @@ def bulk_pdc_create(request):
                             notes=notes,
                             created_by=request.user
                         )
+                        pdc.post_received_journal(request.user)
                         created_pdcs.append(pdc)
                         current_date = next_date
                     

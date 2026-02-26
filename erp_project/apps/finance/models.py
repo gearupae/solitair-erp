@@ -214,6 +214,33 @@ class FiscalYear(BaseModel):
         self.closed_by = user
         self.save()
 
+    @classmethod
+    def validate_posting_allowed(cls, entry_date):
+        """
+        Central guard: raise ValidationError if the fiscal year for entry_date
+        is closed. Called by every module before creating a journal entry.
+
+        This check is NOT bypassable — a closed fiscal year is a hard lock.
+        Period lock bypass (for superusers) is a separate, softer control.
+        """
+        if not entry_date:
+            return
+        fy = cls.objects.filter(
+            start_date__lte=entry_date,
+            end_date__gte=entry_date,
+            is_active=True,
+        ).first()
+        if fy and fy.is_closed:
+            raise ValidationError(
+                f"Fiscal year {fy.name} ({fy.start_date} – {fy.end_date}) is closed. "
+                f"No transactions can be posted to date {entry_date}."
+            )
+        if not fy:
+            raise ValidationError(
+                f"No active fiscal year found for date {entry_date}. "
+                f"Create or activate a fiscal year covering this date."
+            )
+
 
 class AccountingPeriod(BaseModel):
     """
@@ -360,9 +387,25 @@ class JournalEntry(BaseModel):
         return f"{self.entry_number} - {self.date}"
     
     def save(self, *args, **kwargs):
+        # Auto-set fiscal_year from date when missing (for system-generated journals)
+        if self.date and not self.fiscal_year:
+            fy = FiscalYear.objects.filter(
+                start_date__lte=self.date,
+                end_date__gte=self.date,
+                is_active=True
+            ).first()
+            if fy:
+                self.fiscal_year = fy
+
         if not self.entry_number:
-            self.entry_number = generate_number('JOURNAL', JournalEntry, 'entry_number')
-        
+            # Fiscal integrity: Use entry date year so DOC-2024-xxx for 2024 entries
+            year = None
+            if self.date:
+                year = self.date.year
+            elif self.fiscal_year:
+                year = self.fiscal_year.start_date.year
+            self.entry_number = generate_number('JOURNAL', JournalEntry, 'entry_number', year=year)
+
         # Set is_system_generated based on source_module
         if self.source_module != 'manual':
             self.is_system_generated = True
@@ -463,7 +506,7 @@ class JournalEntry(BaseModel):
         """Get number of journal lines."""
         return self.lines.count()
     
-    def validate_for_posting(self):
+    def validate_for_posting(self, user=None):
         """Validate journal entry before posting."""
         errors = []
         
@@ -475,21 +518,55 @@ class JournalEntry(BaseModel):
         if self.line_count < 2:
             errors.append("Journal entry must have at least 2 lines.")
         
-        # Check period is not locked
-        if self.period and self.period.is_locked:
+        # FISCAL YEAR BOUNDARY: Entry date must fall within fiscal year
+        if self.fiscal_year and self.date:
+            fy_start = self.fiscal_year.start_date
+            fy_end = self.fiscal_year.end_date
+            if self.date < fy_start or self.date > fy_end:
+                errors.append(
+                    f"Entry date {self.date} is outside fiscal year {self.fiscal_year.name} "
+                    f"({fy_start} to {fy_end}). Posting blocked."
+                )
+        
+        # HARD LOCK: Closed fiscal year is NEVER bypassable.
+        fy_closed = bool(self.fiscal_year and self.fiscal_year.is_closed)
+        if fy_closed:
+            errors.append(
+                f"Fiscal year {self.fiscal_year.name} is closed. "
+                f"This is a hard lock — no bypass allowed."
+            )
+
+        # SOFT LOCK: Period lock — superuser can bypass if setting allows.
+        allow_period_bypass = False
+        if user and user.is_superuser:
+            try:
+                allow_period_bypass = AccountingSettings.get_settings().allow_posting_to_closed_period
+            except Exception:
+                pass
+
+        period_locked = bool(self.period and self.period.is_locked)
+        bypass_used = allow_period_bypass and period_locked and not fy_closed
+
+        if period_locked and not allow_period_bypass:
             errors.append(f"Accounting period {self.period.name} is locked.")
         
-        # Check fiscal year is not closed
-        if self.fiscal_year and self.fiscal_year.is_closed:
-            errors.append(f"Fiscal year {self.fiscal_year.name} is closed.")
-        
+        # VAT PERIOD LOCK: Block posting into a filed VAT period
+        if self.date and self.source_module not in ('vat', 'vat_return'):
+            if VATReturn.is_date_in_locked_period(self.date):
+                errors.append(
+                    f"VAT period containing {self.date} is filed and locked. "
+                    f"Backdated transactions are blocked for FTA compliance."
+                )
+
         # Check all accounts are leaf accounts
         for line in self.lines.all():
             if not line.account.is_leaf:
                 errors.append(f"Cannot post to parent account: {line.account.code}. Only leaf accounts allowed.")
         
+        # Store bypass flag for audit (validate returns before post, so we attach to self)
+        self._post_bypass_used = bypass_used
         return errors
-    
+
     def post(self, user=None):
         """
         Post the journal entry and update account balances.
@@ -497,10 +574,31 @@ class JournalEntry(BaseModel):
         """
         from django.utils import timezone
         
-        errors = self.validate_for_posting()
+        errors = self.validate_for_posting(user=user)
         if errors:
             raise ValidationError(errors)
-        
+
+        # Audit: Log when superuser bypasses closed period (enterprise control requirement)
+        bypass_used = getattr(self, '_post_bypass_used', False)
+        if bypass_used and user:
+            from apps.core.audit import log_finance_audit
+            log_finance_audit(
+                user=user,
+                action='post_bypass',
+                entity_type='JournalEntry',
+                entity_id=self.pk,
+                reference_number=self.entry_number,
+                amount_after=self.total_debit,
+                accounting_period=str(self.period) if self.period else None,
+                reason='Superuser bypass: allow_posting_to_closed_period=True',
+                details={
+                    'date': str(self.date),
+                    'period_locked': bool(self.period and self.period.is_locked),
+                    'fiscal_year_closed': bool(self.fiscal_year and self.fiscal_year.is_closed),
+                    'fiscal_year': self.fiscal_year.name if self.fiscal_year else None,
+                },
+            )
+
         # Update account balances
         for line in self.lines.all():
             account = line.account
@@ -591,7 +689,17 @@ class JournalEntryLine(models.Model):
     description = models.CharField(max_length=500, blank=True)
     debit = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     credit = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
-    
+
+    # Bank reconciliation audit trail
+    is_bank_reconciled = models.BooleanField(default=False)
+    bank_reconciliation = models.ForeignKey(
+        'BankReconciliation',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='cleared_lines',
+    )
+
     class Meta:
         ordering = ['id']
     
@@ -600,7 +708,6 @@ class JournalEntryLine(models.Model):
     
     def clean(self):
         """Validate journal line."""
-        # Either debit or credit should be > 0, not both
         if self.debit > 0 and self.credit > 0:
             raise ValidationError("A line cannot have both debit and credit amounts.")
         
@@ -1456,14 +1563,13 @@ class VATReturn(BaseModel):
                 credit=Decimal('0.00'),
             )
         
-        # Update journal totals
+        # Update journal totals then post through the proper engine
+        # (validates balance, updates account balances, locks the entry)
         journal.total_debit = sum(line.debit for line in journal.lines.all())
         journal.total_credit = sum(line.credit for line in journal.lines.all())
         journal.save(update_fields=['total_debit', 'total_credit'])
-        
-        # Post the journal entry
-        journal.status = 'posted'
-        journal.save(update_fields=['status'])
+
+        journal.post(user=user)
         
         # Update VAT Return
         self.journal_entry = journal
@@ -1517,11 +1623,12 @@ class VATReturn(BaseModel):
                 credit=line.debit,
             )
         
-        # Update reversal totals
+        # Update reversal totals then post through the proper engine
         reversal.total_debit = sum(line.debit for line in reversal.lines.all())
         reversal.total_credit = sum(line.credit for line in reversal.lines.all())
-        reversal.status = 'posted'
-        reversal.save(update_fields=['total_debit', 'total_credit', 'status'])
+        reversal.save(update_fields=['total_debit', 'total_credit'])
+
+        reversal.post(user=user)
         
         # Update original journal
         original.reversed_by = reversal
@@ -2049,6 +2156,7 @@ class BankStatement(BaseModel):
     STATUS_CHOICES = [
         ('draft', 'Draft'),
         ('in_progress', 'In Progress'),
+        ('matched', 'Fully Matched'),
         ('reconciled', 'Reconciled'),
         ('locked', 'Locked'),
     ]
@@ -2131,112 +2239,134 @@ class BankStatement(BaseModel):
     
     def auto_match(self, date_tolerance=3):
         """
-        Auto-match statement lines with accounting records.
-        Matching criteria: Amount, Date (± tolerance days), Reference
+        Auto-match statement lines with GL journal lines (primary) and payments.
+
+        Confidence scoring:
+          100% — exactly one candidate matches amount + date window
+           70% — multiple candidates; best one picked but flagged for review
+            0% — no match found
         """
         from datetime import timedelta
-        
+
+        already_matched_payment_ids = set(
+            BankStatementLine.objects.filter(
+                matched_payment__isnull=False
+            ).values_list('matched_payment_id', flat=True)
+        )
+        already_matched_jel_ids = set(
+            BankStatementLine.objects.filter(
+                matched_journal_line__isnull=False
+            ).values_list('matched_journal_line_id', flat=True)
+        )
+
         unmatched_lines = self.lines.filter(reconciliation_status='unmatched')
         matched_count = 0
-        
+
         for line in unmatched_lines:
-            # Calculate date range
             date_from = line.transaction_date - timedelta(days=date_tolerance)
             date_to = line.transaction_date + timedelta(days=date_tolerance)
-            
-            # Try to match with Payments
+
+            # --- 1) Try GL Journal Entry Lines first ---
+            je_qs = JournalEntryLine.objects.filter(
+                account=self.bank_account.gl_account,
+                journal_entry__status='posted',
+                journal_entry__date__gte=date_from,
+                journal_entry__date__lte=date_to,
+                is_bank_reconciled=False,
+            ).exclude(id__in=already_matched_jel_ids)
+
             if line.credit > 0:
-                # Statement credit = money coming in = Payment Received
-                payment = Payment.objects.filter(
+                je_candidates = list(je_qs.filter(debit=line.credit))
+            else:
+                je_candidates = list(je_qs.filter(credit=line.debit))
+
+            if len(je_candidates) == 1:
+                jel = je_candidates[0]
+                line.matched_journal_line = jel
+                line.matched_record_type = 'journal'
+                line.reconciliation_status = 'matched'
+                line.match_method = 'auto'
+                line.match_confidence = Decimal('100.00')
+                line.save()
+                already_matched_jel_ids.add(jel.id)
+                matched_count += 1
+                continue
+            elif len(je_candidates) > 1:
+                jel = je_candidates[0]
+                line.matched_journal_line = jel
+                line.matched_record_type = 'journal'
+                line.reconciliation_status = 'matched'
+                line.match_method = 'auto'
+                line.match_confidence = Decimal('70.00')
+                line.save()
+                already_matched_jel_ids.add(jel.id)
+                matched_count += 1
+                continue
+
+            # --- 2) Try Payments ---
+            if line.credit > 0:
+                pay_qs = Payment.objects.filter(
                     bank_account=self.bank_account,
                     payment_type='received',
                     status='confirmed',
                     amount=line.credit,
                     payment_date__gte=date_from,
                     payment_date__lte=date_to,
-                ).exclude(
-                    id__in=BankStatementLine.objects.filter(
-                        matched_payment__isnull=False
-                    ).values_list('matched_payment_id', flat=True)
-                ).first()
-                
-                if payment:
-                    line.matched_payment = payment
-                    line.matched_record_type = 'payment'
-                    line.reconciliation_status = 'matched'
-                    line.match_method = 'auto'
-                    line.save()
-                    matched_count += 1
-                    continue
-            
-            if line.debit > 0:
-                # Statement debit = money going out = Payment Made
-                payment = Payment.objects.filter(
+                ).exclude(id__in=already_matched_payment_ids)
+            elif line.debit > 0:
+                pay_qs = Payment.objects.filter(
                     bank_account=self.bank_account,
                     payment_type='made',
                     status='confirmed',
                     amount=line.debit,
                     payment_date__gte=date_from,
                     payment_date__lte=date_to,
-                ).exclude(
-                    id__in=BankStatementLine.objects.filter(
-                        matched_payment__isnull=False
-                    ).values_list('matched_payment_id', flat=True)
-                ).first()
-                
-                if payment:
-                    line.matched_payment = payment
-                    line.matched_record_type = 'payment'
-                    line.reconciliation_status = 'matched'
-                    line.match_method = 'auto'
-                    line.save()
-                    matched_count += 1
-                    continue
-            
-            # Try to match with Journal Entry Lines
-            amount = line.credit if line.credit > 0 else line.debit
-            je_lines = JournalEntryLine.objects.filter(
-                account=self.bank_account.gl_account,
-                journal_entry__status='posted',
-                journal_entry__date__gte=date_from,
-                journal_entry__date__lte=date_to,
-            ).exclude(
-                id__in=BankStatementLine.objects.filter(
-                    matched_journal_line__isnull=False
-                ).values_list('matched_journal_line_id', flat=True)
-            )
-            
-            if line.credit > 0:
-                je_line = je_lines.filter(debit=amount).first()
+                ).exclude(id__in=already_matched_payment_ids)
             else:
-                je_line = je_lines.filter(credit=amount).first()
-            
-            if je_line:
-                line.matched_journal_line = je_line
-                line.matched_record_type = 'journal'
+                continue
+
+            pay_candidates = list(pay_qs[:5])
+
+            if len(pay_candidates) == 1:
+                pay = pay_candidates[0]
+                line.matched_payment = pay
+                line.matched_record_type = 'payment'
                 line.reconciliation_status = 'matched'
                 line.match_method = 'auto'
+                line.match_confidence = Decimal('100.00')
                 line.save()
+                already_matched_payment_ids.add(pay.id)
                 matched_count += 1
-        
+            elif len(pay_candidates) > 1:
+                pay = pay_candidates[0]
+                line.matched_payment = pay
+                line.matched_record_type = 'payment'
+                line.reconciliation_status = 'matched'
+                line.match_method = 'auto'
+                line.match_confidence = Decimal('70.00')
+                line.save()
+                already_matched_payment_ids.add(pay.id)
+                matched_count += 1
+
+        if self.unmatched_count == 0 and self.total_lines > 0:
+            self.status = 'matched'
+            self.save(update_fields=['status'])
+
         return matched_count
     
     def finalize(self, user):
         """
-        Finalize the reconciliation.
+        Finalize the statement.
         Validates all lines are matched and balance is correct.
         """
         from django.utils import timezone
         
-        # Check all lines are matched
         if self.unmatched_count > 0:
             raise ValidationError(f"{self.unmatched_count} lines are still unmatched.")
         
-        # Validate balance
         if not self.validate_balance():
             raise ValidationError("Statement balance does not match calculated balance.")
         
-        # Mark all matched payments/journals as reconciled
         for line in self.lines.filter(reconciliation_status='matched'):
             if line.matched_payment:
                 line.matched_payment.status = 'reconciled'
@@ -2248,10 +2378,14 @@ class BankStatement(BaseModel):
         self.save()
     
     def lock(self, user):
-        """Lock a reconciled statement - no further changes allowed."""
-        if self.status != 'reconciled':
-            raise ValidationError("Only reconciled statements can be locked.")
+        """Lock a fully matched/reconciled statement — no further changes allowed."""
+        from django.utils import timezone
+        if self.status not in ('matched', 'reconciled'):
+            raise ValidationError("Only matched or reconciled statements can be locked.")
         self.status = 'locked'
+        if not self.reconciled_date:
+            self.reconciled_date = timezone.now()
+            self.reconciled_by = user
         self.save()
 
 
@@ -2331,6 +2465,11 @@ class BankStatementLine(models.Model):
         related_name='adjustment_statement_lines'
     )
     
+    match_confidence = models.DecimalField(
+        max_digits=5, decimal_places=2, default=Decimal('0.00'),
+        help_text="Auto-match confidence: 100 = exact single, 70 = multiple candidates"
+    )
+
     # Audit
     matched_date = models.DateTimeField(null=True, blank=True)
     matched_by = models.ForeignKey(
@@ -2344,6 +2483,12 @@ class BankStatementLine(models.Model):
     class Meta:
         ordering = ['line_number', 'transaction_date']
         unique_together = ['statement', 'line_number']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['statement', 'transaction_date', 'description', 'debit', 'credit'],
+                name='unique_statement_line_content',
+            ),
+        ]
     
     def __str__(self):
         return f"{self.transaction_date}: {self.description} ({self.debit or self.credit})"
@@ -2359,11 +2504,20 @@ class BankStatementLine(models.Model):
         
         if self.reconciliation_status == 'matched':
             raise ValidationError("This line is already matched.")
+
+        existing = BankStatementLine.objects.filter(
+            matched_payment=payment
+        ).exclude(pk=self.pk).exists()
+        if existing:
+            raise ValidationError(
+                f"Payment {payment.payment_number} is already matched to another statement line."
+            )
         
         self.matched_payment = payment
         self.matched_record_type = 'payment'
         self.reconciliation_status = 'matched'
         self.match_method = 'manual'
+        self.match_confidence = Decimal('100.00')
         self.matched_date = timezone.now()
         self.matched_by = user
         self.save()
@@ -2374,11 +2528,20 @@ class BankStatementLine(models.Model):
         
         if self.reconciliation_status == 'matched':
             raise ValidationError("This line is already matched.")
+
+        existing = BankStatementLine.objects.filter(
+            matched_journal_line=journal_line
+        ).exclude(pk=self.pk).exists()
+        if existing:
+            raise ValidationError(
+                f"Journal line {journal_line.id} is already matched to another statement line."
+            )
         
         self.matched_journal_line = journal_line
         self.matched_record_type = 'journal'
         self.reconciliation_status = 'matched'
         self.match_method = 'manual'
+        self.match_confidence = Decimal('100.00')
         self.matched_date = timezone.now()
         self.matched_by = user
         self.save()
@@ -2456,6 +2619,7 @@ class BankStatementLine(models.Model):
         self.matched_record_type = ''
         self.reconciliation_status = 'unmatched'
         self.match_method = ''
+        self.match_confidence = Decimal('0.00')
         self.matched_date = None
         self.matched_by = None
         self.save()
@@ -2536,91 +2700,155 @@ class BankReconciliation(BaseModel):
             self.reconciliation_number = generate_number('RECON', BankReconciliation, 'reconciliation_number')
         super().save(*args, **kwargs)
     
-    def calculate(self):
-        """
-        Calculate reconciliation.
-        Reconciled Balance = Statement Balance + Outstanding Deposits - Outstanding Checks + Adjustments
-        Difference = GL Balance - Reconciled Balance
-        """
-        self.reconciled_balance = (
-            self.statement_closing_balance 
-            + self.outstanding_deposits 
-            - self.outstanding_checks 
-            + self.adjustments
-        )
-        self.difference = self.gl_closing_balance - self.reconciled_balance
-        self.save(update_fields=['reconciled_balance', 'difference'])
-    
-    def calculate_from_statement(self):
-        """Calculate values from linked bank statement."""
-        if not self.bank_statement:
-            return
-        
-        self.statement_opening_balance = self.bank_statement.opening_balance
-        self.statement_closing_balance = self.bank_statement.closing_balance
-        
-        # Get GL balance
+    def compute_gl_closing_balance(self):
+        """GL Closing Balance = sum(debits) - sum(credits) for all posted lines up to period_end."""
         gl_account = self.bank_account.gl_account
-        gl_lines = JournalEntryLine.objects.filter(
+        agg = JournalEntryLine.objects.filter(
             account=gl_account,
             journal_entry__status='posted',
             journal_entry__date__lte=self.period_end,
         ).aggregate(
             total_debit=Sum('debit'),
-            total_credit=Sum('credit')
+            total_credit=Sum('credit'),
         )
-        
-        debit = gl_lines['total_debit'] or Decimal('0.00')
-        credit = gl_lines['total_credit'] or Decimal('0.00')
-        self.gl_closing_balance = gl_account.opening_balance + debit - credit
-        
-        # Calculate outstanding items from statement lines
-        unmatched_credits = self.bank_statement.lines.filter(
-            reconciliation_status='unmatched',
-            credit__gt=0
-        ).aggregate(total=Sum('credit'))['total'] or Decimal('0.00')
-        
-        unmatched_debits = self.bank_statement.lines.filter(
-            reconciliation_status='unmatched',
-            debit__gt=0
-        ).aggregate(total=Sum('debit'))['total'] or Decimal('0.00')
-        
-        self.outstanding_deposits = unmatched_credits
-        self.outstanding_checks = unmatched_debits
-        
+        dr = agg['total_debit'] or Decimal('0.00')
+        cr = agg['total_credit'] or Decimal('0.00')
+        return dr - cr
+
+    def get_gl_lines(self):
+        """All posted journal lines hitting this bank GL account within the period."""
+        gl_account = self.bank_account.gl_account
+        return JournalEntryLine.objects.filter(
+            account=gl_account,
+            journal_entry__status='posted',
+            journal_entry__date__gte=self.period_start,
+            journal_entry__date__lte=self.period_end,
+        ).select_related('journal_entry').order_by('journal_entry__date', 'id')
+
+    def calculate(self):
+        """
+        Reconciliation formula (audit-standard):
+        Statement Closing
+          + Outstanding Deposits  (uncleared debits in GL = money coming in)
+          - Outstanding Payments  (uncleared credits in GL = money going out)
+          = Adjusted Bank Balance
+        Difference = GL Closing - Adjusted Bank Balance (must be 0 to approve)
+        """
+        self.gl_closing_balance = self.compute_gl_closing_balance()
+
+        gl_lines = self.get_gl_lines()
+        cleared_ids = set(
+            self.cleared_lines.values_list('id', flat=True)
+        )
+
+        outstanding_debits = Decimal('0.00')
+        outstanding_credits = Decimal('0.00')
+        for line in gl_lines:
+            if line.id not in cleared_ids:
+                outstanding_debits += line.debit
+                outstanding_credits += line.credit
+
+        self.outstanding_deposits = outstanding_debits
+        self.outstanding_checks = outstanding_credits
+
+        self.reconciled_balance = (
+            self.statement_closing_balance
+            + self.outstanding_deposits
+            - self.outstanding_checks
+            + self.adjustments
+        )
+        self.difference = self.gl_closing_balance - self.reconciled_balance
+        self.save(update_fields=[
+            'gl_closing_balance', 'outstanding_deposits', 'outstanding_checks',
+            'reconciled_balance', 'difference',
+        ])
+
+    def calculate_from_statement(self):
+        """Calculate values from linked bank statement."""
+        if not self.bank_statement:
+            return
+
+        self.statement_opening_balance = self.bank_statement.opening_balance
+        self.statement_closing_balance = self.bank_statement.closing_balance
         self.calculate()
-    
+
     @property
     def is_reconciled(self):
-        """Check if GL and statement are reconciled."""
         return abs(self.difference) < Decimal('0.01')
-    
+
+    def clear_line(self, journal_line, cleared_date=None):
+        """Mark a single GL journal line as cleared in this reconciliation."""
+        if journal_line.is_bank_reconciled:
+            raise ValidationError(
+                f"Journal line {journal_line.id} is already reconciled "
+                f"(Reconciliation #{journal_line.bank_reconciliation_id})."
+            )
+        if self.status not in ('draft', 'in_progress'):
+            raise ValidationError("Cannot modify a completed/approved reconciliation.")
+
+        journal_line.is_bank_reconciled = True
+        journal_line.bank_reconciliation = self
+        journal_line.save(update_fields=['is_bank_reconciled', 'bank_reconciliation'])
+
+    def unclear_line(self, journal_line):
+        """Un-clear a journal line (only if this reconciliation owns it)."""
+        if self.status not in ('draft', 'in_progress'):
+            raise ValidationError("Cannot modify a completed/approved reconciliation.")
+        if journal_line.bank_reconciliation_id != self.pk:
+            raise ValidationError("This line is not cleared in this reconciliation.")
+
+        journal_line.is_bank_reconciled = False
+        journal_line.bank_reconciliation = None
+        journal_line.save(update_fields=['is_bank_reconciled', 'bank_reconciliation'])
+
     def complete(self, user):
-        """Mark reconciliation as complete."""
+        """Mark reconciliation as complete. Difference must be zero."""
         from django.utils import timezone
-        
+
+        self.calculate()
         if not self.is_reconciled:
-            raise ValidationError(f"Reconciliation has a difference of {self.difference}. Cannot complete.")
-        
+            raise ValidationError(
+                f"Cannot complete: difference is AED {self.difference:.2f}. Must be zero."
+            )
+
+        if self.bank_statement:
+            unmatched = self.bank_statement.unmatched_count
+            if unmatched > 0:
+                raise ValidationError(
+                    f"Cannot complete: linked statement has {unmatched} unmatched line(s). "
+                    f"All statement lines must be matched before reconciliation."
+                )
+
         self.status = 'completed'
         self.completed_by = user
         self.completed_date = timezone.now()
         self.save()
-    
+
     def approve(self, user):
-        """Approve a completed reconciliation."""
+        """Approve a completed reconciliation. Locks cleared lines permanently."""
         from django.utils import timezone
-        
+
         if self.status != 'completed':
             raise ValidationError("Only completed reconciliations can be approved.")
-        
+
         self.status = 'approved'
         self.approved_by = user
         self.approved_date = timezone.now()
         self.save()
-        
-        # Lock the bank statement
+
+        self.bank_account.last_reconciled_date = self.reconciliation_date
+        self.bank_account.save(update_fields=['last_reconciled_date'])
+
         if self.bank_statement:
+            for sl in self.bank_statement.lines.filter(
+                reconciliation_status='matched',
+                matched_journal_line__isnull=False,
+            ):
+                jel = sl.matched_journal_line
+                if not jel.is_bank_reconciled:
+                    jel.is_bank_reconciled = True
+                    jel.bank_reconciliation = self
+                    jel.save(update_fields=['is_bank_reconciled', 'bank_reconciliation'])
             self.bank_statement.lock(user)
 
 
@@ -3332,7 +3560,9 @@ class AccountMapping(models.Model):
         ('inventory_asset', 'Inventory - Asset Account'),
         ('inventory_cogs', 'Inventory - Cost of Goods Sold'),
         ('inventory_grn_clearing', 'Inventory - GRN Clearing'),
-        ('inventory_variance', 'Inventory - Stock Variance'),
+        ('inventory_variance', 'Inventory - Stock Variance / Shrinkage'),
+        ('inventory_damage_expense', 'Inventory - Damage Write-Off Expense'),
+        ('inventory_revaluation', 'Inventory - Revaluation Gain/Loss'),
         
         # Fixed Assets
         ('fixed_asset', 'Fixed Asset - Asset Account'),

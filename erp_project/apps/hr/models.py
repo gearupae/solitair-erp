@@ -183,40 +183,31 @@ class Payroll(BaseModel):
         Cr Salary Payable (net salary)
         Cr Other Deductions (if any)
         """
-        from apps.finance.models import JournalEntry, JournalEntryLine, Account, AccountType, AccountMapping
+        from apps.finance.models import JournalEntry, JournalEntryLine, Account, AccountType, AccountMapping, FiscalYear
         from django.core.exceptions import ValidationError
-        
+
         if self.status != 'draft':
             raise ValidationError("Only draft payrolls can be processed.")
-        
+
+        FiscalYear.validate_posting_allowed(self.month)
+
         if self.journal_entry:
             raise ValidationError("Journal entry already exists for this payroll.")
         
-        # Get accounts using Account Mapping (SAP/Oracle standard)
-        salary_expense = AccountMapping.get_account_or_default('payroll_salary_expense', '5100')
-        if not salary_expense:
-            salary_expense = Account.objects.filter(
-                account_type=AccountType.EXPENSE, is_active=True, name__icontains='salary'
-            ).first()
-        if not salary_expense:
-            salary_expense = Account.objects.filter(
-                account_type=AccountType.EXPENSE, is_active=True
-            ).first()
+        # Account determination: Account Mapping first, then hard-coded defaults.
+        # NO generic fallback — posting to the wrong account is worse than failing.
+        salary_expense = AccountMapping.get_account_or_default('payroll_salary_expense', '5300')
         if not salary_expense:
             raise ValidationError(
                 "Salary Expense account not configured. "
-                "Please set up Account Mapping in Finance → Account Mapping."
+                "Expected account 5300 or set up 'payroll_salary_expense' in Finance → Account Mapping."
             )
-        
-        salary_payable = AccountMapping.get_account_or_default('payroll_salary_payable', '2300')
-        if not salary_payable:
-            salary_payable = Account.objects.filter(
-                account_type=AccountType.LIABILITY, is_active=True, name__icontains='payable'
-            ).first()
+
+        salary_payable = AccountMapping.get_account_or_default('payroll_salary_payable', '2200')
         if not salary_payable:
             raise ValidationError(
                 "Salary Payable account not configured. "
-                "Please set up Account Mapping in Finance → Account Mapping."
+                "Expected account 2200 or set up 'payroll_salary_payable' in Finance → Account Mapping."
             )
         
         gross_salary = self.basic_salary + self.allowances
@@ -284,14 +275,16 @@ class Payroll(BaseModel):
         if self.payment_journal_entry:
             raise ValidationError("Payment journal already exists for this payroll.")
         
-        # Get Salary Payable account using Account Mapping
-        salary_payable = AccountMapping.get_account_or_default('payroll_payment_clear', '2300')
+        # Account determination: Account Mapping first, then hard-coded default.
+        # NO generic fallback — posting to the wrong account is worse than failing.
+        salary_payable = AccountMapping.get_account_or_default('payroll_payment_clear', '2200')
         if not salary_payable:
-            salary_payable = AccountMapping.get_account_or_default('payroll_salary_payable', '2300')
+            salary_payable = AccountMapping.get_account_or_default('payroll_salary_payable', '2200')
         if not salary_payable:
-            salary_payable = Account.objects.filter(
-                account_type=AccountType.LIABILITY, is_active=True, name__icontains='payable'
-            ).first()
+            raise ValidationError(
+                "Salary Payable account not configured. "
+                "Expected account 2200 or set up 'payroll_salary_payable' in Finance → Account Mapping."
+            )
         
         if not bank_account.gl_account:
             raise ValidationError("Bank account has no linked GL account.")

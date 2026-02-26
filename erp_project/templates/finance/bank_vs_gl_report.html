@@ -79,13 +79,17 @@
                                 {% endif %}
                             </td>
                             <td class="text-center">
-                                {% if data.is_reconciled %}
+                                {% if data.recon_status == 'reconciled' %}
                                 <span class="badge bg-success">
                                     <i class="fas fa-check me-1"></i>Reconciled
                                 </span>
-                                {% else %}
+                                {% elif data.recon_status == 'difference' %}
                                 <span class="badge bg-danger">
                                     <i class="fas fa-exclamation me-1"></i>Difference
+                                </span>
+                                {% else %}
+                                <span class="badge bg-warning text-dark">
+                                    <i class="fas fa-clock me-1"></i>Not Reconciled
                                 </span>
                                 {% endif %}
                             </td>
@@ -108,10 +112,13 @@
         <div class="card-body">
             <h6 class="mb-3">Legend</h6>
             <div class="row">
-                <div class="col-md-6">
-                    <p class="mb-1"><span class="badge bg-success">Reconciled</span> - GL and Bank balances match</p>
+                <div class="col-md-4">
+                    <p class="mb-1"><span class="badge bg-success">Reconciled</span> - Formal reconciliation completed and approved</p>
                 </div>
-                <div class="col-md-6">
+                <div class="col-md-4">
+                    <p class="mb-1"><span class="badge bg-warning text-dark">Not Reconciled</span> - No formal reconciliation on record (balances may match)</p>
+                </div>
+                <div class="col-md-4">
                     <p class="mb-1"><span class="badge bg-danger">Difference</span> - Balances do not match, investigation required</p>
                 </div>
             </div>

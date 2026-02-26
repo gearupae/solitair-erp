@@ -112,6 +112,8 @@
                                 <span class="badge bg-secondary">Draft</span>
                                 {% elif stmt.status == 'in_progress' %}
                                 <span class="badge bg-warning text-dark">In Progress</span>
+                                {% elif stmt.status == 'matched' %}
+                                <span class="badge bg-info">Fully Matched</span>
                                 {% elif stmt.status == 'reconciled' %}
                                 <span class="badge bg-success">Reconciled</span>
                                 {% elif stmt.status == 'locked' %}

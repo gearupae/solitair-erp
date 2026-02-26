@@ -30,6 +30,7 @@ urlpatterns = [
     
     # Movements
     path('movements/', views.MovementListView.as_view(), name='movement_list'),
+    path('movements/export/', views.movement_export_excel, name='movement_export'),
     path('movements/<int:pk>/', views.movement_detail, name='movement_detail'),
     path('movements/<int:pk>/post/', views.movement_post_to_accounting, name='movement_post'),
     

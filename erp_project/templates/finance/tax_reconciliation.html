@@ -1,0 +1,332 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-center">
+    <div>
+        <h4 class="mb-1 fw-bold">{{ title }}</h4>
+        <p class="text-muted mb-0">GL &rarr; Tax Computation &rarr; Filed Return &rarr; Liability Account</p>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="?fiscal_year={{ selected_fy.pk }}&vat_return={{ selected_vr.pk }}&format=excel" class="btn btn-success">
+            <i class="fas fa-file-excel me-1"></i>Export Excel
+        </a>
+        <button class="btn btn-outline-secondary" onclick="window.print()">
+            <i class="fas fa-print me-1"></i>Print
+        </button>
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="card mb-4">
+    <div class="card-body py-3">
+        <form method="get" class="row g-3 align-items-end">
+            <div class="col-md-4">
+                <label class="form-label small fw-medium">Fiscal Year (Corporate Tax)</label>
+                <select name="fiscal_year" class="form-select" onchange="this.form.submit()">
+                    {% for fy in fiscal_years %}
+                    <option value="{{ fy.pk }}" {% if selected_fy.pk == fy.pk %}selected{% endif %}>
+                        {{ fy.name }} ({{ fy.start_date|date:"d M Y" }} – {{ fy.end_date|date:"d M Y" }})
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label small fw-medium">VAT Return Period</label>
+                <select name="vat_return" class="form-select" onchange="this.form.submit()">
+                    <option value="">— None —</option>
+                    {% for vr in vat_returns %}
+                    <option value="{{ vr.pk }}" {% if selected_vr.pk == vr.pk %}selected{% endif %}>
+                        {{ vr.return_number }} ({{ vr.period_start|date:"d/m/Y" }} – {{ vr.period_end|date:"d/m/Y" }}) — {{ vr.get_status_display }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+        </form>
+    </div>
+</div>
+
+{# ───────── SECTION 1: Corporate Tax Bridge ───────── #}
+{% if ct_bridge %}
+<div class="card mb-4 border-0 shadow-sm">
+    <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center" data-bs-toggle="collapse" data-bs-target="#ctBridge" role="button">
+        <h6 class="mb-0 fw-bold"><i class="fas fa-briefcase me-2"></i>Section A — Corporate Tax Bridge ({{ selected_fy.name }})</h6>
+        {% if ct_bridge.ct_match %}
+        <span class="badge bg-success"><i class="fas fa-check-circle me-1"></i>Reconciled</span>
+        {% else %}
+        <span class="badge bg-danger"><i class="fas fa-exclamation-triangle me-1"></i>Mismatch</span>
+        {% endif %}
+    </div>
+    <div class="collapse show" id="ctBridge">
+        <div class="card-body p-0">
+            <table class="table table-bordered mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th style="width:60%">Description</th>
+                        <th class="text-end" style="width:20%">GL Amount (AED)</th>
+                        <th class="text-end" style="width:20%">Tax Comp. (AED)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Revenue (Income accounts — net credits)</td>
+                        <td class="text-end">{{ ct_bridge.gl_revenue|floatformat:2|intcomma }}</td>
+                        <td class="text-end">{% if ct_bridge.ct_comp %}{{ ct_bridge.ct_comp.revenue|floatformat:2|intcomma }}{% else %}—{% endif %}</td>
+                    </tr>
+                    <tr>
+                        <td>Less: Expenses (Expense accounts — net debits)</td>
+                        <td class="text-end">({{ ct_bridge.gl_expenses|floatformat:2|intcomma }})</td>
+                        <td class="text-end">{% if ct_bridge.ct_comp %}({{ ct_bridge.ct_comp.expenses|floatformat:2|intcomma }}){% else %}—{% endif %}</td>
+                    </tr>
+                    <tr class="table-primary fw-bold">
+                        <td>Accounting Profit</td>
+                        <td class="text-end">{{ ct_bridge.gl_profit|floatformat:2|intcomma }}</td>
+                        <td class="text-end">{% if ct_bridge.ct_comp %}{{ ct_bridge.ct_comp.accounting_profit|floatformat:2|intcomma }}{% else %}—{% endif %}</td>
+                    </tr>
+                    <tr>
+                        <td class="ps-4">+ Non-deductible expenses (add-backs)</td>
+                        <td class="text-end">—</td>
+                        <td class="text-end">{{ ct_bridge.add_backs|floatformat:2|intcomma }}</td>
+                    </tr>
+                    <tr>
+                        <td class="ps-4">− Exempt income</td>
+                        <td class="text-end">—</td>
+                        <td class="text-end">({{ ct_bridge.exempt_income|floatformat:2|intcomma }})</td>
+                    </tr>
+                    <tr>
+                        <td class="ps-4">± Other adjustments</td>
+                        <td class="text-end">—</td>
+                        <td class="text-end">{{ ct_bridge.other_adj|floatformat:2|intcomma }}</td>
+                    </tr>
+                    <tr class="table-warning fw-bold">
+                        <td>Taxable Income</td>
+                        <td class="text-end" colspan="1"></td>
+                        <td class="text-end">{{ ct_bridge.taxable_income|floatformat:2|intcomma }}</td>
+                    </tr>
+                    <tr>
+                        <td>Less: Small Business Relief Threshold</td>
+                        <td class="text-end"></td>
+                        <td class="text-end">({{ ct_bridge.threshold|floatformat:2|intcomma }})</td>
+                    </tr>
+                    <tr class="table-info">
+                        <td>Amount Taxed @ 9%</td>
+                        <td class="text-end"></td>
+                        <td class="text-end">{{ ct_bridge.above_threshold|floatformat:2|intcomma }}</td>
+                    </tr>
+                    <tr class="table-dark text-white fs-5">
+                        <td class="fw-bold">Corporate Tax Payable</td>
+                        <td class="text-end fw-bold">{{ ct_bridge.computed_tax|floatformat:2|intcomma }}</td>
+                        <td class="text-end fw-bold">{% if ct_bridge.stored_tax is not None %}{{ ct_bridge.stored_tax|floatformat:2|intcomma }}{% else %}Not computed{% endif %}</td>
+                    </tr>
+                </tbody>
+            </table>
+            {% if not ct_bridge.ct_match %}
+            <div class="alert alert-danger m-3">
+                <i class="fas fa-exclamation-triangle me-2"></i>
+                <strong>Reconciliation Warning:</strong>
+                Computed tax ({{ ct_bridge.computed_tax|floatformat:2|intcomma }}) does not match stored computation
+                ({% if ct_bridge.stored_tax is not None %}{{ ct_bridge.stored_tax|floatformat:2|intcomma }}{% else %}None{% endif %}).
+                {% if not ct_bridge.ct_comp %}No CorporateTaxComputation record exists for {{ selected_fy.name }}.{% endif %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{# ───────── SECTION 2: VAT Revenue Bridge ───────── #}
+{% if vat_revenue_bridge %}
+<div class="card mb-4 border-0 shadow-sm">
+    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center" data-bs-toggle="collapse" data-bs-target="#vatRevBridge" role="button">
+        <h6 class="mb-0 fw-bold"><i class="fas fa-file-invoice me-2"></i>Section B — VAT Revenue Bridge ({{ selected_vr.return_number }})</h6>
+        {% if vat_revenue_bridge.match %}
+        <span class="badge bg-success"><i class="fas fa-check-circle me-1"></i>Reconciled</span>
+        {% else %}
+        <span class="badge bg-danger"><i class="fas fa-exclamation-triangle me-1"></i>Discrepancy {{ vat_revenue_bridge.difference|floatformat:2|intcomma }}</span>
+        {% endif %}
+    </div>
+    <div class="collapse show" id="vatRevBridge">
+        <div class="card-body p-0">
+            <table class="table table-bordered mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th style="width:60%">Source</th>
+                        <th class="text-end" style="width:20%">Amount (AED)</th>
+                        <th class="text-center" style="width:20%">Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr class="table-secondary fw-bold">
+                        <td colspan="3">From General Ledger (Income accounts, posted journals)</td>
+                    </tr>
+                    <tr>
+                        <td class="ps-4">GL Revenue ({{ selected_vr.period_start|date:"d/m/Y" }} – {{ selected_vr.period_end|date:"d/m/Y" }})</td>
+                        <td class="text-end fw-bold">{{ vat_revenue_bridge.gl_revenue|floatformat:2|intcomma }}</td>
+                        <td></td>
+                    </tr>
+                    <tr class="table-secondary fw-bold">
+                        <td colspan="3">From Invoice Items (grouped by tax_code.tax_type)</td>
+                    </tr>
+                    <tr>
+                        <td class="ps-4">Box 1 — Standard Rated Supplies (5%)</td>
+                        <td class="text-end">{{ vat_revenue_bridge.box1|floatformat:2|intcomma }}</td>
+                        <td></td>
+                    </tr>
+                    <tr>
+                        <td class="ps-4">Box 3 — Zero Rated Supplies</td>
+                        <td class="text-end">{{ vat_revenue_bridge.box3|floatformat:2|intcomma }}</td>
+                        <td></td>
+                    </tr>
+                    <tr>
+                        <td class="ps-4">Box 4 — Exempt Supplies</td>
+                        <td class="text-end">{{ vat_revenue_bridge.box4|floatformat:2|intcomma }}</td>
+                        <td></td>
+                    </tr>
+                    <tr>
+                        <td class="ps-4">Out of Scope</td>
+                        <td class="text-end">{{ vat_revenue_bridge.out_of_scope|floatformat:2|intcomma }}</td>
+                        <td></td>
+                    </tr>
+                    <tr class="table-info fw-bold">
+                        <td>Total Invoice Items (Box1 + Box3 + Box4 + OOS)</td>
+                        <td class="text-end">{{ vat_revenue_bridge.box_total|floatformat:2|intcomma }}</td>
+                        <td></td>
+                    </tr>
+                    <tr class="table-dark text-white fs-5">
+                        <td class="fw-bold">Difference (GL − Boxes)</td>
+                        <td class="text-end fw-bold">{{ vat_revenue_bridge.difference|floatformat:2|intcomma }}</td>
+                        <td class="text-center">
+                            {% if vat_revenue_bridge.match %}
+                            <span class="badge bg-success fs-6"><i class="fas fa-check-circle"></i></span>
+                            {% else %}
+                            <span class="badge bg-danger fs-6"><i class="fas fa-times-circle"></i></span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+            {% if not vat_revenue_bridge.match %}
+            <div class="alert alert-danger m-3">
+                <i class="fas fa-exclamation-triangle me-2"></i>
+                <strong>Revenue Discrepancy:</strong>
+                GL revenue ({{ vat_revenue_bridge.gl_revenue|floatformat:2|intcomma }}) does not match
+                invoice box total ({{ vat_revenue_bridge.box_total|floatformat:2|intcomma }}).
+                Difference: <strong>{{ vat_revenue_bridge.difference|floatformat:2|intcomma }}</strong>.
+                Check for: manual revenue journals, credit notes, or un-invoiced GL entries.
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{# ───────── SECTION 3: VAT Liability Bridge ───────── #}
+{% if vat_liability_bridge %}
+<div class="card mb-4 border-0 shadow-sm">
+    <div class="card-header bg-success text-white d-flex justify-content-between align-items-center" data-bs-toggle="collapse" data-bs-target="#vatLiabBridge" role="button">
+        <h6 class="mb-0 fw-bold"><i class="fas fa-balance-scale me-2"></i>Section C — VAT Liability Bridge ({{ selected_vr.return_number }})</h6>
+        {% if vat_liability_bridge.output_match and vat_liability_bridge.input_match and vat_liability_bridge.payable_match %}
+        <span class="badge bg-light text-success"><i class="fas fa-check-circle me-1"></i>All Reconciled</span>
+        {% else %}
+        <span class="badge bg-danger"><i class="fas fa-exclamation-triangle me-1"></i>Mismatch</span>
+        {% endif %}
+    </div>
+    <div class="collapse show" id="vatLiabBridge">
+        <div class="card-body p-0">
+            <table class="table table-bordered mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th style="width:30%">Account</th>
+                        <th class="text-end" style="width:17%">GL Balance</th>
+                        <th class="text-end" style="width:17%">Expected</th>
+                        <th class="text-end" style="width:17%">Difference</th>
+                        <th class="text-center" style="width:10%">Status</th>
+                        <th style="width:9%">Logic</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>
+                            {% if vat_liability_bridge.output_vat_account %}
+                            {{ vat_liability_bridge.output_vat_account.code }} — {{ vat_liability_bridge.output_vat_account.name }}
+                            {% else %}Output VAT (not mapped){% endif %}
+                        </td>
+                        <td class="text-end">{{ vat_liability_bridge.gl_output|floatformat:2|intcomma }}</td>
+                        <td class="text-end">{{ vat_liability_bridge.output_expected|floatformat:2|intcomma }}</td>
+                        <td class="text-end {% if not vat_liability_bridge.output_match %}text-danger fw-bold{% endif %}">{{ vat_liability_bridge.output_diff|floatformat:2|intcomma }}</td>
+                        <td class="text-center">
+                            {% if vat_liability_bridge.output_match %}<span class="text-success"><i class="fas fa-check-circle fs-5"></i></span>
+                            {% else %}<span class="text-danger"><i class="fas fa-times-circle fs-5"></i></span>{% endif %}
+                        </td>
+                        <td><small class="text-muted">{% if vat_liability_bridge.is_settled %}Settled→0{% else %}Open{% endif %}</small></td>
+                    </tr>
+                    <tr>
+                        <td>
+                            {% if vat_liability_bridge.input_vat_account %}
+                            {{ vat_liability_bridge.input_vat_account.code }} — {{ vat_liability_bridge.input_vat_account.name }}
+                            {% else %}Input VAT (not mapped){% endif %}
+                        </td>
+                        <td class="text-end">{{ vat_liability_bridge.gl_input|floatformat:2|intcomma }}</td>
+                        <td class="text-end">{{ vat_liability_bridge.input_expected|floatformat:2|intcomma }}</td>
+                        <td class="text-end {% if not vat_liability_bridge.input_match %}text-danger fw-bold{% endif %}">{{ vat_liability_bridge.input_diff|floatformat:2|intcomma }}</td>
+                        <td class="text-center">
+                            {% if vat_liability_bridge.input_match %}<span class="text-success"><i class="fas fa-check-circle fs-5"></i></span>
+                            {% else %}<span class="text-danger"><i class="fas fa-times-circle fs-5"></i></span>{% endif %}
+                        </td>
+                        <td><small class="text-muted">{% if vat_liability_bridge.is_settled %}Settled→0{% else %}Open{% endif %}</small></td>
+                    </tr>
+                    <tr class="table-warning">
+                        <td class="fw-bold">
+                            {% if vat_liability_bridge.vat_payable_account %}
+                            {{ vat_liability_bridge.vat_payable_account.code }} — {{ vat_liability_bridge.vat_payable_account.name }}
+                            {% else %}VAT Net Payable (not mapped){% endif %}
+                        </td>
+                        <td class="text-end fw-bold">{{ vat_liability_bridge.gl_vat_payable|floatformat:2|intcomma }}</td>
+                        <td class="text-end fw-bold">{{ vat_liability_bridge.payable_expected|floatformat:2|intcomma }}</td>
+                        <td class="text-end {% if not vat_liability_bridge.payable_match %}text-danger fw-bold{% endif %}">{{ vat_liability_bridge.payable_diff|floatformat:2|intcomma }}</td>
+                        <td class="text-center">
+                            {% if vat_liability_bridge.payable_match %}<span class="text-success"><i class="fas fa-check-circle fs-5"></i></span>
+                            {% else %}<span class="text-danger"><i class="fas fa-times-circle fs-5"></i></span>{% endif %}
+                        </td>
+                        <td><small class="text-muted">{% if vat_liability_bridge.is_settled %}Net={{ vat_liability_bridge.vr_net|floatformat:2 }}{% else %}Pre-filing{% endif %}</small></td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <div class="card-body border-top">
+                <div class="row text-center">
+                    <div class="col-md-4">
+                        <small class="text-muted d-block">VAT Return Output</small>
+                        <strong>{{ vat_liability_bridge.vr_output|floatformat:2|intcomma }}</strong>
+                    </div>
+                    <div class="col-md-4">
+                        <small class="text-muted d-block">VAT Return Input</small>
+                        <strong>{{ vat_liability_bridge.vr_input|floatformat:2|intcomma }}</strong>
+                    </div>
+                    <div class="col-md-4">
+                        <small class="text-muted d-block">VAT Return Net</small>
+                        <strong>{{ vat_liability_bridge.vr_net|floatformat:2|intcomma }}</strong>
+                    </div>
+                </div>
+                <p class="text-muted small mt-2 mb-0">
+                    <i class="fas fa-info-circle me-1"></i>
+                    {% if vat_liability_bridge.is_settled %}
+                    Settlement journal posted. Output &amp; Input VAT should be zero; net moved to VAT Payable.
+                    {% else %}
+                    Return is draft/unfiled. GL VAT balances should match return values.
+                    {% endif %}
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% if not selected_vr %}
+<div class="alert alert-info">
+    <i class="fas fa-info-circle me-2"></i>
+    Select a VAT Return period above to view the VAT Revenue and Liability bridges.
+</div>
+{% endif %}
+
+{% endblock %}

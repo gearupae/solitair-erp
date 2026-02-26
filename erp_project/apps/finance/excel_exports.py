@@ -426,35 +426,67 @@ def export_balance_sheet(assets, liabilities, equity, end_date, start_date=None,
 
 # ============ GENERAL LEDGER EXPORT ============
 
-def export_general_ledger(transactions, account_name, start_date, end_date):
-    """Export General Ledger to Excel."""
+def export_general_ledger(transactions, account_name, start_date, end_date,
+                          opening_balance=None, period_debit=None,
+                          period_credit=None, closing_balance=None):
+    """Export General Ledger to Excel with opening balance, period totals, and closing."""
     wb = Workbook()
     ws = wb.active
     ws.title = 'General Ledger'
-    
-    # Title
-    style_title_row(ws, 1, f'General Ledger - {account_name}', 6)
+
+    style_title_row(ws, 1, f'General Ledger - {account_name}', 7)
     ws.cell(row=2, column=1, value=f'Period: {start_date} to {end_date}')
-    
-    # Headers
-    headers = ['Date', 'Reference', 'Description', 'Debit', 'Credit', 'Balance']
+
+    headers = ['Date', 'Entry #', 'Reference', 'Description', 'Debit', 'Credit', 'Balance']
     for col, header in enumerate(headers, 1):
         ws.cell(row=4, column=col, value=header)
     style_header_row(ws, 4, len(headers))
-    
-    # Data
+
     row = 5
-    for txn in transactions:
-        ws.cell(row=row, column=1, value=txn.get('date', ''))
-        ws.cell(row=row, column=2, value=txn.get('reference', ''))
-        ws.cell(row=row, column=3, value=txn.get('description', ''))
-        ws.cell(row=row, column=4, value=format_currency(txn.get('debit', 0)))
-        ws.cell(row=row, column=5, value=format_currency(txn.get('credit', 0)))
-        ws.cell(row=row, column=6, value=format_currency(txn.get('balance', 0)))
+    opening_fill = PatternFill(start_color='E8F5E9', end_color='E8F5E9', fill_type='solid')
+    bold = Font(bold=True)
+
+    # Opening balance row
+    if opening_balance is not None:
+        ws.cell(row=row, column=1, value='')
+        ws.cell(row=row, column=4, value='Opening Balance').font = bold
+        ws.cell(row=row, column=7, value=format_currency(opening_balance)).font = bold
+        for c in range(1, 8):
+            ws.cell(row=row, column=c).fill = opening_fill
         row += 1
-    
+
+    for txn in transactions:
+        d = txn.get('date', '')
+        ws.cell(row=row, column=1, value=d.strftime('%d/%m/%Y') if hasattr(d, 'strftime') else str(d))
+        ws.cell(row=row, column=2, value=txn.get('entry_number', ''))
+        ws.cell(row=row, column=3, value=txn.get('reference', ''))
+        ws.cell(row=row, column=4, value=txn.get('description', ''))
+        ws.cell(row=row, column=5, value=format_currency(txn.get('debit', 0)))
+        ws.cell(row=row, column=6, value=format_currency(txn.get('credit', 0)))
+        ws.cell(row=row, column=7, value=format_currency(txn.get('balance', 0)))
+        row += 1
+
+    # Period totals row
+    totals_fill = PatternFill(start_color='E3F2FD', end_color='E3F2FD', fill_type='solid')
+    if period_debit is not None:
+        ws.cell(row=row, column=4, value='Period Totals').font = bold
+        ws.cell(row=row, column=5, value=format_currency(period_debit)).font = bold
+        ws.cell(row=row, column=6, value=format_currency(period_credit)).font = bold
+        for c in range(1, 8):
+            ws.cell(row=row, column=c).fill = totals_fill
+        row += 1
+
+    # Closing balance row
+    closing_fill = PatternFill(start_color='263238', end_color='263238', fill_type='solid')
+    closing_font = Font(bold=True, color='FFFFFF')
+    if closing_balance is not None:
+        ws.cell(row=row, column=4, value='Closing Balance').font = closing_font
+        ws.cell(row=row, column=7, value=format_currency(closing_balance)).font = closing_font
+        for c in range(1, 8):
+            ws.cell(row=row, column=c).fill = closing_fill
+
     auto_width_columns(ws)
-    
+
     response = create_excel_response(f'general_ledger_{start_date}_to_{end_date}.xlsx')
     wb.save(response)
     return response
@@ -1227,6 +1259,132 @@ def export_vat_audit(start_date, end_date, transactions, box_totals):
     auto_width_columns(ws)
     
     response = create_excel_response(f'vat_audit_{start_date}_to_{end_date}.xlsx')
+    wb.save(response)
+    return response
+
+
+# ============ TAX RECONCILIATION BRIDGE EXPORT ============
+
+def export_tax_reconciliation(ct_bridge, vat_revenue_bridge, vat_liability_bridge, fiscal_year, vat_return):
+    """Export Tax Reconciliation Bridge Report to Excel."""
+    wb = Workbook()
+
+    match_fill = PatternFill(start_color='C6EFCE', end_color='C6EFCE', fill_type='solid')
+    mismatch_fill = PatternFill(start_color='FFC7CE', end_color='FFC7CE', fill_type='solid')
+    header_fill = PatternFill(start_color='366092', end_color='366092', fill_type='solid')
+    header_font = Font(bold=True, color='FFFFFF')
+    bold = Font(bold=True)
+
+    def _header(ws, row, cols):
+        for i, col in enumerate(cols, 1):
+            c = ws.cell(row=row, column=i, value=col)
+            c.font = header_font
+            c.fill = header_fill
+            c.alignment = Alignment(horizontal='center')
+
+    def _val(v):
+        return format_currency(v) if v is not None else ''
+
+    # ── Sheet 1: Corporate Tax Bridge ──
+    if ct_bridge:
+        ws = wb.active
+        ws.title = 'CT Bridge'
+        style_title_row(ws, 1, f'Corporate Tax Bridge — {fiscal_year.name if fiscal_year else ""}', 3)
+        ws.cell(row=2, column=1, value=f'Period: {fiscal_year.start_date} to {fiscal_year.end_date}' if fiscal_year else '')
+
+        _header(ws, 4, ['Description', 'GL Amount (AED)', 'Tax Comp. (AED)'])
+        rows = [
+            ('Revenue', ct_bridge['gl_revenue'], ct_bridge['ct_comp'].revenue if ct_bridge.get('ct_comp') else None),
+            ('Less: Expenses', ct_bridge['gl_expenses'], ct_bridge['ct_comp'].expenses if ct_bridge.get('ct_comp') else None),
+            ('Accounting Profit', ct_bridge['gl_profit'], ct_bridge['ct_comp'].accounting_profit if ct_bridge.get('ct_comp') else None),
+            ('+ Non-deductible expenses', '', ct_bridge['add_backs']),
+            ('- Exempt income', '', ct_bridge['exempt_income']),
+            ('+/- Other adjustments', '', ct_bridge['other_adj']),
+            ('Taxable Income', '', ct_bridge['taxable_income']),
+            ('Less: Threshold', '', ct_bridge['threshold']),
+            ('Amount Taxed @ 9%', '', ct_bridge['above_threshold']),
+            ('Corporate Tax Payable', ct_bridge['computed_tax'], ct_bridge['stored_tax']),
+        ]
+        r = 5
+        for desc, gl, tc in rows:
+            ws.cell(row=r, column=1, value=desc)
+            ws.cell(row=r, column=2, value=_val(gl))
+            ws.cell(row=r, column=3, value=_val(tc))
+            if desc in ('Accounting Profit', 'Taxable Income', 'Corporate Tax Payable'):
+                for col in range(1, 4):
+                    ws.cell(row=r, column=col).font = bold
+            r += 1
+
+        status_cell = ws.cell(row=r + 1, column=1, value='Reconciliation Status')
+        status_cell.font = bold
+        match_cell = ws.cell(row=r + 1, column=2, value='MATCH' if ct_bridge['ct_match'] else 'MISMATCH')
+        match_cell.fill = match_fill if ct_bridge['ct_match'] else mismatch_fill
+        match_cell.font = bold
+        auto_width_columns(ws)
+    else:
+        ws = wb.active
+        ws.title = 'CT Bridge'
+        ws.cell(row=1, column=1, value='No fiscal year selected')
+
+    # ── Sheet 2: VAT Revenue Bridge ──
+    if vat_revenue_bridge:
+        ws2 = wb.create_sheet('VAT Revenue Bridge')
+        vr_label = f'{vat_return.return_number}' if vat_return else ''
+        style_title_row(ws2, 1, f'VAT Revenue Bridge — {vr_label}', 3)
+        ws2.cell(row=2, column=1,
+                 value=f'Period: {vat_return.period_start} to {vat_return.period_end}' if vat_return else '')
+
+        _header(ws2, 4, ['Source', 'Amount (AED)', 'Status'])
+        items = [
+            ('GL Revenue (posted journals)', vat_revenue_bridge['gl_revenue']),
+            ('', ''),
+            ('Box 1 — Standard Rated', vat_revenue_bridge['box1']),
+            ('Box 3 — Zero Rated', vat_revenue_bridge['box3']),
+            ('Box 4 — Exempt', vat_revenue_bridge['box4']),
+            ('Out of Scope', vat_revenue_bridge['out_of_scope']),
+            ('Total Invoice Items', vat_revenue_bridge['box_total']),
+            ('', ''),
+            ('Difference (GL − Boxes)', vat_revenue_bridge['difference']),
+        ]
+        r = 5
+        for desc, val in items:
+            ws2.cell(row=r, column=1, value=desc)
+            ws2.cell(row=r, column=2, value=_val(val) if val != '' else '')
+            r += 1
+
+        status = ws2.cell(row=r, column=1, value='Status')
+        status.font = bold
+        m = ws2.cell(row=r, column=2, value='MATCH' if vat_revenue_bridge['match'] else 'MISMATCH')
+        m.fill = match_fill if vat_revenue_bridge['match'] else mismatch_fill
+        m.font = bold
+        auto_width_columns(ws2)
+
+    # ── Sheet 3: VAT Liability Bridge ──
+    if vat_liability_bridge:
+        ws3 = wb.create_sheet('VAT Liability Bridge')
+        style_title_row(ws3, 1, f'VAT Liability Bridge — {vat_return.return_number if vat_return else ""}', 5)
+
+        _header(ws3, 3, ['Account', 'GL Balance', 'Expected', 'Difference', 'Status'])
+        rows = [
+            ('Output VAT', 'gl_output', 'output_expected', 'output_diff', 'output_match'),
+            ('Input VAT', 'gl_input', 'input_expected', 'input_diff', 'input_match'),
+            ('VAT Net Payable', 'gl_vat_payable', 'payable_expected', 'payable_diff', 'payable_match'),
+        ]
+        r = 4
+        for label, gl_k, exp_k, diff_k, match_k in rows:
+            ws3.cell(row=r, column=1, value=label)
+            ws3.cell(row=r, column=2, value=_val(vat_liability_bridge[gl_k]))
+            ws3.cell(row=r, column=3, value=_val(vat_liability_bridge[exp_k]))
+            ws3.cell(row=r, column=4, value=_val(vat_liability_bridge[diff_k]))
+            status_val = 'MATCH' if vat_liability_bridge[match_k] else 'MISMATCH'
+            sc = ws3.cell(row=r, column=5, value=status_val)
+            sc.fill = match_fill if vat_liability_bridge[match_k] else mismatch_fill
+            sc.font = bold
+            r += 1
+        auto_width_columns(ws3)
+
+    fy_name = fiscal_year.name.replace(' ', '_') if fiscal_year else 'none'
+    response = create_excel_response(f'tax_reconciliation_{fy_name}.xlsx')
     wb.save(response)
     return response
 

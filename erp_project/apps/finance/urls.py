@@ -62,6 +62,7 @@ urlpatterns = [
     path('reconciliations/', views.BankReconciliationListView.as_view(), name='bankreconciliation_list'),
     path('reconciliations/create/', views.BankReconciliationCreateView.as_view(), name='bankreconciliation_create'),
     path('reconciliations/<int:pk>/', views.BankReconciliationDetailView.as_view(), name='bankreconciliation_detail'),
+    path('reconciliations/<int:pk>/toggle-clear/', views.bankreconciliation_toggle_clear, name='bankreconciliation_toggle_clear'),
     path('reconciliations/<int:pk>/complete/', views.bankreconciliation_complete, name='bankreconciliation_complete'),
     path('reconciliations/<int:pk>/approve/', views.bankreconciliation_approve, name='bankreconciliation_approve'),
     
@@ -80,6 +81,7 @@ urlpatterns = [
     # ============ VAT RETURNS (UAE) ============
     path('vat-returns/', views.VATReturnListView.as_view(), name='vatreturn_list'),
     path('vat-returns/create/', views.VATReturnCreateView.as_view(), name='vatreturn_create'),
+    path('vat-returns/create-from-preview/', views.vatreturn_create_from_preview, name='vatreturn_create_from_preview'),
     path('vat-returns/<int:pk>/', views.VATReturnDetailView.as_view(), name='vatreturn_detail'),
     path('vat-returns/<int:pk>/edit/', views.VATReturnUpdateView.as_view(), name='vatreturn_edit'),
     path('vat-returns/<int:pk>/post/', views.vatreturn_post, name='vatreturn_post'),
@@ -113,6 +115,7 @@ urlpatterns = [
     
     # Statutory Reports (UAE)
     path('reports/vat/', views.vat_report, name='vat_report'),
+    path('reports/tax-reconciliation/', views.tax_reconciliation, name='tax_reconciliation'),
     path('reports/corporate-tax/', views.corporate_tax_report, name='corporate_tax_report'),
     path('reports/corporate-tax/create/', views.corporate_tax_create, name='corporate_tax_create'),
     path('reports/corporate-tax/<int:pk>/recalculate/', views.corporate_tax_recalculate, name='corporate_tax_recalculate'),

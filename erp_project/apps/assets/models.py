@@ -213,12 +213,13 @@ class FixedAsset(BaseModel):
         Dr Fixed Asset Account
         Cr Accounts Payable / Bank
         """
-        from apps.finance.models import JournalEntry, JournalEntryLine, AccountMapping
-        
+        from apps.finance.models import JournalEntry, JournalEntryLine, AccountMapping, FiscalYear
+
         if self.status != 'draft':
             raise ValidationError("Only draft assets can be activated.")
-        
-        # Get accounts
+
+        FiscalYear.validate_posting_allowed(self.acquisition_date)
+
         asset_account = self.category.asset_account or \
                        AccountMapping.get_account_or_default('fixed_asset', '1400')
         ap_account = AccountMapping.get_account_or_default('fixed_asset_clearing', '2000')
@@ -269,11 +270,13 @@ class FixedAsset(BaseModel):
         Dr Depreciation Expense
         Cr Accumulated Depreciation
         """
-        from apps.finance.models import JournalEntry, JournalEntryLine, AccountMapping
-        
+        from apps.finance.models import JournalEntry, JournalEntryLine, AccountMapping, FiscalYear
+
         if self.status not in ['active']:
             raise ValidationError("Only active assets can be depreciated.")
-        
+
+        FiscalYear.validate_posting_allowed(depreciation_date)
+
         if self.book_value <= self.salvage_value:
             self.status = 'fully_depreciated'
             self.save(update_fields=['status'])
@@ -358,12 +361,13 @@ class FixedAsset(BaseModel):
         Dr/Cr Gain/Loss on Disposal
         Cr Fixed Asset (original cost)
         """
-        from apps.finance.models import JournalEntry, JournalEntryLine, AccountMapping
-        
+        from apps.finance.models import JournalEntry, JournalEntryLine, AccountMapping, FiscalYear
+
         if self.status not in ['active', 'fully_depreciated']:
             raise ValidationError("Only active or fully depreciated assets can be disposed.")
-        
-        # Calculate gain/loss
+
+        FiscalYear.validate_posting_allowed(disposal_date)
+
         self.gain_loss_on_disposal = disposal_amount - self.book_value
         
         # Get accounts

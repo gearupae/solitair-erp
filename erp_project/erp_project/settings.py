@@ -161,6 +161,7 @@ MESSAGE_TAGS = {
 }
 
 # Number Series Configuration
+# JOURNAL uses entry date year for fiscal integrity (DOC-2024-0001 for 2024 entries)
 NUMBER_SERIES = {
     'CUSTOMER': {'prefix': 'CUST', 'padding': 4},
     'VENDOR': {'prefix': 'VEND', 'padding': 4},
@@ -171,5 +172,6 @@ NUMBER_SERIES = {
     'BILL': {'prefix': 'BILL', 'padding': 4},
     'EMPLOYEE': {'prefix': 'EMP', 'padding': 4},
     'PROJECT': {'prefix': 'PROJ', 'padding': 4},
+    'JOURNAL': {'prefix': 'DOC', 'padding': 4},
 }
 

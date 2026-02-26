@@ -5,12 +5,12 @@
     <div>
         <h4 class="mb-0 fw-bold">{{ title }}</h4>
         {% if selected_budget %}
-        <small class="text-muted">{{ selected_budget.name }} - {{ selected_budget.fiscal_year.name }}</small>
+        <small class="text-muted">{{ selected_budget.name }} — {{ selected_budget.fiscal_year.name }}</small>
         {% endif %}
     </div>
     <div class="btn-group">
         {% if selected_budget %}
-        <a href="?budget={{ selected_budget.pk }}&format=excel" class="btn btn-success">
+        <a href="?budget={{ selected_budget.pk }}&month={{ through_month }}&format=excel" class="btn btn-success">
             <i class="fas fa-file-excel me-2"></i>Excel
         </a>
         {% endif %}
@@ -20,11 +20,12 @@
     </div>
 </div>
 
-<!-- Budget Selection -->
+<!-- Filters -->
 <div class="card border-0 shadow-sm mb-3">
     <div class="card-body py-2">
         <form method="get" class="row g-2 align-items-center">
             <div class="col-md-4">
+                <label class="form-label mb-0 small text-muted">Budget</label>
                 <select name="budget" class="form-select form-select-sm">
                     <option value="">-- Select Budget --</option>
                     {% for b in budgets %}
@@ -34,7 +35,24 @@
                     {% endfor %}
                 </select>
             </div>
-            <div class="col-auto">
+            <div class="col-md-3">
+                <label class="form-label mb-0 small text-muted">Through Month (YTD)</label>
+                <select name="month" class="form-select form-select-sm">
+                    <option value="1" {% if through_month == 1 %}selected{% endif %}>Jan</option>
+                    <option value="2" {% if through_month == 2 %}selected{% endif %}>Feb</option>
+                    <option value="3" {% if through_month == 3 %}selected{% endif %}>Mar</option>
+                    <option value="4" {% if through_month == 4 %}selected{% endif %}>Apr</option>
+                    <option value="5" {% if through_month == 5 %}selected{% endif %}>May</option>
+                    <option value="6" {% if through_month == 6 %}selected{% endif %}>Jun</option>
+                    <option value="7" {% if through_month == 7 %}selected{% endif %}>Jul</option>
+                    <option value="8" {% if through_month == 8 %}selected{% endif %}>Aug</option>
+                    <option value="9" {% if through_month == 9 %}selected{% endif %}>Sep</option>
+                    <option value="10" {% if through_month == 10 %}selected{% endif %}>Oct</option>
+                    <option value="11" {% if through_month == 11 %}selected{% endif %}>Nov</option>
+                    <option value="12" {% if through_month == 12 %}selected{% endif %}>Dec (Full Year)</option>
+                </select>
+            </div>
+            <div class="col-auto d-flex align-items-end">
                 <button type="submit" class="btn btn-sm btn-dark">View</button>
             </div>
         </form>
@@ -47,7 +65,7 @@
     <div class="col-md-4">
         <div class="card border-0 shadow-sm h-100">
             <div class="card-body text-center">
-                <h6 class="text-muted mb-2">Total Budgeted</h6>
+                <h6 class="text-muted mb-2">YTD Budget</h6>
                 <h4 class="mb-0 text-primary">AED {{ total_budget|floatformat:2 }}</h4>
             </div>
         </div>
@@ -55,7 +73,7 @@
     <div class="col-md-4">
         <div class="card border-0 shadow-sm h-100">
             <div class="card-body text-center">
-                <h6 class="text-muted mb-2">Total Actual</h6>
+                <h6 class="text-muted mb-2">YTD Actual (GL Posted)</h6>
                 <h4 class="mb-0">AED {{ total_actual|floatformat:2 }}</h4>
             </div>
         </div>
@@ -63,45 +81,50 @@
     <div class="col-md-4">
         <div class="card border-0 shadow-sm h-100 {% if total_variance >= 0 %}bg-success{% else %}bg-danger{% endif %} text-white">
             <div class="card-body text-center">
-                <h6 class="mb-2">Variance</h6>
+                <h6 class="mb-2">YTD Variance</h6>
                 <h4 class="mb-0">AED {{ total_variance|floatformat:2 }}</h4>
             </div>
         </div>
     </div>
 </div>
 
-<!-- Comparison Table -->
-<div class="card border-0 shadow-sm">
+<!-- YTD Comparison Table -->
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-dark text-white">
+        <h6 class="mb-0"><i class="fas fa-chart-bar me-2"></i>YTD Summary by Account</h6>
+    </div>
     <div class="card-body p-0">
         <div class="table-responsive">
             <table class="table table-hover mb-0">
                 <thead class="bg-light">
                     <tr>
                         <th>Account</th>
-                        <th class="text-end">Budgeted</th>
-                        <th class="text-end">Actual</th>
+                        <th class="text-end">YTD Budget</th>
+                        <th class="text-end">YTD Actual</th>
                         <th class="text-end">Variance</th>
-                        <th class="text-end">Variance %</th>
-                        <th style="width: 150px;">Progress</th>
+                        <th class="text-end">Var %</th>
+                        <th class="text-end">Annual Budget</th>
+                        <th style="width: 140px;">Utilisation</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for row in comparison_data %}
                     <tr class="{% if row.is_over %}table-danger{% endif %}">
                         <td class="fw-medium">{{ row.account.code }} - {{ row.account.name }}</td>
-                        <td class="text-end">{{ row.budgeted|floatformat:2 }}</td>
-                        <td class="text-end">{{ row.actual|floatformat:2 }}</td>
-                        <td class="text-end {% if row.variance >= 0 %}text-success{% else %}text-danger{% endif %}">
-                            {{ row.variance|floatformat:2 }}
+                        <td class="text-end">{{ row.ytd_budget|floatformat:2 }}</td>
+                        <td class="text-end">{{ row.ytd_actual|floatformat:2 }}</td>
+                        <td class="text-end {% if row.ytd_variance >= 0 %}text-success{% else %}text-danger fw-bold{% endif %}">
+                            {{ row.ytd_variance|floatformat:2 }}
                         </td>
-                        <td class="text-end {% if row.variance >= 0 %}text-success{% else %}text-danger{% endif %}">
-                            {% if row.budgeted %}{{ row.variance_pct|floatformat:1 }}%{% else %}-{% endif %}
+                        <td class="text-end {% if row.ytd_variance >= 0 %}text-success{% else %}text-danger{% endif %}">
+                            {% if row.ytd_budget %}{{ row.ytd_var_pct|floatformat:1 }}%{% else %}-{% endif %}
                         </td>
+                        <td class="text-end text-muted">{{ row.annual_budget|floatformat:2 }}</td>
                         <td>
                             <div class="progress" style="height: 20px;">
-                                {% if row.budgeted and row.budgeted > 0 %}
-                                {% widthratio row.actual row.budgeted 100 as usage_pct %}
-                                <div class="progress-bar {% if row.is_over %}bg-danger{% else %}bg-success{% endif %}" 
+                                {% if row.annual_budget and row.annual_budget > 0 %}
+                                {% widthratio row.ytd_actual row.annual_budget 100 as usage_pct %}
+                                <div class="progress-bar {% if row.is_over %}bg-danger{% elif usage_pct > 75 %}bg-warning{% else %}bg-success{% endif %}"
                                      style="width: {% if usage_pct > 100 %}100{% else %}{{ usage_pct }}{% endif %}%">
                                     {{ usage_pct }}%
                                 </div>
@@ -113,19 +136,88 @@
                     </tr>
                     {% empty %}
                     <tr>
-                        <td colspan="6" class="text-center py-3 text-muted">No budget lines</td>
+                        <td colspan="7" class="text-center py-3 text-muted">No budget lines</td>
                     </tr>
                     {% endfor %}
                 </tbody>
+                {% if comparison_data %}
+                <tfoot class="table-light fw-bold">
+                    <tr>
+                        <td>TOTAL</td>
+                        <td class="text-end">{{ total_budget|floatformat:2 }}</td>
+                        <td class="text-end">{{ total_actual|floatformat:2 }}</td>
+                        <td class="text-end {% if total_variance >= 0 %}text-success{% else %}text-danger{% endif %}">
+                            {{ total_variance|floatformat:2 }}
+                        </td>
+                        <td class="text-end">
+                            {% if total_budget %}
+                            {% widthratio total_variance total_budget 100 as total_var_pct %}
+                            {{ total_var_pct }}%
+                            {% else %}-{% endif %}
+                        </td>
+                        <td></td>
+                        <td></td>
+                    </tr>
+                </tfoot>
+                {% endif %}
             </table>
         </div>
     </div>
 </div>
+
+<!-- Monthly Breakdown -->
+<div class="card border-0 shadow-sm">
+    <div class="card-header bg-dark text-white">
+        <h6 class="mb-0"><i class="fas fa-calendar-alt me-2"></i>Monthly Breakdown</h6>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0" style="font-size: 0.85rem;">
+                <thead class="bg-light">
+                    <tr>
+                        <th class="sticky-col">Account</th>
+                        {% for label in month_labels %}
+                        <th class="text-center" colspan="2" style="border-left: 1px solid #dee2e6;">{{ label }}</th>
+                        {% endfor %}
+                    </tr>
+                    <tr class="text-muted small">
+                        <th></th>
+                        {% for label in month_labels %}
+                        <th class="text-end" style="border-left: 1px solid #dee2e6;">Bgt</th>
+                        <th class="text-end">Act</th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in comparison_data %}
+                    <tr>
+                        <td class="fw-medium text-nowrap">{{ row.account.code }}</td>
+                        {% for m in row.months %}
+                        <td class="text-end" style="border-left: 1px solid #dee2e6;">{{ m.budget|floatformat:0 }}</td>
+                        <td class="text-end {% if m.variance < 0 %}text-danger{% endif %}">{{ m.actual|floatformat:0 }}</td>
+                        {% endfor %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+                {% if monthly_totals %}
+                <tfoot class="table-light fw-bold">
+                    <tr>
+                        <td>TOTAL</td>
+                        {% for bgt, act in monthly_totals %}
+                        <td class="text-end" style="border-left: 1px solid #dee2e6;">{{ bgt|floatformat:0 }}</td>
+                        <td class="text-end {% if act > bgt %}text-danger{% endif %}">{{ act|floatformat:0 }}</td>
+                        {% endfor %}
+                    </tr>
+                </tfoot>
+                {% endif %}
+            </table>
+        </div>
+    </div>
+</div>
+
 {% else %}
 <div class="alert alert-info">
     <i class="fas fa-info-circle me-2"></i>Select a budget to view the comparison.
 </div>
 {% endif %}
 {% endblock %}
-
-

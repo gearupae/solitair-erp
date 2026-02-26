@@ -211,11 +211,13 @@ class Invoice(BaseModel):
         Credit: Sales Revenue (subtotal)
         Credit: VAT Payable (VAT amount)
         """
-        from apps.finance.models import JournalEntry, JournalEntryLine, Account, AccountType, AccountMapping
-        
+        from apps.finance.models import JournalEntry, JournalEntryLine, Account, AccountType, AccountMapping, FiscalYear
+
         if self.status != 'draft':
             raise ValidationError("Only draft invoices can be posted.")
-        
+
+        FiscalYear.validate_posting_allowed(self.invoice_date)
+
         if self.total_amount <= 0:
             raise ValidationError("Invoice amount must be greater than zero.")
         
@@ -463,11 +465,13 @@ class SalesCreditNote(BaseModel):
         Dr VAT Output  
         Cr Accounts Receivable
         """
-        from apps.finance.models import JournalEntry, JournalEntryLine, AccountMapping
-        
+        from apps.finance.models import JournalEntry, JournalEntryLine, AccountMapping, FiscalYear
+
         if self.status != 'draft':
             raise ValidationError("Only draft credit notes can be posted.")
-        
+
+        FiscalYear.validate_posting_allowed(self.date)
+
         if self.total_amount <= 0:
             raise ValidationError("Credit note amount must be greater than zero.")
         

@@ -264,7 +264,16 @@ class StockMovement(BaseModel):
         ('return', 'Return'),
         ('opening', 'Opening Balance'),
     ]
-    
+
+    ADJUSTMENT_REASON_CHOICES = [
+        ('shrinkage', 'Shrinkage / Count Variance'),
+        ('damage', 'Damage / Write-Off'),
+        ('supplier_return', 'Supplier Return'),
+        ('correction', 'Internal Correction'),
+        ('revaluation', 'Revaluation'),
+        ('other', 'Other'),
+    ]
+
     movement_number = models.CharField(max_length=50, unique=False, editable=False, blank=True, default='')
     item = models.ForeignKey(
         Item,
@@ -291,6 +300,11 @@ class StockMovement(BaseModel):
     total_cost = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     reference = models.CharField(max_length=200, blank=True)  # PO, Invoice, etc.
     notes = models.TextField(blank=True)
+    adjustment_reason = models.CharField(
+        max_length=20, choices=ADJUSTMENT_REASON_CHOICES,
+        blank=True, default='',
+        help_text='Required for adjustments — determines which GL account is hit',
+    )
     movement_date = models.DateField()
     
     # Accounting link
@@ -321,7 +335,36 @@ class StockMovement(BaseModel):
             self.total_cost = self.unit_cost * abs(self.quantity)
         
         super().save(*args, **kwargs)
-    
+
+    def execute(self, user=None, allow_zero_cost=False):
+        """
+        Atomic execution: update stock quantity AND post to GL together.
+        In perpetual inventory, quantity and GL must always be in sync.
+        If GL posting fails, the quantity update is rolled back.
+        """
+        from django.db import transaction as db_transaction
+        from apps.finance.models import FiscalYear
+
+        FiscalYear.validate_posting_allowed(self.movement_date)
+
+        if self.movement_type in ('out', 'adjustment_minus') and self.unit_cost <= 0 and not allow_zero_cost:
+            raise ValidationError(
+                f"Stock out requires a valid unit cost (got {self.unit_cost}). "
+                f"Zero-cost movements distort COGS and margins. "
+                f"Set a cost or pass allow_zero_cost=True for confirmed zero-value items."
+            )
+
+        if self.movement_type in ('adjustment_plus', 'adjustment_minus') and not self.adjustment_reason:
+            raise ValidationError(
+                "Adjustment reason is required. Choose a reason to ensure the "
+                "correct GL account is used (variance, damage, supplier return, etc.)."
+            )
+
+        with db_transaction.atomic():
+            self.update_stock()
+            if self.total_cost > 0:
+                self.post_to_accounting(user=user)
+
     def update_stock(self):
         """Update stock levels based on movement type."""
         # Get or create stock record
@@ -379,12 +422,10 @@ class StockMovement(BaseModel):
         if self.total_cost <= 0:
             raise ValidationError("Movement cost must be greater than zero for accounting.")
         
-        # Get accounts from mapping
         inventory_account = AccountMapping.get_account_or_default('inventory_asset', '1500')
         cogs_account = AccountMapping.get_account_or_default('inventory_cogs', '5100')
         grn_clearing = AccountMapping.get_account_or_default('inventory_grn_clearing', '2010')
-        stock_variance = AccountMapping.get_account_or_default('inventory_variance', '5200')
-        
+
         if not inventory_account:
             raise ValidationError("Inventory Asset account not configured in Account Mapping.")
         
@@ -435,40 +476,31 @@ class StockMovement(BaseModel):
                 credit=self.total_cost,
             )
         
-        elif self.movement_type == 'adjustment_plus':
-            # Adjustment (+): Dr Inventory Asset, Cr Stock Variance
-            if not stock_variance:
-                raise ValidationError("Stock Variance account not configured.")
+        elif self.movement_type in ('adjustment_plus', 'adjustment_minus'):
+            contra_account = self._get_adjustment_contra_account(AccountMapping)
+            if not contra_account:
+                raise ValidationError(
+                    "Adjustment contra account not configured. "
+                    "Set up the appropriate mapping in Finance → Account Mapping."
+                )
+
+            if self.movement_type == 'adjustment_plus':
+                dr_account, cr_account = inventory_account, contra_account
+            else:
+                dr_account, cr_account = contra_account, inventory_account
+
+            reason_label = self.get_adjustment_reason_display() if self.adjustment_reason else 'Adjustment'
             JournalEntryLine.objects.create(
                 journal_entry=journal,
-                account=inventory_account,
-                description=f"Inventory Adjustment (+) - {self.item.name}",
+                account=dr_account,
+                description=f"{reason_label} - {self.item.name}",
                 debit=self.total_cost,
                 credit=Decimal('0.00'),
             )
             JournalEntryLine.objects.create(
                 journal_entry=journal,
-                account=stock_variance,
-                description=f"Stock Variance - {self.item.name}",
-                debit=Decimal('0.00'),
-                credit=self.total_cost,
-            )
-        
-        elif self.movement_type == 'adjustment_minus':
-            # Adjustment (-): Dr Stock Variance, Cr Inventory Asset
-            if not stock_variance:
-                raise ValidationError("Stock Variance account not configured.")
-            JournalEntryLine.objects.create(
-                journal_entry=journal,
-                account=stock_variance,
-                description=f"Stock Variance - {self.item.name}",
-                debit=self.total_cost,
-                credit=Decimal('0.00'),
-            )
-            JournalEntryLine.objects.create(
-                journal_entry=journal,
-                account=inventory_account,
-                description=f"Inventory Adjustment (-) - {self.item.name}",
+                account=cr_account,
+                description=f"{reason_label} - {self.item.name}",
                 debit=Decimal('0.00'),
                 credit=self.total_cost,
             )
@@ -488,6 +520,32 @@ class StockMovement(BaseModel):
         self.save(update_fields=['journal_entry', 'posted'])
         
         return journal
+
+    def _get_adjustment_contra_account(self, AccountMapping):
+        """
+        Resolve the contra account for an inventory adjustment based on reason.
+
+        Reason → Account Mapping key → Default code
+        ─────────────────────────────────────────────
+        shrinkage       → inventory_variance      → 5200  (Stock Variance / Shrinkage)
+        damage          → inventory_damage_expense → 5210  (Damage Write-Off)
+        supplier_return → inventory_grn_clearing   → 2010  (AP / GRN Clearing)
+        correction      → inventory_variance       → 5200  (Stock Variance)
+        revaluation     → inventory_revaluation    → 5220  (Revaluation Gain/Loss)
+        other / blank   → inventory_variance       → 5200  (fallback)
+        """
+        reason_map = {
+            'shrinkage':       ('inventory_variance',       '5200'),
+            'damage':          ('inventory_damage_expense', '5210'),
+            'supplier_return': ('inventory_grn_clearing',   '2010'),
+            'correction':      ('inventory_variance',       '5200'),
+            'revaluation':     ('inventory_revaluation',    '5220'),
+            'other':           ('inventory_variance',       '5200'),
+        }
+        mapping_key, default_code = reason_map.get(
+            self.adjustment_reason, ('inventory_variance', '5200')
+        )
+        return AccountMapping.get_account_or_default(mapping_key, default_code)
 
 
 class ConsumableRequest(BaseModel):
@@ -673,7 +731,7 @@ class ConsumableRequest(BaseModel):
         except Stock.DoesNotExist:
             raise ValidationError(f"No stock record found for {self.item.name} in {dispense_warehouse.name}")
         
-        # Create stock movement (Stock Out)
+        # Create stock movement (Stock Out) — atomic quantity + GL
         movement = StockMovement.objects.create(
             item=self.item,
             warehouse=dispense_warehouse,
@@ -685,9 +743,8 @@ class ConsumableRequest(BaseModel):
             notes=f"Dispensed to: {self.requested_by.get_full_name() or self.requested_by.username}",
             movement_date=date.today(),
         )
-        
-        # Update stock
-        movement.update_stock()
+
+        movement.execute(user=user)
         
         # Update request
         self.status = 'dispensed'

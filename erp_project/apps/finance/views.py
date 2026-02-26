@@ -296,7 +296,7 @@ def journal_post(request, pk):
         return redirect('finance:journal_detail', pk=pk)
     
     # Validate before posting
-    errors = entry.validate_for_posting()
+    errors = entry.validate_for_posting(user=request.user)
     if errors:
         for error in errors:
             messages.error(request, error)
@@ -1397,63 +1397,121 @@ def balance_sheet(request):
     })
 
 
+def _parse_ledger_date(val, default):
+    """
+    Parse date for GL report. Uses entry_date (journal_entry.date), NOT created_at.
+    Handles: YYYY-MM-DD, DD/MM/YYYY, MM/DD/YYYY, DD-MM-YYYY.
+    """
+    if val is None or str(val).strip() == '':
+        return default
+    if isinstance(val, date):
+        return val if not isinstance(val, datetime) else val.date()
+    s = str(val).strip()
+    for fmt in ('%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y', '%d-%m-%Y'):
+        try:
+            return datetime.strptime(s, fmt).date()
+        except ValueError:
+            continue
+    return default
+
+
 @login_required
 def general_ledger(request):
-    """General Ledger - All transactions for an account."""
+    """
+    General Ledger - All transactions for an account.
+
+    REPORT LOGIC:
+    - Uses journal_entry.date (entry date), NOT created_at
+    - Includes only status='posted', excludes reversed originals
+    - Date range: full range (gte/lte), NOT ExtractMonth
+    - Opening = account.opening_balance + sum of posted lines before start_date
+    - Period lines = posted lines in [start_date, end_date]
+    - include_history=1 removes start_date filter so ALL transactions up to
+      end_date are visible (opening balance row still shows the account base)
+    """
     from django.http import JsonResponse
-    
+
     if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'finance', 'view')):
         messages.error(request, 'Permission denied.')
         return redirect('dashboard')
-    
+
     account_id = request.GET.get('account')
-    start_date = request.GET.get('start_date', date(date.today().year, 1, 1).isoformat())
-    end_date = request.GET.get('end_date', date.today().isoformat())
+    today = date.today()
+    default_start = date(today.year, 1, 1)
+
+    raw_start = request.GET.get('start_date', default_start.isoformat())
+    raw_end = request.GET.get('end_date', today.isoformat())
+
+    start_date = _parse_ledger_date(raw_start, default_start)
+    end_date = _parse_ledger_date(raw_end, today)
+
+    if start_date > end_date:
+        start_date, end_date = end_date, start_date
+
+    include_history = request.GET.get('include_history') == '1'
+
     export_format = request.GET.get('format', '')
-    
+
     accounts = Account.objects.filter(is_active=True).order_by('code')
     selected_account = None
     transactions = []
     running_balance = Decimal('0.00')
-    
+    period_debit = Decimal('0.00')
+    period_credit = Decimal('0.00')
+
     if account_id:
         selected_account = get_object_or_404(Account, pk=account_id)
-        
-        # Calculate opening balance as of start_date
-        # = Account opening balance + all posted journals before start_date
+
         base_opening = selected_account.opening_balance or Decimal('0.00')
-        
-        # Get all movements before the start date
-        pre_period = JournalEntryLine.objects.filter(
+
+        base_filter = dict(
             account=selected_account,
             journal_entry__status='posted',
-            journal_entry__date__lt=start_date
-        ).aggregate(
-            total_debit=Coalesce(Sum('debit'), Decimal('0.00')),
-            total_credit=Coalesce(Sum('credit'), Decimal('0.00'))
+            journal_entry__reversed_by__isnull=True,
         )
-        
-        # Calculate opening balance at start_date
-        if selected_account.debit_increases:
-            running_balance = base_opening + (pre_period['total_debit'] - pre_period['total_credit'])
+
+        if include_history:
+            # Show all transactions from the beginning up to end_date.
+            # Opening balance = just the account's static opening (no pre-period sum).
+            running_balance = base_opening
+            opening_balance = running_balance
+
+            lines = JournalEntryLine.objects.filter(
+                **base_filter,
+                journal_entry__date__lte=end_date,
+            ).select_related('journal_entry').order_by('journal_entry__date', 'id')
         else:
-            running_balance = base_opening + (pre_period['total_credit'] - pre_period['total_debit'])
-        
-        opening_balance = running_balance  # Store for display
-        
-        lines = JournalEntryLine.objects.filter(
-            account=selected_account,
-            journal_entry__status='posted',
-            journal_entry__date__gte=start_date,
-            journal_entry__date__lte=end_date,
-        ).select_related('journal_entry').order_by('journal_entry__date', 'id')
-        
+            # Standard mode: opening = base + pre-period, then period lines
+            pre_period = JournalEntryLine.objects.filter(
+                **base_filter,
+                journal_entry__date__lt=start_date,
+            ).aggregate(
+                total_debit=Coalesce(Sum('debit'), Decimal('0.00')),
+                total_credit=Coalesce(Sum('credit'), Decimal('0.00'))
+            )
+
+            if selected_account.debit_increases:
+                running_balance = base_opening + (pre_period['total_debit'] - pre_period['total_credit'])
+            else:
+                running_balance = base_opening + (pre_period['total_credit'] - pre_period['total_debit'])
+
+            opening_balance = running_balance
+
+            lines = JournalEntryLine.objects.filter(
+                **base_filter,
+                journal_entry__date__gte=start_date,
+                journal_entry__date__lte=end_date,
+            ).select_related('journal_entry').order_by('journal_entry__date', 'id')
+
         for line in lines:
             if selected_account.debit_increases:
                 running_balance += line.debit - line.credit
             else:
                 running_balance += line.credit - line.debit
-            
+
+            period_debit += line.debit
+            period_credit += line.credit
+
             transactions.append({
                 'date': line.journal_entry.date,
                 'journal_pk': line.journal_entry.pk,
@@ -1466,16 +1524,17 @@ def general_ledger(request):
                 'credit': line.credit,
                 'balance': running_balance,
             })
-    
-    # JSON Export (for drill-down)
+
+    # JSON Export
     if export_format == 'json' and selected_account:
         return JsonResponse({
             'account': {
                 'code': selected_account.code,
                 'name': selected_account.name,
             },
-            'start_date': start_date,
-            'end_date': end_date,
+            'start_date': start_date.isoformat(),
+            'end_date': end_date.isoformat(),
+            'include_history': include_history,
             'entries': [
                 {
                     'date': str(t['date']),
@@ -1490,15 +1549,21 @@ def general_ledger(request):
                 for t in transactions
             ]
         })
-    
+
     # Excel Export
     if export_format == 'excel' and selected_account:
         from .excel_exports import export_general_ledger
-        return export_general_ledger(transactions, selected_account.name, start_date, end_date)
-    
-    # Opening balance for context (calculated at start_date, not just account opening)
+        return export_general_ledger(
+            transactions, selected_account.name,
+            start_date, end_date,
+            opening_balance=opening_balance if 'opening_balance' in locals() else Decimal('0.00'),
+            period_debit=period_debit,
+            period_credit=period_credit,
+            closing_balance=running_balance,
+        )
+
     context_opening_balance = opening_balance if account_id and 'opening_balance' in locals() else Decimal('0.00')
-    
+
     return render(request, 'finance/general_ledger.html', {
         'title': 'General Ledger',
         'accounts': accounts,
@@ -1506,8 +1571,11 @@ def general_ledger(request):
         'transactions': transactions,
         'opening_balance': context_opening_balance,
         'closing_balance': running_balance,
-        'start_date': start_date,
-        'end_date': end_date,
+        'period_debit': period_debit,
+        'period_credit': period_credit,
+        'start_date': start_date.isoformat() if isinstance(start_date, date) else start_date,
+        'end_date': end_date.isoformat() if isinstance(end_date, date) else end_date,
+        'include_history': include_history,
     })
 
 
@@ -1569,7 +1637,9 @@ def vat_report(request):
         
         # Box 3: Exempt Supplies
         exempt_supplies = submitted_vat_return.exempt_supplies
-        
+
+        out_of_scope_supplies = Decimal('0.00')
+
         # Box 9: Standard Rated Expenses
         standard_rated_expenses = submitted_vat_return.standard_rated_expenses
         
@@ -1634,23 +1704,23 @@ def vat_report(request):
                 name__icontains='vat'
             )
     
-    # Get Sales accounts (Income - typically 4xxx)
-    sales_accounts = Account.objects.filter(
-        account_type=AccountType.INCOME, is_active=True
-    )
+        # Get Sales accounts (Income - typically 4xxx)
+        sales_accounts = Account.objects.filter(
+            account_type=AccountType.INCOME, is_active=True
+        )
     
-    # Get Expense accounts (Expense - typically 5xxx)
-    expense_accounts = Account.objects.filter(
-        account_type=AccountType.EXPENSE, is_active=True
-    )
+        # Get Expense accounts (Expense - typically 5xxx)
+        expense_accounts = Account.objects.filter(
+            account_type=AccountType.EXPENSE, is_active=True
+        )
     
         # Calculate Output VAT from ALL VAT Payable accounts
         # Output VAT = Credit entries to VAT Payable (when sales are made)
-    output_vat_lines = JournalEntryLine.objects.filter(
+        output_vat_lines = JournalEntryLine.objects.filter(
             account__in=vat_payable_accounts,
-        journal_entry__status='posted',
-        journal_entry__date__gte=start_date,
-        journal_entry__date__lte=end_date,
+            journal_entry__status='posted',
+            journal_entry__date__gte=start_date,
+            journal_entry__date__lte=end_date,
         ).exclude(
             # Exclude VAT Return settlement entries (already counted in submitted returns)
             journal_entry__source_module='vat'
@@ -1658,67 +1728,105 @@ def vat_report(request):
             journal_entry__source_module='vat_return'
         ) if vat_payable_accounts.exists() else JournalEntryLine.objects.none()
     
-    current_output_vat = output_vat_lines.aggregate(
-        total=Sum('credit')
-    )['total'] or Decimal('0.00')
+        current_output_vat = output_vat_lines.aggregate(
+            total=Sum('credit')
+        )['total'] or Decimal('0.00')
     
         # Calculate Input VAT from ALL VAT Recoverable accounts
         # Input VAT = Debit entries to VAT Recoverable (when purchases are made)
-    input_vat_lines = JournalEntryLine.objects.filter(
+        input_vat_lines = JournalEntryLine.objects.filter(
             account__in=vat_recoverable_accounts,
-        journal_entry__status='posted',
-        journal_entry__date__gte=start_date,
-        journal_entry__date__lte=end_date,
+            journal_entry__status='posted',
+            journal_entry__date__gte=start_date,
+            journal_entry__date__lte=end_date,
         ).exclude(
             journal_entry__source_module='vat'
         ).exclude(
             journal_entry__source_module='vat_return'
         ) if vat_recoverable_accounts.exists() else JournalEntryLine.objects.none()
     
-    current_input_vat = input_vat_lines.aggregate(
-        total=Sum('debit')
-    )['total'] or Decimal('0.00')
+        current_input_vat = input_vat_lines.aggregate(
+            total=Sum('debit')
+        )['total'] or Decimal('0.00')
     
-    # Calculate Sales from Income account journal lines (Credits = Sales)
-    sales_lines = JournalEntryLine.objects.filter(
-        account__in=sales_accounts,
-        journal_entry__status='posted',
-        journal_entry__date__gte=start_date,
-        journal_entry__date__lte=end_date,
-    )
+        # Calculate Sales from Income account journal lines (Credits = Sales)
+        sales_lines = JournalEntryLine.objects.filter(
+            account__in=sales_accounts,
+            journal_entry__status='posted',
+            journal_entry__date__gte=start_date,
+            journal_entry__date__lte=end_date,
+        )
     
-    current_sales = sales_lines.aggregate(
-        total=Sum('credit')
-    )['total'] or Decimal('0.00')
+        current_sales = sales_lines.aggregate(
+            total=Sum('credit')
+        )['total'] or Decimal('0.00')
     
-    # Calculate Purchases from Expense account journal lines (Debits = Expenses)
-    expense_lines = JournalEntryLine.objects.filter(
-        account__in=expense_accounts,
-        journal_entry__status='posted',
-        journal_entry__date__gte=start_date,
-        journal_entry__date__lte=end_date,
-    )
+        # Calculate Purchases from Expense account journal lines (Debits = Expenses)
+        expense_lines = JournalEntryLine.objects.filter(
+            account__in=expense_accounts,
+            journal_entry__status='posted',
+            journal_entry__date__gte=start_date,
+            journal_entry__date__lte=end_date,
+        )
     
-    current_purchases = expense_lines.aggregate(
-        total=Sum('debit')
-    )['total'] or Decimal('0.00')
+        current_purchases = expense_lines.aggregate(
+            total=Sum('debit')
+        )['total'] or Decimal('0.00')
     
-    # Standard Rated = Amounts where VAT was charged (5%)
-    # Simplified: assumes all sales/purchases are standard rated
-    standard_rated_supplies = current_sales
-    standard_rated_vat = current_output_vat
-    standard_rated_expenses = current_purchases
-    
-    # Zero rated and Exempt (not yet calculated from transactions)
-    zero_rated_supplies = Decimal('0.00')
-    exempt_supplies = Decimal('0.00')
-    
-    # Net VAT
-    current_net_vat = current_output_vat - current_input_vat
-    
-    # No adjustments in draft mode
-    adjustments = Decimal('0.00')
-    adjustment_reason = ''
+        # FTA-compliant sales breakdown by tax_code.tax_type.
+        # GL totals (output/input VAT) are already correct above.
+        # Box breakdown MUST come from invoice/bill line items — not GL —
+        # because zero-rated and exempt both have VAT=0 but are legally distinct.
+        from apps.sales.models import InvoiceItem
+        from apps.purchase.models import VendorBillItem
+
+        period_invoice_items = InvoiceItem.objects.filter(
+            invoice__status='posted',
+            invoice__invoice_date__gte=start_date,
+            invoice__invoice_date__lte=end_date,
+        ).select_related('tax_code')
+
+        standard_rated_supplies = period_invoice_items.filter(
+            tax_code__tax_type='standard',
+        ).aggregate(total=Coalesce(Sum('total'), Decimal('0.00')))['total']
+
+        standard_rated_vat = period_invoice_items.filter(
+            tax_code__tax_type='standard',
+        ).aggregate(total=Coalesce(Sum('vat_amount'), Decimal('0.00')))['total']
+
+        zero_rated_supplies = period_invoice_items.filter(
+            tax_code__tax_type='zero',
+        ).aggregate(total=Coalesce(Sum('total'), Decimal('0.00')))['total']
+
+        exempt_supplies = period_invoice_items.filter(
+            tax_code__tax_type='exempt',
+        ).aggregate(total=Coalesce(Sum('total'), Decimal('0.00')))['total']
+
+        out_of_scope_supplies = period_invoice_items.filter(
+            tax_code__tax_type='out_of_scope',
+        ).aggregate(total=Coalesce(Sum('total'), Decimal('0.00')))['total']
+
+        # Items with no tax_code assigned (treat as out of scope)
+        out_of_scope_supplies += period_invoice_items.filter(
+            tax_code__isnull=True,
+        ).aggregate(total=Coalesce(Sum('total'), Decimal('0.00')))['total']
+
+        # Purchases breakdown (standard rated expenses for Box 9)
+        period_bill_items = VendorBillItem.objects.filter(
+            bill__status='posted',
+            bill__bill_date__gte=start_date,
+            bill__bill_date__lte=end_date,
+        ).select_related('tax_code')
+
+        standard_rated_expenses = period_bill_items.filter(
+            tax_code__tax_type='standard',
+        ).aggregate(total=Coalesce(Sum('total'), Decimal('0.00')))['total']
+
+        # Net VAT
+        current_net_vat = current_output_vat - current_input_vat
+
+        adjustments = Decimal('0.00')
+        adjustment_reason = ''
     
     # ========================================
     # EXCEL EXPORT
@@ -1731,6 +1839,7 @@ def vat_report(request):
             'output_vat': current_output_vat,
             'zero_rated_sales': zero_rated_supplies,
             'exempt_sales': exempt_supplies,
+            'out_of_scope_sales': out_of_scope_supplies,
             'standard_purchases': standard_rated_expenses,
             'input_vat': current_input_vat,
             'net_vat': current_net_vat,
@@ -1760,8 +1869,8 @@ def vat_report(request):
         # Box 3: Exempt Supplies
         'exempt_supplies': exempt_supplies,
         
-        # Box 4: Out of scope (not applicable for UAE)
-        'out_of_scope': Decimal('0.00'),
+        # Out of Scope supplies (not reported to FTA, but tracked)
+        'out_of_scope': out_of_scope_supplies if not is_submitted_data else Decimal('0.00'),
         
         # Box 9: Standard Rated Expenses
         'standard_rated_expenses': standard_rated_expenses,
@@ -3338,6 +3447,367 @@ def vatreturn_submit_to_fta(request, pk):
     return redirect('finance:vatreturn_detail', pk=pk)
 
 
+@login_required
+def vatreturn_create_from_preview(request):
+    """
+    Auto-create a VATReturn record from live transaction data.
+    Reuses the same tax-code-driven calculation as the VAT report preview.
+    """
+    if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'finance', 'edit')):
+        messages.error(request, 'Permission denied.')
+        return redirect('finance:vat_report')
+
+    if request.method != 'POST':
+        return redirect('finance:vat_report')
+
+    from django.db import transaction as db_transaction
+    from apps.sales.models import InvoiceItem
+    from apps.purchase.models import VendorBillItem
+
+    period_start_str = request.POST.get('period_start', '')
+    period_end_str = request.POST.get('period_end', '')
+    period_type = request.POST.get('period_type', 'quarterly')
+
+    try:
+        period_start = date.fromisoformat(period_start_str)
+        period_end = date.fromisoformat(period_end_str)
+    except (ValueError, TypeError):
+        messages.error(request, 'Invalid period dates.')
+        return redirect('finance:vat_report')
+
+    if VATReturn.objects.filter(
+        period_start=period_start,
+        period_end=period_end,
+    ).exclude(status='draft').exists():
+        messages.error(request, 'A filed VAT Return already exists for this period.')
+        return redirect('finance:vat_report')
+
+    # Remove any existing draft for this exact period (allow re-creation)
+    VATReturn.objects.filter(
+        period_start=period_start,
+        period_end=period_end,
+        status='draft',
+    ).delete()
+
+    # --- Sales breakdown by tax_code.tax_type ---
+    inv_items = InvoiceItem.objects.filter(
+        invoice__status='posted',
+        invoice__invoice_date__gte=period_start,
+        invoice__invoice_date__lte=period_end,
+    ).select_related('tax_code')
+
+    std_supplies = inv_items.filter(
+        tax_code__tax_type='standard',
+    ).aggregate(total=Coalesce(Sum('total'), Decimal('0.00')))['total']
+
+    std_vat = inv_items.filter(
+        tax_code__tax_type='standard',
+    ).aggregate(total=Coalesce(Sum('vat_amount'), Decimal('0.00')))['total']
+
+    zero_supplies = inv_items.filter(
+        tax_code__tax_type='zero',
+    ).aggregate(total=Coalesce(Sum('total'), Decimal('0.00')))['total']
+
+    exempt_supplies = inv_items.filter(
+        tax_code__tax_type='exempt',
+    ).aggregate(total=Coalesce(Sum('total'), Decimal('0.00')))['total']
+
+    # --- Purchases breakdown ---
+    bill_items = VendorBillItem.objects.filter(
+        bill__status='posted',
+        bill__bill_date__gte=period_start,
+        bill__bill_date__lte=period_end,
+    ).select_related('tax_code')
+
+    std_expenses = bill_items.filter(
+        tax_code__tax_type='standard',
+    ).aggregate(total=Coalesce(Sum('total'), Decimal('0.00')))['total']
+
+    input_vat = bill_items.filter(
+        tax_code__tax_type='standard',
+    ).aggregate(total=Coalesce(Sum('vat_amount'), Decimal('0.00')))['total']
+
+    # --- GL-based output/input VAT (authoritative for the journal) ---
+    vat_payable_accounts = Account.objects.filter(
+        account_type=AccountType.LIABILITY, is_active=True, name__icontains='vat'
+    ).filter(Q(name__icontains='output') | Q(name__icontains='payable')).exclude(name__icontains='settlement')
+
+    vat_recoverable_accounts = Account.objects.filter(
+        account_type=AccountType.ASSET, is_active=True, name__icontains='vat'
+    ).filter(Q(name__icontains='input') | Q(name__icontains='recoverable'))
+
+    gl_output_vat = JournalEntryLine.objects.filter(
+        account__in=vat_payable_accounts,
+        journal_entry__status='posted',
+        journal_entry__date__gte=period_start,
+        journal_entry__date__lte=period_end,
+    ).exclude(
+        journal_entry__source_module__in=['vat', 'vat_return']
+    ).aggregate(total=Coalesce(Sum('credit'), Decimal('0.00')))['total']
+
+    gl_input_vat = JournalEntryLine.objects.filter(
+        account__in=vat_recoverable_accounts,
+        journal_entry__status='posted',
+        journal_entry__date__gte=period_start,
+        journal_entry__date__lte=period_end,
+    ).exclude(
+        journal_entry__source_module__in=['vat', 'vat_return']
+    ).aggregate(total=Coalesce(Sum('debit'), Decimal('0.00')))['total']
+
+    total_sales = std_supplies + zero_supplies + exempt_supplies
+    total_purchases = std_expenses
+    net_vat = gl_output_vat - gl_input_vat
+
+    # FTA due date: 28th of month following quarter end
+    due_date = date(period_end.year, period_end.month, 28) + timedelta(days=31)
+    due_date = due_date.replace(day=28)
+
+    with db_transaction.atomic():
+        vat_return = VATReturn.objects.create(
+            period_type=period_type,
+            period_start=period_start,
+            period_end=period_end,
+            due_date=due_date,
+            standard_rated_supplies=std_supplies,
+            standard_rated_vat=std_vat,
+            zero_rated_supplies=zero_supplies,
+            exempt_supplies=exempt_supplies,
+            output_vat=gl_output_vat,
+            standard_rated_expenses=std_expenses,
+            input_vat=gl_input_vat,
+            total_sales=total_sales,
+            total_purchases=total_purchases,
+            net_vat=net_vat,
+        )
+
+    messages.success(
+        request,
+        f'VAT Return {vat_return.return_number} created for '
+        f'{period_start.strftime("%d/%m/%Y")} - {period_end.strftime("%d/%m/%Y")}. '
+        f'Net VAT: AED {net_vat:,.2f}. Review and Post when ready.'
+    )
+    return redirect('finance:vatreturn_detail', pk=vat_return.pk)
+
+
+# ============ TAX RECONCILIATION BRIDGE ============
+
+@login_required
+def tax_reconciliation(request):
+    """
+    Audit-grade Tax Reconciliation Bridge Report (UAE compliant).
+
+    Three reconciliation sections:
+    1. Corporate Tax Bridge — GL Accounting Profit -> Taxable Income -> Tax Payable
+    2. VAT Revenue Bridge  — GL Revenue vs InvoiceItem box totals
+    3. VAT Liability Bridge — GL Output/Input VAT vs filed VATReturn values
+
+    READ-ONLY: never modifies posted journals or filed returns.
+    """
+    if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'finance', 'view')):
+        messages.error(request, 'Permission denied.')
+        return redirect('dashboard')
+
+    from apps.sales.models import InvoiceItem
+    from apps.purchase.models import VendorBillItem
+
+    # ── Inputs ──────────────────────────────────────────────
+    fiscal_years = FiscalYear.objects.filter(is_active=True).order_by('-start_date')
+    fy_id = request.GET.get('fiscal_year')
+    selected_fy = FiscalYear.objects.filter(pk=fy_id).first() if fy_id else fiscal_years.first()
+
+    vat_returns = VATReturn.objects.filter(is_active=True).order_by('-period_start')
+    vr_id = request.GET.get('vat_return')
+    selected_vr = VATReturn.objects.filter(pk=vr_id).first() if vr_id else vat_returns.first()
+
+    # ── PART 1: Corporate Tax Bridge ────────────────────────
+    ct_bridge = None
+    if selected_fy:
+        fy_start = selected_fy.start_date
+        fy_end = selected_fy.end_date
+
+        income_accounts = Account.objects.filter(is_active=True, account_type=AccountType.INCOME)
+        expense_accounts = Account.objects.filter(is_active=True, account_type=AccountType.EXPENSE)
+
+        gl_income = JournalEntryLine.objects.filter(
+            account__in=income_accounts,
+            journal_entry__status='posted',
+            journal_entry__date__gte=fy_start,
+            journal_entry__date__lte=fy_end,
+        ).aggregate(dr=Sum('debit'), cr=Sum('credit'))
+        gl_revenue = (gl_income['cr'] or Decimal('0.00')) - (gl_income['dr'] or Decimal('0.00'))
+
+        gl_exp = JournalEntryLine.objects.filter(
+            account__in=expense_accounts,
+            journal_entry__status='posted',
+            journal_entry__date__gte=fy_start,
+            journal_entry__date__lte=fy_end,
+        ).aggregate(dr=Sum('debit'), cr=Sum('credit'))
+        gl_expenses = (gl_exp['dr'] or Decimal('0.00')) - (gl_exp['cr'] or Decimal('0.00'))
+
+        gl_profit = gl_revenue - gl_expenses
+
+        # Pull stored CT computation
+        ct_comp = CorporateTaxComputation.objects.filter(
+            fiscal_year=selected_fy, is_active=True
+        ).first()
+
+        add_backs = ct_comp.non_deductible_expenses if ct_comp else Decimal('0.00')
+        exempt_income = ct_comp.exempt_income if ct_comp else Decimal('0.00')
+        other_adj = ct_comp.other_adjustments if ct_comp else Decimal('0.00')
+
+        taxable_income = gl_profit + add_backs - exempt_income + other_adj
+        threshold = Decimal('375000.00')
+        above_threshold = max(taxable_income - threshold, Decimal('0.00'))
+        computed_tax = (above_threshold * Decimal('9') / Decimal('100')).quantize(Decimal('0.01'))
+
+        stored_tax = ct_comp.tax_payable if ct_comp else None
+        ct_match = stored_tax is not None and stored_tax == computed_tax
+
+        ct_bridge = {
+            'gl_revenue': gl_revenue,
+            'gl_expenses': gl_expenses,
+            'gl_profit': gl_profit,
+            'add_backs': add_backs,
+            'exempt_income': exempt_income,
+            'other_adj': other_adj,
+            'taxable_income': taxable_income,
+            'threshold': threshold,
+            'above_threshold': above_threshold,
+            'computed_tax': computed_tax,
+            'stored_tax': stored_tax,
+            'ct_match': ct_match,
+            'ct_comp': ct_comp,
+        }
+
+    # ── PART 2 & 3: VAT Bridges ────────────────────────────
+    vat_revenue_bridge = None
+    vat_liability_bridge = None
+
+    if selected_vr:
+        ps = selected_vr.period_start
+        pe = selected_vr.period_end
+
+        # --- 2A: Revenue Reconciliation ---
+        # GL revenue for the period
+        income_accounts = Account.objects.filter(is_active=True, account_type=AccountType.INCOME)
+        gl_rev_agg = JournalEntryLine.objects.filter(
+            account__in=income_accounts,
+            journal_entry__status='posted',
+            journal_entry__date__gte=ps,
+            journal_entry__date__lte=pe,
+        ).aggregate(dr=Sum('debit'), cr=Sum('credit'))
+        gl_period_revenue = (gl_rev_agg['cr'] or Decimal('0.00')) - (gl_rev_agg['dr'] or Decimal('0.00'))
+
+        # InvoiceItem breakdown by tax_code.tax_type
+        inv_items = InvoiceItem.objects.filter(
+            invoice__status='posted',
+            invoice__invoice_date__gte=ps,
+            invoice__invoice_date__lte=pe,
+        ).select_related('tax_code')
+
+        box1 = inv_items.filter(tax_code__tax_type='standard').aggregate(
+            total=Coalesce(Sum('total'), Decimal('0.00')))['total']
+        box3 = inv_items.filter(tax_code__tax_type='zero').aggregate(
+            total=Coalesce(Sum('total'), Decimal('0.00')))['total']
+        box4 = inv_items.filter(tax_code__tax_type='exempt').aggregate(
+            total=Coalesce(Sum('total'), Decimal('0.00')))['total']
+        oos = inv_items.filter(
+            Q(tax_code__tax_type='out_of_scope') | Q(tax_code__isnull=True)
+        ).aggregate(total=Coalesce(Sum('total'), Decimal('0.00')))['total']
+
+        box_total = box1 + box3 + box4 + oos
+        rev_diff = gl_period_revenue - box_total
+        rev_match = rev_diff == Decimal('0.00')
+
+        vat_revenue_bridge = {
+            'gl_revenue': gl_period_revenue,
+            'box1': box1,
+            'box3': box3,
+            'box4': box4,
+            'out_of_scope': oos,
+            'box_total': box_total,
+            'difference': rev_diff,
+            'match': rev_match,
+        }
+
+        # --- 2B & 2C: VAT Liability Reconciliation ---
+        # GL balances for Output VAT and Input VAT accounts
+        output_vat_account = AccountMapping.get_account_or_default('vat_output', '2110')
+        input_vat_account = AccountMapping.get_account_or_default('vat_input', '1300')
+
+        gl_output_balance = Decimal('0.00')
+        gl_input_balance = Decimal('0.00')
+
+        if output_vat_account:
+            gl_output_balance = output_vat_account.balance
+        if input_vat_account:
+            gl_input_balance = input_vat_account.balance
+
+        # Filed return values
+        vr_output = selected_vr.output_vat
+        vr_input = selected_vr.input_vat
+        vr_net = selected_vr.net_vat
+        is_settled = selected_vr.status in ('posted', 'submitted', 'accepted')
+
+        # After settlement journal, Output/Input VAT GL should be 0
+        if is_settled:
+            output_expected = Decimal('0.00')
+            input_expected = Decimal('0.00')
+        else:
+            output_expected = vr_output
+            input_expected = vr_input
+
+        output_diff = gl_output_balance - output_expected
+        input_diff = gl_input_balance - input_expected
+        output_match = output_diff == Decimal('0.00')
+        input_match = input_diff == Decimal('0.00')
+
+        vat_payable_account = AccountMapping.get_account_or_default('vat_payable', '2120')
+        gl_vat_payable = vat_payable_account.balance if vat_payable_account else Decimal('0.00')
+        payable_expected = vr_net if is_settled else Decimal('0.00')
+        payable_diff = gl_vat_payable - payable_expected
+        payable_match = payable_diff == Decimal('0.00')
+
+        vat_liability_bridge = {
+            'output_vat_account': output_vat_account,
+            'input_vat_account': input_vat_account,
+            'vat_payable_account': vat_payable_account,
+            'gl_output': gl_output_balance,
+            'gl_input': gl_input_balance,
+            'gl_vat_payable': gl_vat_payable,
+            'vr_output': vr_output,
+            'vr_input': vr_input,
+            'vr_net': vr_net,
+            'is_settled': is_settled,
+            'output_expected': output_expected,
+            'input_expected': input_expected,
+            'payable_expected': payable_expected,
+            'output_diff': output_diff,
+            'input_diff': input_diff,
+            'payable_diff': payable_diff,
+            'output_match': output_match,
+            'input_match': input_match,
+            'payable_match': payable_match,
+        }
+
+    # ── Excel export ────────────────────────────────────────
+    if request.GET.get('format') == 'excel':
+        from .excel_exports import export_tax_reconciliation
+        return export_tax_reconciliation(ct_bridge, vat_revenue_bridge, vat_liability_bridge,
+                                         selected_fy, selected_vr)
+
+    return render(request, 'finance/tax_reconciliation.html', {
+        'title': 'Tax Reconciliation Bridge',
+        'fiscal_years': fiscal_years,
+        'selected_fy': selected_fy,
+        'vat_returns': vat_returns,
+        'selected_vr': selected_vr,
+        'ct_bridge': ct_bridge,
+        'vat_revenue_bridge': vat_revenue_bridge,
+        'vat_liability_bridge': vat_liability_bridge,
+    })
+
+
 # ============ ADDITIONAL REPORTS ============
 
 @login_required
@@ -4297,61 +4767,130 @@ def bank_ledger(request):
 
 @login_required
 def budget_vs_actual(request):
-    """Budget vs Actual Report."""
+    """
+    Budget vs Actual Report.
+    Queries actual GL postings within the budget's fiscal year — NOT Account.balance.
+    Supports monthly breakdown and YTD filtering.
+    """
     if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'finance', 'view')):
         messages.error(request, 'Permission denied.')
         return redirect('dashboard')
-    
+
+    from django.db.models.functions import ExtractMonth
+
+    MONTH_FIELDS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun',
+                     'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
+    MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                     'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
     budget_id = request.GET.get('budget')
+    through_month = request.GET.get('month', '')
     budgets = Budget.objects.filter(is_active=True, status__in=['approved', 'locked'])
-    
+
     selected_budget = None
     comparison_data = []
+    monthly_totals = {'budget': [Decimal('0.00')] * 12,
+                      'actual': [Decimal('0.00')] * 12}
     total_budget = Decimal('0.00')
     total_actual = Decimal('0.00')
-    
+
     if budget_id:
         selected_budget = get_object_or_404(Budget, pk=budget_id)
-        
+        fy = selected_budget.fiscal_year
+
+        if through_month and through_month.isdigit():
+            through_month = int(through_month)
+            if through_month < 1 or through_month > 12:
+                through_month = 12
+        else:
+            through_month = 12
+
+        account_ids = list(
+            selected_budget.lines.values_list('account_id', flat=True)
+        )
+
+        actuals_by_account = {}
+        if account_ids:
+            rows = (
+                JournalEntryLine.objects.filter(
+                    journal_entry__status='posted',
+                    journal_entry__date__gte=fy.start_date,
+                    journal_entry__date__lte=fy.end_date,
+                    account_id__in=account_ids,
+                )
+                .values('account_id')
+                .annotate(month=ExtractMonth('journal_entry__date'))
+                .values('account_id', 'month')
+                .annotate(
+                    total_debit=Coalesce(Sum('debit'), Decimal('0.00')),
+                    total_credit=Coalesce(Sum('credit'), Decimal('0.00')),
+                )
+            )
+            for row in rows:
+                acct_id = row['account_id']
+                m = row['month']
+                net = row['total_debit'] - row['total_credit']
+                actuals_by_account.setdefault(acct_id, [Decimal('0.00')] * 12)
+                actuals_by_account[acct_id][m - 1] = abs(net)
+
         for line in selected_budget.lines.all().select_related('account'):
             account = line.account
-            actual = abs(account.balance) if account.balance else Decimal('0.00')
-            budgeted = line.amount
-            variance = budgeted - actual
-            variance_pct = (variance / budgeted * 100) if budgeted else Decimal('0.00')
-            
+            budget_months = [getattr(line, f) for f in MONTH_FIELDS]
+            actual_months = actuals_by_account.get(account.pk, [Decimal('0.00')] * 12)
+
+            ytd_budget = sum(budget_months[:through_month])
+            ytd_actual = sum(actual_months[:through_month])
+            ytd_variance = ytd_budget - ytd_actual
+            ytd_var_pct = (ytd_variance / ytd_budget * 100) if ytd_budget else Decimal('0.00')
+
+            months = []
+            for i in range(12):
+                b = budget_months[i]
+                a = actual_months[i]
+                v = b - a
+                months.append({'budget': b, 'actual': a, 'variance': v})
+                monthly_totals['budget'][i] += b
+                monthly_totals['actual'][i] += a
+
             comparison_data.append({
                 'account': account,
-                'budgeted': budgeted,
-                'actual': actual,
-                'variance': variance,
-                'variance_pct': variance_pct,
-                'is_over': actual > budgeted,
+                'months': months,
+                'ytd_budget': ytd_budget,
+                'ytd_actual': ytd_actual,
+                'ytd_variance': ytd_variance,
+                'ytd_var_pct': ytd_var_pct,
+                'annual_budget': line.amount,
+                'is_over': ytd_actual > ytd_budget,
             })
-            
-            total_budget += budgeted
-            total_actual += actual
-    
+
+            total_budget += ytd_budget
+            total_actual += ytd_actual
+
     total_variance = total_budget - total_actual
-    
-    # Excel Export
+
     export_format = request.GET.get('format', '')
     if export_format == 'excel' and selected_budget:
         from .excel_exports import export_budget_vs_actual
         export_data = [{
             'account': f"{d['account'].code} - {d['account'].name}",
-            'budget': d['budgeted'],
-            'actual': d['actual'],
-            'variance': d['variance'],
-            'variance_pct': float(d['variance_pct']),
+            'budget': d['ytd_budget'],
+            'actual': d['ytd_actual'],
+            'variance': d['ytd_variance'],
+            'variance_pct': float(d['ytd_var_pct']),
         } for d in comparison_data]
         return export_budget_vs_actual(export_data, selected_budget.name, selected_budget.fiscal_year.name)
-    
+
     return render(request, 'finance/budget_vs_actual.html', {
         'title': 'Budget vs Actual',
         'budgets': budgets,
         'selected_budget': selected_budget,
         'comparison_data': comparison_data,
+        'month_labels': MONTH_LABELS,
+        'through_month': through_month if selected_budget else 12,
+        'month_range': range(1, 13),
+        'monthly_totals': list(zip(
+            monthly_totals['budget'], monthly_totals['actual']
+        )) if selected_budget else [],
         'total_budget': total_budget,
         'total_actual': total_actual,
         'total_variance': total_variance,
@@ -4390,15 +4929,10 @@ def payment_post(request, pk):
         source_module='payment',
     )
     
-    # Get AR/AP accounts using Account Mapping (SAP/Oracle standard)
-    # Fallback to hardcoded codes for backward compatibility
+    # Account determination: Account Mapping first, then hard-coded default code.
+    # NO generic fallback — posting to the wrong account is worse than failing.
     ar_account = AccountMapping.get_account_or_default('customer_receipt_ar_clear', '1200')
-    if not ar_account:
-        ar_account = Account.objects.filter(code__startswith='12', account_type='asset').first()
-    
     ap_account = AccountMapping.get_account_or_default('vendor_payment_ap_clear', '2000')
-    if not ap_account:
-        ap_account = Account.objects.filter(code__startswith='20', account_type='liability').first()
     
     bank_account = payment.bank_account.gl_account
     
@@ -4624,6 +5158,10 @@ def bankstatement_import(request, pk):
     from decimal import Decimal, InvalidOperation
     
     statement = get_object_or_404(BankStatement, pk=pk)
+
+    if statement.status in ['reconciled', 'locked']:
+        messages.error(request, 'Cannot import lines into a reconciled or locked statement.')
+        return redirect('finance:bankstatement_detail', pk=pk)
     
     if request.method != 'POST':
         return redirect('finance:bankstatement_detail', pk=pk)
@@ -4643,13 +5181,13 @@ def bankstatement_import(request, pk):
         ws = wb.active
         
         imported_count = 0
+        skipped_dupes = 0
         errors = []
         
-        # Get existing max line number
-        max_line = statement.lines.aggregate(max_line=models.Max('line_number'))['max_line'] or 0
+        from django.db.models import Max as _Max
+        max_line = statement.lines.aggregate(max_line=_Max('line_number'))['max_line'] or 0
         
         for row_num, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
-            # Skip empty rows
             if not row or not any(row):
                 continue
             
@@ -4662,7 +5200,6 @@ def bankstatement_import(request, pk):
                 balance = row[5] if len(row) > 5 else None
                 value_date = row[6] if len(row) > 6 else None
                 
-                # Validate required fields
                 if not transaction_date:
                     errors.append(f"Row {row_num}: Transaction Date is required")
                     continue
@@ -4670,38 +5207,56 @@ def bankstatement_import(request, pk):
                     errors.append(f"Row {row_num}: Description is required")
                     continue
                 
-                # Parse date
                 if isinstance(transaction_date, str):
                     from datetime import datetime
                     transaction_date = datetime.strptime(transaction_date, '%Y-%m-%d').date()
                 elif hasattr(transaction_date, 'date'):
-                    transaction_date = transaction_date.date() if hasattr(transaction_date, 'date') else transaction_date
+                    transaction_date = transaction_date.date()
                 
-                # Parse value date
                 if value_date:
                     if isinstance(value_date, str):
                         from datetime import datetime
                         value_date = datetime.strptime(value_date, '%Y-%m-%d').date()
                     elif hasattr(value_date, 'date'):
-                        value_date = value_date.date() if hasattr(value_date, 'date') else value_date
+                        value_date = value_date.date()
                 
-                # Parse amounts
                 debit_amount = Decimal(str(debit or 0).replace(',', ''))
                 credit_amount = Decimal(str(credit or 0).replace(',', ''))
                 balance_amount = Decimal(str(balance or 0).replace(',', '')) if balance else Decimal('0.00')
+
+                if debit_amount < 0 or credit_amount < 0:
+                    errors.append(f"Row {row_num}: Negative amounts not allowed")
+                    continue
                 
                 if debit_amount == 0 and credit_amount == 0:
                     errors.append(f"Row {row_num}: Either Debit or Credit amount is required")
                     continue
+
+                if transaction_date < statement.statement_start_date or transaction_date > statement.statement_end_date:
+                    errors.append(
+                        f"Row {row_num}: Date {transaction_date} outside statement period "
+                        f"({statement.statement_start_date} to {statement.statement_end_date})"
+                    )
+                    continue
+
+                desc_str = str(description)[:500]
+                if BankStatementLine.objects.filter(
+                    statement=statement,
+                    transaction_date=transaction_date,
+                    description=desc_str,
+                    debit=debit_amount,
+                    credit=credit_amount,
+                ).exists():
+                    skipped_dupes += 1
+                    continue
                 
-                # Create statement line
                 max_line += 1
                 BankStatementLine.objects.create(
                     statement=statement,
                     line_number=max_line,
                     transaction_date=transaction_date,
                     value_date=value_date,
-                    description=str(description)[:500],
+                    description=desc_str,
                     reference=str(reference)[:200],
                     debit=debit_amount,
                     credit=credit_amount,
@@ -4715,19 +5270,16 @@ def bankstatement_import(request, pk):
             except Exception as e:
                 errors.append(f"Row {row_num}: {str(e)}")
         
-        # Update statement totals
-        statement.total_debits = statement.lines.aggregate(total=models.Sum('debit'))['total'] or Decimal('0.00')
-        statement.total_credits = statement.lines.aggregate(total=models.Sum('credit'))['total'] or Decimal('0.00')
-        statement.save()
+        statement.calculate_totals()
         
         if imported_count > 0:
             messages.success(request, f'Successfully imported {imported_count} transaction(s).')
-        
+        if skipped_dupes > 0:
+            messages.info(request, f'{skipped_dupes} duplicate line(s) skipped.')
         if errors:
             error_msg = f'{len(errors)} error(s) during import. First 5: ' + '; '.join(errors[:5])
             messages.warning(request, error_msg)
-        
-        if imported_count == 0 and not errors:
+        if imported_count == 0 and not errors and skipped_dupes == 0:
             messages.warning(request, 'No data found in the Excel file. Make sure to use the template format.')
             
     except Exception as e:
@@ -4745,20 +5297,35 @@ class BankStatementDetailView(PermissionRequiredMixin, DetailView):
     permission_type = 'view'
     
     def get_context_data(self, **kwargs):
-        from .forms import AdjustmentForm
         from apps.core.audit import get_entity_audit_history
         
         context = super().get_context_data(**kwargs)
-        context['title'] = f'Bank Statement: {self.object.statement_number}'
+        stmt = self.object
+        context['title'] = f'Bank Statement: {stmt.statement_number}'
         
-        # Statement lines
-        context['lines'] = self.object.lines.all().select_related(
+        lines = stmt.lines.all().select_related(
             'matched_payment', 'matched_journal_line', 'adjustment_journal'
         )
+        context['lines'] = lines
+
+        matched_lines = [l for l in lines if l.reconciliation_status == 'matched']
+        unmatched_lines = [l for l in lines if l.reconciliation_status == 'unmatched']
+        low_confidence = [l for l in matched_lines if l.match_confidence < 100 and l.match_confidence > 0]
+        context['summary'] = {
+            'total_lines': len(lines),
+            'matched_count': len(matched_lines),
+            'unmatched_count': len(unmatched_lines),
+            'low_confidence_count': len(low_confidence),
+            'total_stmt_debit': sum(l.debit for l in lines),
+            'total_stmt_credit': sum(l.credit for l in lines),
+            'matched_debit': sum(l.debit for l in matched_lines),
+            'matched_credit': sum(l.credit for l in matched_lines),
+            'unmatched_debit': sum(l.debit for l in unmatched_lines),
+            'unmatched_credit': sum(l.credit for l in unmatched_lines),
+        }
         
-        # Unmatched payments for this bank account
         context['unmatched_payments'] = Payment.objects.filter(
-            bank_account=self.object.bank_account,
+            bank_account=stmt.bank_account,
             status='confirmed',
         ).exclude(
             id__in=BankStatementLine.objects.filter(
@@ -4766,31 +5333,28 @@ class BankStatementDetailView(PermissionRequiredMixin, DetailView):
             ).values_list('matched_payment_id', flat=True)
         )
         
-        # Unmatched journal entries for the bank GL account
         context['unmatched_journals'] = JournalEntryLine.objects.filter(
-            account=self.object.bank_account.gl_account,
+            account=stmt.bank_account.gl_account,
             journal_entry__status='posted',
+            is_bank_reconciled=False,
         ).exclude(
             id__in=BankStatementLine.objects.filter(
                 matched_journal_line__isnull=False
             ).values_list('matched_journal_line_id', flat=True)
         ).select_related('journal_entry')
         
-        # Expense/Income accounts for adjustments
         context['expense_accounts'] = Account.objects.filter(
             is_active=True, account_type__in=['expense', 'income']
         ).order_by('account_type', 'code')
         
-        # Permissions
         context['can_edit'] = (
             self.request.user.is_superuser or 
             PermissionChecker.has_permission(self.request.user, 'finance', 'edit')
-        ) and self.object.status not in ['reconciled', 'locked']
+        ) and stmt.status not in ['reconciled', 'locked']
         
-        context['can_finalize'] = context['can_edit'] and self.object.unmatched_count == 0
+        context['can_finalize'] = context['can_edit'] and stmt.unmatched_count == 0
         
-        # Audit History
-        context['audit_history'] = get_entity_audit_history('BankReconciliation', self.object.pk)
+        context['audit_history'] = get_entity_audit_history('BankReconciliation', stmt.pk)
         
         return context
 
@@ -5140,66 +5704,120 @@ class BankReconciliationDetailView(PermissionRequiredMixin, DetailView):
     context_object_name = 'reconciliation'
     module_name = 'finance'
     permission_type = 'view'
-    
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['title'] = f'Reconciliation: {self.object.reconciliation_number}'
-        context['items'] = self.object.items.all()
-        
-        # Permissions
-        context['can_edit'] = (
-            self.request.user.is_superuser or 
+        recon = self.object
+        recon.calculate()
+
+        context['title'] = f'Reconciliation: {recon.reconciliation_number}'
+        context['items'] = recon.items.all()
+
+        gl_lines = recon.get_gl_lines()
+        cleared_ids = set(recon.cleared_lines.values_list('id', flat=True))
+        annotated_lines = []
+        for line in gl_lines:
+            annotated_lines.append({
+                'id': line.id,
+                'date': line.journal_entry.date,
+                'entry_number': line.journal_entry.entry_number,
+                'description': line.description or line.journal_entry.description,
+                'debit': line.debit,
+                'credit': line.credit,
+                'cleared': line.id in cleared_ids,
+                'reconciled_elsewhere': line.is_bank_reconciled and line.id not in cleared_ids,
+            })
+        context['gl_lines'] = annotated_lines
+
+        can_edit = (
+            self.request.user.is_superuser or
             PermissionChecker.has_permission(self.request.user, 'finance', 'edit')
-        ) and self.object.status in ['draft', 'in_progress']
-        
-        context['can_complete'] = context['can_edit'] and self.object.is_reconciled
+        ) and recon.status in ('draft', 'in_progress')
+        context['can_edit'] = can_edit
+        context['can_complete'] = can_edit and recon.is_reconciled
         context['can_approve'] = (
-            self.request.user.is_superuser or 
+            self.request.user.is_superuser or
             PermissionChecker.has_permission(self.request.user, 'finance', 'approve')
-        ) and self.object.status == 'completed'
-        
+        ) and recon.status == 'completed'
+
         return context
 
 
 @login_required
+def bankreconciliation_toggle_clear(request, pk):
+    """AJAX endpoint: toggle a journal line's cleared status in a reconciliation."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+
+    recon = get_object_or_404(BankReconciliation, pk=pk)
+    if recon.status not in ('draft', 'in_progress'):
+        return JsonResponse({'error': 'Reconciliation is locked.'}, status=400)
+
+    import json
+    body = json.loads(request.body)
+    line_id = body.get('line_id')
+    action = body.get('action')  # 'clear' or 'unclear'
+
+    line = get_object_or_404(JournalEntryLine, pk=line_id)
+
+    try:
+        if action == 'clear':
+            recon.clear_line(line)
+        elif action == 'unclear':
+            recon.unclear_line(line)
+        else:
+            return JsonResponse({'error': 'Invalid action'}, status=400)
+    except ValidationError as e:
+        return JsonResponse({'error': str(e.message)}, status=400)
+
+    recon.calculate()
+
+    return JsonResponse({
+        'ok': True,
+        'gl_closing_balance': str(recon.gl_closing_balance),
+        'outstanding_deposits': str(recon.outstanding_deposits),
+        'outstanding_checks': str(recon.outstanding_checks),
+        'reconciled_balance': str(recon.reconciled_balance),
+        'difference': str(recon.difference),
+        'is_reconciled': recon.is_reconciled,
+    })
+
+
+@login_required
 def bankreconciliation_complete(request, pk):
-    """Complete a bank reconciliation."""
+    """Complete a bank reconciliation — enforces difference == 0."""
     reconciliation = get_object_or_404(BankReconciliation, pk=pk)
-    
+
     if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'finance', 'edit')):
         messages.error(request, 'Permission denied.')
         return redirect('finance:bankreconciliation_detail', pk=pk)
-    
+
     try:
         reconciliation.complete(request.user)
         messages.success(request, f'Reconciliation {reconciliation.reconciliation_number} completed.')
     except ValidationError as e:
-        for error in e.messages:
+        for error in (e.messages if hasattr(e, 'messages') else [str(e)]):
             messages.error(request, error)
-    except Exception as e:
-        messages.error(request, f'Failed to complete: {e}')
-    
+
     return redirect('finance:bankreconciliation_detail', pk=pk)
 
 
 @login_required
 def bankreconciliation_approve(request, pk):
-    """Approve a completed bank reconciliation."""
+    """Approve a completed bank reconciliation — locks cleared lines permanently."""
     reconciliation = get_object_or_404(BankReconciliation, pk=pk)
-    
+
     if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'finance', 'approve')):
         messages.error(request, 'Permission denied.')
         return redirect('finance:bankreconciliation_detail', pk=pk)
-    
+
     try:
         reconciliation.approve(request.user)
         messages.success(request, f'Reconciliation {reconciliation.reconciliation_number} approved.')
     except ValidationError as e:
-        for error in e.messages:
+        for error in (e.messages if hasattr(e, 'messages') else [str(e)]):
             messages.error(request, error)
-    except Exception as e:
-        messages.error(request, f'Failed to approve: {e}')
-    
+
     return redirect('finance:bankreconciliation_detail', pk=pk)
 
 
@@ -5445,7 +6063,6 @@ def bank_vs_gl_report(request):
     comparison_data = []
     
     for bank in bank_accounts:
-        # GL balance
         gl_account = bank.gl_account
         gl_lines = JournalEntryLine.objects.filter(
             account=gl_account,
@@ -5455,27 +6072,41 @@ def bank_vs_gl_report(request):
             total_debit=Sum('debit'),
             total_credit=Sum('credit')
         )
-        
+
         gl_balance = gl_account.opening_balance + (gl_lines['total_debit'] or Decimal('0.00')) - (gl_lines['total_credit'] or Decimal('0.00'))
-        
-        # Latest reconciled statement balance
+
         from .models import BankStatement
         latest_statement = BankStatement.objects.filter(
             bank_account=bank,
             status__in=['reconciled', 'locked']
         ).order_by('-statement_end_date').first()
-        
+
         bank_balance = latest_statement.closing_balance if latest_statement else bank.bank_statement_balance
-        
+
         difference = gl_balance - bank_balance
-        
+
+        latest_recon = BankReconciliation.objects.filter(
+            bank_account=bank,
+            status__in=['completed', 'approved'],
+        ).order_by('-reconciliation_date').first()
+
+        if latest_recon:
+            recon_status = 'reconciled'
+            last_reconciled = latest_recon.reconciliation_date
+        elif abs(difference) < Decimal('0.01'):
+            recon_status = 'not_reconciled'
+            last_reconciled = None
+        else:
+            recon_status = 'difference'
+            last_reconciled = None
+
         comparison_data.append({
             'bank': bank,
             'gl_balance': gl_balance,
             'bank_balance': bank_balance,
             'difference': difference,
-            'is_reconciled': abs(difference) < Decimal('0.01'),
-            'last_reconciled': latest_statement.statement_end_date if latest_statement else None,
+            'recon_status': recon_status,
+            'last_reconciled': last_reconciled,
         })
     
     return render(request, 'finance/bank_vs_gl_report.html', {

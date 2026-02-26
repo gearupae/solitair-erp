@@ -9,7 +9,7 @@
     </div>
     <div>
         {% if selected_account %}
-        <a href="?account={{ selected_account.pk }}&start_date={{ start_date }}&end_date={{ end_date }}&format=excel" class="btn btn-success me-2">
+        <a href="?account={{ selected_account.pk }}&start_date={{ start_date }}&end_date={{ end_date }}{% if include_history %}&include_history=1{% endif %}&format=excel" class="btn btn-success me-2">
             <i class="fas fa-file-excel me-1"></i>Excel
         </a>
         {% endif %}
@@ -34,13 +34,19 @@
                     {% endfor %}
                 </select>
             </div>
-            <div class="col-md-3">
+            <div class="col-md-2">
                 <label class="form-label">Start Date</label>
                 <input type="date" name="start_date" class="form-control" value="{{ start_date }}">
             </div>
-            <div class="col-md-3">
+            <div class="col-md-2">
                 <label class="form-label">End Date</label>
                 <input type="date" name="end_date" class="form-control" value="{{ end_date }}">
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+                <div class="form-check mb-2">
+                    <input class="form-check-input" type="checkbox" name="include_history" value="1" id="includeHistory" {% if include_history %}checked{% endif %}>
+                    <label class="form-check-label small" for="includeHistory">Include all history</label>
+                </div>
             </div>
             <div class="col-md-2">
                 <button type="submit" class="btn btn-primary w-100">
@@ -54,7 +60,7 @@
 {% if selected_account %}
 <!-- Account Info -->
 <div class="row mb-4">
-    <div class="col-md-4">
+    <div class="col-md-3">
         <div class="card border-0 shadow-sm">
             <div class="card-body">
                 <h6 class="text-muted mb-1">Account</h6>
@@ -63,7 +69,7 @@
             </div>
         </div>
     </div>
-    <div class="col-md-4">
+    <div class="col-md-3">
         <div class="card border-0 shadow-sm">
             <div class="card-body">
                 <h6 class="text-muted mb-1">Opening Balance</h6>
@@ -71,7 +77,18 @@
             </div>
         </div>
     </div>
-    <div class="col-md-4">
+    <div class="col-md-3">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <h6 class="text-muted mb-1">Period Movement</h6>
+                <div class="d-flex justify-content-between small">
+                    <span class="text-success">Dr {{ period_debit|floatformat:2|intcomma }}</span>
+                    <span class="text-danger">Cr {{ period_credit|floatformat:2|intcomma }}</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
         <div class="card border-0 shadow-sm">
             <div class="card-body">
                 <h6 class="text-muted mb-1">Closing Balance</h6>
@@ -93,6 +110,7 @@
                         <th>Date</th>
                         <th>Entry #</th>
                         <th>Reference</th>
+                        <th>Source</th>
                         <th>Description</th>
                         <th class="text-end">Debit (AED)</th>
                         <th class="text-end">Credit (AED)</th>
@@ -101,41 +119,90 @@
                 </thead>
                 <tbody>
                     <tr class="table-light">
-                        <td colspan="4" class="fw-medium">Opening Balance</td>
+                        <td colspan="5" class="fw-medium">
+                            Opening Balance
+                            {% if include_history %}
+                            <small class="text-muted ms-2">(Account opening balance)</small>
+                            {% else %}
+                            <small class="text-muted ms-2">(as at {{ start_date }})</small>
+                            {% endif %}
+                        </td>
                         <td class="text-end">-</td>
                         <td class="text-end">-</td>
                         <td class="text-end fw-medium">{{ opening_balance|floatformat:2|intcomma }}</td>
                     </tr>
                     {% for txn in transactions %}
                     <tr>
-                        <td>{{ txn.date }}</td>
+                        <td>{{ txn.date|date:"d/m/Y" }}</td>
                         <td>
                             <a href="{% url 'finance:journal_detail' txn.journal_pk %}" class="text-decoration-none">
                                 {{ txn.entry_number }}
                             </a>
                         </td>
                         <td>{{ txn.reference|default:"-" }}</td>
-                        <td>{{ txn.description|default:"-" }}</td>
+                        <td>
+                            {% if txn.source_module == 'inventory' %}
+                            <span class="badge bg-info bg-opacity-10 text-info">Inventory</span>
+                            {% elif txn.source_module == 'sales' %}
+                            <span class="badge bg-success bg-opacity-10 text-success">Sales</span>
+                            {% elif txn.source_module == 'purchase' %}
+                            <span class="badge bg-warning bg-opacity-10 text-warning">Purchase</span>
+                            {% elif txn.source_module == 'hr' %}
+                            <span class="badge bg-primary bg-opacity-10 text-primary">HR</span>
+                            {% elif txn.source_module == 'property' %}
+                            <span class="badge bg-secondary bg-opacity-10 text-secondary">Property</span>
+                            {% elif txn.source_module == 'manual' %}
+                            <span class="badge bg-dark bg-opacity-10 text-dark">Manual</span>
+                            {% else %}
+                            <span class="badge bg-light text-muted">{{ txn.source_module|default:"Manual" }}</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ txn.description|default:"-"|truncatechars:60 }}</td>
                         <td class="text-end">{% if txn.debit %}{{ txn.debit|floatformat:2|intcomma }}{% else %}-{% endif %}</td>
                         <td class="text-end">{% if txn.credit %}{{ txn.credit|floatformat:2|intcomma }}{% else %}-{% endif %}</td>
                         <td class="text-end fw-medium">{{ txn.balance|floatformat:2|intcomma }}</td>
                     </tr>
                     {% empty %}
                     <tr>
-                        <td colspan="7" class="text-center py-4 text-muted">
-                            No transactions found for this period
+                        <td colspan="8" class="text-center py-4">
+                            <div class="text-muted">
+                                <i class="fas fa-info-circle me-1"></i>
+                                No transactions found for this period.
+                                {% if not include_history and opening_balance %}
+                                <br>
+                                <small>The opening balance of {{ opening_balance|floatformat:2|intcomma }} represents activity before {{ start_date }}.
+                                <br>Check <strong>"Include all history"</strong> to see those transactions.</small>
+                                {% endif %}
+                            </div>
                         </td>
                     </tr>
                     {% endfor %}
                 </tbody>
-                <tfoot class="table-dark">
-                    <tr>
-                        <th colspan="4">Closing Balance</th>
+                {% if transactions %}
+                <tfoot>
+                    <tr class="table-secondary">
+                        <th colspan="5">Period Totals</th>
+                        <th class="text-end">{{ period_debit|floatformat:2|intcomma }}</th>
+                        <th class="text-end">{{ period_credit|floatformat:2|intcomma }}</th>
+                        <th class="text-end">-</th>
+                    </tr>
+                    <tr class="table-dark">
+                        <th colspan="5">Closing Balance</th>
                         <th class="text-end">-</th>
                         <th class="text-end">-</th>
                         <th class="text-end">{{ closing_balance|floatformat:2|intcomma }}</th>
                     </tr>
                 </tfoot>
+                {% else %}
+                <tfoot class="table-dark">
+                    <tr>
+                        <th colspan="5">Closing Balance</th>
+                        <th class="text-end">-</th>
+                        <th class="text-end">-</th>
+                        <th class="text-end">{{ closing_balance|floatformat:2|intcomma }}</th>
+                    </tr>
+                </tfoot>
+                {% endif %}
             </table>
         </div>
     </div>
@@ -150,5 +217,3 @@
 </div>
 {% endif %}
 {% endblock %}
-
-

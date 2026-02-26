@@ -265,13 +265,15 @@ class ProjectExpense(BaseModel):
         Dr VAT Recoverable (if applicable)
         Cr Accounts Payable / Accrued Expenses
         """
-        from apps.finance.models import JournalEntry, JournalEntryLine, AccountMapping
-        
+        from apps.finance.models import JournalEntry, JournalEntryLine, AccountMapping, FiscalYear
+
         if self.posted:
             raise ValidationError("Expense already posted to accounting.")
-        
+
         if self.status != 'approved':
             raise ValidationError("Only approved expenses can be posted.")
+
+        FiscalYear.validate_posting_allowed(self.expense_date)
         
         # Get accounts
         expense_account = self.expense_account or self.project.expense_account or \

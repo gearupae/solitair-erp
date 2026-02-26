@@ -221,6 +221,7 @@ class AuditLog(models.Model):
         ('login', 'Login'),
         ('logout', 'Logout'),
         ('post', 'Post'),
+        ('post_bypass', 'Post (Closed Period Bypass)'),
         ('reverse', 'Reverse'),
         ('approve', 'Approve'),
         ('reject', 'Reject'),

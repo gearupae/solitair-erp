@@ -155,16 +155,20 @@ PurchaseOrderItemFormSet = forms.inlineformset_factory(
 
 class VendorBillForm(forms.ModelForm):
     """Form for creating/editing vendor bills."""
-    
+
     class Meta:
         model = VendorBill
-        fields = ['vendor', 'purchase_order', 'vendor_invoice_number', 'bill_date', 'due_date', 'status', 'notes']
+        fields = [
+            'vendor', 'purchase_order', 'goods_received',
+            'vendor_invoice_number', 'bill_date', 'due_date', 'status', 'notes',
+        ]
         widgets = {
             'bill_date': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}, format='%Y-%m-%d'),
             'due_date': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}, format='%Y-%m-%d'),
             'notes': forms.Textarea(attrs={'rows': 2, 'class': 'form-control'}),
+            'goods_received': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
         }
-    
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields['vendor'].queryset = Vendor.objects.filter(is_active=True)
@@ -176,6 +180,26 @@ class VendorBillForm(forms.ModelForm):
         self.fields['vendor_invoice_number'].widget.attrs['class'] = 'form-control'
         self.fields['vendor_invoice_number'].required = False
         self.fields['notes'].required = False
+        self.fields['goods_received'].help_text = (
+            "Check if this bill is for goods already received into inventory. "
+            "This will debit GRN Clearing instead of Expense."
+        )
+
+    def clean(self):
+        cleaned = super().clean()
+        goods_received = cleaned.get('goods_received', False)
+        po = cleaned.get('purchase_order')
+
+        if goods_received and not po:
+            self.add_error('purchase_order',
+                           'A goods-received bill must be linked to a Purchase Order.')
+
+        if goods_received and po and po.status != 'received':
+            self.add_error('purchase_order',
+                           f'PO {po.po_number} has status "{po.get_status_display()}". '
+                           f'Goods must be received before posting a GRN bill.')
+
+        return cleaned
 
 
 class VendorBillItemForm(forms.ModelForm):

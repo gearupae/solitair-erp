@@ -10,6 +10,7 @@ from django.db.models import Q, Sum, F, Value, DecimalField, Count, Avg, Prefetc
 from django.db import models as db_models
 from django.db.models.functions import Coalesce
 from django.db import transaction
+from django.http import HttpResponse
 from decimal import Decimal
 
 from .models import Category, Warehouse, Item, Stock, StockMovement, ConsumableRequest, ConditionLog
@@ -377,28 +378,19 @@ def stock_adjustment(request):
             warehouse = form.cleaned_data['warehouse']
             quantity = Decimal(str(form.cleaned_data['quantity']))
             movement_type = form.cleaned_data['movement_type']
+            adjustment_reason = form.cleaned_data.get('adjustment_reason', '')
             reference = form.cleaned_data['reference']
             notes = form.cleaned_data['notes']
-            
+
             try:
                 with transaction.atomic():
-                    # Get or create stock record
-                    stock, created = Stock.objects.get_or_create(
-                        item=item,
-                        warehouse=warehouse,
-                        defaults={'quantity': Decimal('0.00')}
-                    )
-                    
-                    # Store old quantity for display
-                    old_quantity = stock.quantity
-                    
-                    # Update stock based on movement type
-                    if movement_type == 'in':
-                        stock.quantity += quantity
-                    elif movement_type == 'out':
-                        # Prevent negative stock
-                        if stock.quantity < quantity:
-                            messages.error(request, f'Insufficient stock. Available: {stock.quantity}, Requested: {quantity}')
+                    from datetime import date as dt_date
+
+                    if movement_type in ('out', 'adjustment_minus'):
+                        stock_record = Stock.objects.filter(item=item, warehouse=warehouse).first()
+                        available = stock_record.quantity if stock_record else Decimal('0.00')
+                        if available < quantity:
+                            messages.error(request, f'Insufficient stock. Available: {available}, Requested: {quantity}')
                             items = Item.objects.filter(is_active=True).order_by('name')
                             warehouses = Warehouse.objects.filter(is_active=True, status='active').order_by('name')
                             return render(request, 'inventory/stock_adjustment.html', {
@@ -407,24 +399,33 @@ def stock_adjustment(request):
                                 'items': items,
                                 'warehouses': warehouses,
                             })
-                        stock.quantity -= quantity
-                    else:  # adjustment
-                        stock.quantity = quantity
-                    
-                    # Save stock with all fields to ensure proper update
-                    stock.save()
-                    
-                    # Create movement record
-                    StockMovement.objects.create(
+
+                    old_quantity = Stock.objects.filter(
+                        item=item, warehouse=warehouse
+                    ).values_list('quantity', flat=True).first() or Decimal('0.00')
+
+                    movement = StockMovement.objects.create(
                         item=item,
                         warehouse=warehouse,
                         movement_type=movement_type,
+                        adjustment_reason=adjustment_reason,
+                        source='manual',
                         quantity=quantity,
+                        unit_cost=item.purchase_price or Decimal('0.00'),
                         reference=reference,
-                        notes=notes
+                        notes=notes,
+                        movement_date=dt_date.today(),
+                        created_by=request.user,
                     )
-                    
-                    messages.success(request, f'Stock adjusted for {item.name} at {warehouse.name}. Quantity: {old_quantity} → {stock.quantity}')
+
+                    # Atomic: update quantity + post GL together
+                    movement.execute(user=request.user)
+
+                    new_quantity = Stock.objects.filter(
+                        item=item, warehouse=warehouse
+                    ).values_list('quantity', flat=True).first() or Decimal('0.00')
+
+                    messages.success(request, f'Stock adjusted for {item.name} at {warehouse.name}. Quantity: {old_quantity} → {new_quantity}')
                     return redirect('inventory:stock_list')
                     
             except Exception as e:
@@ -528,6 +529,148 @@ def movement_post_to_accounting(request, pk):
 
 
 @login_required
+def movement_export_excel(request):
+    """Export stock movements to a formatted Excel file."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+    from io import BytesIO
+
+    queryset = StockMovement.objects.filter(
+        item__is_active=True
+    ).select_related('item', 'warehouse', 'to_warehouse', 'journal_entry')
+
+    search = request.GET.get('search')
+    if search:
+        queryset = queryset.filter(
+            Q(item__name__icontains=search) |
+            Q(reference__icontains=search) |
+            Q(movement_number__icontains=search)
+        )
+
+    movement_type = request.GET.get('type')
+    if movement_type:
+        queryset = queryset.filter(movement_type=movement_type)
+
+    posted = request.GET.get('posted')
+    if posted == '1':
+        queryset = queryset.filter(posted=True)
+    elif posted == '0':
+        queryset = queryset.filter(posted=False)
+
+    movements = queryset.order_by('-movement_date', '-id')
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Stock Movements'
+
+    headers = [
+        'Movement #', 'Date', 'Item Code', 'Item Name', 'Warehouse',
+        'Type', 'Source', 'Quantity', 'Unit Cost', 'Total Cost',
+        'Reference', 'To Warehouse', 'Adjustment Reason',
+        'GL Status', 'Journal #', 'Notes',
+    ]
+    header_font = Font(bold=True, color='FFFFFF', size=11)
+    header_fill = PatternFill(start_color='2563EB', end_color='2563EB', fill_type='solid')
+    thin_border = Border(
+        left=Side(style='thin'), right=Side(style='thin'),
+        top=Side(style='thin'), bottom=Side(style='thin'),
+    )
+
+    for col_idx, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col_idx, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+        cell.border = thin_border
+
+    type_display = dict(StockMovement.MOVEMENT_TYPE_CHOICES)
+    source_display = dict(StockMovement.SOURCE_CHOICES)
+    reason_display = dict(StockMovement.ADJUSTMENT_REASON_CHOICES)
+
+    posted_fill = PatternFill(start_color='D1FAE5', end_color='D1FAE5', fill_type='solid')
+    pending_fill = PatternFill(start_color='FEF3C7', end_color='FEF3C7', fill_type='solid')
+    number_fmt = '#,##0.00'
+
+    for row_idx, m in enumerate(movements, 2):
+        row_data = [
+            m.movement_number,
+            m.movement_date,
+            m.item.item_code,
+            m.item.name,
+            m.warehouse.name,
+            type_display.get(m.movement_type, m.movement_type),
+            source_display.get(m.source, m.source),
+            float(m.quantity),
+            float(m.unit_cost),
+            float(m.total_cost),
+            m.reference,
+            m.to_warehouse.name if m.to_warehouse else '',
+            reason_display.get(m.adjustment_reason, m.adjustment_reason) if m.adjustment_reason else '',
+            'Posted' if m.posted else ('Pending' if m.total_cost > 0 else 'No Cost'),
+            m.journal_entry.entry_number if m.journal_entry else '',
+            m.notes,
+        ]
+        row_fill = posted_fill if m.posted else (pending_fill if m.total_cost > 0 else None)
+        for col_idx, value in enumerate(row_data, 1):
+            cell = ws.cell(row=row_idx, column=col_idx, value=value)
+            cell.border = thin_border
+            if row_fill:
+                cell.fill = row_fill
+            if col_idx in (8, 9, 10):
+                cell.number_format = number_fmt
+                cell.alignment = Alignment(horizontal='right')
+            if col_idx == 2:
+                cell.number_format = 'DD/MM/YYYY'
+
+    col_widths = [18, 14, 14, 28, 20, 16, 16, 12, 14, 16, 22, 20, 22, 12, 18, 30]
+    for i, w in enumerate(col_widths, 1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+
+    # Summary sheet
+    ws_summary = wb.create_sheet('Summary')
+    ws_summary.sheet_properties.tabColor = '10B981'
+    summary_header_fill = PatternFill(start_color='10B981', end_color='10B981', fill_type='solid')
+
+    summary_title = ws_summary.cell(row=1, column=1, value='Stock Movement Summary')
+    summary_title.font = Font(bold=True, size=14)
+    ws_summary.merge_cells('A1:D1')
+
+    all_movements = StockMovement.objects.filter(item__is_active=True)
+    summary_data = [
+        ('Total Movements', all_movements.count()),
+        ('Posted to GL', all_movements.filter(posted=True).count()),
+        ('Pending Posting', all_movements.filter(posted=False, total_cost__gt=0).count()),
+        ('Total Posted Value', float(all_movements.filter(posted=True).aggregate(Sum('total_cost'))['total_cost__sum'] or 0)),
+        ('', ''),
+        ('By Type', ''),
+    ]
+    for choice_val, choice_label in StockMovement.MOVEMENT_TYPE_CHOICES:
+        count = all_movements.filter(movement_type=choice_val).count()
+        value = float(all_movements.filter(movement_type=choice_val).aggregate(Sum('total_cost'))['total_cost__sum'] or 0)
+        summary_data.append((f'  {choice_label}', f'{count} movements — {value:,.2f} value'))
+
+    for row_idx, (label, value) in enumerate(summary_data, 3):
+        ws_summary.cell(row=row_idx, column=1, value=label).font = Font(bold=True)
+        ws_summary.cell(row=row_idx, column=2, value=value)
+    ws_summary.column_dimensions['A'].width = 24
+    ws_summary.column_dimensions['B'].width = 36
+
+    ws.auto_filter.ref = f'A1:{get_column_letter(len(headers))}1'
+    ws.freeze_panes = 'A2'
+
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    response = HttpResponse(
+        buf.getvalue(),
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )
+    response['Content-Disposition'] = 'attachment; filename="stock_movements_export.xlsx"'
+    return response
+
+
+@login_required
 def movement_detail(request, pk):
     """View stock movement detail."""
     movement = get_object_or_404(
@@ -571,7 +714,6 @@ def stock_transfer(request):
             try:
                 with transaction.atomic():
                     from datetime import date
-                    # Create the transfer movement
                     movement = StockMovement.objects.create(
                         item=item,
                         warehouse=from_warehouse,
@@ -583,11 +725,12 @@ def stock_transfer(request):
                         reference=reference or f'Manual transfer to {to_warehouse.name}',
                         notes=notes,
                         movement_date=date.today(),
+                        created_by=request.user,
                     )
-                    
-                    # Update stock levels
-                    movement.update_stock()
-                    
+
+                    # Atomic: update quantity + post GL together
+                    movement.execute(user=request.user)
+
                     messages.success(
                         request,
                         f'Successfully transferred {quantity} {item.unit} of {item.name} '

@@ -107,8 +107,13 @@ class StockAdjustmentForm(forms.Form):
         widget=forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01'})
     )
     movement_type = forms.ChoiceField(
-        choices=[('in', 'Stock In'), ('out', 'Stock Out'), ('adjustment', 'Adjustment')],
-        widget=forms.Select(attrs={'class': 'form-select'})
+        choices=[('in', 'Stock In'), ('out', 'Stock Out'), ('adjustment_plus', 'Adjustment (+)'), ('adjustment_minus', 'Adjustment (-)')],
+        widget=forms.Select(attrs={'class': 'form-select', 'id': 'id_movement_type'})
+    )
+    adjustment_reason = forms.ChoiceField(
+        choices=[('', '-- Select reason --')] + list(StockMovement.ADJUSTMENT_REASON_CHOICES),
+        required=False,
+        widget=forms.Select(attrs={'class': 'form-select', 'id': 'id_adjustment_reason'}),
     )
     reference = forms.CharField(
         max_length=200,
@@ -119,6 +124,14 @@ class StockAdjustmentForm(forms.Form):
         required=False,
         widget=forms.Textarea(attrs={'class': 'form-control', 'rows': 2})
     )
+
+    def clean(self):
+        cleaned = super().clean()
+        mt = cleaned.get('movement_type', '')
+        reason = cleaned.get('adjustment_reason', '')
+        if mt in ('adjustment_plus', 'adjustment_minus') and not reason:
+            self.add_error('adjustment_reason', 'Adjustment reason is required for inventory adjustments.')
+        return cleaned
 
 
 # ============ CONSUMABLE REQUEST FORMS ============

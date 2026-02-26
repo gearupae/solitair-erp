@@ -5,15 +5,20 @@ from django.conf import settings
 from datetime import datetime
 
 
-def generate_number(document_type, model_class, number_field='number'):
+def generate_number(document_type, model_class, number_field='number', year=None):
     """
     Generate a sequential number for documents.
     Format: PREFIX-YEAR-NUMBER (e.g., INV-2025-0001)
+    
+    Fiscal integrity: When year is provided (e.g. from entry date), use it so
+    document number matches the transaction period. Never use current year for
+    backdated entries.
     
     Args:
         document_type: Key from NUMBER_SERIES settings (e.g., 'INVOICE')
         model_class: The model class to query for existing numbers
         number_field: The field name that stores the number
+        year: Optional year for the number (e.g. from entry date). If None, uses current year.
     
     Returns:
         str: Generated number
@@ -22,7 +27,7 @@ def generate_number(document_type, model_class, number_field='number'):
     prefix = config.get('prefix', 'DOC')
     padding = config.get('padding', 4)
     
-    year = datetime.now().year
+    year = year if year is not None else datetime.now().year
     year_prefix = f"{prefix}-{year}-"
     
     # Get the last number for this year

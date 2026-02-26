@@ -424,275 +424,251 @@ class PDCCheque(BaseModel):
         if self.amount <= 0:
             raise ValidationError({'amount': 'Amount must be positive.'})
     
-    def deposit(self, bank_account, user, deposit_date=None):
+    def post_received_journal(self, user):
         """
-        Deposit PDC to bank.
-        Creates PDC Control Account entry (not Bank directly).
-        
+        Post journal when PDC is received from tenant.
+        Immediately recognizes the cheque as a current asset and clears AR.
+
         Journal Entry:
-        Dr PDC Control Account
-        Cr Trade Debtors - Property (Tenant)
+        Dr PDC Receivable (1210)
+        Cr Trade Debtors / Tenant AR
         """
-        from apps.finance.models import JournalEntry, JournalEntryLine, Account, AccountMapping
-        
-        if self.status != 'received':
-            raise ValidationError('Only received PDCs can be deposited.')
-        
-        if not deposit_date:
-            deposit_date = date.today()
-        
-        # Get accounts from mapping
-        try:
-            pdc_control = AccountMapping.objects.get(transaction_type='pdc_control').debit_account
-        except AccountMapping.DoesNotExist:
-            pdc_control = Account.objects.filter(code__icontains='pdc', account_type='asset').first()
-            if not pdc_control:
-                raise ValidationError('PDC Control Account not configured.')
-        
+        from apps.finance.models import JournalEntry, JournalEntryLine, AccountMapping, FiscalYear
+
+        if self.pdc_control_journal:
+            raise ValidationError("Receipt journal already exists for this PDC.")
+
+        FiscalYear.validate_posting_allowed(self.received_date or date.today())
+
+        pdc_receivable = AccountMapping.get_account_or_default('pdc_control', '1210')
+        if not pdc_receivable:
+            raise ValidationError(
+                "PDC Receivable account not configured. "
+                "Expected account 1210 or set up 'pdc_control' in Finance → Account Mapping."
+            )
+
         ar_account = self.tenant.ar_account
         if not ar_account:
             raise ValidationError(f'Tenant {self.tenant.name} does not have AR account configured.')
-        
-        # Create journal entry for PDC deposit
+
         journal = JournalEntry.objects.create(
-            date=deposit_date,
-            reference=f"PDC Deposit - {self.cheque_number}",
-            description=f"PDC deposited for {self.tenant.name} - Cheque: {self.cheque_number}",
-            source_module='manual',
+            date=self.received_date or date.today(),
+            reference=f"PDC Received - {self.cheque_number}",
+            description=f"PDC received from {self.tenant.name} - Cheque: {self.cheque_number}",
+            source_module='pdc',
             entry_type='standard',
             status='draft',
-            created_by=user
+            created_by=user,
         )
-        
-        # Dr PDC Control Account
+
         JournalEntryLine.objects.create(
             journal_entry=journal,
-            account=pdc_control,
+            account=pdc_receivable,
             debit=self.amount,
             credit=Decimal('0.00'),
-            description=f"PDC from {self.tenant.name}"
+            description=f"PDC {self.cheque_number} from {self.tenant.name}",
         )
-        
-        # Cr Trade Debtors (Tenant AR)
+
         JournalEntryLine.objects.create(
             journal_entry=journal,
             account=ar_account,
             debit=Decimal('0.00'),
             credit=self.amount,
-            description=f"PDC {self.cheque_number} deposited"
+            description=f"AR cleared by PDC {self.cheque_number}",
         )
-        
-        # Post journal
-        journal.status = 'posted'
-        journal.posted_by = user
-        journal.posted_at = timezone.now()
-        journal.save()
-        
-        # Update account balances
-        pdc_control.balance += self.amount
-        pdc_control.save()
-        ar_account.balance -= self.amount
-        ar_account.save()
-        
-        # Update PDC status
+
+        journal.calculate_totals()
+        journal.post(user)
+
+        self.pdc_control_journal = journal
+        self.save(update_fields=['pdc_control_journal'])
+
+        return journal
+
+    def deposit(self, bank_account, user, deposit_date=None):
+        """
+        Submit PDC to bank for clearing.
+        Status change only — the GL already recognized the PDC asset on receipt.
+        """
+        if self.status != 'received':
+            raise ValidationError('Only received PDCs can be deposited.')
+
+        if not deposit_date:
+            deposit_date = date.today()
+
         self.status = 'deposited'
         self.deposit_status = 'in_clearing'
         self.deposited_date = deposit_date
         self.deposited_to_bank = bank_account
         self.deposited_by = user
-        self.pdc_control_journal = journal
         self.save()
-        
-        return journal
     
     def clear(self, user, clearing_date=None, clearing_reference=''):
         """
         Mark PDC as cleared in bank.
-        Moves from PDC Control to Bank.
-        
+        Converts PDC Receivable asset to cash.
+
         Journal Entry:
         Dr Bank
-        Cr PDC Control Account
+        Cr PDC Receivable (1210)
         """
-        from apps.finance.models import JournalEntry, JournalEntryLine, Account, AccountMapping
-        
+        from apps.finance.models import JournalEntry, JournalEntryLine, AccountMapping, FiscalYear
+
         if self.status != 'deposited' or self.deposit_status != 'in_clearing':
             raise ValidationError('Only deposited PDCs in clearing can be cleared.')
-        
+
         if not clearing_date:
             clearing_date = date.today()
-        
-        # Get accounts
-        try:
-            pdc_control = AccountMapping.objects.get(transaction_type='pdc_control').debit_account
-        except AccountMapping.DoesNotExist:
-            pdc_control = Account.objects.filter(code__icontains='pdc', account_type='asset').first()
-        
+
+        FiscalYear.validate_posting_allowed(clearing_date)
+
+        pdc_receivable = AccountMapping.get_account_or_default('pdc_control', '1210')
+        if not pdc_receivable:
+            raise ValidationError(
+                "PDC Receivable account not configured. "
+                "Expected account 1210 or set up 'pdc_control' in Finance → Account Mapping."
+            )
+
         bank_account = self.deposited_to_bank
         if not bank_account or not bank_account.gl_account:
             raise ValidationError('Bank account not configured for this PDC.')
-        
-        # Create clearing journal entry
+
         journal = JournalEntry.objects.create(
             date=clearing_date,
             reference=f"PDC Cleared - {self.cheque_number}",
             description=f"PDC cleared for {self.tenant.name} - Cheque: {self.cheque_number}",
-            source_module='manual',
+            source_module='pdc',
             entry_type='standard',
             status='draft',
-            created_by=user
+            created_by=user,
         )
-        
-        # Dr Bank
+
         JournalEntryLine.objects.create(
             journal_entry=journal,
             account=bank_account.gl_account,
             debit=self.amount,
             credit=Decimal('0.00'),
-            description=f"PDC {self.cheque_number} cleared"
+            description=f"PDC {self.cheque_number} cleared",
         )
-        
-        # Cr PDC Control Account
+
         JournalEntryLine.objects.create(
             journal_entry=journal,
-            account=pdc_control,
+            account=pdc_receivable,
             debit=Decimal('0.00'),
             credit=self.amount,
-            description=f"PDC {self.cheque_number} cleared from control"
+            description=f"PDC {self.cheque_number} cleared from receivable",
         )
-        
-        # Post journal
-        journal.status = 'posted'
-        journal.posted_by = user
-        journal.posted_at = timezone.now()
-        journal.save()
-        
-        # Update account balances
-        bank_account.gl_account.balance += self.amount
-        bank_account.gl_account.save()
-        pdc_control.balance -= self.amount
-        pdc_control.save()
-        
-        # Update PDC status
+
+        journal.calculate_totals()
+        journal.post(user)
+
         self.status = 'cleared'
         self.deposit_status = 'cleared'
         self.cleared_date = clearing_date
         self.clearing_reference = clearing_reference
         self.journal_entry = journal
         self.save()
-        
+
         return journal
     
     def bounce(self, user, bounce_date=None, bounce_reason='', bounce_charges=Decimal('0.00')):
         """
-        Mark PDC as bounced. Reverses the deposit entry.
-        
-        Journal Entry:
-        Dr Trade Debtors - Property (Tenant)
-        Cr Bank (if cleared) OR Cr PDC Control (if deposited)
-        
-        Optional (if bounce charges):
-        Dr Cheque Bounce Charges (Expense)
-        Cr Other Income / Bank
+        Mark PDC as bounced. Reverses the receipt entry and, if cleared, the clearing entry.
+
+        Net effect:
+        - If deposited (not yet cleared): Dr Tenant AR, Cr PDC Receivable (1210)
+        - If cleared: Dr Tenant AR, Cr Bank
+
+        Optional bounce charges: Dr Bounce Expense (6800), Cr Tenant AR
         """
-        from apps.finance.models import JournalEntry, JournalEntryLine, Account, AccountMapping
-        
+        from apps.finance.models import JournalEntry, JournalEntryLine, Account, AccountMapping, FiscalYear
+
         if self.status not in ['deposited', 'cleared']:
             raise ValidationError('Only deposited or cleared PDCs can bounce.')
-        
+
         if not bounce_date:
             bounce_date = date.today()
-        
-        # Get tenant AR account
+
+        FiscalYear.validate_posting_allowed(bounce_date)
+
         ar_account = self.tenant.ar_account
         if not ar_account:
             raise ValidationError(f'Tenant {self.tenant.name} does not have AR account configured.')
-        
-        # Determine which account to credit (Bank or PDC Control)
+
         if self.status == 'cleared':
             credit_account = self.deposited_to_bank.gl_account
         else:
-            try:
-                credit_account = AccountMapping.objects.get(transaction_type='pdc_control').debit_account
-            except AccountMapping.DoesNotExist:
-                credit_account = Account.objects.filter(code__icontains='pdc', account_type='asset').first()
-        
-        # Create bounce reversal journal entry
+            pdc_receivable = AccountMapping.get_account_or_default('pdc_control', '1210')
+            if not pdc_receivable:
+                raise ValidationError(
+                    "PDC Receivable account not configured. "
+                    "Expected account 1210 or set up 'pdc_control' in Finance → Account Mapping."
+                )
+            credit_account = pdc_receivable
+
         journal = JournalEntry.objects.create(
             date=bounce_date,
             reference=f"PDC Bounce - {self.cheque_number}",
             description=f"Cheque bounced for {self.tenant.name} - Reason: {bounce_reason}",
-            source_module='manual',
+            source_module='pdc',
             entry_type='reversal',
             status='draft',
-            created_by=user
+            created_by=user,
         )
-        
-        # Dr Trade Debtors (restore AR)
+
         JournalEntryLine.objects.create(
             journal_entry=journal,
             account=ar_account,
             debit=self.amount,
             credit=Decimal('0.00'),
-            description=f"PDC {self.cheque_number} bounced - AR restored"
+            description=f"PDC {self.cheque_number} bounced - AR restored",
         )
-        
-        # Cr Bank/PDC Control
+
         JournalEntryLine.objects.create(
             journal_entry=journal,
             account=credit_account,
             debit=Decimal('0.00'),
             credit=self.amount,
-            description=f"PDC {self.cheque_number} bounced"
+            description=f"PDC {self.cheque_number} bounced",
         )
-        
-        # Handle bounce charges if any
+
         if bounce_charges > 0:
             try:
-                bounce_expense = Account.objects.get(code__icontains='bounce', account_type='expense')
+                bounce_expense = Account.objects.get(code='6800', account_type='expense')
             except Account.DoesNotExist:
-                bounce_expense = Account.objects.filter(account_type='expense').first()
-            
-            # Dr Bounce Charges Expense
+                raise ValidationError(
+                    "Bounce Charges Expense account (6800) not found. "
+                    "Create the account before processing bounced cheques."
+                )
+
             JournalEntryLine.objects.create(
                 journal_entry=journal,
                 account=bounce_expense,
                 debit=bounce_charges,
                 credit=Decimal('0.00'),
-                description=f"Bounce charges for {self.cheque_number}"
+                description=f"Bounce charges for {self.cheque_number}",
             )
-            
-            # Cr Trade Debtors (charge to tenant)
+
             JournalEntryLine.objects.create(
                 journal_entry=journal,
                 account=ar_account,
                 debit=Decimal('0.00'),
                 credit=bounce_charges,
-                description=f"Bounce charges billed to tenant"
+                description=f"Bounce charges billed to tenant",
             )
-        
-        # Post journal
-        journal.status = 'posted'
-        journal.posted_by = user
-        journal.posted_at = timezone.now()
-        journal.save()
-        
-        # Update account balances
-        ar_account.balance += self.amount
-        ar_account.save()
-        credit_account.balance -= self.amount
-        credit_account.save()
-        
-        # Update PDC status
+
+        journal.calculate_totals()
+        journal.post(user)
+
         self.status = 'bounced'
         self.deposit_status = 'bounced'
         self.bounce_date = bounce_date
         self.bounce_reason = bounce_reason
         self.bounce_charges = bounce_charges
         self.bounce_journal = journal
-        self.reconciled = False  # Unreconcile if was reconciled
+        self.reconciled = False
         self.save()
-        
+
         return journal
 
 
@@ -995,11 +971,13 @@ class RentInvoice(BaseModel):
         Cr Rental Income (rent amount)
         Cr VAT Payable (vat amount, if applicable)
         """
-        from apps.finance.models import JournalEntry, JournalEntryLine, Account, AccountMapping
-        
+        from apps.finance.models import JournalEntry, JournalEntryLine, Account, AccountMapping, FiscalYear
+
         if self.status != 'draft':
             raise ValidationError('Only draft invoices can be posted.')
-        
+
+        FiscalYear.validate_posting_allowed(self.invoice_date)
+
         if self.total_amount <= 0:
             raise ValidationError('Invoice amount must be greater than zero.')
         
@@ -1009,23 +987,17 @@ class RentInvoice(BaseModel):
             try:
                 ar_account = AccountMapping.objects.get(transaction_type='trade_debtors_property').account
             except AccountMapping.DoesNotExist:
-                ar_account = Account.objects.filter(
-                    account_type='asset', name__icontains='receivable'
-                ).first()
-        
-        if not ar_account:
-            raise ValidationError('Trade Debtors (Property) account not configured.')
-        
-        # Get Rental Income account
-        rental_income = Account.objects.filter(
-            account_type='income', 
-            name__icontains='rental'
-        ).first()
+                raise ValidationError(
+                    "Trade Debtors (Property) account not configured. "
+                    "Set tenant AR account or configure 'trade_debtors_property' in Account Mapping."
+                )
+
+        rental_income = AccountMapping.get_account_or_default('rental_income', '4200')
         if not rental_income:
-            rental_income = Account.objects.filter(account_type='income').first()
-        
-        if not rental_income:
-            raise ValidationError('Rental Income account not configured.')
+            raise ValidationError(
+                "Rental Income account not configured. "
+                "Expected account 4200 or set up 'rental_income' in Finance → Account Mapping."
+            )
         
         # Get VAT Payable account (if applicable)
         vat_account = None

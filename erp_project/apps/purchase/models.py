@@ -270,6 +270,15 @@ class VendorBill(BaseModel):
     total_amount = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     paid_amount = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     
+    goods_received = models.BooleanField(
+        default=False,
+        help_text=(
+            "If True, this bill is for goods already received into inventory. "
+            "Posting will debit GRN Clearing (2010) instead of Expense to close "
+            "the 3-way match: PO → GRN → Bill."
+        ),
+    )
+
     # Link to accounting journal entry (single source of truth)
     journal_entry = models.ForeignKey(
         'finance.JournalEntry',
@@ -303,52 +312,62 @@ class VendorBill(BaseModel):
     
     def post_to_accounting(self, user=None):
         """
-        Post bill to accounting - creates journal entry.
-        Uses Account Mapping (SAP/Oracle-style Account Determination) for account selection.
-        
-        Debit: Expense Account (subtotal)
-        Debit: VAT Recoverable (VAT amount)
-        Credit: Accounts Payable (total amount)
+        Post bill to accounting — creates journal entry.
+
+        Two modes based on goods_received flag:
+
+        A) goods_received=True  (bill for inventory already received via GRN):
+           Dr GRN Clearing (2010)   ← closes the liability created by Stock In
+           Dr VAT Recoverable       ← if applicable
+           Cr Accounts Payable      ← recognizes vendor liability
+
+        B) goods_received=False (service / direct expense bill):
+           Dr Expense Account       ← direct P&L hit
+           Dr VAT Recoverable       ← if applicable
+           Cr Accounts Payable      ← recognizes vendor liability
         """
-        from apps.finance.models import JournalEntry, JournalEntryLine, Account, AccountType, AccountMapping
-        
+        from apps.finance.models import JournalEntry, JournalEntryLine, AccountMapping, FiscalYear
+
         if self.status != 'draft':
             raise ValidationError("Only draft bills can be posted.")
-        
+
         if self.total_amount <= 0:
             raise ValidationError("Bill amount must be greater than zero.")
-        
-        # Get accounts using Account Mapping (SAP/Oracle standard)
-        # Fallback to hardcoded codes for backward compatibility
+
+        FiscalYear.validate_posting_allowed(self.bill_date)
+
+        if self.goods_received and not self.purchase_order:
+            raise ValidationError(
+                "A goods-received bill must be linked to a Purchase Order. "
+                "Set the PO reference or uncheck 'Goods Received'."
+            )
+
         ap_account = AccountMapping.get_account_or_default('vendor_bill_payable', '2000')
         if not ap_account:
-            ap_account = Account.objects.filter(
-                account_type=AccountType.LIABILITY, is_active=True, code__startswith='20'
-            ).first()
-            if not ap_account:
+            raise ValidationError(
+                "Accounts Payable account not configured. "
+                "Expected account 2000 or set up 'vendor_bill_payable' in Finance → Account Mapping."
+            )
+
+        if self.goods_received:
+            debit_account = AccountMapping.get_account_or_default('inventory_grn_clearing', '2010')
+            if not debit_account:
                 raise ValidationError(
-                    "Accounts Payable account not configured. "
-                    "Please set up Account Mapping in Finance → Account Mapping."
+                    "GRN Clearing account not configured. "
+                    "Expected account 2010 or set up 'inventory_grn_clearing' in Finance → Account Mapping."
                 )
-        
-        expense_account = AccountMapping.get_account_or_default('vendor_bill_expense', '5000')
-        if not expense_account:
-            expense_account = Account.objects.filter(
-                account_type=AccountType.EXPENSE, is_active=True
-            ).first()
-            if not expense_account:
+            debit_label = "GRN Clearing"
+        else:
+            debit_account = AccountMapping.get_account_or_default('vendor_bill_expense', '5000')
+            if not debit_account:
                 raise ValidationError(
                     "Expense account not configured. "
-                    "Please set up Account Mapping in Finance → Account Mapping."
+                    "Expected account 5000 or set up 'vendor_bill_expense' in Finance → Account Mapping."
                 )
-        
-        vat_recoverable_account = AccountMapping.get_account_or_default('vendor_bill_vat', '1300')
-        if not vat_recoverable_account:
-            vat_recoverable_account = Account.objects.filter(
-                account_type=AccountType.ASSET, is_active=True, code__startswith='13'
-            ).first()
-        
-        # Create journal entry
+            debit_label = "Expense"
+
+        vat_account = AccountMapping.get_account_or_default('vendor_bill_vat', '1300')
+
         journal = JournalEntry.objects.create(
             date=self.bill_date,
             reference=self.bill_number,
@@ -356,27 +375,29 @@ class VendorBill(BaseModel):
             entry_type='standard',
             source_module='purchase',
         )
-        
-        # Debit Expense (subtotal excl VAT)
+
         JournalEntryLine.objects.create(
             journal_entry=journal,
-            account=expense_account,
-            description=f"Expense - {self.bill_number}",
+            account=debit_account,
+            description=f"{debit_label} - {self.bill_number}",
             debit=self.subtotal,
             credit=Decimal('0.00'),
         )
-        
-        # Debit VAT Recoverable (if VAT exists)
-        if self.vat_amount > 0 and vat_recoverable_account:
+
+        if self.vat_amount > 0:
+            if not vat_account:
+                raise ValidationError(
+                    "VAT Recoverable account not configured. "
+                    "Expected account 1300 or set up 'vendor_bill_vat' in Finance → Account Mapping."
+                )
             JournalEntryLine.objects.create(
                 journal_entry=journal,
-                account=vat_recoverable_account,
+                account=vat_account,
                 description=f"Input VAT - {self.bill_number}",
                 debit=self.vat_amount,
                 credit=Decimal('0.00'),
             )
-        
-        # Credit Accounts Payable (total amount incl VAT)
+
         JournalEntryLine.objects.create(
             journal_entry=journal,
             account=ap_account,
@@ -384,15 +405,14 @@ class VendorBill(BaseModel):
             debit=Decimal('0.00'),
             credit=self.total_amount,
         )
-        
+
         journal.calculate_totals()
         journal.post(user)
-        
-        # Link journal to bill
+
         self.journal_entry = journal
         self.status = 'posted'
         self.save(update_fields=['journal_entry', 'status'])
-        
+
         return journal
 
 
@@ -541,11 +561,13 @@ class PurchaseCreditNote(BaseModel):
         Cr VAT Input (reverses VAT recoverable)
         Dr Accounts Payable
         """
-        from apps.finance.models import JournalEntry, JournalEntryLine, AccountMapping
-        
+        from apps.finance.models import JournalEntry, JournalEntryLine, AccountMapping, FiscalYear
+
         if self.status != 'draft':
             raise ValidationError("Only draft credit notes can be posted.")
-        
+
+        FiscalYear.validate_posting_allowed(self.date)
+
         if self.total_amount <= 0:
             raise ValidationError("Credit note amount must be greater than zero.")
         

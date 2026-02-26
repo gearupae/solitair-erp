@@ -1,17 +1,13 @@
 {% extends 'base.html' %}
-{% load static %}
-
-{% block title %}{{ title }}{% endblock %}
+{% load humanize %}
 
 {% block content %}
 <div class="container-fluid py-4">
-    <!-- Header -->
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
-            <h4 class="mb-1">{{ title }}</h4>
+            <h4 class="mb-1 fw-bold">{{ title }}</h4>
             <nav aria-label="breadcrumb">
                 <ol class="breadcrumb mb-0">
-                    <li class="breadcrumb-item"><a href="{% url 'dashboard' %}">Dashboard</a></li>
                     <li class="breadcrumb-item"><a href="{% url 'finance:bankreconciliation_list' %}">Reconciliations</a></li>
                     <li class="breadcrumb-item active">{{ reconciliation.reconciliation_number }}</li>
                 </ol>
@@ -19,24 +15,33 @@
         </div>
         <div class="d-flex gap-2">
             {% if can_complete %}
-            <a href="{% url 'finance:bankreconciliation_complete' reconciliation.pk %}" class="btn btn-primary"
-               onclick="return confirm('Mark this reconciliation as complete?')">
-                <i class="fas fa-check me-1"></i>Complete
-            </a>
+            <form method="post" action="{% url 'finance:bankreconciliation_complete' reconciliation.pk %}" class="d-inline">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-primary" id="btnComplete"
+                        onclick="return confirm('Mark this reconciliation as complete? Difference must be zero.')">
+                    <i class="fas fa-check me-1"></i>Complete
+                </button>
+            </form>
             {% endif %}
             {% if can_approve %}
-            <a href="{% url 'finance:bankreconciliation_approve' reconciliation.pk %}" class="btn btn-success"
-               onclick="return confirm('Approve this reconciliation?')">
-                <i class="fas fa-check-double me-1"></i>Approve
-            </a>
+            <form method="post" action="{% url 'finance:bankreconciliation_approve' reconciliation.pk %}" class="d-inline">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-success"
+                        onclick="return confirm('Approve this reconciliation? Cleared lines will be permanently locked.')">
+                    <i class="fas fa-check-double me-1"></i>Approve
+                </button>
+            </form>
             {% endif %}
+            <a href="{% url 'finance:bankreconciliation_list' %}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left me-1"></i>Back
+            </a>
         </div>
     </div>
 
     <div class="row">
-        <!-- Main Info -->
+        {# ── Left: Info + GL Lines ── #}
         <div class="col-lg-8">
-            <div class="card mb-4">
+            <div class="card mb-4 border-0 shadow-sm">
                 <div class="card-header bg-light">
                     <h6 class="mb-0"><i class="fas fa-info-circle me-2"></i>Reconciliation Details</h6>
                 </div>
@@ -44,69 +49,27 @@
                     <div class="row">
                         <div class="col-md-6">
                             <table class="table table-sm">
-                                <tr>
-                                    <td class="text-muted">Reconciliation #</td>
-                                    <td class="fw-medium">{{ reconciliation.reconciliation_number }}</td>
-                                </tr>
-                                <tr>
-                                    <td class="text-muted">Bank Account</td>
-                                    <td>{{ reconciliation.bank_account.name }}</td>
-                                </tr>
-                                <tr>
-                                    <td class="text-muted">Period</td>
-                                    <td>{{ reconciliation.period_start|date:"d M Y" }} - {{ reconciliation.period_end|date:"d M Y" }}</td>
-                                </tr>
-                                <tr>
-                                    <td class="text-muted">Reconciliation Date</td>
-                                    <td>{{ reconciliation.reconciliation_date|date:"d M Y" }}</td>
-                                </tr>
+                                <tr><td class="text-muted">Number</td><td class="fw-medium">{{ reconciliation.reconciliation_number }}</td></tr>
+                                <tr><td class="text-muted">Bank Account</td><td>{{ reconciliation.bank_account.name }} ({{ reconciliation.bank_account.gl_account.code }})</td></tr>
+                                <tr><td class="text-muted">Period</td><td>{{ reconciliation.period_start|date:"d M Y" }} — {{ reconciliation.period_end|date:"d M Y" }}</td></tr>
                                 <tr>
                                     <td class="text-muted">Status</td>
                                     <td>
-                                        {% if reconciliation.status == 'draft' %}
-                                        <span class="badge bg-secondary">Draft</span>
-                                        {% elif reconciliation.status == 'in_progress' %}
-                                        <span class="badge bg-warning text-dark">In Progress</span>
-                                        {% elif reconciliation.status == 'completed' %}
-                                        <span class="badge bg-primary">Completed</span>
-                                        {% elif reconciliation.status == 'approved' %}
-                                        <span class="badge bg-success">Approved</span>
-                                        {% endif %}
+                                        {% if reconciliation.status == 'draft' %}<span class="badge bg-secondary">Draft</span>
+                                        {% elif reconciliation.status == 'in_progress' %}<span class="badge bg-warning text-dark">In Progress</span>
+                                        {% elif reconciliation.status == 'completed' %}<span class="badge bg-primary">Completed</span>
+                                        {% elif reconciliation.status == 'approved' %}<span class="badge bg-success">Approved</span>{% endif %}
                                     </td>
                                 </tr>
                             </table>
                         </div>
                         <div class="col-md-6">
                             <table class="table table-sm">
-                                {% if reconciliation.bank_statement %}
-                                <tr>
-                                    <td class="text-muted">Bank Statement</td>
-                                    <td>
-                                        <a href="{% url 'finance:bankstatement_detail' reconciliation.bank_statement.pk %}">
-                                            {{ reconciliation.bank_statement.statement_number }}
-                                        </a>
-                                    </td>
-                                </tr>
-                                {% endif %}
                                 {% if reconciliation.completed_by %}
-                                <tr>
-                                    <td class="text-muted">Completed By</td>
-                                    <td>{{ reconciliation.completed_by.get_full_name|default:reconciliation.completed_by.username }}</td>
-                                </tr>
-                                <tr>
-                                    <td class="text-muted">Completed Date</td>
-                                    <td>{{ reconciliation.completed_date|date:"d M Y H:i" }}</td>
-                                </tr>
+                                <tr><td class="text-muted">Completed By</td><td>{{ reconciliation.completed_by.username }} — {{ reconciliation.completed_date|date:"d M Y H:i" }}</td></tr>
                                 {% endif %}
                                 {% if reconciliation.approved_by %}
-                                <tr>
-                                    <td class="text-muted">Approved By</td>
-                                    <td>{{ reconciliation.approved_by.get_full_name|default:reconciliation.approved_by.username }}</td>
-                                </tr>
-                                <tr>
-                                    <td class="text-muted">Approved Date</td>
-                                    <td>{{ reconciliation.approved_date|date:"d M Y H:i" }}</td>
-                                </tr>
+                                <tr><td class="text-muted">Approved By</td><td>{{ reconciliation.approved_by.username }} — {{ reconciliation.approved_date|date:"d M Y H:i" }}</td></tr>
                                 {% endif %}
                             </table>
                         </div>
@@ -114,102 +77,107 @@
                 </div>
             </div>
 
-            <!-- Outstanding Items -->
-            {% if items %}
-            <div class="card">
-                <div class="card-header bg-light">
-                    <h6 class="mb-0"><i class="fas fa-list me-2"></i>Outstanding Items</h6>
+            {# ── GL Journal Lines with Clearing Checkboxes ── #}
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-dark text-white d-flex justify-content-between">
+                    <h6 class="mb-0"><i class="fas fa-list-alt me-2"></i>GL Journal Lines ({{ reconciliation.period_start|date:"d/m/Y" }} — {{ reconciliation.period_end|date:"d/m/Y" }})</h6>
+                    <span class="badge bg-light text-dark">{{ gl_lines|length }} lines</span>
                 </div>
                 <div class="card-body p-0">
                     <div class="table-responsive">
-                        <table class="table table-hover mb-0">
+                        <table class="table table-hover table-sm mb-0">
                             <thead class="table-light">
                                 <tr>
-                                    <th>Type</th>
+                                    <th style="width:40px">
+                                        {% if can_edit %}<input type="checkbox" id="selectAll" title="Select All">{% endif %}
+                                    </th>
                                     <th>Date</th>
-                                    <th>Reference</th>
+                                    <th>Entry #</th>
                                     <th>Description</th>
-                                    <th class="text-end">Amount</th>
-                                    <th>Cleared</th>
+                                    <th class="text-end">Debit</th>
+                                    <th class="text-end">Credit</th>
+                                    <th class="text-center">Status</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {% for item in items %}
-                                <tr>
+                                {% for line in gl_lines %}
+                                <tr class="{% if line.cleared %}table-success{% elif line.reconciled_elsewhere %}table-secondary{% endif %}"
+                                    id="row-{{ line.id }}">
                                     <td>
-                                        <span class="badge {% if item.item_type == 'outstanding_deposit' %}bg-success{% elif item.item_type == 'outstanding_check' %}bg-danger{% else %}bg-info{% endif %}">
-                                            {{ item.get_item_type_display }}
-                                        </span>
+                                        {% if can_edit and not line.reconciled_elsewhere %}
+                                        <input type="checkbox" class="clear-check" data-line-id="{{ line.id }}"
+                                               {% if line.cleared %}checked{% endif %}>
+                                        {% elif line.reconciled_elsewhere %}
+                                        <i class="fas fa-lock text-muted" title="Reconciled in another period"></i>
+                                        {% else %}
+                                        <input type="checkbox" disabled {% if line.cleared %}checked{% endif %}>
+                                        {% endif %}
                                     </td>
-                                    <td>{{ item.date|date:"d M Y" }}</td>
-                                    <td>{{ item.reference }}</td>
-                                    <td>{{ item.description|truncatewords:5 }}</td>
-                                    <td class="text-end">AED {{ item.amount|floatformat:2 }}</td>
-                                    <td>
-                                        {% if item.is_cleared %}
-                                        <span class="badge bg-success">Cleared {{ item.cleared_date|date:"d M" }}</span>
+                                    <td>{{ line.date|date:"d/m/Y" }}</td>
+                                    <td><small>{{ line.entry_number }}</small></td>
+                                    <td><small>{{ line.description|truncatewords:8 }}</small></td>
+                                    <td class="text-end">{% if line.debit %}{{ line.debit|floatformat:2|intcomma }}{% endif %}</td>
+                                    <td class="text-end">{% if line.credit %}{{ line.credit|floatformat:2|intcomma }}{% endif %}</td>
+                                    <td class="text-center">
+                                        {% if line.cleared %}
+                                        <span class="badge bg-success">Cleared</span>
+                                        {% elif line.reconciled_elsewhere %}
+                                        <span class="badge bg-secondary">Other Recon</span>
                                         {% else %}
                                         <span class="badge bg-warning text-dark">Outstanding</span>
                                         {% endif %}
                                     </td>
                                 </tr>
+                                {% empty %}
+                                <tr><td colspan="7" class="text-center text-muted py-4">No GL journal lines in this period.</td></tr>
                                 {% endfor %}
                             </tbody>
                         </table>
                     </div>
                 </div>
             </div>
-            {% endif %}
         </div>
 
-        <!-- Summary -->
+        {# ── Right: Reconciliation Summary ── #}
         <div class="col-lg-4">
-            <div class="card mb-3">
+            <div class="card mb-3 border-0 shadow-sm">
                 <div class="card-header bg-dark text-white">
                     <h6 class="mb-0"><i class="fas fa-calculator me-2"></i>Reconciliation Summary</h6>
                 </div>
                 <div class="card-body">
-                    <table class="table table-sm mb-0">
+                    <table class="table table-sm mb-0" id="summaryTable">
                         <tr>
-                            <td><strong>Bank Statement Balance</strong></td>
-                            <td></td>
+                            <td class="fw-bold">Statement Closing Balance</td>
+                            <td class="text-end fw-bold">{{ reconciliation.statement_closing_balance|floatformat:2|intcomma }}</td>
+                        </tr>
+                        <tr><td colspan="2"><hr class="my-1"></td></tr>
+                        <tr class="text-success">
+                            <td>+ Outstanding Deposits (uncleared debits)</td>
+                            <td class="text-end" id="sumDeposits">{{ reconciliation.outstanding_deposits|floatformat:2|intcomma }}</td>
+                        </tr>
+                        <tr class="text-danger">
+                            <td>− Outstanding Payments (uncleared credits)</td>
+                            <td class="text-end" id="sumChecks">({{ reconciliation.outstanding_checks|floatformat:2|intcomma }})</td>
                         </tr>
                         <tr>
-                            <td class="ps-3">Opening Balance</td>
-                            <td class="text-end">{{ reconciliation.statement_opening_balance|floatformat:2 }}</td>
+                            <td>± Adjustments</td>
+                            <td class="text-end">{{ reconciliation.adjustments|floatformat:2|intcomma }}</td>
                         </tr>
-                        <tr>
-                            <td class="ps-3">Closing Balance</td>
-                            <td class="text-end fw-bold">{{ reconciliation.statement_closing_balance|floatformat:2 }}</td>
-                        </tr>
-                        <tr><td colspan="2"><hr class="my-2"></td></tr>
-                        <tr>
-                            <td><strong>Add: Outstanding Deposits</strong></td>
-                            <td class="text-end text-success">{{ reconciliation.outstanding_deposits|floatformat:2 }}</td>
-                        </tr>
-                        <tr>
-                            <td><strong>Less: Outstanding Checks</strong></td>
-                            <td class="text-end text-danger">({{ reconciliation.outstanding_checks|floatformat:2 }})</td>
-                        </tr>
-                        <tr>
-                            <td><strong>Adjustments</strong></td>
-                            <td class="text-end">{{ reconciliation.adjustments|floatformat:2 }}</td>
-                        </tr>
-                        <tr><td colspan="2"><hr class="my-2"></td></tr>
+                        <tr><td colspan="2"><hr class="my-1"></td></tr>
                         <tr class="table-light">
-                            <td><strong>Adjusted Bank Balance</strong></td>
-                            <td class="text-end fw-bold">{{ reconciliation.reconciled_balance|floatformat:2 }}</td>
+                            <td class="fw-bold">= Adjusted Bank Balance</td>
+                            <td class="text-end fw-bold" id="sumAdjusted">{{ reconciliation.reconciled_balance|floatformat:2|intcomma }}</td>
                         </tr>
-                        <tr><td colspan="2"><hr class="my-2"></td></tr>
+                        <tr><td colspan="2"><hr class="my-1"></td></tr>
                         <tr>
-                            <td><strong>GL Balance</strong></td>
-                            <td class="text-end fw-bold">{{ reconciliation.gl_closing_balance|floatformat:2 }}</td>
+                            <td class="fw-bold">GL Closing Balance</td>
+                            <td class="text-end fw-bold" id="sumGL">{{ reconciliation.gl_closing_balance|floatformat:2|intcomma }}</td>
                         </tr>
-                        <tr><td colspan="2"><hr class="my-2"></td></tr>
-                        <tr class="{% if reconciliation.is_reconciled %}table-success{% else %}table-danger{% endif %}">
-                            <td><strong>Difference</strong></td>
-                            <td class="text-end fw-bold">
-                                AED {{ reconciliation.difference|floatformat:2 }}
+                        <tr><td colspan="2"><hr class="my-1"></td></tr>
+                        <tr id="diffRow" class="{% if reconciliation.is_reconciled %}table-success{% else %}table-danger{% endif %}">
+                            <td class="fw-bold fs-5">Difference</td>
+                            <td class="text-end fw-bold fs-5" id="sumDiff">
+                                {{ reconciliation.difference|floatformat:2|intcomma }}
                                 {% if reconciliation.is_reconciled %}
                                 <i class="fas fa-check-circle text-success ms-1"></i>
                                 {% else %}
@@ -222,21 +190,79 @@
             </div>
 
             {% if reconciliation.notes %}
-            <div class="card">
+            <div class="card border-0 shadow-sm">
                 <div class="card-header bg-light">
                     <h6 class="mb-0"><i class="fas fa-sticky-note me-2"></i>Notes</h6>
                 </div>
-                <div class="card-body">
-                    <p class="mb-0">{{ reconciliation.notes }}</p>
-                </div>
+                <div class="card-body"><p class="mb-0">{{ reconciliation.notes }}</p></div>
             </div>
             {% endif %}
         </div>
     </div>
 </div>
+
+{% if can_edit %}
+<script>
+const TOGGLE_URL = "{% url 'finance:bankreconciliation_toggle_clear' reconciliation.pk %}";
+const CSRF = "{{ csrf_token }}";
+
+function fmtNum(v) {
+    return parseFloat(v).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+}
+
+document.querySelectorAll('.clear-check').forEach(cb => {
+    cb.addEventListener('change', async function() {
+        const lineId = this.dataset.lineId;
+        const action = this.checked ? 'clear' : 'unclear';
+        const row = document.getElementById('row-' + lineId);
+        try {
+            const resp = await fetch(TOGGLE_URL, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json', 'X-CSRFToken': CSRF},
+                body: JSON.stringify({line_id: parseInt(lineId), action: action}),
+            });
+            const data = await resp.json();
+            if (!resp.ok) {
+                alert(data.error || 'Error');
+                this.checked = !this.checked;
+                return;
+            }
+            row.className = this.checked ? 'table-success' : '';
+            const badge = row.querySelector('td:last-child .badge');
+            if (badge) {
+                badge.className = this.checked ? 'badge bg-success' : 'badge bg-warning text-dark';
+                badge.textContent = this.checked ? 'Cleared' : 'Outstanding';
+            }
+            document.getElementById('sumDeposits').textContent = fmtNum(data.outstanding_deposits);
+            document.getElementById('sumChecks').textContent = '(' + fmtNum(data.outstanding_checks) + ')';
+            document.getElementById('sumAdjusted').textContent = fmtNum(data.reconciled_balance);
+            document.getElementById('sumGL').textContent = fmtNum(data.gl_closing_balance);
+            document.getElementById('sumDiff').innerHTML = fmtNum(data.difference) +
+                (data.is_reconciled
+                    ? ' <i class="fas fa-check-circle text-success ms-1"></i>'
+                    : ' <i class="fas fa-exclamation-circle text-danger ms-1"></i>');
+            const diffRow = document.getElementById('diffRow');
+            diffRow.className = data.is_reconciled ? 'table-success' : 'table-danger';
+            const btn = document.getElementById('btnComplete');
+            if (btn) btn.disabled = !data.is_reconciled;
+        } catch(e) {
+            alert('Network error');
+            this.checked = !this.checked;
+        }
+    });
+});
+
+const selectAll = document.getElementById('selectAll');
+if (selectAll) {
+    selectAll.addEventListener('change', function() {
+        document.querySelectorAll('.clear-check').forEach(cb => {
+            if (cb.checked !== selectAll.checked) {
+                cb.checked = selectAll.checked;
+                cb.dispatchEvent(new Event('change'));
+            }
+        });
+    });
+}
+</script>
+{% endif %}
 {% endblock %}
-
-
-
-
-

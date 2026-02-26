@@ -114,6 +114,17 @@ class JournalEntryForm(forms.ModelForm):
         if fiscal_year and fiscal_year.is_closed:
             raise ValidationError(f"Fiscal year {fiscal_year.name} is closed. No posting allowed.")
         
+        # FISCAL YEAR BOUNDARY: Entry date must fall within fiscal year
+        date_val = cleaned_data.get('date')
+        if fiscal_year and date_val:
+            fy_start = fiscal_year.start_date
+            fy_end = fiscal_year.end_date
+            if date_val < fy_start or date_val > fy_end:
+                raise ValidationError(
+                    f"Entry date {date_val} is outside fiscal year {fiscal_year.name} "
+                    f"({fy_start} to {fy_end}). Choose a date within the fiscal period."
+                )
+        
         return cleaned_data
 
 

@@ -72,15 +72,20 @@
                     </small>
                     {% endif %}
                 </div>
-                <div class="col-md-4">
+                <div class="col-md-3">
                     <label class="form-label">Movement Type <span class="text-danger">*</span></label>
                     {{ form.movement_type }}
                 </div>
-                <div class="col-md-4">
+                <div class="col-md-3" id="reason-group" style="display:none;">
+                    <label class="form-label">Adjustment Reason <span class="text-danger">*</span></label>
+                    {{ form.adjustment_reason }}
+                    {% if form.adjustment_reason.errors %}<div class="text-danger small mt-1">{{ form.adjustment_reason.errors|join:", " }}</div>{% endif %}
+                </div>
+                <div class="col-md-3">
                     <label class="form-label">Quantity <span class="text-danger">*</span></label>
                     {{ form.quantity }}
                 </div>
-                <div class="col-md-4">
+                <div class="col-md-3">
                     <label class="form-label">Reference</label>
                     {{ form.reference }}
                 </div>
@@ -101,6 +106,21 @@
 {% block extra_js %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    const movementType = document.getElementById('id_movement_type');
+    const reasonGroup = document.getElementById('reason-group');
+    const reasonSelect = document.getElementById('id_adjustment_reason');
+
+    function toggleReason() {
+        const val = movementType ? movementType.value : '';
+        const show = val.startsWith('adjustment');
+        reasonGroup.style.display = show ? '' : 'none';
+        if (!show && reasonSelect) reasonSelect.value = '';
+    }
+    if (movementType) {
+        movementType.addEventListener('change', toggleReason);
+        toggleReason();
+    }
+
     const itemSelect = document.getElementById('id_item');
     const warehouseSelect = document.getElementById('id_warehouse');
     

@@ -63,12 +63,20 @@
 {% else %}
 <div class="alert alert-warning d-flex align-items-center mb-4" role="alert">
     <i class="fas fa-exclamation-triangle me-3 fs-4"></i>
-    <div>
+    <div class="flex-grow-1">
         <h6 class="alert-heading mb-1"><i class="fas fa-calculator me-1"></i>Draft / Preview Mode</h6>
-        <p class="mb-0">
+        <p class="mb-2">
             No submitted VAT Return found for this period. Values are calculated from transactions.
-            <a href="{% url 'finance:vatreturn_create' %}" class="alert-link">Create VAT Return</a> to finalize.
         </p>
+        <form method="post" action="{% url 'finance:vatreturn_create_from_preview' %}" class="d-inline">
+            {% csrf_token %}
+            <input type="hidden" name="period_start" value="{{ start_date }}">
+            <input type="hidden" name="period_end" value="{{ end_date }}">
+            <input type="hidden" name="period_type" value="quarterly">
+            <button type="submit" class="btn btn-warning btn-sm" onclick="return confirm('Create a VAT Return for this period with the calculated values?')">
+                <i class="fas fa-file-invoice me-1"></i>Create VAT Return from Preview
+            </button>
+        </form>
     </div>
 </div>
 {% endif %}

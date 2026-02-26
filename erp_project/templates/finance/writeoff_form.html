@@ -118,14 +118,19 @@
                 <div class="card-body small">
                     <table class="table table-sm table-borderless mb-0">
                         <tr>
-                            <td><strong>Dr</strong> Expense Account</td>
-                            <td class="text-end" id="previewAmount">0.00</td>
+                            <td><span class="badge bg-success me-1">Dr</span> <span id="previewExpenseName">Expense Account</span></td>
+                            <td class="text-end fw-bold" id="previewAmount">0.00</td>
                         </tr>
                         <tr>
-                            <td><strong>Cr</strong> Source Account</td>
-                            <td class="text-end" id="previewAmountCr">0.00</td>
+                            <td><span class="badge bg-danger me-1">Cr</span> <span id="previewSourceName">Source Account</span></td>
+                            <td class="text-end fw-bold" id="previewAmountCr">0.00</td>
                         </tr>
                     </table>
+                    <hr class="my-2">
+                    <div class="d-flex justify-content-between">
+                        <span class="text-muted">Balance</span>
+                        <span class="fw-bold text-success" id="previewBalance">0.00</span>
+                    </div>
                 </div>
             </div>
         </div>
@@ -143,19 +148,26 @@
 {% block extra_js %}
 <script>
 $(document).ready(function() {
-    // Update preview
     function updatePreview() {
         const amount = parseFloat($('#id_amount').val()) || 0;
         $('#previewAmount').text(amount.toFixed(2));
         $('#previewAmountCr').text(amount.toFixed(2));
+        $('#previewBalance').text('0.00');
+
+        const expenseText = $('#id_expense_account option:selected').text().trim();
+        const sourceText = $('#id_source_account option:selected').text().trim();
+        $('#previewExpenseName').text(expenseText && expenseText !== '---------' ? expenseText : 'Expense Account');
+        $('#previewSourceName').text(sourceText && sourceText !== '---------' ? sourceText : 'Source Account');
     }
-    
+
     $('#id_amount').on('change input', updatePreview);
+    $('#id_expense_account').on('change', updatePreview);
+    $('#id_source_account').on('change', updatePreview);
     updatePreview();
-    
-    // Initialize select2
+
     if ($.fn.select2) {
         $('select').select2({ theme: 'bootstrap-5', width: '100%' });
+        $('#id_expense_account, #id_source_account').on('select2:select', updatePreview);
     }
 });
 </script>
