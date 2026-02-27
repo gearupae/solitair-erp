@@ -51,7 +51,7 @@
         <p class="mb-0">
             Showing data from VAT Return <strong>{{ submitted_vat_return.return_number }}</strong>
             ({{ submitted_vat_return.period_start|date:"d/m/Y" }} - {{ submitted_vat_return.period_end|date:"d/m/Y" }})
-            <span class="badge {% if submitted_vat_return.status == 'submitted' or submitted_vat_return.status == 'accepted' %}bg-success{% else %}bg-primary{% endif %} ms-2">
+            <span class="badge {% if submitted_vat_return.status == 'filed' or submitted_vat_return.status == 'locked' %}bg-success{% else %}bg-primary{% endif %} ms-2">
                 {{ submitted_vat_return.get_status_display }}
             </span>
             {% if submitted_vat_return.journal_entry %}
@@ -230,10 +230,14 @@
                         <td>
                             {% if vat.status == 'draft' %}
                                 <span class="badge bg-secondary">Draft</span>
-                            {% elif vat.status == 'submitted' %}
-                                <span class="badge bg-warning">Submitted</span>
-                            {% elif vat.status == 'accepted' %}
-                                <span class="badge bg-success">Accepted</span>
+                            {% elif vat.status == 'filed' %}
+                                <span class="badge bg-success">Filed</span>
+                            {% elif vat.status == 'amended' %}
+                                <span class="badge bg-info">Amended</span>
+                            {% elif vat.status == 'locked' %}
+                                <span class="badge bg-danger">Locked</span>
+                            {% elif vat.status == 'reversed' %}
+                                <span class="badge bg-warning text-dark">Reversed</span>
                             {% endif %}
                         </td>
                     </tr>

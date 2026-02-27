@@ -15,12 +15,14 @@
     <div class="d-flex align-items-center gap-2">
         {% if vat_return.status == 'draft' %}
         <span class="badge bg-secondary fs-6">Draft</span>
-        {% elif vat_return.status == 'posted' %}
-        <span class="badge bg-primary fs-6">Posted</span>
-        {% elif vat_return.status == 'submitted' %}
-        <span class="badge bg-warning fs-6">Submitted to FTA</span>
-        {% elif vat_return.status == 'accepted' %}
-        <span class="badge bg-success fs-6">Accepted by FTA</span>
+        {% elif vat_return.status == 'filed' %}
+        <span class="badge bg-success fs-6">Filed</span>
+        {% elif vat_return.status == 'amended' %}
+        <span class="badge bg-info fs-6">Amended</span>
+        {% elif vat_return.status == 'locked' %}
+        <span class="badge bg-danger fs-6">Locked</span>
+        {% elif vat_return.status == 'reversed' %}
+        <span class="badge bg-warning text-dark fs-6">Reversed</span>
         {% endif %}
         
         {% if vat_return.is_period_locked %}
@@ -49,7 +51,7 @@
     </form>
     {% endif %}
     
-    {% if vat_return.status == 'posted' %}
+    {% if vat_return.status == 'filed' %}
     <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#submitFTAModal">
         <i class="fas fa-paper-plane me-1"></i>Submit to FTA
     </button>
@@ -271,7 +273,7 @@
             <div class="card-body text-center">
                 <h6 class="mb-2">{% if vat_return.is_refund %}VAT REFUND DUE{% else %}VAT PAYABLE{% endif %}</h6>
                 <h2 class="mb-0">AED {{ vat_return.net_vat|floatformat:2|intcomma }}</h2>
-                {% if vat_return.status == 'posted' or vat_return.status == 'submitted' %}
+                {% if vat_return.status == 'filed' or vat_return.status == 'locked' %}
                 <small class="opacity-75">Journal Posted</small>
                 {% elif vat_return.status == 'draft' %}
                 <small class="opacity-75">Not Yet Posted</small>

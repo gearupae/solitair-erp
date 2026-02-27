@@ -1080,7 +1080,7 @@ class Command(BaseCommand):
             period_start=period.start_date,
             period_end=period.end_date,
             due_date=period.end_date + timedelta(days=28),
-            status='submitted' if submit else 'draft',
+            status='filed' if submit else 'draft',
             standard_rated_supplies=total_sales,
             standard_rated_vat=output_vat,
             standard_rated_expenses=total_expenses,

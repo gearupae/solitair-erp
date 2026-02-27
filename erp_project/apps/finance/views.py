@@ -1585,7 +1585,7 @@ def vat_report(request):
     UAE VAT Return Report (FTA format).
     
     DATA SOURCE LOGIC (UAE FTA Compliant):
-    1. If a VAT Return exists for the period AND status is 'posted', 'submitted', or 'accepted':
+    1. If a VAT Return exists for the period AND status is 'filed' or 'locked':
        → Use values from the VATReturn record (SOURCE OF TRUTH)
        → This ensures consistency with VAT Return History
     2. If no submitted VAT Return exists:
@@ -1615,14 +1615,14 @@ def vat_report(request):
     # Look for VAT Return that covers or overlaps the selected period
     submitted_vat_return = VATReturn.objects.filter(
         is_active=True,
-        status__in=['posted', 'submitted', 'accepted'],  # Final statuses
+        status__in=['filed', 'locked'],  # FTA: successfully submitted
         period_start__lte=end_date,
         period_end__gte=start_date,
     ).first()
     
     # Flag to indicate if we're showing submitted data or calculated data
     is_submitted_data = submitted_vat_return is not None
-    is_period_locked = is_submitted_data and submitted_vat_return.status in ['submitted', 'accepted']
+    is_period_locked = is_submitted_data and submitted_vat_return.status in ['filed', 'locked']
     
     if is_submitted_data:
         # ========================================
@@ -3372,7 +3372,7 @@ def vatreturn_reverse(request, pk):
     vat_return = get_object_or_404(VATReturn, pk=pk)
     
     if not vat_return.can_reverse:
-        messages.error(request, f'VAT Return {vat_return.return_number} cannot be reversed. Status must be "posted".')
+        messages.error(request, f'VAT Return {vat_return.return_number} cannot be reversed. Status must be "filed".')
         return redirect('finance:vatreturn_detail', pk=pk)
     
     if request.method == 'POST':
@@ -3415,8 +3415,8 @@ def vatreturn_submit_to_fta(request, pk):
     
     vat_return = get_object_or_404(VATReturn, pk=pk)
     
-    if vat_return.status != 'posted':
-        messages.error(request, f'VAT Return must be posted before submitting to FTA.')
+    if vat_return.status != 'filed':
+        messages.error(request, f'VAT Return must be filed before submitting to FTA.')
         return redirect('finance:vatreturn_detail', pk=pk)
     
     if request.method == 'POST':
@@ -3424,11 +3424,10 @@ def vatreturn_submit_to_fta(request, pk):
         
         fta_reference = request.POST.get('fta_reference', '')
         
-        vat_return.status = 'submitted'
         vat_return.filed_date = timezone.now()
         vat_return.filed_by = request.user
         vat_return.fta_reference = fta_reference
-        vat_return.save(update_fields=['status', 'filed_date', 'filed_by', 'fta_reference'])
+        vat_return.save(update_fields=['filed_date', 'filed_by', 'fta_reference'])
         
         # Log audit entry
         from django.contrib.admin.models import LogEntry, CHANGE
@@ -3747,7 +3746,7 @@ def tax_reconciliation(request):
         vr_output = selected_vr.output_vat
         vr_input = selected_vr.input_vat
         vr_net = selected_vr.net_vat
-        is_settled = selected_vr.status in ('posted', 'submitted', 'accepted')
+        is_settled = selected_vr.status in ('filed', 'locked')
 
         # After settlement journal, Output/Input VAT GL should be 0
         if is_settled:

@@ -49,12 +49,14 @@
                         <td>
                             {% if vr.status == 'draft' %}
                             <span class="badge bg-secondary">Draft</span>
-                            {% elif vr.status == 'submitted' %}
-                            <span class="badge bg-warning">Submitted</span>
-                            {% elif vr.status == 'accepted' %}
-                            <span class="badge bg-success">Accepted</span>
-                            {% else %}
+                            {% elif vr.status == 'filed' %}
+                            <span class="badge bg-success">Filed</span>
+                            {% elif vr.status == 'amended' %}
                             <span class="badge bg-info">Amended</span>
+                            {% elif vr.status == 'locked' %}
+                            <span class="badge bg-danger">Locked</span>
+                            {% elif vr.status == 'reversed' %}
+                            <span class="badge bg-warning text-dark">Reversed</span>
                             {% endif %}
                         </td>
                         <td class="text-end">

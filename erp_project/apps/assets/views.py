@@ -317,9 +317,15 @@ def depreciation_report(request):
         messages.error(request, 'Permission denied.')
         return redirect('dashboard')
     
-    # Get date range
-    from_date = request.GET.get('from_date', date(date.today().year, 1, 1).isoformat())
-    to_date = request.GET.get('to_date', date.today().isoformat())
+    # Get date range with robust parsing
+    try:
+        from_str = request.GET.get('from_date', '')
+        to_str = request.GET.get('to_date', '')
+        from_date = date.fromisoformat(from_str) if from_str else date(date.today().year, 1, 1)
+        to_date = date.fromisoformat(to_str) if to_str else date.today()
+    except (ValueError, TypeError):
+        from_date = date(date.today().year, 1, 1)
+        to_date = date.today()
     
     depreciation_records = AssetDepreciation.objects.filter(
         depreciation_date__gte=from_date,

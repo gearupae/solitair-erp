@@ -1274,20 +1274,21 @@ class ExpenseItem(models.Model):
 class VATReturn(BaseModel):
     """
     UAE VAT Return model for quarterly/monthly filing.
-    Period locked after filing (FTA requirement).
+    Status terminology aligned with UAE FTA standards.
     
-    POSTING WORKFLOW:
-    1. Draft - VAT Return created, can be edited
-    2. Posted - Journal entry created, period locked
-    3. Submitted - Filed with FTA (cannot reverse)
-    4. Accepted - FTA confirmation received
+    FTA STATUS WORKFLOW:
+    1. Draft – before submission to FTA
+    2. Filed – successfully submitted to FTA (journal posted, period locked)
+    3. Amended – previously filed return has been corrected
+    4. Locked – VAT period is closed and cannot be edited
+    5. Reversed – VAT return has been reversed
     """
     STATUS_CHOICES = [
         ('draft', 'Draft'),
-        ('posted', 'Posted'),  # NEW: After journal entry posted
-        ('submitted', 'Submitted'),
-        ('accepted', 'Accepted'),
+        ('filed', 'Filed'),
         ('amended', 'Amended'),
+        ('locked', 'Locked'),
+        ('reversed', 'Reversed'),
     ]
     
     PERIOD_TYPE_CHOICES = [
@@ -1400,8 +1401,8 @@ class VATReturn(BaseModel):
     
     @property
     def can_reverse(self):
-        """Check if VAT Return can be reversed (only if Posted, not yet Submitted)."""
-        return self.status == 'posted' and self.journal_entry is not None
+        """Check if VAT Return can be reversed (only if Filed, not yet Amended/Locked)."""
+        return self.status == 'filed' and self.journal_entry is not None
     
     def get_vat_accounts(self):
         """
@@ -1575,7 +1576,7 @@ class VATReturn(BaseModel):
         self.journal_entry = journal
         self.posted_date = timezone.now()
         self.posted_by = user
-        self.status = 'posted'
+        self.status = 'filed'
         self.is_period_locked = True
         self.save(update_fields=['journal_entry', 'posted_date', 'posted_by', 'status', 'is_period_locked'])
         
@@ -1588,13 +1589,13 @@ class VATReturn(BaseModel):
         This:
         1. Creates exact reversal of the posting journal
         2. Unlocks the VAT period
-        3. Sets status back to 'draft'
+        3. Sets status to 'reversed'
         """
         from django.utils import timezone
         from django.core.exceptions import ValidationError
         
         if not self.can_reverse:
-            raise ValidationError("VAT Return cannot be reversed. Status must be 'posted'.")
+            raise ValidationError("VAT Return cannot be reversed. Status must be 'filed'.")
         
         if not self.journal_entry:
             raise ValidationError("No journal entry found to reverse.")
@@ -1636,7 +1637,7 @@ class VATReturn(BaseModel):
         
         # Update VAT Return
         self.reversal_journal_entry = reversal
-        self.status = 'draft'
+        self.status = 'reversed'
         self.is_period_locked = False
         self.save(update_fields=['reversal_journal_entry', 'status', 'is_period_locked'])
         
