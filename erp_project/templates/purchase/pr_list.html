@@ -57,7 +57,7 @@
                 <tbody>
                     {% for pr in purchase_requests %}
                     <tr>
-                        <td class="fw-medium">{{ pr.pr_number }}</td>
+                        <td class="fw-medium"><a href="{% url 'purchase:pr_detail' pr.pk %}">{{ pr.pr_number }}</a></td>
                         <td>{{ pr.date|date:"d/m/Y" }}</td>
                         <td>{{ pr.requested_by.get_full_name|default:pr.requested_by.username }}</td>
                         <td>{{ pr.required_by_date|date:"d/m/Y"|default:"-" }}</td>
@@ -76,9 +76,17 @@
                         </td>
                         <td class="text-end">AED {{ pr.total_amount|floatformat:2 }}</td>
                         <td class="text-center">
-                            {% if can_edit %}
+                            <a href="{% url 'purchase:pr_detail' pr.pk %}" class="btn btn-action btn-outline-primary" title="View">
+                                <i class="fas fa-eye"></i>
+                            </a>
+                            {% if can_edit and pr.status == 'draft' or can_edit and pr.status == 'returned' or can_edit and request.user.is_superuser and pr.status == 'approved' %}
                             <a href="{% url 'purchase:pr_edit' pr.pk %}" class="btn btn-action btn-outline-primary" title="Edit">
                                 <i class="fas fa-edit"></i>
+                            </a>
+                            {% endif %}
+                            {% if can_convert and pr.status == 'approved' %}
+                            <a href="{% url 'purchase:pr_convert' pr.pk %}" class="btn btn-action btn-outline-primary" title="Convert to Purchase Order">
+                                <i class="fas fa-exchange-alt"></i>
                             </a>
                             {% endif %}
                             {% if can_approve and pr.status == 'pending' %}

@@ -11,7 +11,13 @@
     <div class="d-flex justify-content-between align-items-center">
         <div>
             <h4 class="mb-1 fw-bold">{{ request_obj.request_number }}</h4>
-            <span class="text-muted">{{ request_obj.item.name }}</span>
+            <span class="text-muted">
+                {% if request_obj.items.exists %}
+                    {{ request_obj.items.count }} item(s)
+                {% else %}
+                    {{ request_obj.item.name|default:"-" }}
+                {% endif %}
+            </span>
         </div>
         <div>
             {% if request_obj.status == 'pending' %}
@@ -36,23 +42,47 @@
             </div>
             <div class="card-body">
                 <div class="row g-4">
+                    {% if request_obj.items.exists %}
+                    <div class="col-12">
+                        <h6 class="text-muted mb-2">Items</h6>
+                        <table class="table table-sm mb-0">
+                            <tr><th>Item</th><th class="text-end">Qty</th><th class="text-end">Unit</th></tr>
+                            {% for li in request_obj.items.all %}
+                            <tr><td>{{ li.item.name }}</td><td class="text-end">{{ li.quantity|floatformat:0 }}</td><td class="text-end">{{ li.item.unit }}</td></tr>
+                            {% endfor %}
+                        </table>
+                    </div>
+                    {% else %}
                     <div class="col-md-6">
                         <h6 class="text-muted mb-2">Item</h6>
-                        <p class="mb-0 fw-medium">{{ request_obj.item.name }}</p>
-                        <small class="text-muted">{{ request_obj.item.item_code }}</small>
+                        <p class="mb-0 fw-medium">{{ request_obj.item.name|default:"-" }}</p>
+                        <small class="text-muted">{{ request_obj.item.item_code|default:"" }}</small>
                     </div>
                     <div class="col-md-3">
                         <h6 class="text-muted mb-2">Quantity</h6>
-                        <p class="mb-0 fw-medium">{{ request_obj.quantity|floatformat:0 }} {{ request_obj.item.unit }}</p>
+                        <p class="mb-0 fw-medium">{{ request_obj.quantity|floatformat:0 }} {{ request_obj.item.unit|default:"" }}</p>
                     </div>
+                    {% endif %}
                     <div class="col-md-3">
                         <h6 class="text-muted mb-2">Request Date</h6>
                         <p class="mb-0">{{ request_obj.request_date|date:"d/m/Y" }}</p>
                     </div>
-                    <div class="col-md-6">
+                    <div class="col-md-4">
                         <h6 class="text-muted mb-2">Requested By</h6>
                         <p class="mb-0">{{ request_obj.requested_by.get_full_name|default:request_obj.requested_by.username }}</p>
                     </div>
+                    {% if request_obj.department %}
+                    <div class="col-md-4">
+                        <h6 class="text-muted mb-2">Department</h6>
+                        <p class="mb-0">{{ request_obj.department.name }}</p>
+                    </div>
+                    {% endif %}
+                    {% if request_obj.required_by_date %}
+                    <div class="col-md-4">
+                        <h6 class="text-muted mb-2">Required By</h6>
+                        <p class="mb-0">{{ request_obj.required_by_date|date:"d/m/Y" }}</p>
+                    </div>
+                    {% endif %}
                     {% if request_obj.remarks %}
                     <div class="col-12">
                         <h6 class="text-muted mb-2">Notes</h6>
@@ -149,7 +179,7 @@
                 <div class="alert alert-danger mb-3">
                     <i class="fas fa-exclamation-circle me-2"></i>
                     <strong>Cannot Process!</strong><br>
-                    <small>No warehouse has sufficient stock ({{ request_obj.quantity }} {{ request_obj.item.unit }}) for this item. Please add stock first.</small>
+                    <small>No warehouse has sufficient stock for all items. Please add stock first.</small>
                 </div>
                 {% else %}
                 <!-- Approve & Dispense Form -->
@@ -182,7 +212,18 @@
                 <!-- Just Approve -->
                 <form method="post" action="{% url 'inventory:consumable_request_approve' request_obj.pk %}" class="mb-3">
                     {% csrf_token %}
-                    <input type="hidden" name="warehouse" value="{{ approve_form.warehouse.field.queryset.first.pk }}">
+                    <div class="mb-2">
+                        <label class="form-label">Warehouse</label>
+                        <select name="warehouse" class="form-select" required>
+                            {% for w in approve_form.fields.warehouse.queryset %}
+                            <option value="{{ w.pk }}">{{ w.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Admin Notes</label>
+                        <textarea name="admin_notes" class="form-control" rows="2"></textarea>
+                    </div>
                     <button type="submit" class="btn btn-info w-100 mb-2">
                         <i class="fas fa-check me-1"></i>Approve Only
                     </button>
@@ -264,7 +305,8 @@
         </div>
         {% endif %}
 
-        <!-- Item Info Card -->
+        <!-- Item Info Card (show for single item) -->
+        {% if request_obj.item and not request_obj.items.exists %}
         <div class="card {% if is_admin and request_obj.status in 'pending,approved' %}mt-4{% endif %}">
             <div class="card-header">
                 <h6 class="mb-0 fw-semibold">Item Information</h6>
@@ -302,6 +344,19 @@
                 </table>
             </div>
         </div>
+        {% endif %}
+        {% if request_obj.attachments.exists %}
+        <div class="card mt-4">
+            <div class="card-header"><h6 class="mb-0 fw-semibold">Attachments</h6></div>
+            <div class="card-body">
+                <ul class="mb-0">
+                    {% for att in request_obj.attachments.all %}
+                    <li><a href="{{ att.file.url }}" target="_blank">{{ att.filename|default:att.file.name }}</a></li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+        {% endif %}
     </div>
 </div>
 

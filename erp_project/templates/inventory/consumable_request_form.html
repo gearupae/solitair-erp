@@ -1,106 +1,150 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<div class="container" style="max-width: 500px;">
-    <div class="text-center mb-4">
-        <div class="bg-primary bg-opacity-10 rounded-circle d-inline-flex align-items-center justify-content-center mb-3" style="width:80px;height:80px;">
-            <i class="fas fa-box-open text-primary fa-2x"></i>
-        </div>
-        <h4 class="fw-bold">{{ title }}</h4>
-        <p class="text-muted">Fill the form below to request consumables</p>
-    </div>
+<div class="page-header">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb mb-2">
+            <li class="breadcrumb-item"><a href="{% url 'inventory:consumable_request_list' %}">Consumable Requests</a></li>
+            <li class="breadcrumb-item active">{{ title }}</li>
+        </ol>
+    </nav>
+    <h4 class="mb-0 fw-bold">{{ title }}</h4>
+</div>
 
-    <div class="card">
-        <div class="card-body p-4">
-            <form method="post">
-                {% csrf_token %}
-                
-                <div class="mb-4">
-                    <label class="form-label fw-medium">
-                        <i class="fas fa-box me-2 text-primary"></i>Consumable Item
-                        <span class="text-danger">*</span>
-                    </label>
-                    {{ form.item }}
-                    <div id="stockInfo" class="mt-2" style="display:none;">
-                        <div id="stockAvailable" class="alert alert-success py-2 mb-0" style="display:none;">
-                            <i class="fas fa-check-circle me-1"></i>
-                            <span id="stockText"></span>
-                        </div>
-                        <div id="stockUnavailable" class="alert alert-warning py-2 mb-0" style="display:none;">
-                            <i class="fas fa-exclamation-triangle me-1"></i>
-                            <span id="noStockText">No stock available. Request will be pending approval.</span>
-                        </div>
-                    </div>
+{% if form.errors or items_formset.non_form_errors %}
+<div class="alert alert-danger mb-4">
+    <h6 class="alert-heading mb-2"><i class="fas fa-exclamation-triangle me-2"></i>Please correct the errors below:</h6>
+    {% for field, errors in form.errors.items %}
+        <div><strong>{{ field }}:</strong> {{ errors|join:", " }}</div>
+    {% endfor %}
+    {% if items_formset.non_form_errors %}
+        <div>{{ items_formset.non_form_errors|join:", " }}</div>
+    {% endif %}
+</div>
+{% endif %}
+
+<form method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+    
+    <div class="card mb-4">
+        <div class="card-header"><h6 class="mb-0 fw-semibold">Request Details</h6></div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label">Requested By</label>
+                    <input type="text" class="form-control bg-light" value="{{ request.user.get_full_name|default:request.user.username }}" readonly>
                 </div>
-                
-                <div class="mb-4">
-                    <label class="form-label fw-medium">
-                        <i class="fas fa-hashtag me-2 text-primary"></i>Quantity Needed
-                        <span class="text-danger">*</span>
-                    </label>
-                    {{ form.quantity }}
+                <div class="col-md-4">
+                    <label class="form-label">Department</label>
+                    {{ form.department }}
                 </div>
-                
-                <div class="mb-4">
-                    <label class="form-label fw-medium">
-                        <i class="fas fa-sticky-note me-2 text-primary"></i>Notes
-                        <span class="text-muted small">(Optional)</span>
-                    </label>
+                <div class="col-md-4">
+                    <label class="form-label">Priority</label>
+                    {{ form.priority }}
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Required By Date</label>
+                    {{ form.required_by_date }}
+                </div>
+                <div class="col-12">
+                    <label class="form-label">Notes</label>
                     {{ form.remarks }}
                 </div>
-                
-                <div class="d-grid gap-2">
-                    <button type="submit" class="btn btn-primary btn-lg">
-                        <i class="fas fa-paper-plane me-2"></i>Submit Request
-                    </button>
-                    <a href="{% url 'inventory:consumable_request_list' %}" class="btn btn-light">
-                        Cancel
-                    </a>
-                </div>
-            </form>
+            </div>
         </div>
     </div>
-</div>
-{% endblock %}
+    
+    <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h6 class="mb-0 fw-semibold">Line Items</h6>
+            <button type="button" class="btn btn-sm btn-primary" onclick="addItemRow()">
+                <i class="fas fa-plus me-1"></i>Add Item
+            </button>
+        </div>
+        <div class="card-body p-0">
+            {{ items_formset.management_form }}
+            <div class="table-responsive">
+                <table class="table mb-0">
+                    <thead>
+                        <tr>
+                            <th style="width:55%">Consumable Item</th>
+                            <th style="width:25%">Quantity</th>
+                            <th style="width:20%"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="itemsBody">
+                        {% for item_form in items_formset %}
+                        <tr class="item-row" {% if item_form.DELETE.value %}style="display:none;"{% endif %}>
+                            <td>
+                                {{ item_form.id }}
+                                {{ item_form.item }}
+                            </td>
+                            <td>{{ item_form.quantity }}</td>
+                            <td class="text-center">
+                                {% if item_form.instance.pk %}
+                                <input type="checkbox" name="{{ item_form.prefix }}-DELETE" class="d-none delete-check"
+                                       {% if item_form.DELETE.value %}checked{% endif %}>
+                                {% endif %}
+                                <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeItemRow(this)">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    
+    <div class="card mb-4">
+        <div class="card-header"><h6 class="mb-0 fw-semibold">Attachments</h6></div>
+        <div class="card-body">
+            <input type="file" name="attachments" class="form-control" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png">
+            <small class="text-muted">You can select multiple files</small>
+        </div>
+    </div>
+    
+    <button type="submit" class="btn btn-primary"><i class="fas fa-paper-plane me-2"></i>Submit Request</button>
+    <a href="{% url 'inventory:consumable_request_list' %}" class="btn btn-light">Cancel</a>
+</form>
 
 {% block extra_js %}
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    const itemSelect = document.getElementById('id_item');
-    const stockInfo = document.getElementById('stockInfo');
-    const stockAvailable = document.getElementById('stockAvailable');
-    const stockUnavailable = document.getElementById('stockUnavailable');
-    const stockText = document.getElementById('stockText');
-    
-    // Stock data from server
-    const stockData = {
-        {% for item in items_with_stock %}
-        {{ item.id }}: {{ item.total_stock|default:0 }},
-        {% endfor %}
-    };
-    
-    itemSelect.addEventListener('change', function() {
-        const itemId = this.value;
-        stockInfo.style.display = 'block';
-        
-        if (itemId && stockData[itemId] !== undefined) {
-            const stock = stockData[itemId];
-            if (stock > 0) {
-                stockAvailable.style.display = 'block';
-                stockUnavailable.style.display = 'none';
-                stockText.textContent = `Available: ${stock} units in stock`;
-            } else {
-                stockAvailable.style.display = 'none';
-                stockUnavailable.style.display = 'block';
-            }
-        } else if (itemId) {
-            stockAvailable.style.display = 'none';
-            stockUnavailable.style.display = 'block';
-        } else {
-            stockInfo.style.display = 'none';
-        }
-    });
-});
+let formCount = {{ items_formset.total_form_count }};
+
+function addItemRow() {
+    const tbody = document.getElementById('itemsBody');
+    const firstRow = tbody.querySelector('.item-row');
+    const itemSelect = firstRow.querySelector('select[name*="-item"]');
+    let optionsHtml = '<option value="">---------</option>';
+    if (itemSelect) {
+        itemSelect.querySelectorAll('option').forEach(opt => {
+            if (opt.value) optionsHtml += `<option value="${opt.value}">${opt.text}</option>`;
+        });
+    }
+    const newRow = document.createElement('tr');
+    newRow.className = 'item-row';
+    newRow.innerHTML = `
+        <td><select name="items-${formCount}-item" class="form-select" id="id_items-${formCount}-item">${optionsHtml}</select></td>
+        <td><input type="number" name="items-${formCount}-quantity" class="form-control" value="1" step="0.01" min="0.01"></td>
+        <td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger" onclick="removeItemRow(this)"><i class="fas fa-times"></i></button></td>
+    `;
+    tbody.appendChild(newRow);
+    formCount++;
+    document.getElementById('id_items-TOTAL_FORMS').value = formCount;
+}
+
+function removeItemRow(btn) {
+    const row = btn.closest('tr');
+    const deleteCheck = row.querySelector('.delete-check');
+    if (deleteCheck) {
+        deleteCheck.checked = true;
+        row.style.display = 'none';
+    } else {
+        row.remove();
+    }
+}
 </script>
 {% endblock %}
-
+{% endblock %}

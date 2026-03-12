@@ -15,10 +15,14 @@ urlpatterns = [
     # Purchase Requests
     path('requests/', views.PurchaseRequestListView.as_view(), name='pr_list'),
     path('requests/create/', views.PurchaseRequestCreateView.as_view(), name='pr_create'),
+    path('requests/<int:pk>/', views.PurchaseRequestDetailView.as_view(), name='pr_detail'),
     path('requests/<int:pk>/edit/', views.PurchaseRequestUpdateView.as_view(), name='pr_edit'),
+    path('requests/<int:pk>/submit/', views.pr_submit, name='pr_submit'),
+    path('requests/<int:pk>/return/', views.pr_return, name='pr_return'),
     path('requests/<int:pk>/delete/', views.pr_delete, name='pr_delete'),
     path('requests/<int:pk>/approve/', views.pr_approve, name='pr_approve'),
     path('requests/<int:pk>/reject/', views.pr_reject, name='pr_reject'),
+    path('requests/<int:pk>/convert/', views.pr_convert, name='pr_convert'),
     path('requests/<int:pk>/items/', views.pr_items_json, name='pr_items_json'),
     
     # Purchase Orders

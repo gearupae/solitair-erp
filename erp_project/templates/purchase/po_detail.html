@@ -32,6 +32,18 @@
                         <h6 class="text-muted mb-2">Vendor</h6>
                         <p class="fw-medium mb-0">{{ po.vendor.name }}</p>
                     </div>
+                    {% if po.purchase_request %}
+                    <div class="col-md-6">
+                        <h6 class="text-muted mb-2">From Purchase Request</h6>
+                        <p class="mb-0"><a href="{% url 'purchase:pr_edit' po.purchase_request.pk %}">{{ po.purchase_request.pr_number }}</a></p>
+                    </div>
+                    {% endif %}
+                    {% if po.service_request %}
+                    <div class="col-md-6">
+                        <h6 class="text-muted mb-2">From Service Request</h6>
+                        <p class="mb-0"><a href="{% url 'service_request:sr_detail' po.service_request.pk %}">{{ po.service_request.sr_number }}</a></p>
+                    </div>
+                    {% endif %}
                     <div class="col-md-3">
                         <h6 class="text-muted mb-2">Order Date</h6>
                         <p class="mb-0">{{ po.order_date|date:"d/m/Y" }}</p>

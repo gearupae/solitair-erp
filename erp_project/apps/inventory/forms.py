@@ -2,7 +2,7 @@
 Inventory Forms
 """
 from django import forms
-from .models import Category, Warehouse, Item, Stock, StockMovement, ConsumableRequest, ConditionLog
+from .models import Category, Warehouse, Item, Stock, StockMovement, ConsumableRequest, ConsumableRequestItem, ConditionLog
 
 
 class CategoryForm(forms.ModelForm):
@@ -138,39 +138,50 @@ class StockAdjustmentForm(forms.Form):
 
 class ConsumableRequestForm(forms.ModelForm):
     """
-    Nurse-facing form for creating consumable requests.
-    VERY SIMPLE - max 4 fields, no pricing shown.
+    Form for creating consumable requests (full page, multi-item).
     """
     class Meta:
         model = ConsumableRequest
-        fields = ['item', 'quantity', 'remarks']
+        fields = ['department', 'priority', 'required_by_date', 'remarks']
         widgets = {
-            'remarks': forms.Textarea(attrs={
-                'rows': 2, 
-                'placeholder': 'Optional notes (e.g., urgent, for procedure room)'
-            }),
+            'department': forms.Select(attrs={'class': 'form-select'}),
+            'priority': forms.Select(attrs={'class': 'form-select'}),
+            'required_by_date': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
+            'remarks': forms.Textarea(attrs={'rows': 3, 'class': 'form-control', 'placeholder': 'Optional notes'}),
         }
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # Style fields
+        from apps.hr.models import Department
+        self.fields['department'].queryset = Department.objects.filter(is_active=True)
+        self.fields['department'].required = False
+        self.fields['required_by_date'].required = False
+        self.fields['remarks'].required = False
+
+
+class ConsumableRequestItemForm(forms.ModelForm):
+    class Meta:
+        model = ConsumableRequestItem
+        fields = ['item', 'quantity']
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['item'].queryset = Item.objects.filter(
+            is_active=True, item_type='product', status='active'
+        ).order_by('name')
         self.fields['item'].widget.attrs['class'] = 'form-select'
         self.fields['quantity'].widget.attrs['class'] = 'form-control'
-        self.fields['quantity'].widget.attrs['min'] = '1'
-        self.fields['quantity'].widget.attrs['step'] = '1'
-        self.fields['remarks'].widget.attrs['class'] = 'form-control'
-        
-        # Only show active product items (consumables)
-        self.fields['item'].queryset = Item.objects.filter(
-            is_active=True,
-            item_type='product',
-            status='active'
-        ).order_by('name')
-        
-        # Simple labels
-        self.fields['item'].label = 'Consumable Item'
-        self.fields['quantity'].label = 'Quantity Needed'
-        self.fields['remarks'].label = 'Notes (Optional)'
+        self.fields['quantity'].widget.attrs['min'] = '0.01'
+
+
+ConsumableRequestItemFormSet = forms.inlineformset_factory(
+    ConsumableRequest,
+    ConsumableRequestItem,
+    form=ConsumableRequestItemForm,
+    extra=1,
+    can_delete=True,
+    min_num=1
+)
 
 
 class ConsumableRequestApproveForm(forms.Form):
@@ -188,41 +199,39 @@ class ConsumableRequestApproveForm(forms.Form):
         label='Admin Notes'
     )
     
-    def __init__(self, *args, item=None, quantity=None, **kwargs):
+    def __init__(self, *args, item=None, quantity=None, consumable_request=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.no_stock_available = False
         self.stock_info = []
         
-        # Show warehouses with sufficient stock
-        if item and quantity:
-            # Get all stock for this item
-            all_stocks = Stock.objects.filter(
-                item=item,
-                warehouse__status='active',
-                warehouse__is_active=True
-            ).select_related('warehouse')
+        items_to_check = []
+        if consumable_request:
+            items_to_check = consumable_request.get_items_for_dispense()
+        elif item and quantity:
+            items_to_check = [(item, quantity)]
+        
+        if items_to_check:
+            # Find warehouses that have stock for ALL items
+            warehouse_ids = None
+            for itm, qty in items_to_check:
+                wh_ids = set(Stock.objects.filter(
+                    item=itm,
+                    quantity__gte=qty,
+                    warehouse__status='active',
+                    warehouse__is_active=True
+                ).values_list('warehouse_id', flat=True))
+                warehouse_ids = wh_ids if warehouse_ids is None else warehouse_ids & wh_ids
             
-            # Build stock info for display
-            for stock in all_stocks:
-                self.stock_info.append({
-                    'warehouse': stock.warehouse,
-                    'quantity': stock.quantity,
-                    'sufficient': stock.quantity >= quantity
-                })
-            
-            warehouses_with_stock = [s.warehouse.id for s in all_stocks if s.quantity >= quantity]
-            
-            if warehouses_with_stock:
+            if warehouse_ids:
                 self.fields['warehouse'].queryset = Warehouse.objects.filter(
-                    id__in=warehouses_with_stock
+                    id__in=warehouse_ids, is_active=True, status='active'
                 )
             else:
-                # No sufficient stock - show all active warehouses with warning
                 self.no_stock_available = True
                 self.fields['warehouse'].queryset = Warehouse.objects.filter(
                     is_active=True, status='active'
                 )
-                self.fields['warehouse'].help_text = 'WARNING: No warehouse has sufficient stock!'
+                self.fields['warehouse'].help_text = 'WARNING: No warehouse has sufficient stock for all items!'
         else:
             self.fields['warehouse'].queryset = Warehouse.objects.filter(
                 is_active=True, status='active'

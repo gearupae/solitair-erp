@@ -1,0 +1,177 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-center">
+    <div>
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-2">
+                <li class="breadcrumb-item"><a href="{% url 'purchase:pr_list' %}">Purchase Requests</a></li>
+                <li class="breadcrumb-item active">{{ pr.pr_number }}</li>
+            </ol>
+        </nav>
+        <h4 class="mb-1 fw-bold">{{ pr.pr_number }}</h4>
+        <p class="text-muted mb-0">
+            {{ pr.get_status_display }} • {{ pr.date|date:"d/m/Y" }}
+            {% if pr.required_by_date %}• Required by {{ pr.required_by_date|date:"d/m/Y" }}{% endif %}
+        </p>
+    </div>
+    <div>
+        {% if can_submit %}
+        <a href="{% url 'purchase:pr_submit' pr.pk %}" class="btn btn-primary" onclick="return confirm('Submit for approval?');">
+            <i class="fas fa-paper-plane me-2"></i>Submit for Approval
+        </a>
+        {% endif %}
+        {% if can_edit %}
+        <a href="{% url 'purchase:pr_edit' pr.pk %}" class="btn btn-outline-primary">
+            <i class="fas fa-edit me-2"></i>Edit
+        </a>
+        {% endif %}
+        {% if can_approve and pr.status == 'pending' %}
+        <a href="{% url 'purchase:pr_approve' pr.pk %}" class="btn btn-success" onclick="return confirm('Approve this request?');">
+            <i class="fas fa-check me-2"></i>Approve
+        </a>
+        {% endif %}
+        {% if can_convert and pr.status == 'approved' %}
+        <a href="{% url 'purchase:pr_convert' pr.pk %}" class="btn btn-primary" onclick="return confirm('Convert to Purchase Order?');">
+            <i class="fas fa-exchange-alt me-2"></i>Convert to Purchase Order
+        </a>
+        {% endif %}
+    </div>
+</div>
+
+{% if pr.rejection_reason %}
+<div class="alert alert-warning mb-4">
+    <strong><i class="fas fa-comment-alt me-2"></i>Comment from approver:</strong><br>
+    {{ pr.rejection_reason }}
+</div>
+{% endif %}
+
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card mb-4">
+            <div class="card-header"><h6 class="mb-0 fw-semibold">Request Details</h6></div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label text-muted small">Date</label>
+                        <p class="mb-0">{{ pr.date|date:"d/m/Y" }}</p>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label text-muted small">Required By</label>
+                        <p class="mb-0">{{ pr.required_by_date|date:"d/m/Y"|default:"-" }}</p>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label text-muted small">Department</label>
+                        <p class="mb-0">{{ pr.department.name|default:"-" }}</p>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label text-muted small">Requested By</label>
+                        <p class="mb-0">{{ pr.requested_by.get_full_name|default:pr.requested_by.username }}</p>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label text-muted small">Priority</label>
+                        <p class="mb-0">{{ pr.get_priority_display }}</p>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label text-muted small">Status</label>
+                        <p class="mb-0">
+                            {% if pr.status == 'draft' %}<span class="badge bg-secondary">Draft</span>
+                            {% elif pr.status == 'pending' %}<span class="badge" style="background:#fef3c7;color:#92400e;">Pending</span>
+                            {% elif pr.status == 'returned' %}<span class="badge bg-warning text-dark">Returned</span>
+                            {% elif pr.status == 'approved' %}<span class="badge badge-active">Approved</span>
+                            {% elif pr.status == 'rejected' %}<span class="badge badge-inactive">Rejected</span>
+                            {% elif pr.status == 'converted' %}<span class="badge bg-success">Converted</span>
+                            {% else %}<span class="badge bg-secondary">{{ pr.get_status_display }}</span>{% endif %}
+                        </p>
+                    </div>
+                    {% if pr.notes %}
+                    <div class="col-12">
+                        <label class="form-label text-muted small">Notes / Justification</label>
+                        <p class="mb-0">{{ pr.notes }}</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header"><h6 class="mb-0 fw-semibold">Line Items</h6></div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table mb-0">
+                        <thead>
+                            <tr>
+                                <th>Description</th>
+                                <th class="text-center">Qty</th>
+                                <th>Unit</th>
+                                <th class="text-end">Est. Price (AED)</th>
+                                <th class="text-end">Total (AED)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in pr.items.all %}
+                            <tr>
+                                <td>{{ item.description }}</td>
+                                <td class="text-center">{{ item.quantity }}</td>
+                                <td>{{ item.get_unit_display }}</td>
+                                <td class="text-end">{{ item.estimated_price|floatformat:2 }}</td>
+                                <td class="text-end">{{ item.total|floatformat:2 }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="5" class="text-center py-3 text-muted">No items</td></tr>
+                            {% endfor %}
+                        </tbody>
+                        <tfoot>
+                            <tr class="fw-bold">
+                                <td colspan="4" class="text-end">Total (AED)</td>
+                                <td class="text-end">{{ pr.total_amount|floatformat:2 }}</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    {% if pr.attachments.exists %}
+    <div class="card mb-4">
+        <div class="card-header"><h6 class="mb-0 fw-semibold">Attachments</h6></div>
+        <div class="card-body">
+            <ul class="mb-0">
+                {% for att in pr.attachments.all %}
+                <li><a href="{{ att.file.url }}" target="_blank">{{ att.filename|default:att.file.name }}</a></li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+{% if can_reject or can_return %}
+<div class="card mb-4">
+    <div class="card-header"><h6 class="mb-0 fw-semibold">Reject / Return for Revision</h6></div>
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-6">
+                <form method="post" action="{% url 'purchase:pr_reject' pr.pk %}">
+                    {% csrf_token %}
+                    <label class="form-label">Reject with comment</label>
+                    <textarea name="comment" class="form-control mb-2" rows="2" placeholder="Enter rejection reason..."></textarea>
+                    <button type="submit" class="btn btn-danger"><i class="fas fa-times me-2"></i>Reject</button>
+                </form>
+            </div>
+            <div class="col-md-6">
+                <form method="post" action="{% url 'purchase:pr_return' pr.pk %}">
+                    {% csrf_token %}
+                    <label class="form-label">Return for revision with comment</label>
+                    <textarea name="comment" class="form-control mb-2" rows="2" required placeholder="Enter revision feedback..."></textarea>
+                    <button type="submit" class="btn btn-warning"><i class="fas fa-undo me-2"></i>Return for Revision</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<a href="{% url 'purchase:pr_list' %}" class="btn btn-light"><i class="fas fa-arrow-left me-2"></i>Back to List</a>
+{% endblock %}

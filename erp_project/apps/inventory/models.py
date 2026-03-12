@@ -559,12 +559,20 @@ class ConsumableRequest(BaseModel):
     - Or Admin rejects (Rejected)
     
     Note: NOT linked to patients (per rehab audit standards)
+    Supports multiple line items via ConsumableRequestItem.
     """
     STATUS_CHOICES = [
         ('pending', 'Pending'),
         ('approved', 'Approved'),
         ('dispensed', 'Dispensed'),
         ('rejected', 'Rejected'),
+    ]
+    
+    PRIORITY_CHOICES = [
+        ('low', 'Low'),
+        ('medium', 'Medium'),
+        ('high', 'High'),
+        ('urgent', 'Urgent'),
     ]
     
     request_number = models.CharField(max_length=50, unique=True, editable=False)
@@ -576,14 +584,27 @@ class ConsumableRequest(BaseModel):
         related_name='consumable_requests'
     )
     
-    # Item details
+    # Department & Priority
+    department = models.ForeignKey(
+        'hr.Department',
+        on_delete=models.PROTECT,
+        related_name='consumable_requests',
+        null=True,
+        blank=True
+    )
+    priority = models.CharField(max_length=20, choices=PRIORITY_CHOICES, default='medium')
+    required_by_date = models.DateField(null=True, blank=True)
+    
+    # Legacy: single item (nullable for backward compat; use items for new requests)
     item = models.ForeignKey(
         Item,
         on_delete=models.PROTECT,
         related_name='consumable_requests',
-        limit_choices_to={'item_type': 'product', 'status': 'active'}
+        limit_choices_to={'item_type': 'product', 'status': 'active'},
+        null=True,
+        blank=True
     )
-    quantity = models.DecimalField(max_digits=10, decimal_places=2)
+    quantity = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     
     # Warehouse to dispense from (set by admin)
     warehouse = models.ForeignKey(
@@ -638,7 +659,7 @@ class ConsumableRequest(BaseModel):
     )
     dispensed_date = models.DateTimeField(null=True, blank=True)
     
-    # Link to stock movement (created on dispense)
+    # Link to stock movement (created on dispense) - for legacy single-item
     stock_movement = models.ForeignKey(
         StockMovement,
         on_delete=models.SET_NULL,
@@ -650,6 +671,14 @@ class ConsumableRequest(BaseModel):
     class Meta:
         ordering = ['-request_date', '-created_at']
     
+    def get_items_for_dispense(self):
+        """Return line items to dispense: use items if present, else legacy item/quantity."""
+        if self.items.exists():
+            return [(li.item, li.quantity) for li in self.items.all()]
+        if self.item and self.quantity:
+            return [(self.item, self.quantity)]
+        return []
+    
     def __str__(self):
         return f"{self.request_number}: {self.item.name} ({self.quantity})"
     
@@ -657,14 +686,19 @@ class ConsumableRequest(BaseModel):
         if not self.request_number:
             self.request_number = generate_number('CR', ConsumableRequest, 'request_number')
         
-        # Auto-set unit cost from item if not set
-        if not self.unit_cost and self.item:
-            self.unit_cost = self.item.purchase_price or Decimal('0.00')
-        
-        # Calculate total cost
-        self.total_cost = (self.unit_cost * self.quantity).quantize(Decimal('0.01'))
+        # Legacy: Auto-set unit cost and total from item/quantity
+        if self.item and self.quantity:
+            if not self.unit_cost:
+                self.unit_cost = self.item.purchase_price or Decimal('0.00')
+            self.total_cost = (self.unit_cost * self.quantity).quantize(Decimal('0.01'))
         
         super().save(*args, **kwargs)
+    
+    def recalculate_total(self):
+        """Call after saving items to update total_cost."""
+        if self.items.exists():
+            self.total_cost = sum(li.total_cost for li in self.items.all())
+            self.save(update_fields=['total_cost'])
     
     def approve(self, user, warehouse=None):
         """Approve the request (by admin)."""
@@ -698,7 +732,8 @@ class ConsumableRequest(BaseModel):
     def dispense(self, user, warehouse=None):
         """
         Dispense the consumable and reduce stock.
-        Creates a StockMovement record for audit trail.
+        Creates StockMovement record(s) for audit trail.
+        Supports multi-item (ConsumableRequestItem) or legacy single item.
         """
         from django.utils import timezone
         from datetime import date
@@ -706,13 +741,17 @@ class ConsumableRequest(BaseModel):
         if self.status not in ['approved', 'pending']:
             raise ValidationError("Only approved or pending requests can be dispensed.")
         
-        # Use provided warehouse or default
+        items_to_dispense = self.get_items_for_dispense()
+        if not items_to_dispense:
+            raise ValidationError("No items to dispense.")
+        
         dispense_warehouse = warehouse or self.warehouse
         if not dispense_warehouse:
-            # Try to find a warehouse with stock
+            # Try to find a warehouse with stock for first item
+            first_item, first_qty = items_to_dispense[0]
             stock_record = Stock.objects.filter(
-                item=self.item,
-                quantity__gte=self.quantity,
+                item=first_item,
+                quantity__gte=first_qty,
                 warehouse__status='active'
             ).first()
             if stock_record:
@@ -720,45 +759,93 @@ class ConsumableRequest(BaseModel):
             else:
                 raise ValidationError("No warehouse specified and no warehouse found with sufficient stock.")
         
-        # Check stock availability
-        try:
-            stock = Stock.objects.get(item=self.item, warehouse=dispense_warehouse)
-            if stock.quantity < self.quantity:
-                raise ValidationError(
-                    f"Insufficient stock in {dispense_warehouse.name}. "
-                    f"Available: {stock.quantity}, Requested: {self.quantity}"
-                )
-        except Stock.DoesNotExist:
-            raise ValidationError(f"No stock record found for {self.item.name} in {dispense_warehouse.name}")
+        movements = []
+        line_items = list(self.items.all()) if self.items.exists() else []
+        for idx, (item, qty) in enumerate(items_to_dispense):
+            unit_cost = line_items[idx].unit_cost if idx < len(line_items) else (
+                self.unit_cost if self.item else (item.purchase_price or Decimal('0.00'))
+            )
+            try:
+                stock = Stock.objects.get(item=item, warehouse=dispense_warehouse)
+                if stock.quantity < qty:
+                    raise ValidationError(
+                        f"Insufficient stock for {item.name} in {dispense_warehouse.name}. "
+                        f"Available: {stock.quantity}, Requested: {qty}"
+                    )
+            except Stock.DoesNotExist:
+                raise ValidationError(f"No stock record for {item.name} in {dispense_warehouse.name}")
+            
+            movement = StockMovement.objects.create(
+                item=item,
+                warehouse=dispense_warehouse,
+                movement_type='out',
+                source='manual',
+                quantity=qty,
+                unit_cost=unit_cost,
+                reference=f"Consumable Request: {self.request_number}",
+                notes=f"Dispensed to: {self.requested_by.get_full_name() or self.requested_by.username}",
+                movement_date=date.today(),
+            )
+            movement.execute(user=user)
+            movements.append(movement)
         
-        # Create stock movement (Stock Out) — atomic quantity + GL
-        movement = StockMovement.objects.create(
-            item=self.item,
-            warehouse=dispense_warehouse,
-            movement_type='out',
-            source='manual',
-            quantity=self.quantity,
-            unit_cost=self.unit_cost,
-            reference=f"Consumable Request: {self.request_number}",
-            notes=f"Dispensed to: {self.requested_by.get_full_name() or self.requested_by.username}",
-            movement_date=date.today(),
-        )
-
-        movement.execute(user=user)
-        
-        # Update request
         self.status = 'dispensed'
         self.warehouse = dispense_warehouse
         self.dispensed_by = user
         self.dispensed_date = timezone.now()
-        self.stock_movement = movement
-        
-        # If not already approved, mark as approved too
+        self.stock_movement = movements[0] if movements else None
         if not self.approved_by:
             self.approved_by = user
             self.approved_date = timezone.now()
-        
         self.save()
         
-        return movement
+        return movements[0] if movements else None
+
+
+class ConsumableRequestItem(models.Model):
+    """Line items for consumable requests (multi-item support)."""
+    consumable_request = models.ForeignKey(
+        ConsumableRequest,
+        on_delete=models.CASCADE,
+        related_name='items'
+    )
+    item = models.ForeignKey(
+        Item,
+        on_delete=models.PROTECT,
+        related_name='consumable_request_items',
+        limit_choices_to={'item_type': 'product', 'status': 'active'}
+    )
+    quantity = models.DecimalField(max_digits=10, decimal_places=2)
+    unit_cost = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    total_cost = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    
+    class Meta:
+        ordering = ['id']
+    
+    def save(self, *args, **kwargs):
+        if not self.unit_cost and self.item:
+            self.unit_cost = self.item.purchase_price or Decimal('0.00')
+        self.total_cost = (self.unit_cost * self.quantity).quantize(Decimal('0.01'))
+        super().save(*args, **kwargs)
+
+
+class ConsumableRequestAttachment(models.Model):
+    """Attachments for consumable requests."""
+    consumable_request = models.ForeignKey(
+        ConsumableRequest,
+        on_delete=models.CASCADE,
+        related_name='attachments'
+    )
+    file = models.FileField(upload_to='consumable_request_attachments/%Y/%m/')
+    filename = models.CharField(max_length=255, blank=True)
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+    uploaded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True
+    )
+    
+    class Meta:
+        ordering = ['-uploaded_at']
 

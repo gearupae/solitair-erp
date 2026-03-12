@@ -418,6 +418,15 @@
                 </li>
                 {% endif %}
                 
+                <!-- Service Request -->
+                {% if is_superuser or 'service_request' in user_permissions %}
+                <li class="nav-item">
+                    <a class="nav-link {% if 'service-request' in request.path %}active{% endif %}" href="{% url 'service_request:sr_list' %}">
+                        <i class="fas fa-tools me-1"></i>Service Requests
+                    </a>
+                </li>
+                {% endif %}
+                
                 <!-- Documents -->
                 {% if is_superuser or 'documents' in user_permissions %}
                 <li class="nav-item dropdown">
@@ -468,6 +477,12 @@
                         <li>
                             <a class="dropdown-item" href="{% url 'settings:audit_log' %}">
                                 <i class="fas fa-history me-2"></i>Audit Log
+                            </a>
+                        </li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'settings:approval_configuration' %}">
+                                <i class="fas fa-check-double me-2"></i>Approval Configuration
                             </a>
                         </li>
                     </ul>

@@ -44,15 +44,20 @@ class PurchaseRequestForm(forms.ModelForm):
     
     class Meta:
         model = PurchaseRequest
-        fields = ['date', 'required_by_date', 'status', 'notes']
+        fields = ['date', 'required_by_date', 'department', 'priority', 'status', 'notes']
         widgets = {
             'date': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}, format='%Y-%m-%d'),
             'required_by_date': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}, format='%Y-%m-%d'),
+            'department': forms.Select(attrs={'class': 'form-select'}),
+            'priority': forms.Select(attrs={'class': 'form-select'}),
             'notes': forms.Textarea(attrs={'rows': 2, 'class': 'form-control'}),
         }
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        from apps.hr.models import Department
+        self.fields['department'].queryset = Department.objects.filter(is_active=True)
+        self.fields['department'].required = False
         self.fields['status'].widget.attrs['class'] = 'form-select'
         self.fields['required_by_date'].required = False
         self.fields['notes'].required = False
@@ -61,12 +66,14 @@ class PurchaseRequestForm(forms.ModelForm):
 class PurchaseRequestItemForm(forms.ModelForm):
     class Meta:
         model = PurchaseRequestItem
-        fields = ['description', 'quantity', 'estimated_price']
+        fields = ['description', 'quantity', 'unit', 'estimated_price']
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields['unit'].widget.attrs['class'] = 'form-select'
         for field in self.fields.values():
-            field.widget.attrs['class'] = 'form-control'
+            if field.widget.attrs.get('class') != 'form-select':
+                field.widget.attrs['class'] = 'form-control'
 
 
 PurchaseRequestItemFormSet = forms.inlineformset_factory(
@@ -83,7 +90,7 @@ class PurchaseOrderForm(forms.ModelForm):
     
     class Meta:
         model = PurchaseOrder
-        fields = ['vendor', 'purchase_request', 'order_date', 'expected_delivery_date', 'status', 'notes']
+        fields = ['vendor', 'purchase_request', 'service_request', 'order_date', 'expected_delivery_date', 'status', 'notes']
         widgets = {
             'order_date': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}, format='%Y-%m-%d'),
             'expected_delivery_date': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}, format='%Y-%m-%d'),
@@ -107,7 +114,21 @@ class PurchaseOrderForm(forms.ModelForm):
         
         self.fields['purchase_request'].widget.attrs['class'] = 'form-select'
         self.fields['purchase_request'].required = False
+        
+        # Show approved SRs (and current SR if editing)
+        from apps.service_request.models import ServiceRequest
+        approved_srs = ServiceRequest.objects.filter(is_active=True, status='approved')
+        if self.instance and self.instance.pk and self.instance.service_request:
+            sr = self.instance.service_request
+            self.fields['service_request'].queryset = approved_srs | ServiceRequest.objects.filter(pk=sr.pk)
+        else:
+            self.fields['service_request'].queryset = approved_srs
+        
+        self.fields['service_request'].widget.attrs['class'] = 'form-select'
+        self.fields['service_request'].required = False
+
         self.fields['status'].widget.attrs['class'] = 'form-select'
+        self.fields['status'].choices = PurchaseOrder.STATUS_CHOICES
         self.fields['expected_delivery_date'].required = False
         self.fields['notes'].required = False
 

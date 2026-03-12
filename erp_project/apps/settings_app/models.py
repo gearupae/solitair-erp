@@ -102,6 +102,7 @@ class ModulePermission(models.Model):
         ('documents', 'Documents'),
         ('assets', 'Fixed Assets'),
         ('property', 'Property Management'),
+        ('service_request', 'Service Request'),
         ('settings', 'Settings'),
     ]
     
@@ -252,7 +253,7 @@ class AuditLog(models.Model):
 
 class ApprovalWorkflow(BaseModel):
     """
-    Approval workflow configuration.
+    Approval workflow configuration (legacy - use ApprovalConfiguration for new modules).
     """
     MODULE_CHOICES = [
         ('purchase_request', 'Purchase Request'),
@@ -270,4 +271,168 @@ class ApprovalWorkflow(BaseModel):
     
     def __str__(self):
         return f"{self.get_module_display()} - {self.approver or 'Auto Approve'}"
+
+
+# ============ APPROVAL CONFIGURATION ============
+
+class ApprovalConfiguration(BaseModel):
+    """
+    Configures who approves what for each request module.
+    Supports Single Level (one approver) or Multi Level (sequential by amount).
+    """
+    APPROVAL_TYPE_CHOICES = [
+        ('single', 'Single Level'),
+        ('multi', 'Multi Level'),
+    ]
+    
+    MODULE_CHOICES = [
+        ('purchase_request', 'Purchase Request'),
+        ('inventory_request', 'Consumable / Inventory Request'),
+        ('service_request', 'Service Request'),
+    ]
+    
+    module = models.CharField(max_length=50, choices=MODULE_CHOICES, unique=True)
+    approval_type = models.CharField(max_length=20, choices=APPROVAL_TYPE_CHOICES, default='single')
+    
+    # Single level: one approver
+    default_approver = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='approval_configs_single'
+    )
+    
+    # If no config, use first superuser as fallback
+    @classmethod
+    def get_approver_for_amount(cls, module, amount):
+        """
+        Get the approver for a given module and amount (AED).
+        For single level: returns default_approver.
+        For multi level: returns approver for the matching amount threshold.
+        """
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        
+        config = cls.objects.filter(module=module, is_active=True).first()
+        if not config:
+            # Default: first active superuser
+            return User.objects.filter(is_superuser=True, is_active=True).first()
+        
+        if config.approval_type == 'single':
+            return config.default_approver or User.objects.filter(is_superuser=True, is_active=True).first()
+        
+        # Multi level: find matching level (levels ordered by amount ascending)
+        level = config.levels.filter(is_active=True).order_by('amount_threshold').filter(
+            amount_threshold__gte=amount
+        ).first()
+        if not level:
+            # Amount exceeds all levels - use highest level's approver
+            level = config.levels.filter(is_active=True).order_by('-amount_threshold').first()
+        return level.approver if level else config.default_approver
+    
+    @classmethod
+    def notify_approver(cls, request_obj, module):
+        """Create in-app notification for approver when action is needed."""
+        amount = getattr(request_obj, 'total_amount', 0) or getattr(request_obj, 'total_cost', 0) or 0
+        approver = cls.get_approver_for_amount(module, amount)
+        if approver:
+            ref = getattr(request_obj, 'sr_number', None) or getattr(request_obj, 'pr_number', None) or getattr(request_obj, 'request_number', None) or str(request_obj.pk)
+            pk = getattr(request_obj, 'pk', None)
+            link_map = {
+                'service_request': f'/service-request/{pk}/' if pk else '',
+                'purchase_request': f'/purchase/requests/{pk}/' if pk else '',
+                'inventory_request': f'/inventory/consumables/{pk}/' if pk else '',
+            }
+            link = link_map.get(module, str(pk) if pk else '')
+            Notification.create(
+                user=approver,
+                title=f'Approval Required: {module.replace("_", " ").title()}',
+                message=f'{ref} requires your approval. Amount: AED {amount:,.2f}',
+                link=link,
+            )
+
+
+class ApprovalConfigurationLevel(models.Model):
+    """
+    Multi-level approval: amount threshold (AED) and approver.
+    Levels are evaluated in order of amount_threshold ascending.
+    """
+    configuration = models.ForeignKey(
+        ApprovalConfiguration,
+        on_delete=models.CASCADE,
+        related_name='levels'
+    )
+    amount_threshold = models.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        help_text='Amount up to (AED) - requests at or below this go to this approver'
+    )
+    approver = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='approval_config_levels'
+    )
+    order = models.PositiveIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+    
+    class Meta:
+        ordering = ['order', 'amount_threshold']
+    
+    def __str__(self):
+        return f"Up to AED {self.amount_threshold} → {self.approver}"
+
+
+class ApprovalAuditLog(models.Model):
+    """
+    Full audit trail: approver name, action, timestamp, comment.
+    """
+    ACTION_CHOICES = [
+        ('approve', 'Approved'),
+        ('reject', 'Rejected'),
+        ('return', 'Returned for Revision'),
+    ]
+    
+    module = models.CharField(max_length=50)
+    reference = models.CharField(max_length=100)
+    approver = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='approval_audit_logs'
+    )
+    action = models.CharField(max_length=20, choices=ACTION_CHOICES)
+    comment = models.TextField(blank=True)
+    timestamp = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        ordering = ['-timestamp']
+    
+    def __str__(self):
+        return f"{self.reference} - {self.get_action_display()} by {self.approver}"
+
+
+class Notification(models.Model):
+    """In-app notification for users."""
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='notifications'
+    )
+    title = models.CharField(max_length=200)
+    message = models.TextField(blank=True)
+    link = models.CharField(max_length=500, blank=True)
+    is_read = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        ordering = ['-created_at']
+    
+    @classmethod
+    def create(cls, user, title, message, link=None):
+        if link and not isinstance(link, str):
+            link = str(link)
+        return cls.objects.create(user=user, title=title, message=message, link=link or '')
 

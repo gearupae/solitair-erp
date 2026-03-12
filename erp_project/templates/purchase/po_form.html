@@ -60,6 +60,14 @@
                     {% endif %}
                 </div>
                 <div class="col-md-4">
+                    <label class="form-label">From SR</label>
+                    {{ form.service_request }}
+                    {% if form.service_request.errors %}<div class="text-danger small">{{ form.service_request.errors|join:", " }}</div>{% endif %}
+                    <small class="text-muted d-block mt-1">
+                        <i class="fas fa-info-circle me-1"></i>Select vendor below. Items load from SR.
+                    </small>
+                </div>
+                <div class="col-md-4">
                     <label class="form-label">Status</label>
                     {{ form.status }}
                     {% if form.status.errors %}<div class="text-danger small">{{ form.status.errors|join:", " }}</div>{% endif %}
@@ -295,6 +303,45 @@ function loadPRItems(prId) {
         });
 }
 
+function loadSRItems(srId) {
+    if (!srId) {
+        const tbody = document.getElementById('itemsBody');
+        tbody.innerHTML = '';
+        formCount = 0;
+        document.getElementById('id_items-TOTAL_FORMS').value = 0;
+        calculateTotals();
+        return;
+    }
+    
+    const url = `/service-request/${srId}/items/`;
+    fetch(url)
+        .then(response => response.json())
+        .then(data => {
+            const tbody = document.getElementById('itemsBody');
+            tbody.innerHTML = '';
+            formCount = 0;
+            
+            if (data.items && data.items.length > 0) {
+                data.items.forEach(item => {
+                    addItemRow(
+                        item.description || '',
+                        item.quantity || '1',
+                        item.unit_price || item.estimated_price || '0',
+                        defaultTaxCodeId
+                    );
+                });
+            } else {
+                addItemRow();
+            }
+            
+            calculateTotals();
+        })
+        .catch(error => {
+            console.error('Error loading SR items:', error);
+            alert('Error loading Service Request items. Please try again.');
+        });
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     document.querySelectorAll('.item-row').forEach(row => {
         const qty = row.querySelector('.item-qty');
@@ -302,15 +349,29 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     
     const prSelect = document.getElementById('id_purchase_request');
+    const srSelect = document.getElementById('id_service_request');
+    
+    function loadFromSource() {
+        const prId = prSelect ? prSelect.value : '';
+        const srId = srSelect ? srSelect.value : '';
+        if (prId) {
+            if (srId && srSelect) srSelect.value = '';
+            loadPRItems(prId);
+        } else if (srId) {
+            if (prSelect) prSelect.value = '';
+            loadSRItems(srId);
+        } else {
+            loadPRItems(null);
+        }
+    }
+    
     if (prSelect) {
         prSelect.addEventListener('change', function() {
             const prId = this.value;
             if (prId) {
-                const existingRows = document.querySelectorAll('.item-row:not([style*="display: none"])');
-                if (existingRows.length > 0) {
-                    if (!confirm('Loading PR items will replace existing items. Continue?')) {
-                        return;
-                    }
+                if (srSelect && srSelect.value) {
+                    if (!confirm('Loading PR items will replace existing items. Continue?')) return;
+                    srSelect.value = '';
                 }
                 loadPRItems(prId);
             } else {
@@ -318,6 +379,39 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     }
+    
+    if (srSelect) {
+        srSelect.addEventListener('change', function() {
+            const srId = this.value;
+            if (srId) {
+                if (prSelect && prSelect.value) {
+                    if (!confirm('Loading SR items will replace existing items. Continue?')) return;
+                    prSelect.value = '';
+                }
+                loadSRItems(srId);
+            } else {
+                loadSRItems(null);
+            }
+        });
+    }
+    
+    {% if preselect_pr %}
+    const preselectPr = '{{ preselect_pr }}';
+    if (preselectPr && prSelect && document.querySelector('#id_purchase_request option[value="' + preselectPr + '"]')) {
+        prSelect.value = preselectPr;
+        if (srSelect) srSelect.value = '';
+        loadPRItems(preselectPr);
+    }
+    {% endif %}
+    
+    {% if preselect_sr %}
+    const preselectSr = '{{ preselect_sr }}';
+    if (preselectSr && srSelect && document.querySelector('#id_service_request option[value="' + preselectSr + '"]')) {
+        srSelect.value = preselectSr;
+        if (prSelect) prSelect.value = '';
+        loadSRItems(preselectSr);
+    }
+    {% endif %}
 });
 </script>
 {% endblock %}

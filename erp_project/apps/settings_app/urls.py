@@ -24,6 +24,9 @@ urlpatterns = [
     
     # Audit Log
     path('audit-log/', views.AuditLogListView.as_view(), name='audit_log'),
+    
+    # Approval Configuration
+    path('approval-configuration/', views.ApprovalConfigurationView.as_view(), name='approval_configuration'),
 ]
 
 

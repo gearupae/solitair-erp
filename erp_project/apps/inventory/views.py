@@ -13,10 +13,11 @@ from django.db import transaction
 from django.http import HttpResponse
 from decimal import Decimal
 
-from .models import Category, Warehouse, Item, Stock, StockMovement, ConsumableRequest, ConditionLog
+from .models import Category, Warehouse, Item, Stock, StockMovement, ConsumableRequest, ConsumableRequestItem, ConsumableRequestAttachment, ConditionLog
 from .forms import (
     CategoryForm, WarehouseForm, ItemForm, StockAdjustmentForm,
-    ConsumableRequestForm, ConsumableRequestApproveForm, ConsumableRequestRejectForm,
+    ConsumableRequestForm, ConsumableRequestItemFormSet,
+    ConsumableRequestApproveForm, ConsumableRequestRejectForm,
     StockTransferForm, ItemConditionForm,
 )
 from apps.core.mixins import PermissionRequiredMixin, CreatePermissionMixin, UpdatePermissionMixin
@@ -808,8 +809,8 @@ class ConsumableRequestListView(PermissionRequiredMixin, ListView):
     def get_queryset(self):
         user = self.request.user
         queryset = ConsumableRequest.objects.filter(is_active=True).select_related(
-            'item', 'requested_by', 'warehouse', 'approved_by', 'dispensed_by'
-        )
+            'item', 'requested_by', 'warehouse', 'approved_by', 'dispensed_by', 'department'
+        ).prefetch_related('items')
         
         # Non-admins only see their own requests
         if not user.is_superuser and not PermissionChecker.has_permission(user, 'inventory', 'edit'):
@@ -825,9 +826,10 @@ class ConsumableRequestListView(PermissionRequiredMixin, ListView):
             queryset = queryset.filter(
                 Q(request_number__icontains=search) |
                 Q(item__name__icontains=search) |
+                Q(items__item__name__icontains=search) |
                 Q(requested_by__first_name__icontains=search) |
                 Q(requested_by__last_name__icontains=search)
-            )
+            ).distinct()
         
         return queryset.order_by('-created_at')
     
@@ -847,55 +849,45 @@ class ConsumableRequestListView(PermissionRequiredMixin, ListView):
             context['approved_count'] = all_requests.filter(status='approved').count()
             context['dispensed_count'] = all_requests.filter(status='dispensed').count()
         
-        # Create form (for inline creation)
-        context['form'] = ConsumableRequestForm()
-        
         return context
-    
-    def post(self, request, *args, **kwargs):
-        """Handle inline request creation."""
-        form = ConsumableRequestForm(request.POST)
-        if form.is_valid():
-            consumable_request = form.save(commit=False)
-            consumable_request.requested_by = request.user
-            consumable_request.save()
-            messages.success(request, f'Request {consumable_request.request_number} submitted successfully.')
-        else:
-            for field, errors in form.errors.items():
-                for error in errors:
-                    messages.error(request, f'{field}: {error}')
-        return redirect('inventory:consumable_request_list')
 
 
 @login_required
 def consumable_request_create(request):
     """
-    Simple nurse-facing form for creating requests.
-    Mobile-friendly, max 4 fields.
+    Full-page form for creating consumable requests with multiple line items.
     """
+    from datetime import date
+    
     if request.method == 'POST':
         form = ConsumableRequestForm(request.POST)
-        if form.is_valid():
+        items_formset = ConsumableRequestItemFormSet(request.POST)
+        if form.is_valid() and items_formset.is_valid():
             consumable_request = form.save(commit=False)
             consumable_request.requested_by = request.user
             consumable_request.save()
+            items_formset.instance = consumable_request
+            items_formset.save()
+            consumable_request.recalculate_total()
+            # Save attachments
+            for f in request.FILES.getlist('attachments'):
+                ConsumableRequestAttachment.objects.create(
+                    consumable_request=consumable_request,
+                    file=f,
+                    filename=f.name,
+                    uploaded_by=request.user
+                )
             messages.success(request, f'Request {consumable_request.request_number} submitted!')
             return redirect('inventory:consumable_request_list')
     else:
         form = ConsumableRequestForm()
-    
-    # Get items with their stock levels for display
-    items_with_stock = Item.objects.filter(
-        is_active=True, 
-        item_type='product'
-    ).annotate(
-        total_stock=Sum('stocks__quantity')
-    ).values('id', 'total_stock')
+        items_formset = ConsumableRequestItemFormSet()
     
     return render(request, 'inventory/consumable_request_form.html', {
-        'title': 'Request Consumable',
+        'title': 'Request Consumables',
         'form': form,
-        'items_with_stock': items_with_stock,
+        'items_formset': items_formset,
+        'today': date.today().isoformat(),
     })
 
 
@@ -904,8 +896,8 @@ def consumable_request_detail(request, pk):
     """View request details."""
     consumable_request = get_object_or_404(
         ConsumableRequest.objects.select_related(
-            'item', 'requested_by', 'warehouse', 'approved_by', 'dispensed_by', 'stock_movement'
-        ),
+            'item', 'requested_by', 'warehouse', 'approved_by', 'dispensed_by', 'stock_movement', 'department'
+        ).prefetch_related('items', 'items__item', 'attachments'),
         pk=pk
     )
     
@@ -926,8 +918,7 @@ def consumable_request_detail(request, pk):
     # For admin: show approve/dispense forms
     if is_admin and consumable_request.status in ['pending', 'approved']:
         context['approve_form'] = ConsumableRequestApproveForm(
-            item=consumable_request.item,
-            quantity=consumable_request.quantity
+            consumable_request=consumable_request
         )
         context['reject_form'] = ConsumableRequestRejectForm()
     
@@ -950,8 +941,7 @@ def consumable_request_approve(request, pk):
     if request.method == 'POST':
         form = ConsumableRequestApproveForm(
             request.POST,
-            item=consumable_request.item,
-            quantity=consumable_request.quantity
+            consumable_request=consumable_request
         )
         if form.is_valid():
             try:
@@ -986,18 +976,17 @@ def consumable_request_dispense(request, pk):
     if request.method == 'POST':
         form = ConsumableRequestApproveForm(
             request.POST,
-            item=consumable_request.item,
-            quantity=consumable_request.quantity
+            consumable_request=consumable_request
         )
         if form.is_valid():
             try:
                 warehouse = form.cleaned_data['warehouse']
                 consumable_request.dispense(request.user, warehouse)
-                messages.success(
-                    request, 
-                    f'Request {consumable_request.request_number} dispensed. '
-                    f'Stock reduced by {consumable_request.quantity} {consumable_request.item.unit}.'
-                )
+                items_dispensed = consumable_request.get_items_for_dispense()
+                msg = f'Request {consumable_request.request_number} dispensed.'
+                if items_dispensed:
+                    msg += f' Stock reduced for {len(items_dispensed)} item(s).'
+                messages.success(request, msg)
             except Exception as e:
                 messages.error(request, f'Error dispensing: {str(e)}')
         else:

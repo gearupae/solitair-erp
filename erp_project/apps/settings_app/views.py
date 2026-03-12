@@ -9,7 +9,10 @@ from django.contrib import messages
 from django.views.generic import ListView, CreateView, UpdateView, View, TemplateView
 from django.urls import reverse_lazy
 from django.http import JsonResponse
-from .models import Role, Permission, RolePermission, UserRole, UserProfile, CompanySettings, AuditLog, ModulePermission
+from .models import (
+    Role, Permission, RolePermission, UserRole, UserProfile, CompanySettings, AuditLog, ModulePermission,
+    ApprovalConfiguration, ApprovalConfigurationLevel
+)
 from .forms import UserForm, RoleForm, CompanySettingsForm
 from apps.core.mixins import PermissionRequiredMixin
 
@@ -287,10 +290,84 @@ class AuditLogListView(PermissionRequiredMixin, ListView):
             ('settings', 'Settings'),
         ]
         return context
+
+
+class ApprovalConfigurationView(PermissionRequiredMixin, TemplateView):
+    """
+    Configure approval workflows for Purchase Request, Inventory Request, Service Request.
+    Single Level: one approver regardless of amount.
+    Multi Level: sequential approvers based on value (AED).
+    """
+    template_name = 'settings/approval_configuration.html'
+    module_name = 'settings'
+    permission_type = 'edit'
     
     def get_context_data(self, **kwargs):
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        
         context = super().get_context_data(**kwargs)
-        context['title'] = 'Audit Log'
-        context['action_choices'] = AuditLog.ACTION_CHOICES
+        context['title'] = 'Approval Configuration'
+        context['module_choices'] = ApprovalConfiguration.MODULE_CHOICES
+        context['approval_type_choices'] = ApprovalConfiguration.APPROVAL_TYPE_CHOICES
+        context['users'] = User.objects.filter(is_active=True).order_by('username')
+        
+        config_list = []
+        for module_code, module_name in ApprovalConfiguration.MODULE_CHOICES:
+            config = ApprovalConfiguration.objects.filter(module=module_code, is_active=True).first()
+            levels = list(config.levels.all().order_by('order', 'amount_threshold')) if config else []
+            config_list.append({
+                'module_code': module_code,
+                'module_name': module_name,
+                'config': config,
+                'levels': levels,
+            })
+        context['config_list'] = config_list
+        
         return context
+    
+    def post(self, request, *args, **kwargs):
+        module = request.POST.get('module')
+        approval_type = request.POST.get('approval_type')
+        default_approver_id = request.POST.get('default_approver') or None
+        
+        if module not in dict(ApprovalConfiguration.MODULE_CHOICES):
+            messages.error(request, 'Invalid module selected.')
+            return redirect('settings:approval_configuration')
+        
+        config, _ = ApprovalConfiguration.objects.update_or_create(
+            module=module,
+            defaults={
+                'approval_type': approval_type or 'single',
+                'default_approver_id': default_approver_id if default_approver_id else None,
+            }
+        )
+        
+        # Multi-level: save levels
+        if approval_type == 'multi':
+            # Remove existing levels
+            config.levels.all().delete()
+            
+            # Parse level data from POST (levels-0-amount, levels-0-approver, etc.)
+            level_idx = 0
+            while True:
+                amount = request.POST.get(f'levels-{level_idx}-amount')
+                approver_id = request.POST.get(f'levels-{level_idx}-approver')
+                if amount is None:
+                    break
+                try:
+                    amount_val = float(amount) if amount else 0
+                    if amount_val > 0 and approver_id:
+                        ApprovalConfigurationLevel.objects.create(
+                            configuration=config,
+                            amount_threshold=amount_val,
+                            approver_id=approver_id,
+                            order=level_idx
+                        )
+                except (ValueError, TypeError):
+                    pass
+                level_idx += 1
+        
+        messages.success(request, f'Approval configuration for {dict(ApprovalConfiguration.MODULE_CHOICES).get(module, module)} saved.')
+        return redirect('settings:approval_configuration')
 

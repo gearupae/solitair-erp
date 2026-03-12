@@ -36,6 +36,7 @@ INSTALLED_APPS = [
     # Local apps
     'apps.core',
     'apps.settings_app',
+    'apps.service_request',
     'apps.crm',
     'apps.sales',
     'apps.purchase',
@@ -168,6 +169,8 @@ NUMBER_SERIES = {
     'QUOTATION': {'prefix': 'QUO', 'padding': 4},
     'INVOICE': {'prefix': 'INV', 'padding': 4},
     'PURCHASE_REQUEST': {'prefix': 'PR', 'padding': 4},
+    'SERVICE_REQUEST': {'prefix': 'SR', 'padding': 4},
+    'SERVICE_ORDER': {'prefix': 'SO', 'padding': 4},
     'PURCHASE_ORDER': {'prefix': 'PO', 'padding': 4},
     'BILL': {'prefix': 'BILL', 'padding': 4},
     'EMPLOYEE': {'prefix': 'EMP', 'padding': 4},

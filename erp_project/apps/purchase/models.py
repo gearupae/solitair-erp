@@ -60,7 +60,15 @@ class PurchaseRequest(BaseModel):
         ('pending', 'Pending Approval'),
         ('approved', 'Approved'),
         ('rejected', 'Rejected'),
+        ('returned', 'Returned for Revision'),
         ('converted', 'Converted to PO'),
+    ]
+    
+    PRIORITY_CHOICES = [
+        ('low', 'Low'),
+        ('medium', 'Medium'),
+        ('high', 'High'),
+        ('urgent', 'Urgent'),
     ]
     
     pr_number = models.CharField(max_length=50, unique=True, editable=False)
@@ -71,11 +79,22 @@ class PurchaseRequest(BaseModel):
         related_name='purchase_requests'
     )
     required_by_date = models.DateField(null=True, blank=True)
+    department = models.ForeignKey(
+        'hr.Department',
+        on_delete=models.PROTECT,
+        related_name='purchase_requests',
+        null=True,
+        blank=True
+    )
+    priority = models.CharField(max_length=20, choices=PRIORITY_CHOICES, default='medium')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft')
     notes = models.TextField(blank=True)
     
     # Calculated
     total_amount = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    
+    # Rejection/return comments from approver
+    rejection_reason = models.TextField(blank=True)
     
     class Meta:
         ordering = ['-created_at']
@@ -97,6 +116,15 @@ class PurchaseRequestItem(models.Model):
     """
     Line items for purchase requests.
     """
+    UNIT_CHOICES = [
+        ('pcs', 'Pcs'),
+        ('box', 'Box'),
+        ('kg', 'Kg'),
+        ('ltr', 'Ltr'),
+        ('set', 'Set'),
+        ('other', 'Other'),
+    ]
+    
     purchase_request = models.ForeignKey(
         PurchaseRequest,
         on_delete=models.CASCADE,
@@ -104,6 +132,7 @@ class PurchaseRequestItem(models.Model):
     )
     description = models.CharField(max_length=500)
     quantity = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('1.00'))
+    unit = models.CharField(max_length=20, choices=UNIT_CHOICES, default='pcs')
     estimated_price = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     total = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     
@@ -111,8 +140,29 @@ class PurchaseRequestItem(models.Model):
         ordering = ['id']
     
     def save(self, *args, **kwargs):
-        self.total = self.quantity * self.estimated_price
+        self.total = (self.quantity * self.estimated_price).quantize(Decimal('0.01'))
         super().save(*args, **kwargs)
+
+
+class PurchaseRequestAttachment(models.Model):
+    """Attachments for purchase requests."""
+    purchase_request = models.ForeignKey(
+        PurchaseRequest,
+        on_delete=models.CASCADE,
+        related_name='attachments'
+    )
+    file = models.FileField(upload_to='purchase_request_attachments/%Y/%m/')
+    filename = models.CharField(max_length=255, blank=True)
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+    uploaded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True
+    )
+    
+    class Meta:
+        ordering = ['-uploaded_at']
 
 
 class PurchaseOrder(BaseModel):
@@ -130,6 +180,13 @@ class PurchaseOrder(BaseModel):
     po_number = models.CharField(max_length=50, unique=True, editable=False)
     purchase_request = models.ForeignKey(
         PurchaseRequest,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='purchase_orders'
+    )
+    service_request = models.ForeignKey(
+        'service_request.ServiceRequest',
         on_delete=models.SET_NULL,
         null=True,
         blank=True,

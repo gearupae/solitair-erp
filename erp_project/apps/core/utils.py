@@ -87,7 +87,10 @@ class PermissionChecker:
         
         user_roles = UserRole.objects.filter(user=user, is_active=True).values_list('role_id', flat=True)
         
-        # Map permission types to model fields
+        # Map permission types to model fields (ModulePermission has view, create, edit, delete only)
+        # 'approve' maps to 'edit' - users who can edit can typically approve
+        if permission_type == 'approve':
+            permission_type = 'edit'
         permission_field = f'can_{permission_type}'
         
         return ModulePermission.objects.filter(

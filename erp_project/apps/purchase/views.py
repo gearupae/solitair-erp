@@ -6,7 +6,7 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.views.generic import ListView, CreateView, UpdateView, DetailView
-from django.urls import reverse_lazy
+from django.urls import reverse, reverse_lazy
 from django.db.models import Q, Sum
 from django.core.exceptions import ValidationError
 from django.http import JsonResponse
@@ -15,7 +15,7 @@ from datetime import date
 from decimal import Decimal
 
 from .models import (
-    Vendor, PurchaseRequest, PurchaseRequestItem,
+    Vendor, PurchaseRequest, PurchaseRequestItem, PurchaseRequestAttachment,
     PurchaseOrder, PurchaseOrderItem, VendorBill, VendorBillItem,
     ExpenseClaim, ExpenseClaimItem, RecurringExpense, RecurringExpenseLog
 )
@@ -140,6 +140,7 @@ class PurchaseRequestListView(PermissionRequiredMixin, ListView):
         context['can_edit'] = self.request.user.is_superuser or PermissionChecker.has_permission(self.request.user, 'purchase', 'edit')
         context['can_delete'] = self.request.user.is_superuser or PermissionChecker.has_permission(self.request.user, 'purchase', 'delete')
         context['can_approve'] = self.request.user.is_superuser or PermissionChecker.has_permission(self.request.user, 'purchase', 'approve')
+        context['can_convert'] = self.request.user.is_superuser or PermissionChecker.has_permission(self.request.user, 'purchase', 'create')
         context['today'] = date.today().isoformat()
         return context
 
@@ -180,6 +181,14 @@ class PurchaseRequestCreateView(CreatePermissionMixin, CreateView):
         items_formset.instance = self.object
         items_formset.save()
         self.object.calculate_total()
+        # Save attachments
+        for f in self.request.FILES.getlist('attachments'):
+            PurchaseRequestAttachment.objects.create(
+                purchase_request=self.object,
+                file=f,
+                filename=f.name,
+                uploaded_by=self.request.user
+            )
         messages.success(self.request, f'Purchase Request {self.object.pr_number} created.')
         return redirect(self.success_url)
     
@@ -199,6 +208,7 @@ class PurchaseRequestUpdateView(UpdatePermissionMixin, UpdateView):
         context = super().get_context_data(**kwargs)
         context['title'] = f'Edit PR: {self.object.pr_number}'
         context['today'] = date.today().isoformat()
+        context['can_convert'] = self.request.user.is_superuser or PermissionChecker.has_permission(self.request.user, 'purchase', 'create')
         if 'items_formset' not in kwargs:
             if self.request.POST:
                 context['items_formset'] = PurchaseRequestItemFormSet(self.request.POST, instance=self.object)
@@ -223,6 +233,14 @@ class PurchaseRequestUpdateView(UpdatePermissionMixin, UpdateView):
         items_formset.instance = self.object
         items_formset.save()
         self.object.calculate_total()
+        # Save new attachments
+        for f in self.request.FILES.getlist('attachments'):
+            PurchaseRequestAttachment.objects.create(
+                purchase_request=self.object,
+                file=f,
+                filename=f.name,
+                uploaded_by=self.request.user
+            )
         messages.success(self.request, f'Purchase Request {self.object.pr_number} updated.')
         return redirect('purchase:pr_list')
     
@@ -232,28 +250,161 @@ class PurchaseRequestUpdateView(UpdatePermissionMixin, UpdateView):
         )
 
 
+class PurchaseRequestDetailView(PermissionRequiredMixin, DetailView):
+    model = PurchaseRequest
+    template_name = 'purchase/pr_detail.html'
+    context_object_name = 'pr'
+    module_name = 'purchase'
+    permission_type = 'view'
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['title'] = f'PR: {self.object.pr_number}'
+        context['can_edit'] = (
+            (self.request.user.is_superuser or
+             PermissionChecker.has_permission(self.request.user, 'purchase', 'edit'))
+            and (self.object.status in ['draft', 'returned'] or
+                 (self.request.user.is_superuser and self.object.status == 'approved'))
+        )
+        context['can_submit'] = context['can_edit'] and self.object.status in ['draft', 'returned']
+        context['can_approve'] = (
+            self.request.user.is_superuser or
+            PermissionChecker.has_permission(self.request.user, 'purchase', 'approve')
+        ) and self.object.status == 'pending'
+        context['can_reject'] = context['can_approve']
+        context['can_return'] = context['can_approve']
+        context['can_convert'] = (
+            self.request.user.is_superuser or
+            PermissionChecker.has_permission(self.request.user, 'purchase', 'create')
+        ) and self.object.status == 'approved'
+        return context
+
+
+@login_required
+def pr_submit(request, pk):
+    """Submit purchase request for approval."""
+    pr = get_object_or_404(PurchaseRequest, pk=pk)
+    
+    if pr.status not in ['draft', 'returned']:
+        messages.error(request, 'Only draft or returned requests can be submitted.')
+        return redirect('purchase:pr_detail', pk=pk)
+    
+    if pr.items.count() == 0:
+        messages.error(request, 'Cannot submit without at least one line item.')
+        return redirect('purchase:pr_detail', pk=pk)
+    
+    pr.status = 'pending'
+    pr.rejection_reason = ''
+    pr.save()
+    
+    from apps.settings_app.models import ApprovalConfiguration
+    ApprovalConfiguration.notify_approver(pr, 'purchase_request')
+    
+    from apps.settings_app.models import Notification
+    Notification.create(
+        user=pr.requested_by,
+        title='Purchase Request Submitted',
+        message=f'Your Purchase Request {pr.pr_number} has been submitted for approval.',
+        link=f'/purchase/requests/{pr.pk}/'
+    )
+    
+    messages.success(request, f'Purchase Request {pr.pr_number} submitted for approval.')
+    return redirect('purchase:pr_detail', pk=pk)
+
+
 @login_required
 def pr_approve(request, pk):
     pr = get_object_or_404(PurchaseRequest, pk=pk)
     if request.user.is_superuser or PermissionChecker.has_permission(request.user, 'purchase', 'approve'):
         pr.status = 'approved'
+        pr.rejection_reason = ''
         pr.save()
+        from apps.settings_app.models import ApprovalAuditLog
+        ApprovalAuditLog.objects.create(
+            module='purchase_request',
+            reference=pr.pr_number,
+            approver=request.user,
+            action='approve',
+            comment=''
+        )
+        from apps.settings_app.models import Notification
+        Notification.create(
+            user=pr.requested_by,
+            title='Purchase Request Approved',
+            message=f'Purchase Request {pr.pr_number} has been approved.',
+            link=f'/purchase/requests/{pr.pk}/'
+        )
         messages.success(request, f'PR {pr.pr_number} approved.')
     else:
         messages.error(request, 'Permission denied.')
-    return redirect('purchase:pr_list')
+    return redirect('purchase:pr_detail', pk=pk)
 
 
 @login_required
 def pr_reject(request, pk):
     pr = get_object_or_404(PurchaseRequest, pk=pk)
-    if request.user.is_superuser or PermissionChecker.has_permission(request.user, 'purchase', 'approve'):
-        pr.status = 'rejected'
-        pr.save()
-        messages.success(request, f'PR {pr.pr_number} rejected.')
-    else:
+    if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'purchase', 'approve')):
         messages.error(request, 'Permission denied.')
-    return redirect('purchase:pr_list')
+        return redirect('purchase:pr_list')
+    if pr.status != 'pending':
+        messages.error(request, 'Only pending requests can be rejected.')
+        return redirect('purchase:pr_detail', pk=pk)
+    if request.method == 'POST':
+        comment = request.POST.get('comment', '').strip()
+        pr.status = 'rejected'
+        pr.rejection_reason = comment
+        pr.save()
+        from apps.settings_app.models import ApprovalAuditLog, Notification
+        ApprovalAuditLog.objects.create(
+            module='purchase_request',
+            reference=pr.pr_number,
+            approver=request.user,
+            action='reject',
+            comment=comment
+        )
+        Notification.create(
+            user=pr.requested_by,
+            title='Purchase Request Rejected',
+            message=f'Purchase Request {pr.pr_number} has been rejected.' + (f' Reason: {comment[:100]}...' if comment else ''),
+            link=f'/purchase/requests/{pr.pk}/'
+        )
+        messages.success(request, f'PR {pr.pr_number} rejected.')
+        return redirect('purchase:pr_list')
+    return redirect('purchase:pr_detail', pk=pk)
+
+
+@login_required
+def pr_return(request, pk):
+    """Return purchase request for revision with comment."""
+    pr = get_object_or_404(PurchaseRequest, pk=pk)
+    if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'purchase', 'approve')):
+        messages.error(request, 'Permission denied.')
+        return redirect('purchase:pr_list')
+    if pr.status != 'pending':
+        messages.error(request, 'Only pending requests can be returned.')
+        return redirect('purchase:pr_detail', pk=pk)
+    if request.method == 'POST':
+        comment = request.POST.get('comment', '').strip()
+        pr.status = 'returned'
+        pr.rejection_reason = comment
+        pr.save()
+        from apps.settings_app.models import ApprovalAuditLog, Notification
+        ApprovalAuditLog.objects.create(
+            module='purchase_request',
+            reference=pr.pr_number,
+            approver=request.user,
+            action='return',
+            comment=comment
+        )
+        Notification.create(
+            user=pr.requested_by,
+            title='Purchase Request Returned for Revision',
+            message=f'Purchase Request {pr.pr_number} has been returned for revision. {comment[:100]}{"..." if len(comment) > 100 else ""}',
+            link=f'/purchase/requests/{pr.pk}/'
+        )
+        messages.success(request, f'PR {pr.pr_number} returned for revision.')
+        return redirect('purchase:pr_list')
+    return redirect('purchase:pr_detail', pk=pk)
 
 
 @login_required
@@ -266,6 +417,20 @@ def pr_delete(request, pk):
     else:
         messages.error(request, 'Permission denied.')
     return redirect('purchase:pr_list')
+
+
+@login_required
+def pr_convert(request, pk):
+    """Redirect to PO create with PR pre-selected. Only for approved PRs."""
+    pr = get_object_or_404(PurchaseRequest, pk=pk)
+    if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'purchase', 'create')):
+        messages.error(request, 'Permission denied.')
+        return redirect('purchase:pr_list')
+    if pr.status != 'approved':
+        messages.error(request, 'Only approved Purchase Requests can be converted to Purchase Order.')
+        return redirect('purchase:pr_detail', pk=pk)
+    url = reverse('purchase:po_create') + '?pr=' + str(pr.pk)
+    return redirect(url)
 
 
 @login_required
@@ -360,6 +525,8 @@ class PurchaseOrderCreateView(CreatePermissionMixin, CreateView):
         # Tax Codes for VAT selection (SAP/Oracle Standard)
         context['tax_codes'] = TaxCode.objects.filter(is_active=True).order_by('code')
         context['default_tax_code'] = TaxCode.objects.filter(is_active=True, is_default=True).first()
+        context['preselect_pr'] = self.request.GET.get('pr')
+        context['preselect_sr'] = self.request.GET.get('sr')
         if 'items_formset' not in kwargs:
             if self.request.POST:
                 context['items_formset'] = PurchaseOrderItemFormSet(self.request.POST)
@@ -384,6 +551,14 @@ class PurchaseOrderCreateView(CreatePermissionMixin, CreateView):
         items_formset.instance = self.object
         items_formset.save()
         self.object.calculate_totals()
+        # When PO is created from PR, update PR status to converted
+        if self.object.purchase_request:
+            self.object.purchase_request.status = 'converted'
+            self.object.purchase_request.save(update_fields=['status'])
+        # When PO is created from SR, update SR status to converted
+        if self.object.service_request:
+            self.object.service_request.status = 'converted'
+            self.object.service_request.save(update_fields=['status'])
         messages.success(self.request, f'Purchase Order {self.object.po_number} created.')
         return redirect(self.success_url)
     
