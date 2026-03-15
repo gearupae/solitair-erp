@@ -65,10 +65,10 @@
                 </li>
                 {% endif %}
                 
-                <!-- Purchase -->
-                {% if is_superuser or 'purchase' in user_permissions %}
+                <!-- Purchase (includes Service Requests) -->
+                {% if is_superuser or 'purchase' in user_permissions or 'service_request' in user_permissions %}
                 <li class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle {% if 'purchase' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
+                    <a class="nav-link dropdown-toggle {% if 'purchase' in request.path or 'service-request' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
                         <i class="fas fa-truck me-1"></i>Purchase
                     </a>
                     <ul class="dropdown-menu dropdown-menu-dark">
@@ -81,6 +81,11 @@
                         <li>
                             <a class="dropdown-item" href="{% url 'purchase:pr_list' %}">
                                 <i class="fas fa-clipboard-list me-2"></i>Purchase Requests
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'service_request:sr_list' %}">
+                                <i class="fas fa-tools me-2"></i>Service Requests
                             </a>
                         </li>
                         <li>
@@ -415,15 +420,6 @@
                             </a>
                         </li>
                     </ul>
-                </li>
-                {% endif %}
-                
-                <!-- Service Request -->
-                {% if is_superuser or 'service_request' in user_permissions %}
-                <li class="nav-item">
-                    <a class="nav-link {% if 'service-request' in request.path %}active{% endif %}" href="{% url 'service_request:sr_list' %}">
-                        <i class="fas fa-tools me-1"></i>Service Requests
-                    </a>
                 </li>
                 {% endif %}
                 
