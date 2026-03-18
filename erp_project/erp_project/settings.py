@@ -176,5 +176,6 @@ NUMBER_SERIES = {
     'EMPLOYEE': {'prefix': 'EMP', 'padding': 4},
     'PROJECT': {'prefix': 'PROJ', 'padding': 4},
     'JOURNAL': {'prefix': 'DOC', 'padding': 4},
+    'ITEM': {'prefix': 'ITEM', 'padding': 4},
 }
 

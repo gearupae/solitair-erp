@@ -5,6 +5,19 @@ from django import forms
 from .models import Category, Warehouse, Item, Stock, StockMovement, ConsumableRequest, ConsumableRequestItem, ConditionLog
 
 
+class LocaleDecimalField(forms.DecimalField):
+    """DecimalField that accepts comma as decimal separator (e.g. 10,50)."""
+    def to_python(self, value):
+        if value is None or value == '':
+            return None
+        if isinstance(value, (int, float)):
+            return value
+        s = str(value).strip().replace(',', '.')
+        if not s:
+            return None
+        return super().to_python(s)
+
+
 class CategoryForm(forms.ModelForm):
     class Meta:
         model = Category
@@ -45,6 +58,9 @@ class ItemForm(forms.ModelForm):
     Form for Inventory Items.
     Tax Code determines VAT rate - No Tax Code = 0% VAT (Out of Scope)
     """
+    purchase_price = LocaleDecimalField(max_digits=15, decimal_places=2, required=False, min_value=0)
+    selling_price = LocaleDecimalField(max_digits=15, decimal_places=2, required=False, min_value=0)
+    
     class Meta:
         model = Item
         fields = [
@@ -54,6 +70,9 @@ class ItemForm(forms.ModelForm):
         ]
         widgets = {
             'description': forms.Textarea(attrs={'rows': 2}),
+            'purchase_price': forms.NumberInput(attrs={'step': 'any', 'min': '0', 'placeholder': '0.00'}),
+            'selling_price': forms.NumberInput(attrs={'step': 'any', 'min': '0', 'placeholder': '0.00'}),
+            'minimum_stock': forms.NumberInput(attrs={'step': 'any', 'min': '0', 'placeholder': '0.00'}),
         }
     
     def __init__(self, *args, **kwargs):
@@ -73,11 +92,36 @@ class ItemForm(forms.ModelForm):
         self.fields['tax_code'].required = False
         self.fields['tax_code'].empty_label = "-- No Tax (Out of Scope) --"
         
+        # Optional fields with model defaults
+        self.fields['minimum_stock'].required = False
+        self.fields['condition_status'].required = False
+        self.fields['description'].required = False
+        self.fields['condition_notes'].required = False
+        
         # Pre-select default tax code if creating new item
         if not self.instance.pk:
             default_tax_code = TaxCode.objects.filter(is_active=True, is_default=True).first()
             if default_tax_code:
                 self.fields['tax_code'].initial = default_tax_code
+    
+    def clean_purchase_price(self):
+        val = self.cleaned_data.get('purchase_price')
+        from decimal import Decimal
+        return val if val is not None else Decimal('0.00')
+    
+    def clean_selling_price(self):
+        val = self.cleaned_data.get('selling_price')
+        from decimal import Decimal
+        return val if val is not None else Decimal('0.00')
+    
+    def clean_minimum_stock(self):
+        val = self.cleaned_data.get('minimum_stock')
+        from decimal import Decimal
+        return val if val is not None else Decimal('0.00')
+    
+    def clean_condition_status(self):
+        val = self.cleaned_data.get('condition_status')
+        return val if val else 'in_store'
 
 
 class StockAdjustmentForm(forms.Form):
