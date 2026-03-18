@@ -114,6 +114,7 @@ class PurchaseOrderForm(forms.ModelForm):
         
         self.fields['purchase_request'].widget.attrs['class'] = 'form-select'
         self.fields['purchase_request'].required = False
+        self.fields['purchase_request'].empty_label = "— Optional —"
         
         # Show approved SRs (and current SR if editing)
         from apps.service_request.models import ServiceRequest
@@ -126,11 +127,22 @@ class PurchaseOrderForm(forms.ModelForm):
         
         self.fields['service_request'].widget.attrs['class'] = 'form-select'
         self.fields['service_request'].required = False
+        self.fields['service_request'].empty_label = "— Optional —"
 
         self.fields['status'].widget.attrs['class'] = 'form-select'
         self.fields['status'].choices = PurchaseOrder.STATUS_CHOICES
         self.fields['expected_delivery_date'].required = False
         self.fields['notes'].required = False
+    
+    def clean_service_request(self):
+        """Ensure empty value is None - From SR is optional."""
+        val = self.cleaned_data.get('service_request')
+        return val if val else None
+    
+    def clean_purchase_request(self):
+        """Ensure empty value is None - From PR is optional."""
+        val = self.cleaned_data.get('purchase_request')
+        return val if val else None
 
 
 class PurchaseOrderItemForm(forms.ModelForm):
