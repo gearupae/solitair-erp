@@ -97,37 +97,37 @@ class PurchaseOrderForm(forms.ModelForm):
             'notes': forms.Textarea(attrs={'rows': 1, 'class': 'form-control'}),
         }
     
+    # Fields to exclude when editing (source is set at creation only)
+    edit_exclude = ['purchase_request', 'service_request']
+    
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        is_edit = self.instance and self.instance.pk
+        
+        # When editing, exclude PR/SR - source is set at creation only, avoids validation issues
+        if is_edit:
+            for f in self.edit_exclude:
+                if f in self.fields:
+                    del self.fields[f]
+        
         self.fields['vendor'].queryset = Vendor.objects.filter(is_active=True, status='active')
         self.fields['vendor'].widget.attrs['class'] = 'form-select'
         
-        # Show approved PRs (and current PR if editing)
-        approved_prs = PurchaseRequest.objects.filter(is_active=True, status='approved')
-        
-        # If editing and there's an existing purchase_request, include it
-        if self.instance and self.instance.pk and self.instance.purchase_request:
-            pr = self.instance.purchase_request
-            self.fields['purchase_request'].queryset = approved_prs | PurchaseRequest.objects.filter(pk=pr.pk)
-        else:
+        if not is_edit:
+            # Show approved PRs (create form only)
+            approved_prs = PurchaseRequest.objects.filter(is_active=True, status='approved')
             self.fields['purchase_request'].queryset = approved_prs
-        
-        self.fields['purchase_request'].widget.attrs['class'] = 'form-select'
-        self.fields['purchase_request'].required = False
-        self.fields['purchase_request'].empty_label = "— Optional —"
-        
-        # Show approved SRs (and current SR if editing)
-        from apps.service_request.models import ServiceRequest
-        approved_srs = ServiceRequest.objects.filter(is_active=True, status='approved')
-        if self.instance and self.instance.pk and self.instance.service_request:
-            sr = self.instance.service_request
-            self.fields['service_request'].queryset = approved_srs | ServiceRequest.objects.filter(pk=sr.pk)
-        else:
+            self.fields['purchase_request'].widget.attrs['class'] = 'form-select'
+            self.fields['purchase_request'].required = False
+            self.fields['purchase_request'].empty_label = "— Optional —"
+            
+            # Show approved SRs (create form only)
+            from apps.service_request.models import ServiceRequest
+            approved_srs = ServiceRequest.objects.filter(is_active=True, status='approved')
             self.fields['service_request'].queryset = approved_srs
-        
-        self.fields['service_request'].widget.attrs['class'] = 'form-select'
-        self.fields['service_request'].required = False
-        self.fields['service_request'].empty_label = "— Optional —"
+            self.fields['service_request'].widget.attrs['class'] = 'form-select'
+            self.fields['service_request'].required = False
+            self.fields['service_request'].empty_label = "— Optional —"
 
         self.fields['status'].widget.attrs['class'] = 'form-select'
         self.fields['status'].choices = PurchaseOrder.STATUS_CHOICES
