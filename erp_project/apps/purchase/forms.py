@@ -170,11 +170,49 @@ class PurchaseOrderItemForm(forms.ModelForm):
         self.fields['tax_code'].required = False
         self.fields['tax_code'].empty_label = "-- No Tax (Out of Scope) --"
         
+        # Description optional for empty extra rows (validated in clean)
+        self.fields['description'].required = False
+        
         # Pre-select default tax code if creating new item
         if not self.instance.pk:
             default_tax_code = TaxCode.objects.filter(is_active=True, is_default=True).first()
             if default_tax_code:
                 self.fields['tax_code'].initial = default_tax_code
+    
+    def clean(self):
+        cleaned = super().clean()
+        desc = (cleaned.get('description') or '').strip()
+        qty = cleaned.get('quantity')
+        price = cleaned.get('unit_price')
+        # Empty row: no description and no meaningful price - allow (will be skipped on save)
+        # (qty=1 is often template default for empty extra row)
+        if not desc and (price is None or price == 0):
+            return cleaned
+        # Partial row: has price but no description - require description
+        if not desc and price and price > 0:
+            raise forms.ValidationError('Description is required when price is entered.')
+        # Has description but no qty/price - use defaults
+        if desc and (qty is None or qty == 0):
+            cleaned['quantity'] = cleaned.get('quantity') or 1
+        if desc and (price is None or price < 0):
+            cleaned['unit_price'] = cleaned.get('unit_price') or 0
+        return cleaned
+
+
+class BasePurchaseOrderItemFormSet(forms.BaseInlineFormSet):
+    """Formset that skips empty extra rows (allows status-only edits)."""
+    
+    def _should_delete_form(self, form):
+        if super()._should_delete_form(form):
+            return True
+        # Treat empty new forms as "delete" - don't save them
+        if not form.instance.pk and form.cleaned_data:
+            desc = (form.cleaned_data.get('description') or '').strip()
+            qty = form.cleaned_data.get('quantity') or 0
+            price = form.cleaned_data.get('unit_price') or 0
+            if not desc and (not qty or qty == 0) and (not price or price == 0):
+                return True
+        return False
 
 
 PurchaseOrderItemFormSet = forms.inlineformset_factory(
@@ -182,7 +220,8 @@ PurchaseOrderItemFormSet = forms.inlineformset_factory(
     PurchaseOrderItem,
     form=PurchaseOrderItemForm,
     extra=1,
-    can_delete=True
+    can_delete=True,
+    formset=BasePurchaseOrderItemFormSet
 )
 
 
