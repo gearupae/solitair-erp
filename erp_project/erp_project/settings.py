@@ -82,8 +82,8 @@ TEMPLATES = [
 WSGI_APPLICATION = 'erp_project.wsgi.application'
 
 # Database
-# Use SQLite for development, PostgreSQL for production
-DATABASE_ENGINE = config('DB_ENGINE', default='sqlite')
+# PostgreSQL (recommended for production). Set DB_ENGINE=sqlite for local dev.
+DATABASE_ENGINE = config('DB_ENGINE', default='postgresql')
 
 if DATABASE_ENGINE == 'postgresql':
     DATABASES = {
