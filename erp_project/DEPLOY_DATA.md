@@ -1,5 +1,10 @@
 # Deploy Local Data to Main Server
 
+For **full production deploy** (code, no `.env` overwrite, optional DB), use from repo root:
+
+- `docs/DEPLOY_HETZNER.md`
+- `scripts/deploy_production.sh`
+
 To replace the main server database with your local data:
 
 ## Option 1: SQLite (default)
