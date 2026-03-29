@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ page_title|default:"Contract" }}</title>
+    <style>
+        @page { size: A4; margin: 14mm; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --ink: #0a0a0a;
+            --ink-soft: #1a1a1a;
+            --silver: #a3a3a3;
+            --mist: #e5e5e5;
+            --paper: #fafafa;
+            --white: #ffffff;
+        }
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            font-size: 11px;
+            line-height: 1.45;
+            color: var(--ink-soft);
+            background: var(--white);
+        }
+        .estimate-container {
+            max-width: 210mm;
+            margin: 0 auto;
+            padding: 16px 16px 28px;
+            background: var(--white);
+        }
+        .addr-grid {
+            display: flex;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 18px;
+            border: 1px solid var(--mist);
+            background: var(--paper);
+        }
+        .addr-block { flex: 1; padding: 14px 16px; min-width: 0; }
+        .addr-block + .addr-block { border-left: 1px solid var(--mist); }
+        .addr-label {
+            font-size: 9px;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            color: var(--silver);
+            margin-bottom: 10px;
+            font-weight: 700;
+        }
+        .addr-from-logo { max-height: 56px; max-width: 200px; margin-bottom: 10px; object-fit: contain; }
+        .addr-name { font-size: 14px; font-weight: 700; color: var(--ink); margin-bottom: 6px; }
+        .addr-lines { font-size: 10px; color: #404040; line-height: 1.55; }
+        .addr-lines .trn {
+            margin-top: 8px; padding-top: 8px; border-top: 1px dashed #ccc;
+            font-weight: 600; color: var(--ink);
+        }
+        .title-strip {
+            background: #153a5c;
+            color: var(--white);
+            padding: 16px 18px;
+            margin-bottom: 16px;
+            border: 1px solid #0c2840;
+        }
+        .estimate-title-text {
+            font-size: 22px;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            line-height: 1.2;
+            color: #f1f5f9;
+        }
+        .estimate-number {
+            font-size: 17px;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            color: #e2e8f0;
+            margin-top: 6px;
+        }
+        .status-badge {
+            display: inline-block;
+            margin-top: 8px;
+            padding: 4px 12px;
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            border: 1px solid rgba(148, 163, 184, 0.45);
+            background: rgba(15, 23, 42, 0.45);
+            color: #e2e8f0;
+        }
+        .addr-to-detail-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            padding: 4px 0;
+            font-size: 9px;
+            border-bottom: 1px solid #eee;
+        }
+        .addr-to-detail-row:last-child { border-bottom: none; }
+        .addr-to-detail-label { color: #737373; flex-shrink: 0; }
+        .addr-to-detail-value { font-weight: 600; color: #404040; text-align: right; }
+        .addr-to-contract-details { margin-top: 12px; padding-top: 12px; border-top: 1px dashed #ccc; }
+        .totals-section { display: flex; justify-content: flex-end; margin-bottom: 16px; }
+        .totals-table { width: 300px; }
+        .totals-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 7px 12px;
+            border-bottom: 1px solid #e5e5e5;
+            font-size: 10px;
+        }
+        .totals-row.total {
+            background: #153a5c;
+            color: #fff;
+            font-size: 13px;
+            font-weight: 700;
+            border: 1px solid #0c2840;
+        }
+        .totals-row.total .totals-label { color: #e8eef5; }
+        .totals-row.total .totals-value { color: #fff; }
+        .totals-label { color: #525252; }
+        .totals-value { font-variant-numeric: tabular-nums; font-weight: 600; }
+        .notes-section, .terms-section { margin-bottom: 16px; }
+        .notes-title, .terms-title {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #525252;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+        .notes-content, .terms-content {
+            background: #fafafa;
+            border: 1px solid #e5e5e5;
+            padding: 10px 12px;
+            font-size: 10px;
+            line-height: 1.55;
+        }
+        .terms-list { margin: 0; padding-left: 18px; }
+        .terms-list li { margin-bottom: 4px; }
+        .signature-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 16px;
+            margin-top: 12px;
+        }
+        .signature-box { flex: 1; }
+        .signature-line {
+            border-bottom: 1px solid #333;
+            height: 36px;
+            margin-bottom: 4px;
+        }
+        .signature-label { font-size: 9px; color: #525252; }
+        .acceptance-section {
+            margin-top: 22px;
+            padding: 14px 16px;
+            background: #f5f5f5;
+            border: 1px solid #d4d4d4;
+            color: #262626;
+        }
+        .acceptance-title {
+            font-size: 11px;
+            font-weight: 700;
+            color: #171717;
+            margin-bottom: 8px;
+        }
+        .acceptance-text { font-size: 10px; color: #404040; margin-bottom: 14px; }
+        .doc-footer {
+            margin-top: 28px;
+            padding-top: 12px;
+            border-top: 1px solid #d4d4d4;
+            font-size: 9px;
+            color: #525252;
+        }
+        .doc-footer-line {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 8px;
+        }
+        .doc-footer-company { flex: 1; min-width: 200px; line-height: 1.5; }
+        .doc-footer-company strong { color: #171717; font-size: 10px; }
+        @media print {
+            body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+            .no-print { display: none !important; }
+            .estimate-container { padding: 0; max-width: none; }
+        }
+        .print-actions {
+            position: fixed;
+            top: 16px;
+            right: 16px;
+            display: flex;
+            gap: 10px;
+            z-index: 1000;
+        }
+        .print-btn {
+            padding: 10px 18px;
+            border: 1px solid #0c2840;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            text-decoration: none;
+            background: #153a5c;
+            color: #fff;
+        }
+        .print-btn-secondary { background: #f5f5f5; color: #333; }
+        .type-tags { font-size: 10px; color: #404040; line-height: 1.6; }
+    </style>
+</head>
+<body>
+    <div class="print-actions no-print">
+        <button type="button" class="print-btn" onclick="window.print()">{{ print_button_label|default:"Print contract" }}</button>
+        <a href="{% url 'contracts:contract_list' %}" class="print-btn print-btn-secondary">Back to contracts</a>
+    </div>
+
+    <div class="estimate-container">
+        <div class="title-strip">
+            <div class="estimate-title-text">CONTRACT</div>
+            <div class="estimate-number">{{ contract.contract_number }}</div>
+            <div class="status-badge">{{ contract.get_status_display }}</div>
+        </div>
+
+        <div class="addr-grid">
+            <div class="addr-block addr-to">
+                <div class="addr-label">To</div>
+                {% if contract.customer %}
+                    {% if contract.customer.company %}
+                    <div class="addr-name">{{ contract.customer.company }}</div>
+                    {% if contract.customer.name %}
+                    <div class="addr-lines" style="font-weight:600;margin-bottom:4px;">Attn: {{ contract.customer.name }}</div>
+                    {% endif %}
+                    {% else %}
+                    <div class="addr-name">{{ contract.customer.name }}</div>
+                    {% endif %}
+                    <div class="addr-lines">
+                        {% if contract.customer.address %}<div>{{ contract.customer.address }}</div>{% endif %}
+                        {% if contract.customer.city or contract.customer.country %}
+                        <div>{% if contract.customer.city %}{{ contract.customer.city }}{% endif %}{% if contract.customer.city and contract.customer.country %}, {% endif %}{% if contract.customer.country %}{{ contract.customer.country }}{% endif %}</div>
+                        {% endif %}
+                        {% if contract.customer.phone %}<div>Tel: {{ contract.customer.phone }}</div>{% endif %}
+                        {% if contract.customer.email %}<div>{{ contract.customer.email }}</div>{% endif %}
+                        {% if contract.customer.trn %}<div class="trn">VAT / TRN: {{ contract.customer.trn }}</div>{% endif %}
+                    </div>
+                {% else %}
+                    <div class="addr-name">—</div>
+                    <div class="addr-lines" style="color:#737373;">No customer linked</div>
+                {% endif %}
+                <div class="addr-to-contract-details">
+                    <div class="addr-label">Contract</div>
+                    <div class="addr-to-detail-row">
+                        <span class="addr-to-detail-label">Title</span>
+                        <span class="addr-to-detail-value">{{ contract.name }}</span>
+                    </div>
+                    <div class="addr-to-detail-row">
+                        <span class="addr-to-detail-label">Start date</span>
+                        <span class="addr-to-detail-value">{{ contract.start_date|date:"d/m/Y" }}</span>
+                    </div>
+                    <div class="addr-to-detail-row">
+                        <span class="addr-to-detail-label">End date</span>
+                        <span class="addr-to-detail-value">{{ contract.end_date|date:"d/m/Y" }}</span>
+                    </div>
+                    <div class="addr-to-detail-row">
+                        <span class="addr-to-detail-label">Reminder</span>
+                        <span class="addr-to-detail-value">{{ contract.remind_before_days }} days before end</span>
+                    </div>
+                    <div class="addr-to-detail-row">
+                        <span class="addr-to-detail-label">Types</span>
+                        <span class="addr-to-detail-value type-tags">{% for t in contract.contract_types.all %}{{ t.name }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}</span>
+                    </div>
+                </div>
+            </div>
+            <div class="addr-block addr-from">
+                <div class="addr-label">From</div>
+                {% if company.logo and logo_absolute_url %}
+                <img src="{{ logo_absolute_url }}" alt="{{ company.company_name }}" class="addr-from-logo">
+                {% endif %}
+                <div class="addr-name">{{ company.company_name }}</div>
+                <div class="addr-lines">
+                    {% if company.address %}<div>{{ company.address|linebreaksbr }}</div>{% endif %}
+                    {% if company.phone %}<div>Tel: {{ company.phone }}</div>{% endif %}
+                    {% if company.email %}<div>{{ company.email }}</div>{% endif %}
+                    {% if company.website %}<div>{{ company.website }}</div>{% endif %}
+                    {% if company.tax_id %}<div class="trn">VAT / TRN: {{ company.tax_id }}</div>{% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="totals-section">
+            <div class="totals-table">
+                <div class="totals-row total">
+                    <span class="totals-label">Contract value</span>
+                    <span class="totals-value">AED {{ contract.contract_value|floatformat:2 }}</span>
+                </div>
+            </div>
+        </div>
+
+        {% if contract.description %}
+        <div class="notes-section">
+            <div class="notes-title">Description</div>
+            <div class="notes-content">{{ contract.description|linebreaks }}</div>
+        </div>
+        {% endif %}
+
+        <div class="terms-section">
+            <div class="terms-title">Terms &amp; conditions</div>
+            <div class="terms-content">
+                {% if contract.terms_and_conditions %}
+                {{ contract.terms_and_conditions|linebreaks }}
+                {% else %}
+                <ol class="terms-list">
+                    <li>This agreement is governed by the dates and value stated on this document.</li>
+                    <li>Payment and delivery terms are as agreed upon signing.</li>
+                </ol>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="acceptance-section">
+            <div class="acceptance-title">Acknowledgement</div>
+            <div class="acceptance-text">
+                By signing below, both parties acknowledge the terms of this contract.
+            </div>
+            <div class="signature-row">
+                <div class="signature-box">
+                    <div class="signature-line"></div>
+                    <div class="signature-label">Authorized signature (company)</div>
+                </div>
+                <div class="signature-box">
+                    <div class="signature-line"></div>
+                    <div class="signature-label">Customer signature</div>
+                </div>
+            </div>
+        </div>
+
+        <footer class="doc-footer">
+            <div class="doc-footer-line">
+                <div class="doc-footer-company">
+                    <strong>{{ company.company_name }}</strong>
+                    {% if company.address %}<br>{{ company.address|linebreaksbr }}{% endif %}
+                    {% if company.phone %}<br>Tel: {{ company.phone }}{% endif %}
+                    {% if company.email %}<br>{{ company.email }}{% endif %}
+                    {% if company.website %}<br>{{ company.website }}{% endif %}
+                    {% if company.tax_id %}<br>VAT / TRN: {{ company.tax_id }}{% endif %}
+                </div>
+                <div style="font-variant-numeric: tabular-nums; color: #737373;">
+                    Ref: {{ contract.contract_number }}<br>
+                    {% now "d/m/Y" %}
+                </div>
+            </div>
+        </footer>
+    </div>
+</body>
+</html>

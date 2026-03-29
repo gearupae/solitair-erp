@@ -1,5 +1,5 @@
 """
-Sales Models - Quotations and Invoices
+Sales Models - Estimates and Invoices
 All invoice postings create journal entries in accounting as single source of truth.
 
 VAT LOGIC (Tax Code Driven - SAP/Oracle Standard):
@@ -16,9 +16,9 @@ from apps.core.utils import generate_number
 from apps.crm.models import Customer
 
 
-class Quotation(BaseModel):
+class Estimate(BaseModel):
     """
-    Sales Quotation model.
+    Sales estimate (formerly quotation).
     """
     STATUS_CHOICES = [
         ('draft', 'Draft'),
@@ -27,47 +27,122 @@ class Quotation(BaseModel):
         ('rejected', 'Rejected'),
         ('expired', 'Expired'),
     ]
+
+    DISCOUNT_TYPE_CHOICES = [
+        ('none', 'None'),
+        ('percent', 'Percentage'),
+        ('amount', 'Fixed amount'),
+    ]
+
+    SCOPE_CHOICES = [
+        ('amc', 'AMC'),
+        ('snag', 'Snag'),
+        ('amc_fitout', 'AMC Fitout'),
+        ('fitout', 'Fitout'),
+        ('project', 'Project'),
+        ('amc_certification', 'AMC Certification'),
+        ('fitout_certification', 'Fitout Certification'),
+    ]
     
-    quotation_number = models.CharField(max_length=50, unique=True, editable=False)
+    estimate_number = models.CharField(max_length=50, unique=True, editable=False)
     customer = models.ForeignKey(
         Customer, 
         on_delete=models.PROTECT, 
-        related_name='quotations'
+        related_name='estimates'
     )
+    assigned_to = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='assigned_estimates',
+    )
+    prepared_by = models.CharField(max_length=200, blank=True, help_text='Name shown on estimate document')
+    project = models.ForeignKey(
+        'projects.Project',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='estimates',
+    )
+    scope = models.JSONField(default=list, blank=True, help_text='Selected scope tags')
     date = models.DateField()
     valid_until = models.DateField(null=True, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft')
-    notes = models.TextField(blank=True)
+    notes = models.TextField(blank=True, help_text='Internal notes (optional)')
+    client_note = models.TextField(blank=True, help_text='Note for the client (shown on estimate)')
     terms_and_conditions = models.TextField(blank=True)
-    
+
+    discount_type = models.CharField(
+        max_length=20, choices=DISCOUNT_TYPE_CHOICES, default='none',
+    )
+    discount_value = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+
+    authorized_signature = models.ImageField(
+        upload_to='estimate_signatures/', blank=True, null=True,
+        help_text='Authorized signatory image',
+    )
+    customer_signature = models.ImageField(
+        upload_to='estimate_signatures/', blank=True, null=True,
+        help_text='Customer signature image (e.g. scan)',
+    )
+    show_rates_on_pdf = models.BooleanField(
+        default=True,
+        help_text='If off, PDF shows description and quantity only; totals still show VAT and amount.',
+    )
+
     # Calculated fields
     subtotal = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     vat_amount = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     total_amount = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    discount_applied = models.DecimalField(
+        max_digits=15, decimal_places=2, default=Decimal('0.00'),
+        help_text='Last calculated discount amount on total',
+    )
     
     class Meta:
         ordering = ['-created_at']
     
     def __str__(self):
-        return f"{self.quotation_number} - {self.customer.name}"
+        return f"{self.estimate_number} - {self.customer.name}"
     
     def save(self, *args, **kwargs):
-        if not self.quotation_number:
-            self.quotation_number = generate_number('QUOTATION', Quotation, 'quotation_number')
+        if not self.estimate_number:
+            self.estimate_number = generate_number('ESTIMATE', Estimate, 'estimate_number')
         super().save(*args, **kwargs)
     
     def calculate_totals(self):
-        """Calculate subtotal, VAT, and total from items."""
-        items = self.items.all()
-        self.subtotal = sum(item.total for item in items)
-        self.vat_amount = sum(item.vat_amount for item in items)
-        self.total_amount = self.subtotal + self.vat_amount
-        self.save(update_fields=['subtotal', 'vat_amount', 'total_amount'])
+        """Calculate subtotal, VAT, discount, and total from line items."""
+        items = list(self.items.all())
+        subtotal = Decimal('0.00')
+        vat_sum = Decimal('0.00')
+        for item in items:
+            item.save()  # refresh rate, total, vat from line
+            subtotal += item.total
+            vat_sum += item.vat_amount
+        gross_before = subtotal + vat_sum
+        discount_amt = Decimal('0.00')
+        if self.discount_type == 'percent' and self.discount_value > 0:
+            discount_amt = (gross_before * self.discount_value / Decimal('100')).quantize(Decimal('0.01'))
+        elif self.discount_type == 'amount' and self.discount_value > 0:
+            discount_amt = min(self.discount_value, gross_before)
+        self.subtotal = subtotal
+        self.vat_amount = vat_sum
+        self.discount_applied = discount_amt
+        self.total_amount = gross_before - discount_amt
+        self.save(update_fields=['subtotal', 'vat_amount', 'total_amount', 'discount_applied'])
+
+    @property
+    def scope_display_labels(self):
+        if not self.scope:
+            return []
+        labels = dict(self.SCOPE_CHOICES)
+        return [labels.get(code, code) for code in self.scope]
 
 
-class QuotationItem(models.Model):
+class EstimateItem(models.Model):
     """
-    Line items for quotations.
+    Line items for estimates.
     Supports both VAT-exclusive and VAT-inclusive pricing.
     
     VAT LOGIC (Tax Code Driven):
@@ -75,14 +150,43 @@ class QuotationItem(models.Model):
     - vat_rate is computed from tax_code.rate (read-only, for display)
     - No tax_code = Out of Scope (0% VAT)
     """
-    quotation = models.ForeignKey(
-        Quotation, 
+    estimate = models.ForeignKey(
+        Estimate, 
         on_delete=models.CASCADE, 
         related_name='items'
     )
+    group_name = models.CharField(max_length=200, blank=True, help_text='Section / group heading')
+    sort_order = models.PositiveIntegerField(default=0)
+    inventory_item = models.ForeignKey(
+        'inventory.Item',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='estimate_lines',
+    )
     description = models.CharField(max_length=500)
     quantity = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('1.00'))
-    unit_price = models.DecimalField(max_digits=15, decimal_places=2)
+    unit_price = models.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        help_text='Base price per unit (before profit).',
+    )
+    PROFIT_TYPE_CHOICES = [
+        ('none', 'None'),
+        ('percent', 'Percent'),
+        ('amount', 'Amount'),
+    ]
+    profit_type = models.CharField(max_length=20, choices=PROFIT_TYPE_CHOICES, default='none')
+    profit_value = models.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        help_text='Per unit: % markup on base, or AED added to base (not total for the whole line).',
+    )
+    rate = models.DecimalField(
+        max_digits=15, decimal_places=2, default=Decimal('0.00'),
+        help_text='Selling price per unit after profit: Base + profit (AED) or Base × (1 + profit%).',
+    )
     
     # Tax Code - source of truth for VAT (SAP/Oracle Standard)
     tax_code = models.ForeignKey(
@@ -90,32 +194,48 @@ class QuotationItem(models.Model):
         on_delete=models.PROTECT,
         null=True,
         blank=True,
-        related_name='quotation_items',
+        related_name='estimate_items',
         help_text='Tax Code determines VAT rate. No selection = Out of Scope (0%)'
     )
     
     # Computed VAT rate from tax_code (read-only, for display/reporting)
     vat_rate = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal('0.00'))
-    is_vat_inclusive = models.BooleanField(default=False, help_text='If true, unit_price includes VAT')
+    is_vat_inclusive = models.BooleanField(default=False, help_text='If true, rate includes VAT')
     
     # Calculated
     total = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     vat_amount = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     
     class Meta:
-        ordering = ['id']
+        ordering = ['sort_order', 'id']
     
     def __str__(self):
         return f"{self.description} - {self.quantity}"
+
+    def compute_rate(self):
+        """
+        Unit selling price after profit (per unit).
+        - none: rate = base
+        - percent: rate = base × (1 + profit% / 100)  e.g. base 10 + 100% → 20
+        - amount: rate = base + profit (AED per unit)  e.g. base 10 + 100 AED → 110
+        """
+        base = self.unit_price or Decimal('0')
+        pv = self.profit_value or Decimal('0')
+        if self.profit_type == 'percent':
+            return (base * (Decimal('1') + pv / Decimal('100'))).quantize(Decimal('0.01'))
+        if self.profit_type == 'amount':
+            return (base + pv).quantize(Decimal('0.01'))
+        return base.quantize(Decimal('0.01'))
     
     def save(self, *args, **kwargs):
+        self.rate = self.compute_rate()
         # Derive VAT rate from Tax Code (No Tax Code = 0%)
         if self.tax_code:
             self.vat_rate = self.tax_code.rate
         else:
             self.vat_rate = Decimal('0.00')
         
-        gross = self.quantity * self.unit_price
+        gross = self.quantity * self.rate
         
         if self.is_vat_inclusive and self.vat_rate > 0:
             # VAT-inclusive: Back-calculate net amount and VAT
@@ -146,8 +266,8 @@ class Invoice(BaseModel):
     ]
     
     invoice_number = models.CharField(max_length=50, unique=True, editable=False)
-    quotation = models.ForeignKey(
-        Quotation, 
+    estimate = models.ForeignKey(
+        Estimate, 
         on_delete=models.SET_NULL, 
         null=True, 
         blank=True,

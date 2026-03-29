@@ -1,4 +1,19 @@
 {% extends 'base.html' %}
+{% block extra_js %}
+<script>
+$(function () {
+    if ($('.select2-members').length) {
+        $('.select2-members').select2({
+            theme: 'bootstrap-5',
+            width: '100%',
+            placeholder: 'Select team members…',
+            closeOnSelect: false,
+            allowClear: true,
+        });
+    }
+});
+</script>
+{% endblock %}
 {% block content %}
 <div class="page-header">
     <nav aria-label="breadcrumb"><ol class="breadcrumb mb-2"><li class="breadcrumb-item"><a href="{% url 'projects:project_list' %}">Projects</a></li><li class="breadcrumb-item active">{{ title }}</li></ol></nav>
@@ -8,15 +23,25 @@
     <div class="card-body">
         <form method="post">
             {% csrf_token %}
+            {% if form.non_field_errors %}
+            <div class="alert alert-danger">{{ form.non_field_errors }}</div>
+            {% endif %}
             <div class="row g-3">
-                <div class="col-md-6"><label class="form-label">Project Name <span class="text-danger">*</span></label>{{ form.name }}</div>
-                <div class="col-md-3"><label class="form-label">Customer</label>{{ form.customer }}</div>
-                <div class="col-md-3"><label class="form-label">Manager</label>{{ form.manager }}</div>
-                <div class="col-md-3"><label class="form-label">Status</label>{{ form.status }}</div>
-                <div class="col-md-3"><label class="form-label">Start Date</label>{{ form.start_date }}</div>
-                <div class="col-md-3"><label class="form-label">End Date</label>{{ form.end_date }}</div>
-                <div class="col-md-3"><label class="form-label">Budget</label>{{ form.budget }}</div>
-                <div class="col-12"><label class="form-label">Description</label>{{ form.description }}</div>
+                <div class="col-md-6"><label class="form-label">Project Name <span class="text-danger">*</span></label>{{ form.name }}{% if form.name.errors %}<div class="text-danger small">{{ form.name.errors }}</div>{% endif %}</div>
+                <div class="col-md-3"><label class="form-label">Customer</label>{{ form.customer }}{% if form.customer.errors %}<div class="text-danger small">{{ form.customer.errors }}</div>{% endif %}</div>
+                <div class="col-md-3"><label class="form-label">Manager</label>{{ form.manager }}{% if form.manager.errors %}<div class="text-danger small">{{ form.manager.errors }}</div>{% endif %}</div>
+                <div class="col-md-3"><label class="form-label">Status</label>{{ form.status }}{% if form.status.errors %}<div class="text-danger small">{{ form.status.errors }}</div>{% endif %}</div>
+                <div class="col-md-3"><label class="form-label">Start Date</label>{{ form.start_date }}{% if form.start_date.errors %}<div class="text-danger small">{{ form.start_date.errors }}</div>{% endif %}</div>
+                <div class="col-md-3"><label class="form-label">End Date</label>{{ form.end_date }}{% if form.end_date.errors %}<div class="text-danger small">{{ form.end_date.errors }}</div>{% endif %}</div>
+                <div class="col-md-3"><label class="form-label">Budget</label>{{ form.budget }}{% if form.budget.errors %}<div class="text-danger small">{{ form.budget.errors }}</div>{% endif %}</div>
+                <div class="col-md-3"><label class="form-label">Estimated cost</label>{{ form.estimated_cost }}{% if form.estimated_cost.errors %}<div class="text-danger small">{{ form.estimated_cost.errors }}</div>{% endif %}</div>
+                <div class="col-12">
+                    <label class="form-label" for="{{ form.members.id_for_label }}">Members</label>
+                    {{ form.members }}
+                    {% if form.members.errors %}<div class="text-danger small">{{ form.members.errors }}</div>{% endif %}
+                    <div class="form-text">Search and select one or more users.</div>
+                </div>
+                <div class="col-12"><label class="form-label">Description</label>{{ form.description }}{% if form.description.errors %}<div class="text-danger small">{{ form.description.errors }}</div>{% endif %}</div>
             </div>
             <div class="mt-4">
                 <button type="submit" class="btn btn-primary"><i class="fas fa-save me-2"></i>Save</button>

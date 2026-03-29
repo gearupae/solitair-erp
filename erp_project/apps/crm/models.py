@@ -21,6 +21,14 @@ class Customer(BaseModel):
         ('inactive', 'Inactive'),
         ('prospect', 'Prospect'),
     ]
+
+    SCOPE_CHOICES = [
+        ('ff', 'FF'),
+        ('fa', 'FA'),
+        ('em', 'EM'),
+        ('fls', 'FLS'),
+        ('mep', 'MEP'),
+    ]
     
     customer_number = models.CharField(max_length=50, unique=True, editable=False)
     name = models.CharField(max_length=200)
@@ -30,8 +38,23 @@ class Customer(BaseModel):
     address = models.TextField(blank=True)
     city = models.CharField(max_length=100, blank=True)
     country = models.CharField(max_length=100, default='United Arab Emirates')
-    trn = models.CharField(max_length=20, blank=True, verbose_name='Tax Registration Number (TRN)', 
-                          help_text='UAE VAT TRN for B2B invoices')
+    trn = models.CharField(
+        max_length=20,
+        blank=True,
+        verbose_name='VAT (TRN)',
+        help_text='Tax registration / VAT number for B2B invoices',
+    )
+    website = models.URLField(blank=True, max_length=500)
+    scope = models.JSONField(default=list, blank=True, help_text='Disciplines: FF, FA, EM, FLS, MEP')
+    job_type = models.CharField(max_length=120, blank=True)
+    primary_project = models.ForeignKey(
+        'projects.Project',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='primary_for_customers',
+        verbose_name='Project',
+    )
     payment_terms = models.CharField(max_length=50, blank=True, default='Net 30')
     credit_limit = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active')
@@ -55,5 +78,13 @@ class Customer(BaseModel):
     def display_name(self):
         """Return company name if available, otherwise contact name."""
         return self.company if self.company else self.name
+
+    @property
+    def scope_display_labels(self):
+        """Labels for selected scope codes (FF, FA, EM, FLS, MEP)."""
+        if not self.scope:
+            return []
+        labels = dict(self.SCOPE_CHOICES)
+        return [labels.get(code, code) for code in self.scope]
 
 

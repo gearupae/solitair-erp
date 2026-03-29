@@ -6,6 +6,7 @@ With full accounting integration:
 - All postings flow automatically to GL with project/cost center tracking
 """
 from django.db import models
+from django.db.models import Sum
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from decimal import Decimal
@@ -45,7 +46,20 @@ class Project(BaseModel):
     # Budget & Billing
     billing_type = models.CharField(max_length=20, choices=BILLING_TYPE_CHOICES, default='fixed')
     budget = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    estimated_cost = models.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        verbose_name='Estimated cost',
+        help_text='Expected cost to deliver this project',
+    )
     contract_value = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    members = models.ManyToManyField(
+        settings.AUTH_USER_MODEL,
+        blank=True,
+        related_name='project_memberships',
+        help_text='Team members assigned to this project',
+    )
     
     # Accounting Tracking
     total_expenses = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
@@ -79,11 +93,28 @@ class Project(BaseModel):
     
     @property
     def total_tasks(self):
-        return self.tasks.count()
+        return self.tasks.filter(is_active=True).count()
     
     @property
     def completed_tasks(self):
-        return self.tasks.filter(status='completed').count()
+        return self.tasks.filter(is_active=True, status='completed').count()
+    
+    @property
+    def task_progress_percent(self):
+        """Equal weight per task: completed / total * 100."""
+        total = self.tasks.filter(is_active=True).count()
+        if total == 0:
+            return Decimal('0')
+        done = self.tasks.filter(is_active=True, status='completed').count()
+        return (Decimal(done) / Decimal(total) * Decimal('100')).quantize(Decimal('0.1'))
+    
+    @property
+    def recorded_expenses_total(self):
+        """Sum of expense amounts recorded for this project (excludes rejected)."""
+        agg = self.project_expenses.filter(is_active=True).exclude(status='rejected').aggregate(
+            s=Sum('total_amount')
+        )
+        return agg['s'] if agg['s'] is not None else Decimal('0.00')
     
     @property
     def profit_margin(self):
@@ -101,8 +132,6 @@ class Project(BaseModel):
     
     def update_totals(self):
         """Recalculate project totals from expenses and revenue entries."""
-        from django.db.models import Sum
-        
         # Sum expenses
         expense_total = self.project_expenses.filter(
             is_active=True, posted=True
@@ -140,11 +169,12 @@ class Task(BaseModel):
     assigned_to = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='assigned_tasks')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     priority = models.CharField(max_length=20, choices=PRIORITY_CHOICES, default='medium')
-    due_date = models.DateField(null=True, blank=True)
+    start_date = models.DateField(null=True, blank=True, verbose_name='Start date')
+    due_date = models.DateField(null=True, blank=True, verbose_name='End date')
     estimated_hours = models.DecimalField(max_digits=8, decimal_places=2, default=Decimal('0.00'))
     
     class Meta:
-        ordering = ['priority', 'due_date']
+        ordering = ['due_date', 'start_date', 'priority', 'name']
     
     def __str__(self):
         return f"{self.project.project_code} - {self.name}"

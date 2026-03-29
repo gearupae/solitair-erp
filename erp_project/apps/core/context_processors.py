@@ -2,6 +2,7 @@
 Context processors for the ERP system.
 """
 from apps.core.utils import PermissionChecker
+from apps.settings_app.models import Notification
 
 
 def global_context(request):
@@ -16,6 +17,15 @@ def global_context(request):
     if request.user.is_authenticated:
         context['user_permissions'] = PermissionChecker.get_user_permissions(request.user)
         context['is_superuser'] = request.user.is_superuser
+        context['header_notifications'] = list(
+            Notification.objects.filter(user=request.user).order_by('-created_at')[:15]
+        )
+        context['unread_notification_count'] = Notification.objects.filter(
+            user=request.user, is_read=False
+        ).count()
+    else:
+        context['header_notifications'] = []
+        context['unread_notification_count'] = 0
     
     return context
 

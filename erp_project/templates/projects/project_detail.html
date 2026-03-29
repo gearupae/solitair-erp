@@ -2,9 +2,12 @@
 {% block content %}
 <div class="page-header">
     <nav aria-label="breadcrumb"><ol class="breadcrumb mb-2"><li class="breadcrumb-item"><a href="{% url 'projects:project_list' %}">Projects</a></li><li class="breadcrumb-item active">{{ project.project_code }}</li></ol></nav>
-    <div class="d-flex justify-content-between align-items-center">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
         <div><h4 class="mb-1 fw-bold">{{ project.name }}</h4><span class="text-muted">{{ project.project_code }}</span></div>
-        {% if can_edit %}<a href="{% url 'projects:project_edit' project.pk %}" class="btn btn-primary"><i class="fas fa-edit me-2"></i>Edit</a>{% endif %}
+        <div class="d-flex flex-wrap gap-2">
+            <a href="{% url 'projects:project_report_pdf' project.pk %}" class="btn btn-light" target="_blank" rel="noopener"><i class="fas fa-file-pdf me-2"></i>Project report</a>
+            {% if can_edit %}<a href="{% url 'projects:project_edit' project.pk %}" class="btn btn-primary"><i class="fas fa-edit me-2"></i>Edit</a>{% endif %}
+        </div>
     </div>
 </div>
 
@@ -16,6 +19,16 @@
                     <div class="col-md-4"><h6 class="text-muted mb-2">Customer</h6><p class="mb-0">{{ project.customer.name|default:"-" }}</p></div>
                     <div class="col-md-4"><h6 class="text-muted mb-2">Manager</h6><p class="mb-0">{% if project.manager %}{{ project.manager.get_full_name|default:project.manager.username }}{% else %}-{% endif %}</p></div>
                     <div class="col-md-4"><h6 class="text-muted mb-2">Budget</h6><p class="mb-0">AED {{ project.budget|floatformat:2 }}</p></div>
+                    <div class="col-md-4"><h6 class="text-muted mb-2">Estimated cost</h6><p class="mb-0">AED {{ project.estimated_cost|floatformat:2 }}</p></div>
+                    <div class="col-md-4"><h6 class="text-muted mb-2">Members</h6>
+                        <ul class="list-unstyled mb-0 small">
+                            {% for u in project.members.all %}
+                            <li>{{ u.get_full_name|default:u.username }}</li>
+                            {% empty %}
+                            <li class="text-muted mb-0">—</li>
+                            {% endfor %}
+                        </ul>
+                    </div>
                     <div class="col-md-4"><h6 class="text-muted mb-2">Start Date</h6><p class="mb-0">{{ project.start_date|date:"d/m/Y"|default:"-" }}</p></div>
                     <div class="col-md-4"><h6 class="text-muted mb-2">End Date</h6><p class="mb-0">{{ project.end_date|date:"d/m/Y"|default:"-" }}</p></div>
                 </div>
@@ -23,9 +36,12 @@
         </div>
         
         <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center">
+            <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
                 <h6 class="mb-0 fw-semibold">Tasks</h6>
-                {% if can_edit %}<button class="btn btn-sm btn-primary" onclick="toggleInlineForm('taskForm')"><i class="fas fa-plus me-1"></i>Add Task</button>{% endif %}
+                <div class="d-flex flex-wrap gap-2">
+                    <a href="{% url 'projects:task_list' %}?project={{ project.pk }}" class="btn btn-sm btn-light"><i class="fas fa-list-check me-1"></i>All tasks (this project)</a>
+                    {% if can_edit %}<button class="btn btn-sm btn-primary" type="button" onclick="toggleInlineForm('taskForm')"><i class="fas fa-plus me-1"></i>Add Task</button>{% endif %}
+                </div>
             </div>
             <div id="taskForm" class="inline-form-container m-3" style="display:none;">
                 <form method="post">{% csrf_token %}
@@ -53,19 +69,24 @@
                             {% if task_form.priority.errors %}<div class="text-danger small mt-1">{{ task_form.priority.errors|join:", " }}</div>{% endif %}
                         </div>
                         <div class="col-md-3">
-                            <label for="{{ task_form.due_date.id_for_label }}" class="form-label">Due Date</label>
-                            {{ task_form.due_date }}
-                            {% if task_form.due_date.errors %}<div class="text-danger small mt-1">{{ task_form.due_date.errors|join:", " }}</div>{% endif %}
+                            <label for="{{ task_form.status.id_for_label }}" class="form-label">Status</label>
+                            {{ task_form.status }}
+                            {% if task_form.status.errors %}<div class="text-danger small mt-1">{{ task_form.status.errors|join:", " }}</div>{% endif %}
                         </div>
-                        <div class="col-md-6">
+                        <div class="col-md-4">
                             <label for="{{ task_form.assigned_to.id_for_label }}" class="form-label">Assigned To</label>
                             {{ task_form.assigned_to }}
                             {% if task_form.assigned_to.errors %}<div class="text-danger small mt-1">{{ task_form.assigned_to.errors|join:", " }}</div>{% endif %}
                         </div>
-                        <div class="col-md-6">
-                            <label for="{{ task_form.status.id_for_label }}" class="form-label">Status</label>
-                            {{ task_form.status }}
-                            {% if task_form.status.errors %}<div class="text-danger small mt-1">{{ task_form.status.errors|join:", " }}</div>{% endif %}
+                        <div class="col-md-4">
+                            <label for="{{ task_form.start_date.id_for_label }}" class="form-label">Start date</label>
+                            {{ task_form.start_date }}
+                            {% if task_form.start_date.errors %}<div class="text-danger small mt-1">{{ task_form.start_date.errors|join:", " }}</div>{% endif %}
+                        </div>
+                        <div class="col-md-4">
+                            <label for="{{ task_form.due_date.id_for_label }}" class="form-label">End date</label>
+                            {{ task_form.due_date }}
+                            {% if task_form.due_date.errors %}<div class="text-danger small mt-1">{{ task_form.due_date.errors|join:", " }}</div>{% endif %}
                         </div>
                         <div class="col-md-6">
                             <label for="{{ task_form.estimated_hours.id_for_label }}" class="form-label">Estimated Hours</label>
@@ -84,20 +105,21 @@
             <div class="card-body p-0">
                 <div class="table-responsive">
                     <table class="table mb-0">
-                        <thead><tr><th>Task</th><th>Assigned To</th><th>Priority</th><th>Due Date</th><th>Status</th><th></th></tr></thead>
+                        <thead><tr><th>Task</th><th>Assigned</th><th>Priority</th><th>Start</th><th>End</th><th>Status</th><th></th></tr></thead>
                         <tbody>
                             {% for task in tasks %}
                             <tr>
                                 <td>{{ task.name }}</td>
-                                <td>{{ task.assigned_to.get_full_name|default:"-" }}</td>
+                                <td>{% if task.assigned_to %}{{ task.assigned_to.get_full_name|default:task.assigned_to.username }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
                                 <td>{% if task.priority == 'high' %}<span class="badge badge-inactive">High</span>{% elif task.priority == 'medium' %}<span class="badge" style="background:#fef3c7;color:#92400e;">Medium</span>{% else %}<span class="badge bg-secondary">Low</span>{% endif %}</td>
-                                <td>{{ task.due_date|date:"d/m/Y"|default:"-" }}</td>
+                                <td>{{ task.start_date|date:"d/m/Y"|default:"—" }}</td>
+                                <td>{{ task.due_date|date:"d/m/Y"|default:"—" }}</td>
                                 <td>{% if task.status == 'completed' %}<span class="badge badge-active">Done</span>{% elif task.status == 'in_progress' %}<span class="badge" style="background:#dbeafe;color:#1e40af;">In Progress</span>{% else %}<span class="badge bg-secondary">Pending</span>{% endif %}</td>
                                 <td>
                                     {% if task.status != 'completed' %}<a href="{% url 'projects:task_status' task.pk 'completed' %}" class="btn btn-action btn-outline-success" title="Mark Complete"><i class="fas fa-check"></i></a>{% endif %}
                                 </td>
                             </tr>
-                            {% empty %}<tr><td colspan="6" class="text-center py-4 text-muted">No tasks yet</td></tr>{% endfor %}
+                            {% empty %}<tr><td colspan="7" class="text-center py-4 text-muted">No tasks yet</td></tr>{% endfor %}
                         </tbody>
                     </table>
                 </div>
@@ -114,15 +136,28 @@
                 {% else %}<span class="badge bg-secondary fs-6">{{ project.get_status_display }}</span>{% endif %}
             </div>
         </div>
-        <div class="card">
+        <div class="card mb-4">
             <div class="card-body">
-                <h6 class="text-muted mb-3">Progress</h6>
-                <div class="d-flex justify-content-between mb-2"><span>Tasks Completed</span><span class="fw-bold">{{ project.completed_tasks }}/{{ project.total_tasks }}</span></div>
-                <div class="progress" style="height:8px;">
-                    <div class="progress-bar bg-success" style="width:{% widthratio project.completed_tasks project.total_tasks 100 %}%"></div>
+                <h6 class="text-muted mb-3">Task progress</h6>
+                <div class="d-flex justify-content-between mb-2 align-items-baseline">
+                    <span>Completed</span>
+                    <span class="fw-bold">{{ project.completed_tasks }}/{{ project.total_tasks }} <span class="text-muted small">({{ project.task_progress_percent|floatformat:1 }}%)</span></span>
                 </div>
+                <div class="progress" style="height:10px;">
+                    <div class="progress-bar bg-success" role="progressbar" style="width: {{ project.task_progress_percent }}%;" aria-valuenow="{{ project.task_progress_percent }}" aria-valuemin="0" aria-valuemax="100"></div>
+                </div>
+                <p class="small text-muted mb-0 mt-2">Progress is equal weight per task (e.g. 2 tasks → 50% each).</p>
             </div>
         </div>
+        {% if has_recorded_expenses %}
+        <div class="card">
+            <div class="card-body">
+                <h6 class="text-muted mb-2">Recorded expenses</h6>
+                <p class="mb-2 fs-5 fw-bold">AED {{ recorded_expenses_total|floatformat:2 }}</p>
+                <a href="{% url 'projects:expense_list' %}?project={{ project.pk }}" class="btn btn-sm btn-outline-primary">View expenses for this project</a>
+            </div>
+        </div>
+        {% endif %}
     </div>
 </div>
 {% endblock %}

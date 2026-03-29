@@ -1,5 +1,44 @@
 {% extends 'base.html' %}
 
+{% block extra_css %}
+<style>
+.sales-invoice-table {
+    font-size: 0.9375rem;
+}
+.sales-invoice-table th,
+.sales-invoice-table td {
+    padding: 0.4rem 0.45rem;
+    vertical-align: middle;
+    font-size: inherit;
+    line-height: 1.45;
+}
+.sales-invoice-table thead th {
+    white-space: nowrap;
+    font-weight: 600;
+}
+.sales-invoice-table .col-customer {
+    max-width: 10rem;
+}
+.sales-invoice-table .col-customer .text-truncate {
+    display: block;
+    max-width: 100%;
+}
+.sales-invoice-table .col-actions {
+    min-width: 7.5rem;
+}
+.sales-invoice-table .col-actions .btn-action {
+    width: 30px;
+    height: 30px;
+    font-size: 0.85rem;
+}
+.sales-invoice-table .badge {
+    font-size: inherit;
+    font-weight: 600;
+    padding: 0.35em 0.55em;
+}
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="page-header d-flex justify-content-between align-items-center">
     <div>
@@ -95,31 +134,31 @@
 <div class="card">
     <div class="card-body p-0">
         <div class="table-responsive">
-            <table class="table table-hover mb-0">
+            <table class="table table-hover table-sm sales-invoice-table mb-0">
                 <thead>
                     <tr>
-                        <th>Invoice #</th>
-                        <th>Customer</th>
+                        <th>#</th>
+                        <th class="col-customer">Customer</th>
                         <th>Date</th>
-                        <th>Due Date</th>
+                        <th>Due</th>
                         <th>Status</th>
                         <th class="text-end">Total</th>
                         <th class="text-end">Paid</th>
                         <th class="text-end">Balance</th>
-                        <th class="text-center" width="120">Actions</th>
+                        <th class="text-center col-actions">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for invoice in invoices %}
                     <tr>
-                        <td>
+                        <td class="text-nowrap">
                             <a href="{% url 'sales:invoice_detail' invoice.pk %}" class="fw-medium text-decoration-none">
                                 {{ invoice.invoice_number }}
                             </a>
                         </td>
-                        <td>{{ invoice.customer.name }}</td>
-                        <td>{{ invoice.invoice_date|date:"d/m/Y" }}</td>
-                        <td>{{ invoice.due_date|date:"d/m/Y" }}</td>
+                        <td class="col-customer"><span class="text-truncate" title="{{ invoice.customer.name }}">{{ invoice.customer.name }}</span></td>
+                        <td class="text-nowrap">{{ invoice.invoice_date|date:"d/m/Y" }}</td>
+                        <td class="text-nowrap">{{ invoice.due_date|date:"d/m/Y" }}</td>
                         <td>
                             {% if invoice.status == 'draft' %}
                                 <span class="badge bg-secondary">Draft</span>
@@ -135,10 +174,11 @@
                                 <span class="badge bg-secondary">{{ invoice.get_status_display }}</span>
                             {% endif %}
                         </td>
-                        <td class="text-end">{{ invoice.total_amount|floatformat:2 }}</td>
-                        <td class="text-end">{{ invoice.paid_amount|floatformat:2 }}</td>
-                        <td class="text-end fw-medium">{{ invoice.balance|floatformat:2 }}</td>
-                        <td class="text-center">
+                        <td class="text-end text-nowrap">{{ invoice.total_amount|floatformat:2 }}</td>
+                        <td class="text-end text-nowrap">{{ invoice.paid_amount|floatformat:2 }}</td>
+                        <td class="text-end fw-medium text-nowrap">{{ invoice.balance|floatformat:2 }}</td>
+                        <td class="text-center col-actions">
+                            <div class="d-flex flex-wrap gap-1 justify-content-center align-items-center">
                             <a href="{% url 'sales:invoice_detail' invoice.pk %}" class="btn btn-action btn-outline-info" title="View">
                                 <i class="fas fa-eye"></i>
                             </a>
@@ -152,6 +192,7 @@
                                 <i class="fas fa-trash"></i>
                             </a>
                             {% endif %}
+                            </div>
                         </td>
                     </tr>
                     {% empty %}

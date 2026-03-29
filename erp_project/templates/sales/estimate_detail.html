@@ -1,0 +1,332 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="page-header">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb mb-2">
+            <li class="breadcrumb-item"><a href="{% url 'sales:estimate_list' %}">Estimates</a></li>
+            <li class="breadcrumb-item active">{{ estimate.estimate_number }}</li>
+        </ol>
+    </nav>
+    <div class="d-flex justify-content-between align-items-center">
+        <div>
+            <h4 class="mb-1 fw-bold">{{ estimate.estimate_number }}</h4>
+            <span class="text-muted">{{ estimate.customer.name }}</span>
+        </div>
+        <div>
+            {% if can_edit %}
+            <a href="{% url 'sales:estimate_edit' estimate.pk %}" class="btn btn-primary">
+                <i class="fas fa-edit me-2"></i>Edit
+            </a>
+            {% endif %}
+            {% if estimate.status == 'approved' %}
+            <a href="{% url 'sales:estimate_convert' estimate.pk %}" class="btn btn-outline-success" onclick="return confirm('Create invoice from this estimate?');">
+                <i class="fas fa-file-invoice me-2"></i>Convert to Invoice
+            </a>
+            {% endif %}
+            <a href="{% url 'sales:estimate_pdf' estimate.pk %}" class="btn btn-outline-danger" target="_blank">
+                <i class="fas fa-file-pdf me-2"></i>PDF
+            </a>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-8">
+        <!-- Estimate Info -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <div class="row g-4">
+                    <div class="col-md-6">
+                        <h6 class="text-muted mb-2">Customer</h6>
+                        <p class="fw-medium mb-0">{{ estimate.customer.name }}</p>
+                        {% if estimate.customer.company %}
+                        <small class="text-muted">{{ estimate.customer.company }}</small>
+                        {% endif %}
+                    </div>
+                    <div class="col-md-3">
+                        <h6 class="text-muted mb-2">Date</h6>
+                        <p class="mb-0">{{ estimate.date|date:"d/m/Y" }}</p>
+                    </div>
+                    <div class="col-md-3">
+                        <h6 class="text-muted mb-2">Valid Until</h6>
+                        <p class="mb-0">{{ estimate.valid_until|date:"d/m/Y"|default:"-" }}</p>
+                    </div>
+                    <div class="col-md-4">
+                        <h6 class="text-muted mb-2">Assigned to</h6>
+                        <p class="mb-0">{% if estimate.assigned_to %}{{ estimate.assigned_to.get_full_name|default:estimate.assigned_to.username }}{% else %}—{% endif %}</p>
+                    </div>
+                    <div class="col-md-4">
+                        <h6 class="text-muted mb-2">Prepared by</h6>
+                        <p class="mb-0">{{ estimate.prepared_by|default:"—" }}</p>
+                    </div>
+                    <div class="col-md-4">
+                        <h6 class="text-muted mb-2">Project</h6>
+                        <p class="mb-0">{% if estimate.project %}{{ estimate.project.name }}{% else %}—{% endif %}</p>
+                    </div>
+                    {% if estimate.scope %}
+                    <div class="col-12">
+                        <h6 class="text-muted mb-2">Scope</h6>
+                        <p class="mb-0">{% for label in estimate.scope_display_labels %}<span class="badge bg-light text-dark border me-1">{{ label }}</span>{% endfor %}</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        
+        <!-- Line Items -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h6 class="mb-0 fw-semibold">Line Items</h6>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table mb-0 table-sm align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Description</th>
+                                <th class="text-center">Qty</th>
+                                <th class="text-end">Base</th>
+                                <th class="text-center">Profit</th>
+                                <th class="text-end">Rate</th>
+                                <th class="text-end">Net</th>
+                                <th class="text-end">Line</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in estimate.items.all %}
+                            {% ifchanged item.group_name %}
+                            {% if item.group_name %}
+                            <tr class="table-secondary">
+                                <td colspan="7" class="fw-semibold small text-uppercase">{{ item.group_name }}</td>
+                            </tr>
+                            {% endif %}
+                            {% endifchanged %}
+                            <tr>
+                                <td>
+                                    {{ item.description }}
+                                    {% if item.inventory_item %}<br><small class="text-muted">{{ item.inventory_item.item_code }}</small>{% endif %}
+                                </td>
+                                <td class="text-center">{{ item.quantity|floatformat:2 }}</td>
+                                <td class="text-end">{{ item.unit_price|floatformat:2 }}</td>
+                                <td class="text-center small">
+                                    {% if item.profit_type == 'percent' %}{{ item.profit_value|floatformat:2 }}%{% elif item.profit_type == 'amount' %}AED {{ item.profit_value|floatformat:2 }}{% else %}—{% endif %}
+                                </td>
+                                <td class="text-end">{{ item.rate|floatformat:2 }}</td>
+                                <td class="text-end">{{ item.total|floatformat:2 }}</td>
+                                <td class="text-end fw-medium">{{ item.total|add:item.vat_amount|floatformat:2 }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="7" class="text-center text-muted py-4">No items</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                        <tfoot>
+                            <tr>
+                                <td colspan="6" class="text-end">Subtotal (excl. VAT):</td>
+                                <td class="text-end fw-medium">AED {{ estimate.subtotal|floatformat:2 }}</td>
+                            </tr>
+                            <tr>
+                                <td colspan="6" class="text-end">VAT:</td>
+                                <td class="text-end fw-medium">AED {{ estimate.vat_amount|floatformat:2 }}</td>
+                            </tr>
+                            {% if estimate.discount_applied and estimate.discount_applied > 0 %}
+                            <tr>
+                                <td colspan="6" class="text-end">Discount:</td>
+                                <td class="text-end text-danger">− AED {{ estimate.discount_applied|floatformat:2 }}</td>
+                            </tr>
+                            {% endif %}
+                            <tr>
+                                <td colspan="6" class="text-end fw-bold">Total:</td>
+                                <td class="text-end fw-bold">AED {{ estimate.total_amount|floatformat:2 }}</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+        
+        {% if estimate.authorized_signature or estimate.customer_signature %}
+        <div class="card mb-4">
+            <div class="card-header">
+                <h6 class="mb-0 fw-semibold">Signatures</h6>
+            </div>
+            <div class="card-body">
+                <div class="row g-4">
+                    <div class="col-md-6 text-center">
+                        <p class="text-muted small mb-2">Authorized signature</p>
+                        {% if estimate.authorized_signature %}
+                        <img src="{{ estimate.authorized_signature.url }}" alt="Authorized signature" class="img-fluid border rounded" style="max-height:120px;">
+                        {% else %}
+                        <p class="text-muted mb-0">—</p>
+                        {% endif %}
+                    </div>
+                    <div class="col-md-6 text-center">
+                        <p class="text-muted small mb-2">Customer signature</p>
+                        {% if estimate.customer_signature %}
+                        <img src="{{ estimate.customer_signature.url }}" alt="Customer signature" class="img-fluid border rounded" style="max-height:120px;">
+                        {% else %}
+                        <p class="text-muted mb-0">—</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+        
+        {% if estimate.notes %}
+        <div class="card mb-4">
+            <div class="card-header">
+                <h6 class="mb-0 fw-semibold">Internal notes</h6>
+            </div>
+            <div class="card-body">
+                <p class="mb-0">{{ estimate.notes|linebreaks }}</p>
+            </div>
+        </div>
+        {% endif %}
+        
+        {% if estimate.client_note %}
+        <div class="card mb-4">
+            <div class="card-header">
+                <h6 class="mb-0 fw-semibold">Client note</h6>
+            </div>
+            <div class="card-body">
+                <p class="mb-0">{{ estimate.client_note|linebreaks }}</p>
+            </div>
+        </div>
+        {% endif %}
+        
+        {% if estimate.terms_and_conditions %}
+        <div class="card">
+            <div class="card-header">
+                <h6 class="mb-0 fw-semibold">Terms & Conditions</h6>
+            </div>
+            <div class="card-body">
+                <p class="mb-0">{{ estimate.terms_and_conditions|linebreaks }}</p>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+    
+    <div class="col-lg-4">
+        <!-- Status -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <h6 class="text-muted mb-3">Status</h6>
+                <div class="mb-3">
+                    {% if estimate.status == 'draft' %}
+                        <span class="badge bg-secondary fs-6">Draft</span>
+                    {% elif estimate.status == 'sent' %}
+                        <span class="badge fs-6" style="background-color: #dbeafe; color: #1e40af;">Sent</span>
+                    {% elif estimate.status == 'approved' %}
+                        <span class="badge badge-active fs-6">Approved</span>
+                    {% elif estimate.status == 'rejected' %}
+                        <span class="badge badge-inactive fs-6">Rejected</span>
+                    {% elif estimate.status == 'expired' %}
+                        <span class="badge bg-warning text-dark fs-6">Expired</span>
+                    {% else %}
+                        <span class="badge bg-secondary fs-6">{{ estimate.get_status_display }}</span>
+                    {% endif %}
+                </div>
+                
+                {% if can_edit %}
+                <hr>
+                <h6 class="text-muted mb-3">Update Status</h6>
+                <div class="d-grid gap-2">
+                    {% if estimate.status == 'draft' %}
+                    <form method="post" action="{% url 'sales:estimate_status' estimate.pk 'sent' %}" class="d-grid">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-sm btn-outline-primary">
+                            <i class="fas fa-paper-plane me-2"></i>Mark as Sent
+                        </button>
+                    </form>
+                    <form method="post" action="{% url 'sales:estimate_status' estimate.pk 'approved' %}" class="d-grid">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-sm btn-outline-success">
+                            <i class="fas fa-check me-2"></i>Approve
+                        </button>
+                    </form>
+                    {% elif estimate.status == 'sent' %}
+                    <form method="post" action="{% url 'sales:estimate_status' estimate.pk 'approved' %}" class="d-grid">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-sm btn-outline-success">
+                            <i class="fas fa-check me-2"></i>Approve
+                        </button>
+                    </form>
+                    <form method="post" action="{% url 'sales:estimate_status' estimate.pk 'rejected' %}" class="d-grid">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-sm btn-outline-danger">
+                            <i class="fas fa-times me-2"></i>Reject
+                        </button>
+                    </form>
+                    <form method="post" action="{% url 'sales:estimate_status' estimate.pk 'expired' %}" class="d-grid">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-sm btn-outline-warning">
+                            <i class="fas fa-clock me-2"></i>Mark Expired
+                        </button>
+                    </form>
+                    {% elif estimate.status == 'approved' %}
+                    <form method="post" action="{% url 'sales:estimate_status' estimate.pk 'draft' %}" class="d-grid">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-sm btn-outline-secondary">
+                            <i class="fas fa-undo me-2"></i>Revert to Draft
+                        </button>
+                    </form>
+                    {% elif estimate.status == 'rejected' or estimate.status == 'expired' %}
+                    <form method="post" action="{% url 'sales:estimate_status' estimate.pk 'draft' %}" class="d-grid">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-sm btn-outline-secondary">
+                            <i class="fas fa-undo me-2"></i>Revert to Draft
+                        </button>
+                    </form>
+                    {% endif %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        
+        <!-- Summary -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <h6 class="text-muted mb-3">Summary</h6>
+                <div class="d-flex justify-content-between mb-2">
+                    <span>Subtotal (excl. VAT)</span>
+                    <span>AED {{ estimate.subtotal|floatformat:2 }}</span>
+                </div>
+                <div class="d-flex justify-content-between mb-2">
+                    <span>VAT</span>
+                    <span>AED {{ estimate.vat_amount|floatformat:2 }}</span>
+                </div>
+                {% if estimate.discount_applied and estimate.discount_applied > 0 %}
+                <div class="d-flex justify-content-between mb-2">
+                    <span>Discount</span>
+                    <span class="text-danger">− AED {{ estimate.discount_applied|floatformat:2 }}</span>
+                </div>
+                {% endif %}
+                <hr>
+                <div class="d-flex justify-content-between">
+                    <span class="fw-bold">Total</span>
+                    <span class="fw-bold">AED {{ estimate.total_amount|floatformat:2 }}</span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Audit Info -->
+        <div class="card">
+            <div class="card-body">
+                <h6 class="text-muted mb-3">Audit Information</h6>
+                <div class="mb-2">
+                    <small class="text-muted">Created</small>
+                    <p class="mb-0 small">{{ estimate.created_at|date:"d/m/Y H:i" }}</p>
+                </div>
+                <div>
+                    <small class="text-muted">Last Updated</small>
+                    <p class="mb-0 small">{{ estimate.updated_at|date:"d/m/Y H:i" }}</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+

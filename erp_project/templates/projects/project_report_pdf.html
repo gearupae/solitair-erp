@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ page_title|default:"Project report" }}</title>
+    <style>
+        @page { size: A4; margin: 14mm; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --ink: #0a0a0a;
+            --ink-soft: #1a1a1a;
+            --silver: #a3a3a3;
+            --mist: #e5e5e5;
+            --paper: #fafafa;
+            --white: #ffffff;
+        }
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            font-size: 11px;
+            line-height: 1.45;
+            color: var(--ink-soft);
+            background: var(--white);
+        }
+        .estimate-container {
+            max-width: 210mm;
+            margin: 0 auto;
+            padding: 16px 16px 28px;
+            background: var(--white);
+        }
+        .addr-grid {
+            display: flex;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 18px;
+            border: 1px solid var(--mist);
+            background: var(--paper);
+        }
+        .addr-block { flex: 1; padding: 14px 16px; min-width: 0; }
+        .addr-block + .addr-block { border-left: 1px solid var(--mist); }
+        .addr-label {
+            font-size: 9px;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            color: var(--silver);
+            margin-bottom: 10px;
+            font-weight: 700;
+        }
+        .addr-from-logo { max-height: 56px; max-width: 200px; margin-bottom: 10px; object-fit: contain; }
+        .addr-name { font-size: 14px; font-weight: 700; color: var(--ink); margin-bottom: 6px; }
+        .addr-lines { font-size: 10px; color: #404040; line-height: 1.55; }
+        .addr-lines .trn {
+            margin-top: 8px; padding-top: 8px; border-top: 1px dashed #ccc;
+            font-weight: 600; color: var(--ink);
+        }
+        .title-strip {
+            background: #153a5c;
+            color: var(--white);
+            padding: 16px 18px;
+            margin-bottom: 16px;
+            border: 1px solid #0c2840;
+        }
+        .estimate-title-text {
+            font-size: 22px;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            line-height: 1.2;
+            color: #f1f5f9;
+        }
+        .estimate-number {
+            font-size: 17px;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            color: #e2e8f0;
+            margin-top: 6px;
+        }
+        .status-badge {
+            display: inline-block;
+            margin-top: 8px;
+            padding: 4px 12px;
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            border: 1px solid rgba(148, 163, 184, 0.45);
+            background: rgba(15, 23, 42, 0.45);
+            color: #e2e8f0;
+        }
+        .addr-to-project-details { margin-top: 12px; padding-top: 12px; border-top: 1px dashed #ccc; }
+        .addr-to-detail-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            padding: 4px 0;
+            font-size: 9px;
+            border-bottom: 1px solid #eee;
+        }
+        .addr-to-detail-row:last-child { border-bottom: none; }
+        .addr-to-detail-label { color: #737373; flex-shrink: 0; }
+        .addr-to-detail-value { font-weight: 600; color: #404040; text-align: right; }
+        .items-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 18px;
+        }
+        .items-table thead th {
+            background: #153a5c;
+            color: #f5f5f5;
+            padding: 9px 6px;
+            text-align: left;
+            font-size: 9px;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            border: 1px solid #0c2840;
+        }
+        .items-table thead th.text-center { text-align: center; }
+        .items-table tbody td {
+            padding: 8px 6px;
+            border-bottom: 1px solid #e8e8e8;
+            font-size: 10px;
+            vertical-align: top;
+        }
+        .items-table tbody tr:nth-child(even) { background: #f7f7f7; }
+        .item-number { color: #737373; font-size: 9px; }
+        .doc-footer {
+            margin-top: 22px;
+            padding-top: 12px;
+            border-top: 1px solid #d4d4d4;
+            font-size: 9px;
+            color: #525252;
+        }
+        .summary-strip {
+            background: #f5f5f5;
+            border: 1px solid #e5e5e5;
+            padding: 10px 14px;
+            margin-bottom: 16px;
+            font-size: 10px;
+        }
+        .summary-strip strong { color: #171717; }
+        @media print {
+            body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+            .no-print { display: none !important; }
+            .estimate-container { padding: 0; max-width: none; }
+        }
+        .print-actions {
+            position: fixed;
+            top: 16px;
+            right: 16px;
+            display: flex;
+            gap: 10px;
+            z-index: 1000;
+        }
+        .print-btn {
+            padding: 10px 18px;
+            border: 1px solid #0c2840;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            text-decoration: none;
+            background: #153a5c;
+            color: #fff;
+        }
+        .print-btn-secondary { background: #f5f5f5; color: #333; }
+        .project-desc {
+            margin-bottom: 16px;
+            padding: 10px 12px;
+            background: #fafafa;
+            border: 1px solid #e5e5e5;
+            font-size: 10px;
+            line-height: 1.55;
+        }
+    </style>
+</head>
+<body>
+    <div class="print-actions no-print">
+        <button type="button" class="print-btn" onclick="window.print()">{{ print_button_label|default:"Print report" }}</button>
+        <a href="{% url 'projects:project_detail' project.pk %}" class="print-btn print-btn-secondary">Back to project</a>
+    </div>
+
+    <div class="estimate-container">
+        <div class="title-strip">
+            <div class="estimate-title-text">PROJECT REPORT</div>
+            <div class="estimate-number">{{ project.project_code }}</div>
+            <div class="status-badge">{{ project.get_status_display }}</div>
+        </div>
+
+        <div class="addr-grid">
+            <div class="addr-block addr-to">
+                <div class="addr-label">To</div>
+                {% if project.customer %}
+                    {% if project.customer.company %}
+                    <div class="addr-name">{{ project.customer.company }}</div>
+                    {% if project.customer.name %}
+                    <div class="addr-lines" style="font-weight:600;margin-bottom:4px;">Attn: {{ project.customer.name }}</div>
+                    {% endif %}
+                    {% else %}
+                    <div class="addr-name">{{ project.customer.name }}</div>
+                    {% endif %}
+                    <div class="addr-lines">
+                        {% if project.customer.address %}<div>{{ project.customer.address }}</div>{% endif %}
+                        {% if project.customer.city or project.customer.country %}
+                        <div>{% if project.customer.city %}{{ project.customer.city }}{% endif %}{% if project.customer.city and project.customer.country %}, {% endif %}{% if project.customer.country %}{{ project.customer.country }}{% endif %}</div>
+                        {% endif %}
+                        {% if project.customer.phone %}<div>Tel: {{ project.customer.phone }}</div>{% endif %}
+                        {% if project.customer.email %}<div>{{ project.customer.email }}</div>{% endif %}
+                        {% if project.customer.trn %}<div class="trn">VAT / TRN: {{ project.customer.trn }}</div>{% endif %}
+                    </div>
+                {% else %}
+                    <div class="addr-name">—</div>
+                    <div class="addr-lines" style="color:#737373;">No customer linked</div>
+                {% endif %}
+                <div class="addr-to-project-details">
+                    <div class="addr-label">Project details</div>
+                    <div class="addr-to-detail-row">
+                        <span class="addr-to-detail-label">Project name</span>
+                        <span class="addr-to-detail-value">{{ project.name }}</span>
+                    </div>
+                    <div class="addr-to-detail-row">
+                        <span class="addr-to-detail-label">Start date</span>
+                        <span class="addr-to-detail-value">{{ project.start_date|date:"d/m/Y"|default:"—" }}</span>
+                    </div>
+                    <div class="addr-to-detail-row">
+                        <span class="addr-to-detail-label">End date</span>
+                        <span class="addr-to-detail-value">{{ project.end_date|date:"d/m/Y"|default:"—" }}</span>
+                    </div>
+                    {% if project.manager %}
+                    <div class="addr-to-detail-row">
+                        <span class="addr-to-detail-label">Manager</span>
+                        <span class="addr-to-detail-value">{{ project.manager.get_full_name|default:project.manager.username }}</span>
+                    </div>
+                    {% endif %}
+                    <div class="addr-to-detail-row">
+                        <span class="addr-to-detail-label">Progress (tasks)</span>
+                        <span class="addr-to-detail-value">{{ project.task_progress_percent }}% ({{ project.completed_tasks }}/{{ project.total_tasks }})</span>
+                    </div>
+                </div>
+            </div>
+            <div class="addr-block addr-from">
+                <div class="addr-label">From</div>
+                {% if company.logo and logo_absolute_url %}
+                <img src="{{ logo_absolute_url }}" alt="{{ company.company_name }}" class="addr-from-logo">
+                {% endif %}
+                <div class="addr-name">{{ company.company_name }}</div>
+                <div class="addr-lines">
+                    {% if company.address %}<div>{{ company.address|linebreaksbr }}</div>{% endif %}
+                    {% if company.phone %}<div>Tel: {{ company.phone }}</div>{% endif %}
+                    {% if company.email %}<div>{{ company.email }}</div>{% endif %}
+                    {% if company.website %}<div>{{ company.website }}</div>{% endif %}
+                    {% if company.tax_id %}<div class="trn">VAT / TRN: {{ company.tax_id }}</div>{% endif %}
+                </div>
+            </div>
+        </div>
+
+        {% if project.description %}
+        <div class="project-desc">
+            <strong>Description</strong><br>
+            {{ project.description|linebreaksbr }}
+        </div>
+        {% endif %}
+
+        <div class="summary-strip">
+            <strong>Tasks:</strong> {{ tasks|length }} total
+            · <strong>Completed:</strong> {{ project.completed_tasks }}
+            · <strong>Progress:</strong> {{ project.task_progress_percent }}%
+        </div>
+
+        <table class="items-table">
+            <thead>
+                <tr>
+                    <th style="width:28px;">#</th>
+                    <th>Task</th>
+                    <th class="text-center" style="width:72px;">Start</th>
+                    <th class="text-center" style="width:72px;">Due</th>
+                    <th style="width:88px;">Status</th>
+                    <th style="width:72px;">Priority</th>
+                    <th>Assigned</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for task in tasks %}
+                <tr>
+                    <td class="item-number">{{ forloop.counter }}</td>
+                    <td>
+                        <strong>{{ task.name }}</strong>
+                        {% if task.description %}<div style="color:#525252;font-size:9px;margin-top:4px;">{{ task.description|truncatewords:40 }}</div>{% endif %}
+                    </td>
+                    <td class="text-center">{{ task.start_date|date:"d/m/Y"|default:"—" }}</td>
+                    <td class="text-center">{{ task.due_date|date:"d/m/Y"|default:"—" }}</td>
+                    <td>{{ task.get_status_display }}</td>
+                    <td>{{ task.get_priority_display }}</td>
+                    <td>{% if task.assigned_to %}{{ task.assigned_to.get_full_name|default:task.assigned_to.username }}{% else %}—{% endif %}</td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="7" style="text-align:center;padding:20px;color:#737373;">No tasks</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <div class="doc-footer">
+            <div><strong>{{ company.company_name }}</strong> — Project report {{ project.project_code }}</div>
+            <div style="margin-top:4px;">Generated {% now "d/m/Y H:i" %}</div>
+        </div>
+    </div>
+</body>
+</html>

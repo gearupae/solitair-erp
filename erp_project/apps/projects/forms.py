@@ -10,26 +10,45 @@ User = get_user_model()
 class ProjectForm(forms.ModelForm):
     class Meta:
         model = Project
-        fields = ['name', 'description', 'customer', 'manager', 'status', 'start_date', 'end_date', 'budget']
+        fields = [
+            'name', 'description', 'customer', 'manager', 'status',
+            'start_date', 'end_date', 'budget', 'estimated_cost', 'members',
+        ]
         widgets = {
             'start_date': forms.DateInput(attrs={'type': 'date'}),
             'end_date': forms.DateInput(attrs={'type': 'date'}),
             'description': forms.Textarea(attrs={'rows': 2}),
+            'members': forms.SelectMultiple(
+                attrs={'class': 'form-select select2-members', 'data-placeholder': 'Search users…'}
+            ),
         }
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        user_qs = User.objects.filter(is_active=True).order_by('first_name', 'last_name', 'username')
+        self.fields['manager'].queryset = user_qs
+        self.fields['members'].queryset = user_qs
+        self.fields['members'].required = False
+        self.fields['members'].label = 'Members'
         for name, field in self.fields.items():
             if name in ['customer', 'manager', 'status']:
                 field.widget.attrs['class'] = 'form-select'
+            elif name == 'members':
+                pass  # class set on widget
             else:
                 field.widget.attrs['class'] = 'form-control'
+        self.fields['budget'].widget.attrs.setdefault('step', '0.01')
+        self.fields['estimated_cost'].widget.attrs.setdefault('step', '0.01')
 
 class TaskForm(forms.ModelForm):
     class Meta:
         model = Task
-        fields = ['name', 'description', 'assigned_to', 'status', 'priority', 'due_date', 'estimated_hours']
+        fields = [
+            'name', 'description', 'assigned_to', 'status', 'priority',
+            'start_date', 'due_date', 'estimated_hours',
+        ]
         widgets = {
+            'start_date': forms.DateInput(attrs={'type': 'date'}),
             'due_date': forms.DateInput(attrs={'type': 'date'}),
             'description': forms.Textarea(attrs={'rows': 2}),
         }
@@ -39,6 +58,7 @@ class TaskForm(forms.ModelForm):
         # Filter assigned_to to active users only
         self.fields['assigned_to'].queryset = User.objects.filter(is_active=True).order_by('first_name', 'last_name', 'username')
         self.fields['assigned_to'].empty_label = '-- Unassigned --'
+        self.fields['due_date'].label = 'End date'
         for name, field in self.fields.items():
             if name in ['assigned_to', 'status', 'priority']:
                 field.widget.attrs['class'] = 'form-select'

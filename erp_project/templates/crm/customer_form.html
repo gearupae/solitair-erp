@@ -1,5 +1,21 @@
 {% extends 'base.html' %}
 
+{% block extra_js %}
+<script>
+$(function () {
+    if ($('.select2-crm-scope').length) {
+        $('.select2-crm-scope').select2({
+            theme: 'bootstrap-5',
+            width: '100%',
+            placeholder: 'Select scope…',
+            closeOnSelect: false,
+            allowClear: true,
+        });
+    }
+});
+</script>
+{% endblock %}
+
 {% block content %}
 <div class="page-header">
     <nav aria-label="breadcrumb">
@@ -45,6 +61,42 @@
                         <option value="prospect" {% if object.status == 'prospect' %}selected{% endif %}>Prospect</option>
                         <option value="inactive" {% if object.status == 'inactive' %}selected{% endif %}>Inactive</option>
                     </select>
+                </div>
+            </div>
+            
+            <hr class="my-4">
+            
+            <h6 class="fw-semibold mb-3">
+                <i class="fas fa-briefcase me-2 text-primary"></i>Business Details
+            </h6>
+            <div class="row g-3 mb-3">
+                <div class="col-md-6">
+                    <label class="form-label">{{ form.trn.label }}</label>
+                    {{ form.trn }}
+                    {% for err in form.trn.errors %}<div class="text-danger small">{{ err }}</div>{% endfor %}
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">{{ form.website.label }}</label>
+                    {{ form.website }}
+                    {% for err in form.website.errors %}<div class="text-danger small">{{ err }}</div>{% endfor %}
+                </div>
+            </div>
+            <div class="row g-3 mb-4">
+                <div class="col-md-6">
+                    <label class="form-label" for="{{ form.scope.id_for_label }}">{{ form.scope.label }}</label>
+                    {{ form.scope }}
+                    {% for err in form.scope.errors %}<div class="text-danger small">{{ err }}</div>{% endfor %}
+                    <div class="form-text">Search and select one or more disciplines.</div>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">{{ form.primary_project.label }}</label>
+                    {{ form.primary_project }}
+                    {% for err in form.primary_project.errors %}<div class="text-danger small">{{ err }}</div>{% endfor %}
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">{{ form.job_type.label }}</label>
+                    {{ form.job_type }}
+                    {% for err in form.job_type.errors %}<div class="text-danger small">{{ err }}</div>{% endfor %}
                 </div>
             </div>
             

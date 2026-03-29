@@ -1,43 +1,58 @@
 """
-Sales Views - Quotations and Invoices
+Sales Views - Estimates and Invoices
 Invoices post to accounting module as single source of truth.
 """
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.views.generic import ListView, CreateView, UpdateView, DetailView
-from django.urls import reverse_lazy
-from django.db.models import Q, Sum
-from django.http import JsonResponse
+from django.urls import reverse, reverse_lazy
+from django.db.models import Q, Sum, Prefetch
+from django.http import JsonResponse, HttpResponse, HttpResponseForbidden, HttpResponseNotAllowed
 from django.core.exceptions import ValidationError
+from django.core.serializers.json import DjangoJSONEncoder
 from datetime import date
 from decimal import Decimal, InvalidOperation
+import json
 
-from .models import Quotation, QuotationItem, Invoice, InvoiceItem
-from .forms import QuotationForm, QuotationItemFormSet, InvoiceForm, InvoiceItemFormSet
+from .models import Estimate, EstimateItem, Invoice, InvoiceItem
+from .forms import EstimateForm, EstimateItemFormSet, InvoiceForm, InvoiceItemFormSet
 from apps.crm.models import Customer
 from apps.core.mixins import PermissionRequiredMixin, CreatePermissionMixin, UpdatePermissionMixin
+from apps.core.notification_utils import notify_if_new_assignee
 from apps.core.utils import PermissionChecker
 
 
-# ============ QUOTATION VIEWS ============
+@login_required
+def estimate_items_sample_csv(request):
+    """Download CSV template for estimate line items (inventory item_code + pricing fields)."""
+    if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'sales', 'create')):
+        return HttpResponseForbidden('Permission denied.')
+    from .estimate_csv import sample_csv_content
 
-class QuotationListView(PermissionRequiredMixin, ListView):
-    """List all quotations."""
-    model = Quotation
-    template_name = 'sales/quotation_list.html'
-    context_object_name = 'quotations'
+    response = HttpResponse(sample_csv_content(), content_type='text/csv; charset=utf-8')
+    response['Content-Disposition'] = 'attachment; filename="estimate_line_items_sample.csv"'
+    return response
+
+
+# ============ ESTIMATE VIEWS ============
+
+class EstimateListView(PermissionRequiredMixin, ListView):
+    """List all estimates."""
+    model = Estimate
+    template_name = 'sales/estimate_list.html'
+    context_object_name = 'estimates'
     module_name = 'sales'
     permission_type = 'view'
     paginate_by = 25
     
     def get_queryset(self):
-        queryset = Quotation.objects.filter(is_active=True).select_related('customer')
+        queryset = Estimate.objects.filter(is_active=True).select_related('customer')
         
         search = self.request.GET.get('search')
         if search:
             queryset = queryset.filter(
-                Q(quotation_number__icontains=search) |
+                Q(estimate_number__icontains=search) |
                 Q(customer__name__icontains=search)
             )
         
@@ -49,9 +64,9 @@ class QuotationListView(PermissionRequiredMixin, ListView):
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['title'] = 'Quotations'
+        context['title'] = 'Estimates'
         context['customers'] = Customer.objects.filter(is_active=True)
-        context['status_choices'] = Quotation.STATUS_CHOICES
+        context['status_choices'] = Estimate.STATUS_CHOICES
         context['can_create'] = self.request.user.is_superuser or PermissionChecker.has_permission(
             self.request.user, 'sales', 'create'
         )
@@ -64,45 +79,97 @@ class QuotationListView(PermissionRequiredMixin, ListView):
         context['today'] = date.today().isoformat()
         
         # Summary stats
-        quotations = self.get_queryset()
-        context['total_quotations'] = quotations.count()
-        context['total_amount'] = quotations.aggregate(Sum('total_amount'))['total_amount__sum'] or 0
-        context['approved_amount'] = quotations.filter(status='approved').aggregate(Sum('total_amount'))['total_amount__sum'] or 0
-        context['pending_count'] = quotations.filter(status__in=['draft', 'sent', 'pending']).count()
+        estimates = self.get_queryset()
+        context['total_estimates'] = estimates.count()
+        context['total_amount'] = estimates.aggregate(Sum('total_amount'))['total_amount__sum'] or 0
+        context['approved_amount'] = estimates.filter(status='approved').aggregate(Sum('total_amount'))['total_amount__sum'] or 0
+        context['pending_count'] = estimates.filter(status__in=['draft', 'sent', 'pending']).count()
         
         return context
 
 
-class QuotationCreateView(CreatePermissionMixin, CreateView):
-    """Create a new quotation."""
-    model = Quotation
-    form_class = QuotationForm
-    template_name = 'sales/quotation_form.html'
-    success_url = reverse_lazy('sales:quotation_list')
+class EstimateCreateView(CreatePermissionMixin, CreateView):
+    """Create a new estimate."""
+    model = Estimate
+    form_class = EstimateForm
+    template_name = 'sales/estimate_form.html'
+    success_url = reverse_lazy('sales:estimate_list')
     module_name = 'sales'
+
+    def get_initial(self):
+        from apps.settings_app.models import CompanySettings
+        initial = super().get_initial()
+        cs = CompanySettings.get_settings()
+        initial['assigned_to'] = self.request.user.pk
+        u = self.request.user
+        initial['prepared_by'] = (u.get_full_name() or '').strip() or u.username
+        if cs.estimate_default_client_note:
+            initial['client_note'] = cs.estimate_default_client_note
+        if cs.estimate_default_terms:
+            initial['terms_and_conditions'] = cs.estimate_default_terms
+        return initial
     
     def get_context_data(self, **kwargs):
         from apps.finance.models import TaxCode
+        from apps.inventory.models import Item
         context = super().get_context_data(**kwargs)
-        context['title'] = 'Create Quotation'
+        context['title'] = 'Create Estimate'
         context['today'] = date.today().isoformat()
+        context['scope_choices'] = Estimate.SCOPE_CHOICES
         # Tax Codes for VAT selection (SAP/Oracle Standard)
         context['tax_codes'] = TaxCode.objects.filter(is_active=True).order_by('code')
         context['default_tax_code'] = TaxCode.objects.filter(is_active=True, is_default=True).first()
+        rows = list(
+            Item.objects.filter(is_active=True, status='active')
+            .values('id', 'item_code', 'name', 'selling_price', 'tax_code_id')[:2000]
+        )
+        context['inventory_items_json'] = json.dumps(rows, cls=DjangoJSONEncoder)
+        context['estimate_items_sample_csv_url'] = reverse('sales:estimate_items_sample_csv')
+        context['inventory_items_export_csv_url'] = reverse('inventory:item_export_csv')
         if 'items_formset' not in kwargs:
             if self.request.POST:
-                context['items_formset'] = QuotationItemFormSet(self.request.POST)
+                context['items_formset'] = EstimateItemFormSet(
+                    self.request.POST, self.request.FILES, prefix='items'
+                )
             else:
-                context['items_formset'] = QuotationItemFormSet()
+                context['items_formset'] = EstimateItemFormSet(prefix='items')
         else:
             context['items_formset'] = kwargs['items_formset']
         return context
     
     def post(self, request, *args, **kwargs):
         self.object = None
+        csv_file = request.FILES.get('items_csv')
+        if csv_file and getattr(csv_file, 'size', 0) > 0:
+            from .estimate_csv import bulk_create_estimate_items, parse_estimate_items_csv
+
+            form = self.get_form()
+            if form.is_valid():
+                try:
+                    rows = parse_estimate_items_csv(csv_file)
+                except ValueError as e:
+                    messages.error(request, str(e))
+                    items_formset = EstimateItemFormSet(request.POST, request.FILES, prefix='items')
+                    return self.form_invalid(form, items_formset)
+                self.object = form.save()
+                bulk_create_estimate_items(self.object, rows, replace_existing=False)
+                messages.success(request, f'Estimate {self.object.estimate_number} created successfully.')
+                est = self.object
+                link = reverse('sales:estimate_detail', kwargs={'pk': est.pk})
+                notify_if_new_assignee(
+                    est.assigned_to,
+                    request.user,
+                    f'Estimate assigned: {est.estimate_number}',
+                    f'{est.customer.name} — {est.estimate_number}' if est.customer else est.estimate_number,
+                    link,
+                )
+                return redirect(self.success_url)
+            items_formset = EstimateItemFormSet(request.POST, request.FILES, prefix='items')
+            return self.form_invalid(form, items_formset)
+
         form = self.get_form()
-        items_formset = QuotationItemFormSet(request.POST)
-        
+        items_formset = EstimateItemFormSet(request.POST, request.FILES, prefix='items')
+
         if form.is_valid() and items_formset.is_valid():
             return self.form_valid(form, items_formset)
         else:
@@ -113,7 +180,16 @@ class QuotationCreateView(CreatePermissionMixin, CreateView):
         items_formset.instance = self.object
         items_formset.save()
         self.object.calculate_totals()
-        messages.success(self.request, f'Quotation {self.object.quotation_number} created successfully.')
+        messages.success(self.request, f'Estimate {self.object.estimate_number} created successfully.')
+        est = self.object
+        link = reverse('sales:estimate_detail', kwargs={'pk': est.pk})
+        notify_if_new_assignee(
+            est.assigned_to,
+            self.request.user,
+            f'Estimate assigned: {est.estimate_number}',
+            f'{est.customer.name} — {est.estimate_number}' if est.customer else est.estimate_number,
+            link,
+        )
         return redirect(self.success_url)
     
     def form_invalid(self, form, items_formset):
@@ -122,52 +198,96 @@ class QuotationCreateView(CreatePermissionMixin, CreateView):
         )
 
 
-class QuotationUpdateView(UpdatePermissionMixin, UpdateView):
-    """Edit a quotation."""
-    model = Quotation
-    form_class = QuotationForm
-    template_name = 'sales/quotation_form.html'
+class EstimateUpdateView(UpdatePermissionMixin, UpdateView):
+    """Edit an estimate."""
+    model = Estimate
+    form_class = EstimateForm
+    template_name = 'sales/estimate_form.html'
     module_name = 'sales'
     
     def get_context_data(self, **kwargs):
         from apps.finance.models import TaxCode
+        from apps.inventory.models import Item
         context = super().get_context_data(**kwargs)
-        context['title'] = f'Edit Quotation: {self.object.quotation_number}'
+        context['title'] = f'Edit Estimate: {self.object.estimate_number}'
         context['today'] = date.today().isoformat()
-        # Tax Codes for VAT selection (SAP/Oracle Standard)
+        context['scope_choices'] = Estimate.SCOPE_CHOICES
         context['tax_codes'] = TaxCode.objects.filter(is_active=True).order_by('code')
         context['default_tax_code'] = TaxCode.objects.filter(is_active=True, is_default=True).first()
+        rows = list(
+            Item.objects.filter(is_active=True, status='active')
+            .values('id', 'item_code', 'name', 'selling_price', 'tax_code_id')[:2000]
+        )
+        context['inventory_items_json'] = json.dumps(rows, cls=DjangoJSONEncoder)
+        context['estimate_items_sample_csv_url'] = reverse('sales:estimate_items_sample_csv')
+        context['inventory_items_export_csv_url'] = reverse('inventory:item_export_csv')
         if 'items_formset' not in kwargs:
             if self.request.POST:
-                context['items_formset'] = QuotationItemFormSet(self.request.POST, instance=self.object)
+                context['items_formset'] = EstimateItemFormSet(
+                    self.request.POST, self.request.FILES, instance=self.object, prefix='items'
+                )
             else:
-                context['items_formset'] = QuotationItemFormSet(instance=self.object)
+                context['items_formset'] = EstimateItemFormSet(instance=self.object, prefix='items')
         else:
             context['items_formset'] = kwargs['items_formset']
         return context
     
     def post(self, request, *args, **kwargs):
         self.object = self.get_object()
+        csv_file = request.FILES.get('items_csv')
+        if csv_file and getattr(csv_file, 'size', 0) > 0:
+            from .estimate_csv import bulk_create_estimate_items, parse_estimate_items_csv
+
+            form = self.get_form()
+            if form.is_valid():
+                try:
+                    rows = parse_estimate_items_csv(csv_file)
+                except ValueError as e:
+                    messages.error(request, str(e))
+                    items_formset = EstimateItemFormSet(
+                        request.POST, request.FILES, instance=self.object, prefix='items'
+                    )
+                    return self.form_invalid(form, items_formset)
+                old_assignee_id = self.object.assigned_to_id
+                self.object = form.save()
+                bulk_create_estimate_items(self.object, rows, replace_existing=True)
+                messages.success(request, f'Estimate {self.object.estimate_number} updated successfully.')
+                est = self.object
+                if est.assigned_to_id and est.assigned_to_id != old_assignee_id:
+                    link = reverse('sales:estimate_detail', kwargs={'pk': est.pk})
+                    notify_if_new_assignee(
+                        est.assigned_to,
+                        request.user,
+                        f'Estimate assigned to you: {est.estimate_number}',
+                        f'{est.customer.name} — reassigned by {request.user.get_full_name() or request.user.username}'
+                        if est.customer
+                        else est.estimate_number,
+                        link,
+                    )
+                return redirect('sales:estimate_detail', pk=self.object.pk)
+            items_formset = EstimateItemFormSet(request.POST, request.FILES, instance=self.object, prefix='items')
+            return self.form_invalid(form, items_formset)
+
         form = self.get_form()
-        items_formset = QuotationItemFormSet(request.POST, instance=self.object)
-        
-        # Debug: Check form and formset validity
+        items_formset = EstimateItemFormSet(request.POST, request.FILES, instance=self.object, prefix='items')
+
         form_valid = form.is_valid()
         formset_valid = items_formset.is_valid()
-        
+
         if not form_valid:
             messages.error(request, f'Form errors: {form.errors}')
         if not formset_valid:
             messages.error(request, f'Formset errors: {items_formset.errors}')
             if items_formset.non_form_errors():
                 messages.error(request, f'Formset non-form errors: {items_formset.non_form_errors()}')
-        
+
         if form_valid and formset_valid:
             return self.form_valid(form, items_formset)
         else:
             return self.form_invalid(form, items_formset)
     
     def form_valid(self, form, items_formset):
+        old_assignee_id = self.object.assigned_to_id
         # Save the main form first
         self.object = form.save()
         # Then save the formset with the instance
@@ -177,8 +297,20 @@ class QuotationUpdateView(UpdatePermissionMixin, UpdateView):
         self.object.calculate_totals()
         # Refresh from database to ensure we have latest data
         self.object.refresh_from_db()
-        messages.success(self.request, f'Quotation {self.object.quotation_number} updated successfully.')
-        return redirect('sales:quotation_detail', pk=self.object.pk)
+        messages.success(self.request, f'Estimate {self.object.estimate_number} updated successfully.')
+        est = self.object
+        if est.assigned_to_id and est.assigned_to_id != old_assignee_id:
+            link = reverse('sales:estimate_detail', kwargs={'pk': est.pk})
+            notify_if_new_assignee(
+                est.assigned_to,
+                self.request.user,
+                f'Estimate assigned to you: {est.estimate_number}',
+                f'{est.customer.name} — reassigned by {self.request.user.get_full_name() or self.request.user.username}'
+                if est.customer
+                else est.estimate_number,
+                link,
+            )
+        return redirect('sales:estimate_detail', pk=self.object.pk)
     
     def form_invalid(self, form, items_formset):
         return self.render_to_response(
@@ -186,17 +318,23 @@ class QuotationUpdateView(UpdatePermissionMixin, UpdateView):
         )
 
 
-class QuotationDetailView(PermissionRequiredMixin, DetailView):
-    """View quotation details."""
-    model = Quotation
-    template_name = 'sales/quotation_detail.html'
-    context_object_name = 'quotation'
+class EstimateDetailView(PermissionRequiredMixin, DetailView):
+    """View estimate details."""
+    model = Estimate
+    template_name = 'sales/estimate_detail.html'
+    context_object_name = 'estimate'
     module_name = 'sales'
     permission_type = 'view'
+
+    def get_queryset(self):
+        items_qs = EstimateItem.objects.select_related('inventory_item', 'tax_code').order_by('sort_order', 'id')
+        return Estimate.objects.select_related(
+            'customer', 'assigned_to', 'project', 'created_by', 'updated_by',
+        ).prefetch_related(Prefetch('items', queryset=items_qs))
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['title'] = f'Quotation: {self.object.quotation_number}'
+        context['title'] = f'Estimate: {self.object.estimate_number}'
         context['can_edit'] = self.request.user.is_superuser or PermissionChecker.has_permission(
             self.request.user, 'sales', 'edit'
         )
@@ -204,149 +342,261 @@ class QuotationDetailView(PermissionRequiredMixin, DetailView):
 
 
 @login_required
-def quotation_delete(request, pk):
-    """Soft delete a quotation."""
-    quotation = get_object_or_404(Quotation, pk=pk)
+def estimate_delete(request, pk):
+    """Soft delete an estimate."""
+    estimate = get_object_or_404(Estimate, pk=pk)
     if request.user.is_superuser or PermissionChecker.has_permission(request.user, 'sales', 'delete'):
-        quotation.is_active = False
-        quotation.save()
-        messages.success(request, f'Quotation {quotation.quotation_number} deleted.')
+        estimate.is_active = False
+        estimate.save()
+        messages.success(request, f'Estimate {estimate.estimate_number} deleted.')
     else:
         messages.error(request, 'Permission denied.')
-    return redirect('sales:quotation_list')
+    return redirect('sales:estimate_list')
 
 
 @login_required
-def quotation_update_status(request, pk, status):
-    """Update quotation status."""
+def estimate_update_status(request, pk, status):
+    """Update estimate status."""
     if request.method != 'POST':
         messages.error(request, 'Invalid request method.')
-        return redirect('sales:quotation_detail', pk=pk)
+        return redirect('sales:estimate_detail', pk=pk)
     
-    quotation = get_object_or_404(Quotation, pk=pk)
+    estimate = get_object_or_404(Estimate, pk=pk)
     
     if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'sales', 'edit')):
         messages.error(request, 'Permission denied.')
-        return redirect('sales:quotation_detail', pk=pk)
+        return redirect('sales:estimate_detail', pk=pk)
     
     valid_statuses = ['draft', 'sent', 'approved', 'rejected', 'expired']
     if status not in valid_statuses:
         messages.error(request, 'Invalid status.')
-        return redirect('sales:quotation_detail', pk=pk)
+        return redirect('sales:estimate_detail', pk=pk)
     
-    old_status = quotation.status
-    quotation.status = status
-    quotation.save()
+    old_status = estimate.status
+    estimate.status = status
+    estimate.save()
     
-    status_display = dict(Quotation.STATUS_CHOICES).get(status, status)
-    messages.success(request, f'Quotation {quotation.quotation_number} status updated to {status_display}.')
+    status_display = dict(Estimate.STATUS_CHOICES).get(status, status)
+    messages.success(request, f'Estimate {estimate.estimate_number} status updated to {status_display}.')
     
-    return redirect('sales:quotation_detail', pk=pk)
+    return redirect('sales:estimate_detail', pk=pk)
 
 
 @login_required
-def quotation_convert_to_invoice(request, pk):
-    """Convert approved quotation to invoice."""
-    quotation = get_object_or_404(Quotation, pk=pk)
+def estimate_convert_to_invoice(request, pk):
+    """Convert approved estimate to invoice."""
+    estimate = get_object_or_404(Estimate, pk=pk)
     
     if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'sales', 'create')):
         messages.error(request, 'Permission denied.')
-        return redirect('sales:quotation_list')
+        return redirect('sales:estimate_list')
     
-    # Create invoice from quotation
+    # Create invoice from estimate
     invoice = Invoice.objects.create(
-        quotation=quotation,
-        customer=quotation.customer,
+        estimate=estimate,
+        customer=estimate.customer,
         invoice_date=date.today(),
         due_date=date.today(),
         status='draft',
-        notes=quotation.notes,
+        notes=estimate.notes,
     )
     
-    # Copy items
-    for item in quotation.items.all():
+    # Copy items (use final rate as invoice unit price)
+    for item in estimate.items.all():
         InvoiceItem.objects.create(
             invoice=invoice,
             description=item.description,
             quantity=item.quantity,
-            unit_price=item.unit_price,
+            unit_price=item.rate,
+            tax_code=item.tax_code,
             vat_rate=item.vat_rate,
+            is_vat_inclusive=item.is_vat_inclusive,
         )
     
     invoice.calculate_totals()
-    messages.success(request, f'Invoice {invoice.invoice_number} created from quotation.')
+    messages.success(request, f'Invoice {invoice.invoice_number} created from estimate.')
+    link = reverse('sales:invoice_edit', kwargs={'pk': invoice.pk})
+    notify_if_new_assignee(
+        estimate.assigned_to,
+        request.user,
+        f'Invoice from estimate: {invoice.invoice_number}',
+        f'{estimate.estimate_number} → {invoice.invoice_number} for {estimate.customer.name}'
+        if estimate.customer
+        else invoice.invoice_number,
+        link,
+    )
     return redirect('sales:invoice_edit', pk=invoice.pk)
 
 
-@login_required
-def quotation_pdf(request, pk):
+def _build_estimate_pdf_context(request, estimate):
     """
-    Generate professional Quotation PDF.
-    Includes company details, customer info, line items, terms & conditions.
+    Shared context for proposal and proforma invoice HTML (print/PDF).
+    Caller adds document_heading, document_number, print_button_label, page_title.
     """
-    from django.http import HttpResponse
     from apps.settings_app.models import CompanySettings
-    
-    quotation = get_object_or_404(
-        Quotation.objects.select_related('customer').prefetch_related('items'),
-        pk=pk
-    )
-    
-    if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'sales', 'view')):
-        messages.error(request, 'Permission denied.')
-        return redirect('sales:quotation_list')
-    
-    # Get company settings
+
     company = CompanySettings.get_settings()
-    
-    # Convert amount to words (simple implementation)
+
     def number_to_words(n):
-        """Convert number to words (simplified English)."""
         ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine',
-                'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 
+                'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen',
                 'Seventeen', 'Eighteen', 'Nineteen']
         tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety']
-        
+
         if n < 20:
             return ones[n]
-        elif n < 100:
+        if n < 100:
             return tens[n // 10] + ('' if n % 10 == 0 else ' ' + ones[n % 10])
-        elif n < 1000:
+        if n < 1000:
             return ones[n // 100] + ' Hundred' + ('' if n % 100 == 0 else ' and ' + number_to_words(n % 100))
-        elif n < 1000000:
+        if n < 1000000:
             return number_to_words(n // 1000) + ' Thousand' + ('' if n % 1000 == 0 else ' ' + number_to_words(n % 1000))
-        elif n < 1000000000:
+        if n < 1000000000:
             return number_to_words(n // 1000000) + ' Million' + ('' if n % 1000000 == 0 else ' ' + number_to_words(n % 1000000))
         return str(n)
-    
+
     try:
-        amount_whole = int(quotation.total_amount)
-        amount_decimal = int((quotation.total_amount - amount_whole) * 100)
+        amount_whole = int(estimate.total_amount)
+        amount_decimal = int((estimate.total_amount - amount_whole) * 100)
         amount_words = number_to_words(amount_whole)
         if amount_decimal > 0:
             amount_words += f" and {amount_decimal}/100"
         amount_words += " Dirhams Only"
-    except:
+    except Exception:
         amount_words = ""
-    
-    # Calculate VAT summary by rate
+
     vat_summary = {}
-    for item in quotation.items.all():
+    for item in estimate.items.all():
         rate = float(item.vat_rate)
         if rate not in vat_summary:
             vat_summary[rate] = {'taxable': 0, 'vat': 0}
         vat_summary[rate]['taxable'] += float(item.total)
         vat_summary[rate]['vat'] += float(item.vat_amount)
-    
-    context = {
-        'quotation': quotation,
+
+    logo_absolute_url = ''
+    if company.logo:
+        logo_absolute_url = request.build_absolute_uri(company.logo.url)
+
+    authorized_signature_url = ''
+    if estimate.authorized_signature:
+        authorized_signature_url = request.build_absolute_uri(estimate.authorized_signature.url)
+    customer_signature_url = ''
+    if estimate.customer_signature:
+        customer_signature_url = request.build_absolute_uri(estimate.customer_signature.url)
+
+    return {
+        'estimate': estimate,
         'company': company,
+        'logo_absolute_url': logo_absolute_url,
+        'authorized_signature_url': authorized_signature_url,
+        'customer_signature_url': customer_signature_url,
         'amount_words': amount_words,
         'vat_summary': vat_summary,
         'is_pdf': True,
     }
-    
-    return render(request, 'sales/quotation_pdf.html', context)
+
+
+@login_required
+def estimate_pdf(request, pk):
+    """
+    Proposal PDF (HTML for print): same layout as proforma, different heading and document number.
+    """
+    items_qs = EstimateItem.objects.select_related('inventory_item', 'tax_code').order_by('sort_order', 'id')
+    estimate = get_object_or_404(
+        Estimate.objects.select_related('customer', 'assigned_to', 'project').prefetch_related(
+            Prefetch('items', queryset=items_qs)
+        ),
+        pk=pk,
+    )
+
+    if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'sales', 'view')):
+        messages.error(request, 'Permission denied.')
+        return redirect('sales:estimate_list')
+
+    context = _build_estimate_pdf_context(request, estimate)
+    context.update({
+        'document_heading': 'PROPOSAL',
+        'document_number': estimate.estimate_number,
+        'page_title': f'Proposal — {estimate.estimate_number}',
+        'print_button_label': 'Print proposal',
+        'show_pdf_status': True,
+    })
+    return render(request, 'sales/estimate_pdf.html', context)
+
+
+@login_required
+def estimate_proforma_pdf(request, pk):
+    """Proforma invoice: same template as proposal; document number PI-{estimate_number}."""
+    items_qs = EstimateItem.objects.select_related('inventory_item', 'tax_code').order_by('sort_order', 'id')
+    estimate = get_object_or_404(
+        Estimate.objects.select_related('customer', 'assigned_to', 'project').prefetch_related(
+            Prefetch('items', queryset=items_qs)
+        ),
+        pk=pk,
+    )
+
+    if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'sales', 'view')):
+        messages.error(request, 'Permission denied.')
+        return redirect('sales:estimate_list')
+
+    proforma_number = f'PI-{estimate.estimate_number}'
+    context = _build_estimate_pdf_context(request, estimate)
+    context.update({
+        'document_heading': 'PROFORMA INVOICE',
+        'document_number': proforma_number,
+        'page_title': f'Proforma invoice — {proforma_number}',
+        'print_button_label': 'Print proforma invoice',
+        'show_pdf_status': False,
+    })
+    return render(request, 'sales/estimate_pdf.html', context)
+
+
+@login_required
+def estimate_set_status(request, pk):
+    """POST: update estimate status from list (inline). Fields: status, next (optional relative URL)."""
+    if request.method != 'POST':
+        return HttpResponseNotAllowed(['POST'])
+
+    estimate = get_object_or_404(Estimate, pk=pk)
+
+    if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'sales', 'edit')):
+        messages.error(request, 'Permission denied.')
+        return redirect('sales:estimate_list')
+
+    status = request.POST.get('status')
+    valid_statuses = [c[0] for c in Estimate.STATUS_CHOICES]
+    if status not in valid_statuses:
+        messages.error(request, 'Invalid status.')
+        return redirect('sales:estimate_list')
+
+    estimate.status = status
+    estimate.save()
+
+    status_display = dict(Estimate.STATUS_CHOICES).get(status, status)
+    messages.success(request, f'Estimate {estimate.estimate_number} status updated to {status_display}.')
+
+    next_url = request.POST.get('next', '').strip()
+    if next_url and next_url.startswith('/') and not next_url.startswith('//'):
+        return redirect(next_url)
+    return redirect('sales:estimate_detail', pk=pk)
+
+
+@login_required
+def inventory_item_json(request, pk):
+    """JSON for populating estimate line from inventory item."""
+    from apps.inventory.models import Item
+    item = get_object_or_404(
+        Item.objects.filter(is_active=True, status='active'),
+        pk=pk,
+    )
+    return JsonResponse({
+        'id': item.pk,
+        'item_code': item.item_code,
+        'name': item.name,
+        'description': item.description or '',
+        'selling_price': str(item.selling_price),
+        'tax_code_id': item.tax_code_id,
+    })
 
 
 # ============ INVOICE VIEWS ============
@@ -361,7 +611,7 @@ class InvoiceListView(PermissionRequiredMixin, ListView):
     paginate_by = 25
     
     def get_queryset(self):
-        queryset = Invoice.objects.filter(is_active=True).select_related('customer', 'quotation')
+        queryset = Invoice.objects.filter(is_active=True).select_related('customer', 'estimate')
         
         search = self.request.GET.get('search')
         if search:
@@ -442,6 +692,17 @@ class InvoiceCreateView(CreatePermissionMixin, CreateView):
         items_formset.save()
         self.object.calculate_totals()
         messages.success(self.request, f'Invoice {self.object.invoice_number} created successfully.')
+        inv = self.object
+        est = inv.estimate if inv.estimate_id else None
+        if est and est.assigned_to_id:
+            link = reverse('sales:invoice_detail', kwargs={'pk': inv.pk})
+            notify_if_new_assignee(
+                est.assigned_to,
+                self.request.user,
+                f'Invoice created: {inv.invoice_number}',
+                f'From estimate {est.estimate_number} — {inv.customer.name}' if inv.customer else inv.invoice_number,
+                link,
+            )
         return redirect(self.success_url)
     
     def form_invalid(self, form, items_formset):
@@ -647,7 +908,7 @@ def invoice_pdf(request, pk):
     from apps.settings_app.models import CompanySettings
     
     invoice = get_object_or_404(
-        Invoice.objects.select_related('customer', 'quotation').prefetch_related('items'),
+        Invoice.objects.select_related('customer', 'estimate').prefetch_related('items'),
         pk=pk
     )
     
@@ -696,12 +957,17 @@ def invoice_pdf(request, pk):
             vat_summary[rate] = {'taxable': 0, 'vat': 0}
         vat_summary[rate]['taxable'] += float(item.total)
         vat_summary[rate]['vat'] += float(item.vat_amount)
-    
+
+    logo_absolute_url = ''
+    if company.logo:
+        logo_absolute_url = request.build_absolute_uri(company.logo.url)
+
     context = {
         'invoice': invoice,
         'company': company,
         'amount_words': amount_words,
         'vat_summary': vat_summary,
+        'logo_absolute_url': logo_absolute_url,
         'is_pdf': True,
     }
     

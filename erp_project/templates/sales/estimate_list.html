@@ -1,0 +1,302 @@
+{% extends 'base.html' %}
+
+{% block extra_css %}
+<style>
+/* Compact table + readable type size */
+.estimate-list-table {
+    font-size: 0.9375rem;
+}
+.estimate-list-table th,
+.estimate-list-table td {
+    padding: 0.45rem 0.45rem;
+    vertical-align: middle;
+}
+.estimate-list-table th {
+    white-space: nowrap;
+    font-size: 0.875rem;
+}
+.estimate-list-table .col-customer {
+    max-width: 10rem;
+}
+.estimate-list-table .col-customer .text-truncate {
+    display: block;
+    max-width: 100%;
+}
+.estimate-list-actions {
+    min-width: 11rem;
+}
+.estimate-list-actions .btn-action {
+    width: 32px;
+    height: 32px;
+    font-size: 0.8rem;
+}
+.estimate-status-inline .estimate-status-select {
+    min-width: 6.25rem;
+    max-width: 7.5rem;
+    padding: 0.2rem 1.75rem 0.2rem 0.4rem;
+    font-size: inherit;
+    line-height: 1.35;
+    font-weight: 400;
+    border: 1px solid transparent;
+    cursor: pointer;
+}
+/* Label-style backgrounds by current status (inline edit unchanged; colors update after save) */
+.estimate-status-select.estimate-status-draft {
+    background-color: #f3f4f6;
+    color: #374151;
+    border-color: #e5e7eb;
+}
+.estimate-status-select.estimate-status-sent {
+    background-color: #dbeafe;
+    color: #1e40af;
+}
+.estimate-status-select.estimate-status-approved {
+    background-color: #dcfce7;
+    color: #166534;
+}
+.estimate-status-select.estimate-status-rejected {
+    background-color: #fee2e2;
+    color: #991b1b;
+}
+.estimate-status-select.estimate-status-expired {
+    background-color: #f3f4f6;
+    color: #6b7280;
+    border-color: #d1d5db;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-center">
+    <div>
+        <h4 class="mb-1 fw-bold">{{ title }}</h4>
+        <p class="text-muted mb-0">Manage your sales estimates</p>
+    </div>
+    <div>
+        {% if can_create %}
+        <a href="{% url 'sales:estimate_create' %}" class="btn btn-primary">
+            <i class="fas fa-plus me-2"></i>Create Estimate
+        </a>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Summary Cards -->
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="bg-primary bg-opacity-10 rounded p-3 me-3">
+                        <i class="fas fa-file-invoice text-primary"></i>
+                    </div>
+                    <div>
+                        <p class="text-muted mb-0 small">Total Estimates</p>
+                        <h5 class="mb-0 fw-bold">{{ total_estimates }}</h5>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="bg-info bg-opacity-10 rounded p-3 me-3">
+                        <i class="fas fa-dollar-sign text-info"></i>
+                    </div>
+                    <div>
+                        <p class="text-muted mb-0 small">Total Amount</p>
+                        <h5 class="mb-0 fw-bold">AED {{ total_amount|floatformat:2 }}</h5>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="bg-success bg-opacity-10 rounded p-3 me-3">
+                        <i class="fas fa-check-circle text-success"></i>
+                    </div>
+                    <div>
+                        <p class="text-muted mb-0 small">Approved Amount</p>
+                        <h5 class="mb-0 fw-bold">AED {{ approved_amount|floatformat:2 }}</h5>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="bg-warning bg-opacity-10 rounded p-3 me-3">
+                        <i class="fas fa-clock text-warning"></i>
+                    </div>
+                    <div>
+                        <p class="text-muted mb-0 small">Pending</p>
+                        <h5 class="mb-0 fw-bold">{{ pending_count }}</h5>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="card mb-4">
+    <div class="card-body py-3">
+        <form method="get" class="row g-3 align-items-end">
+            <div class="col-md-4">
+                <label class="form-label small text-muted">Search</label>
+                <input type="text" name="search" class="form-control" placeholder="Estimate #, Customer..." value="{{ request.GET.search }}">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small text-muted">Status</label>
+                <select name="status" class="form-select">
+                    <option value="">All Status</option>
+                    {% for value, label in status_choices %}
+                    <option value="{{ value }}" {% if request.GET.status == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-5">
+                <button type="submit" class="btn btn-primary me-2">
+                    <i class="fas fa-filter me-1"></i>Filter
+                </button>
+                <a href="{% url 'sales:estimate_list' %}" class="btn btn-light">Clear</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Estimates Table -->
+<div class="card">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover table-sm estimate-list-table mb-0">
+                <thead>
+                    <tr>
+                        <th>Estimate #</th>
+                        <th class="col-customer">Customer</th>
+                        <th>Date</th>
+                        <th>Valid</th>
+                        <th>Status</th>
+                        <th class="text-end">Amount</th>
+                        <th class="text-center estimate-list-actions">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for estimate in estimates %}
+                    <tr>
+                        <td>
+                            <a href="{% url 'sales:estimate_detail' estimate.pk %}" class="fw-medium text-decoration-none">
+                                {{ estimate.estimate_number }}
+                            </a>
+                        </td>
+                        <td class="col-customer"><span class="text-truncate" title="{{ estimate.customer.name }}">{{ estimate.customer.name }}</span></td>
+                        <td>{{ estimate.date|date:"d/m/Y" }}</td>
+                        <td>
+                            {% if estimate.valid_until %}
+                                {{ estimate.valid_until|date:"d/m/Y" }}
+                            {% else %}
+                                <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if can_edit %}
+                            <form method="post" action="{% url 'sales:estimate_set_status' estimate.pk %}" class="estimate-status-inline">
+                                {% csrf_token %}
+                                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                                <select name="status" class="form-select form-select-sm estimate-status-select estimate-status-{{ estimate.status }}" aria-label="Status" onchange="this.form.submit()">
+                                    {% for value, label in status_choices %}
+                                    <option value="{{ value }}" {% if estimate.status == value %}selected{% endif %}>{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                            </form>
+                            {% else %}
+                            {% if estimate.status == 'draft' %}
+                                <span class="badge bg-secondary">Draft</span>
+                            {% elif estimate.status == 'sent' %}
+                                <span class="badge" style="background-color: #dbeafe; color: #1e40af;">Sent</span>
+                            {% elif estimate.status == 'approved' %}
+                                <span class="badge badge-active">Approved</span>
+                            {% elif estimate.status == 'rejected' %}
+                                <span class="badge badge-inactive">Rejected</span>
+                            {% elif estimate.status == 'expired' %}
+                                <span class="badge bg-secondary">Expired</span>
+                            {% else %}
+                                <span class="badge bg-secondary">{{ estimate.get_status_display }}</span>
+                            {% endif %}
+                            {% endif %}
+                        </td>
+                        <td class="text-end fw-medium text-nowrap">AED {{ estimate.total_amount|floatformat:2 }}</td>
+                        <td class="text-center estimate-list-actions">
+                            <div class="d-flex flex-wrap gap-1 justify-content-center align-items-center">
+                                {% if can_edit %}
+                                <a href="{% url 'sales:estimate_edit' estimate.pk %}" class="btn btn-action btn-outline-primary" title="Edit">
+                                    <i class="fas fa-edit"></i>
+                                </a>
+                                {% endif %}
+                                {% if can_create and estimate.status == 'approved' %}
+                                <a href="{% url 'sales:estimate_convert' estimate.pk %}" class="btn btn-action btn-outline-success" title="Convert to Invoice" onclick="return confirm('Create invoice from this estimate?');">
+                                    <i class="fas fa-file-invoice"></i>
+                                </a>
+                                {% endif %}
+                                {% if can_delete %}
+                                <a href="{% url 'sales:estimate_delete' estimate.pk %}" class="btn btn-action btn-outline-danger" title="Delete" onclick="return confirm('Delete this estimate?');">
+                                    <i class="fas fa-trash"></i>
+                                </a>
+                                {% endif %}
+                                <a href="{% url 'sales:estimate_pdf' estimate.pk %}" class="btn btn-action btn-outline-secondary" title="Proposal PDF" target="_blank" rel="noopener">
+                                    <i class="fas fa-file-pdf"></i>
+                                </a>
+                                <a href="{% url 'sales:estimate_proforma_pdf' estimate.pk %}" class="btn btn-action btn-outline-warning" title="Proforma invoice PDF" target="_blank" rel="noopener">
+                                    <i class="fas fa-file-invoice-dollar"></i>
+                                </a>
+                            </div>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="7" class="text-center py-5 text-muted">
+                            <i class="fas fa-file-invoice fa-3x mb-3 d-block"></i>
+                            <p class="mb-2">No estimates found</p>
+                            {% if can_create %}
+                            <a href="{% url 'sales:estimate_create' %}" class="btn btn-primary btn-sm">
+                                <i class="fas fa-plus me-1"></i>Create First Estimate
+                            </a>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Pagination -->
+{% if page_obj.has_other_pages %}
+<nav class="mt-4">
+    <ul class="pagination justify-content-center">
+        {% if page_obj.has_previous %}
+        <li class="page-item">
+            <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">Previous</a>
+        </li>
+        {% endif %}
+        <li class="page-item disabled">
+            <span class="page-link">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+        </li>
+        {% if page_obj.has_next %}
+        <li class="page-item">
+            <a class="page-link" href="?page={{ page_obj.next_page_number }}{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">Next</a>
+        </li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+{% endblock %}
+

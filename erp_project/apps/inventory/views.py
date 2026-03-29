@@ -10,7 +10,9 @@ from django.db.models import Q, Sum, F, Value, DecimalField, Count, Avg, Prefetc
 from django.db import models as db_models
 from django.db.models.functions import Coalesce
 from django.db import transaction
-from django.http import HttpResponse
+import csv
+
+from django.http import HttpResponse, HttpResponseForbidden
 from decimal import Decimal
 
 from .models import Category, Warehouse, Item, Stock, StockMovement, ConsumableRequest, ConsumableRequestItem, ConsumableRequestAttachment, ConditionLog
@@ -237,6 +239,51 @@ class ItemListView(PermissionRequiredMixin, ListView):
         )
         
         return context
+
+
+@login_required
+def item_export_csv(request):
+    """Export all active inventory items as CSV (reference for estimate line-item import)."""
+    if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'inventory', 'view')):
+        return HttpResponseForbidden('Permission denied.')
+
+    response = HttpResponse(content_type='text/csv; charset=utf-8')
+    response['Content-Disposition'] = 'attachment; filename="inventory_items.csv"'
+    response.write('\ufeff')
+    w = csv.writer(response)
+    w.writerow(
+        [
+            'item_code',
+            'name',
+            'description',
+            'category_code',
+            'item_type',
+            'unit',
+            'purchase_price',
+            'selling_price',
+            'tax_code',
+            'minimum_stock',
+            'status',
+        ]
+    )
+    qs = Item.objects.filter(is_active=True).select_related('category', 'tax_code').order_by('item_code')
+    for item in qs:
+        w.writerow(
+            [
+                item.item_code,
+                item.name,
+                (item.description or '').replace('\n', ' ').replace('\r', ' ')[:2000],
+                item.category.code if item.category and item.category.code else (item.category.name if item.category else ''),
+                item.item_type,
+                item.unit,
+                item.purchase_price,
+                item.selling_price,
+                item.tax_code.code if item.tax_code_id else '',
+                item.minimum_stock,
+                item.status,
+            ]
+        )
+    return response
 
 
 class ItemCreateView(CreatePermissionMixin, CreateView):

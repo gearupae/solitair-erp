@@ -3,484 +3,380 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tax Invoice - {{ invoice.invoice_number }}</title>
+    <title>Tax Invoice — {{ invoice.invoice_number }}</title>
     <style>
-        /* FTA Compliant Tax Invoice Template */
         @page {
             size: A4;
-            margin: 15mm;
+            margin: 14mm;
         }
-        
+
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
-        
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            font-size: 11px;
-            line-height: 1.4;
-            color: #333;
-            background: white;
+
+        :root {
+            --ink: #0a0a0a;
+            --ink-soft: #1a1a1a;
+            --graphite: #2a2a2a;
+            --silver: #a3a3a3;
+            --mist: #e5e5e5;
+            --paper: #fafafa;
+            --white: #ffffff;
         }
-        
-        .invoice-container {
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            font-size: 11px;
+            line-height: 1.45;
+            color: var(--ink-soft);
+            background: var(--white);
+        }
+
+        .estimate-container {
             max-width: 210mm;
             margin: 0 auto;
-            padding: 20px;
-            background: white;
+            padding: 16px 16px 28px;
+            background: var(--white);
         }
-        
-        /* Header */
-        .header {
+
+        .addr-grid {
             display: flex;
             justify-content: space-between;
-            align-items: flex-start;
-            margin-bottom: 20px;
-            padding-bottom: 15px;
-            border-bottom: 2px solid #1a365d;
+            gap: 16px;
+            margin-bottom: 18px;
+            border: 1px solid var(--mist);
+            background: var(--paper);
         }
-        
-        .company-info {
+
+        .addr-block {
             flex: 1;
+            padding: 14px 16px;
+            min-width: 0;
         }
-        
-        .company-name {
-            font-size: 22px;
-            font-weight: bold;
-            color: #1a365d;
-            margin-bottom: 5px;
+
+        .addr-block + .addr-block {
+            border-left: 1px solid var(--mist);
         }
-        
-        .company-details {
-            font-size: 10px;
-            color: #666;
-            line-height: 1.5;
-        }
-        
-        .company-trn {
-            font-size: 11px;
-            font-weight: bold;
-            color: #1a365d;
-            margin-top: 8px;
-        }
-        
-        .invoice-title-section {
-            text-align: right;
-        }
-        
-        .invoice-title {
-            font-size: 28px;
-            font-weight: bold;
-            color: #1a365d;
-            margin-bottom: 5px;
-        }
-        
-        .invoice-subtitle {
-            font-size: 10px;
-            color: #666;
-            margin-bottom: 10px;
-        }
-        
-        .invoice-number-box {
-            background: #f7fafc;
-            border: 1px solid #e2e8f0;
-            padding: 10px 15px;
-            text-align: center;
-        }
-        
-        .invoice-number {
-            font-size: 14px;
-            font-weight: bold;
-            color: #1a365d;
-        }
-        
-        /* Info Section */
-        .info-section {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 20px;
-        }
-        
-        .info-box {
-            width: 48%;
-            background: #f8fafc;
-            border: 1px solid #e2e8f0;
-            padding: 12px;
-        }
-        
-        .info-box-title {
+
+        .addr-label {
             font-size: 9px;
             text-transform: uppercase;
-            letter-spacing: 1px;
-            color: #718096;
-            margin-bottom: 8px;
-            font-weight: 600;
+            letter-spacing: 0.12em;
+            color: var(--silver);
+            margin-bottom: 10px;
+            font-weight: 700;
         }
-        
-        .info-box-content {
-            font-size: 11px;
+
+        .addr-from-logo {
+            max-height: 56px;
+            max-width: 200px;
+            margin-bottom: 10px;
+            object-fit: contain;
         }
-        
-        .info-box-name {
-            font-size: 13px;
-            font-weight: bold;
-            color: #2d3748;
-            margin-bottom: 4px;
+
+        .addr-name {
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--ink);
+            margin-bottom: 6px;
         }
-        
-        .info-box-trn {
+
+        .addr-lines {
             font-size: 10px;
+            color: #404040;
+            line-height: 1.55;
+        }
+
+        .addr-lines .trn {
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px dashed #ccc;
             font-weight: 600;
-            color: #1a365d;
-            margin-top: 6px;
-            padding-top: 6px;
-            border-top: 1px dashed #cbd5e0;
+            color: var(--ink);
         }
-        
-        .dates-section {
-            width: 48%;
+
+        .title-strip {
+            background: #153a5c;
+            color: var(--white);
+            padding: 16px 18px;
+            margin-bottom: 16px;
+            border: 1px solid #0c2840;
         }
-        
-        .date-row {
+
+        .title-strip-main {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 6px;
+        }
+
+        .estimate-title-text {
+            font-size: 22px;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            line-height: 1.2;
+            color: #f1f5f9;
+        }
+
+        .estimate-number {
+            font-size: 17px;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            color: #e2e8f0;
+        }
+
+        .addr-to-estimate-details {
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px dashed #ccc;
+        }
+
+        .addr-to-estimate-details .addr-label {
+            margin-bottom: 8px;
+        }
+
+        .addr-to-detail-row {
             display: flex;
             justify-content: space-between;
-            padding: 6px 0;
-            border-bottom: 1px solid #e2e8f0;
+            gap: 8px;
+            padding: 4px 0;
+            font-size: 9px;
+            border-bottom: 1px solid #eee;
         }
-        
-        .date-row:last-child {
+
+        .addr-to-detail-row:last-child {
             border-bottom: none;
         }
-        
-        .date-label {
-            color: #718096;
-            font-size: 10px;
+
+        .addr-to-detail-label {
+            color: #737373;
+            flex-shrink: 0;
         }
-        
-        .date-value {
+
+        .addr-to-detail-value {
             font-weight: 600;
-            font-size: 11px;
+            color: #404040;
+            text-align: right;
         }
-        
-        /* Items Table */
+
+        /* Line items — column layout unchanged from previous invoice PDF */
         .items-table {
             width: 100%;
             border-collapse: collapse;
-            margin-bottom: 20px;
+            margin-bottom: 18px;
         }
-        
+
         .items-table thead th {
-            background: #1a365d;
-            color: white;
-            padding: 10px 8px;
+            background: #153a5c;
+            color: #f5f5f5;
+            padding: 9px 6px;
             text-align: left;
-            font-size: 10px;
+            font-size: 9px;
             text-transform: uppercase;
-            letter-spacing: 0.5px;
+            letter-spacing: 0.04em;
+            border: 1px solid #0c2840;
         }
-        
-        .items-table thead th.text-center {
-            text-align: center;
-        }
-        
-        .items-table thead th.text-right {
-            text-align: right;
-        }
-        
+
+        .items-table thead th.text-center { text-align: center; }
+        .items-table thead th.text-right { text-align: right; }
+
         .items-table tbody td {
-            padding: 10px 8px;
-            border-bottom: 1px solid #e2e8f0;
-            font-size: 11px;
-        }
-        
-        .items-table tbody td.text-center {
-            text-align: center;
-        }
-        
-        .items-table tbody td.text-right {
-            text-align: right;
-            font-family: 'Consolas', 'Monaco', monospace;
-        }
-        
-        .items-table tbody tr:nth-child(even) {
-            background: #f8fafc;
-        }
-        
-        .item-number {
-            color: #718096;
+            padding: 8px 6px;
+            border-bottom: 1px solid #e8e8e8;
             font-size: 10px;
         }
-        
-        .item-description {
-            font-weight: 500;
+
+        .items-table tbody td.text-center { text-align: center; }
+        .items-table tbody td.text-right { text-align: right; font-variant-numeric: tabular-nums; }
+
+        .items-table tbody tr:nth-child(even) {
+            background: #f7f7f7;
         }
-        
-        /* Totals Section */
+
+        .item-number { color: #737373; font-size: 9px; }
+        .item-description { font-weight: 500; }
+
         .totals-section {
             display: flex;
             justify-content: flex-end;
-            margin-bottom: 20px;
+            margin-bottom: 16px;
         }
-        
+
         .totals-table {
             width: 300px;
         }
-        
+
         .totals-row {
             display: flex;
             justify-content: space-between;
-            padding: 8px 12px;
-            border-bottom: 1px solid #e2e8f0;
+            padding: 7px 12px;
+            border-bottom: 1px solid #e5e5e5;
+            font-size: 10px;
         }
-        
-        .totals-row.subtotal {
-            background: #f8fafc;
-        }
-        
-        .totals-row.vat-row {
-            background: #fff5f5;
-        }
-        
+
+        .totals-row.subtotal { background: #f5f5f5; }
+        .totals-row.vat-row { background: #ececec; }
+
         .totals-row.total {
-            background: #1a365d;
-            color: white;
-            font-size: 14px;
-            font-weight: bold;
+            background: #153a5c;
+            color: #fff;
+            font-size: 13px;
+            font-weight: 700;
+            border: 1px solid #0c2840;
         }
-        
-        .totals-label {
-            color: #4a5568;
-        }
-        
+
         .totals-row.total .totals-label {
-            color: white;
+            color: #e8eef5;
         }
-        
-        .totals-value {
-            font-family: 'Consolas', 'Monaco', monospace;
-            font-weight: 600;
+
+        .totals-row.total .totals-value {
+            color: #fff;
         }
-        
-        /* Amount in Words */
+
+        .totals-label { color: #525252; }
+        .totals-value { font-variant-numeric: tabular-nums; font-weight: 600; }
+
         .amount-words {
-            background: #f0fff4;
-            border: 1px solid #9ae6b4;
+            background: #f0f0f0;
+            border: 1px solid #ddd;
             padding: 12px;
-            margin-bottom: 20px;
-            font-size: 11px;
+            margin-bottom: 16px;
+            font-size: 10px;
         }
-        
+
         .amount-words-label {
             font-size: 9px;
             text-transform: uppercase;
-            color: #276749;
-            font-weight: 600;
+            letter-spacing: 0.08em;
+            color: #525252;
+            font-weight: 700;
             margin-bottom: 4px;
         }
-        
-        .amount-words-value {
-            font-weight: 600;
-            color: #22543d;
-        }
-        
-        /* VAT Summary */
-        .vat-summary {
-            margin-bottom: 20px;
-        }
-        
-        .vat-summary-title {
-            font-size: 10px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            color: #718096;
-            margin-bottom: 8px;
-            font-weight: 600;
-        }
-        
-        .vat-summary-table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 10px;
-        }
-        
-        .vat-summary-table th,
-        .vat-summary-table td {
-            padding: 6px 10px;
-            border: 1px solid #e2e8f0;
-        }
-        
-        .vat-summary-table th {
-            background: #edf2f7;
-            text-align: left;
-            font-weight: 600;
-        }
-        
-        .vat-summary-table td.text-right {
-            text-align: right;
-            font-family: 'Consolas', 'Monaco', monospace;
-        }
-        
-        /* Terms & Notes */
+
         .notes-section {
-            margin-bottom: 20px;
+            margin-bottom: 16px;
         }
-        
+
         .notes-title {
             font-size: 10px;
             text-transform: uppercase;
-            letter-spacing: 1px;
-            color: #718096;
-            margin-bottom: 8px;
-            font-weight: 600;
+            letter-spacing: 0.08em;
+            color: #525252;
+            font-weight: 700;
+            margin-bottom: 4px;
         }
-        
+
         .notes-content {
-            background: #f8fafc;
-            border: 1px solid #e2e8f0;
-            padding: 12px;
+            background: #fafafa;
+            border: 1px solid #e5e5e5;
+            padding: 10px 12px;
             font-size: 10px;
+            line-height: 1.55;
+        }
+
+        .doc-footer {
+            margin-top: 28px;
+            padding-top: 12px;
+            border-top: 1px solid #d4d4d4;
+            font-size: 9px;
+            color: #525252;
+        }
+
+        .doc-footer-line {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 8px;
+            margin-bottom: 6px;
+        }
+
+        .doc-footer-company {
+            flex: 1;
+            min-width: 200px;
             line-height: 1.5;
         }
-        
-        /* Footer */
-        .footer {
-            margin-top: 30px;
-            padding-top: 15px;
-            border-top: 1px solid #e2e8f0;
-            font-size: 9px;
-            color: #718096;
-            text-align: center;
+
+        .doc-footer-company strong {
+            color: #171717;
+            font-size: 10px;
         }
-        
-        .footer-legal {
-            margin-top: 10px;
-            padding: 10px;
-            background: #f8fafc;
-            border: 1px solid #e2e8f0;
-            font-size: 8px;
-            line-height: 1.6;
+
+        .doc-footer-page {
+            font-variant-numeric: tabular-nums;
+            color: #737373;
+            white-space: nowrap;
         }
-        
-        /* FTA Compliance Badge */
-        .fta-badge {
-            display: inline-block;
-            background: #c53030;
-            color: white;
-            padding: 3px 8px;
-            font-size: 8px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            margin-top: 5px;
-        }
-        
-        /* Print Styles */
+
         @media print {
             body {
                 -webkit-print-color-adjust: exact !important;
                 print-color-adjust: exact !important;
             }
-            
-            .no-print {
-                display: none !important;
-            }
-            
-            .invoice-container {
-                padding: 0;
-                max-width: none;
-            }
+            .no-print { display: none !important; }
+            .estimate-container { padding: 0; max-width: none; }
         }
-        
-        /* Print Button (for HTML view) */
+
         .print-actions {
             position: fixed;
-            top: 20px;
-            right: 20px;
+            top: 16px;
+            right: 16px;
             display: flex;
             gap: 10px;
             z-index: 1000;
         }
-        
+
         .print-btn {
-            padding: 10px 20px;
-            border: none;
-            border-radius: 5px;
+            padding: 10px 18px;
+            border: 1px solid #0c2840;
+            border-radius: 4px;
             cursor: pointer;
-            font-size: 14px;
+            font-size: 13px;
             font-weight: 600;
-            display: flex;
-            align-items: center;
-            gap: 8px;
+            text-decoration: none;
+            background: #153a5c;
+            color: #fff;
         }
-        
-        .print-btn-primary {
-            background: #1a365d;
-            color: white;
-        }
-        
+
         .print-btn-secondary {
-            background: #e2e8f0;
-            color: #4a5568;
-        }
-        
-        .print-btn:hover {
-            opacity: 0.9;
+            background: #f5f5f5;
+            color: #333;
         }
     </style>
 </head>
 <body>
-    <!-- Print Actions (hidden when printing) -->
     <div class="print-actions no-print">
-        <button class="print-btn print-btn-primary" onclick="window.print()">
-            🖨️ Print Invoice
-        </button>
-        <a href="{% url 'sales:invoice_detail' invoice.pk %}" class="print-btn print-btn-secondary">
-            ← Back to Invoice
-        </a>
+        <button type="button" class="print-btn" onclick="window.print()">Print invoice</button>
+        <a href="{% url 'sales:invoice_detail' invoice.pk %}" class="print-btn print-btn-secondary">Back to invoice</a>
     </div>
-    
-    <div class="invoice-container">
-        <!-- Header -->
-        <div class="header">
-            <div class="company-info">
-                {% if company.logo %}
-                <img src="{{ company.logo.url }}" alt="{{ company.company_name }}" style="max-height: 80px; margin-bottom: 10px;">
-                {% else %}
-                <div class="company-name">{{ company.company_name }}</div>
-                <div class="company-details">
-                    {% if company.address %}{{ company.address }}<br>{% endif %}
-                    {% if company.phone %}Tel: {{ company.phone }}{% endif %}
-                    {% if company.email %} | {{ company.email }}{% endif %}
-                </div>
-                {% if company.tax_id %}
-                <div class="company-trn">TRN: {{ company.tax_id }}</div>
-                {% endif %}
-                {% endif %}
-            </div>
-            <div class="invoice-title-section">
-                <div class="invoice-title">TAX INVOICE</div>
-                <div class="invoice-number-box">
-                    <div class="invoice-number">{{ invoice.invoice_number }}</div>
-                </div>
-                <div class="fta-badge">UAE VAT Compliant</div>
+
+    <div class="estimate-container">
+        <div class="title-strip">
+            <div class="title-strip-main">
+                <div class="estimate-title-text">TAX INVOICE</div>
+                <div class="estimate-number">{{ invoice.invoice_number }}</div>
             </div>
         </div>
-        
-        <!-- Info Section -->
-        <div class="info-section">
-            <div class="info-box">
-                <div class="info-box-title">Bill To</div>
-                <div class="info-box-content">
-                    <div class="info-box-name">{{ invoice.customer.company|default:invoice.customer.name }}</div>
-                    {% if invoice.customer.company and invoice.customer.name != invoice.customer.company %}
-                    <div>Attn: {{ invoice.customer.name }}</div>
-                    {% endif %}
+
+        <div class="addr-grid">
+            <div class="addr-block addr-to">
+                <div class="addr-label">To</div>
+                {% if invoice.customer.company %}
+                <div class="addr-name">{{ invoice.customer.company }}</div>
+                {% if invoice.customer.name %}
+                <div class="addr-lines" style="font-weight:600;margin-bottom:4px;">Attn: {{ invoice.customer.name }}</div>
+                {% endif %}
+                {% else %}
+                <div class="addr-name">{{ invoice.customer.name }}</div>
+                {% endif %}
+                <div class="addr-lines">
                     {% if invoice.customer.address %}
                     <div>{{ invoice.customer.address }}</div>
                     {% endif %}
-                    {% if invoice.customer.city %}
-                    <div>{{ invoice.customer.city }}{% if invoice.customer.country %}, {{ invoice.customer.country }}{% endif %}</div>
+                    {% if invoice.customer.city or invoice.customer.country %}
+                    <div>{% if invoice.customer.city %}{{ invoice.customer.city }}{% endif %}{% if invoice.customer.city and invoice.customer.country %}, {% endif %}{% if invoice.customer.country %}{{ invoice.customer.country }}{% endif %}</div>
                     {% endif %}
                     {% if invoice.customer.phone %}
                     <div>Tel: {{ invoice.customer.phone }}</div>
@@ -488,41 +384,67 @@
                     {% if invoice.customer.email %}
                     <div>{{ invoice.customer.email }}</div>
                     {% endif %}
+                    {% if invoice.customer.website %}
+                    <div>{{ invoice.customer.website }}</div>
+                    {% endif %}
                     {% if invoice.customer.trn %}
-                    <div class="info-box-trn">TRN: {{ invoice.customer.trn }}</div>
+                    <div class="trn">VAT / TRN: {{ invoice.customer.trn }}</div>
+                    {% endif %}
+                </div>
+                <div class="addr-to-estimate-details">
+                    <div class="addr-label">Invoice details</div>
+                    <div class="addr-to-detail-row">
+                        <span class="addr-to-detail-label">Invoice date</span>
+                        <span class="addr-to-detail-value">{{ invoice.invoice_date|date:"d/m/Y" }}</span>
+                    </div>
+                    <div class="addr-to-detail-row">
+                        <span class="addr-to-detail-label">Due date</span>
+                        <span class="addr-to-detail-value">{{ invoice.due_date|date:"d/m/Y" }}</span>
+                    </div>
+                    <div class="addr-to-detail-row">
+                        <span class="addr-to-detail-label">Supply date</span>
+                        <span class="addr-to-detail-value">{{ invoice.invoice_date|date:"d/m/Y" }}</span>
+                    </div>
+                    {% if invoice.customer.customer_number %}
+                    <div class="addr-to-detail-row">
+                        <span class="addr-to-detail-label">Customer ID</span>
+                        <span class="addr-to-detail-value">{{ invoice.customer.customer_number }}</span>
+                    </div>
+                    {% endif %}
+                    {% if invoice.estimate %}
+                    <div class="addr-to-detail-row">
+                        <span class="addr-to-detail-label">Estimate ref</span>
+                        <span class="addr-to-detail-value">{{ invoice.estimate.estimate_number }}</span>
+                    </div>
                     {% endif %}
                 </div>
             </div>
-            <div class="dates-section">
-                <div style="background: #f8fafc; border: 1px solid #e2e8f0; padding: 12px;">
-                    <div class="info-box-title">Invoice Details</div>
-                    <div class="date-row">
-                        <span class="date-label">Invoice Date</span>
-                        <span class="date-value">{{ invoice.invoice_date|date:"d/m/Y" }}</span>
-                    </div>
-                    <div class="date-row">
-                        <span class="date-label">Due Date</span>
-                        <span class="date-value">{{ invoice.due_date|date:"d/m/Y" }}</span>
-                    </div>
-                    <div class="date-row">
-                        <span class="date-label">Supply Date</span>
-                        <span class="date-value">{{ invoice.invoice_date|date:"d/m/Y" }}</span>
-                    </div>
-                    <div class="date-row">
-                        <span class="date-label">Customer ID</span>
-                        <span class="date-value">{{ invoice.customer.customer_number }}</span>
-                    </div>
-                    {% if invoice.quotation %}
-                    <div class="date-row">
-                        <span class="date-label">Quotation Ref</span>
-                        <span class="date-value">{{ invoice.quotation.quotation_number }}</span>
-                    </div>
+            <div class="addr-block addr-from">
+                <div class="addr-label">From</div>
+                {% if company.logo and logo_absolute_url %}
+                <img src="{{ logo_absolute_url }}" alt="{{ company.company_name }}" class="addr-from-logo">
+                {% endif %}
+                <div class="addr-name">{{ company.company_name }}</div>
+                <div class="addr-lines">
+                    {% if company.address %}
+                    <div>{{ company.address|linebreaksbr }}</div>
+                    {% endif %}
+                    {% if company.phone %}
+                    <div>Tel: {{ company.phone }}</div>
+                    {% endif %}
+                    {% if company.email %}
+                    <div>{{ company.email }}</div>
+                    {% endif %}
+                    {% if company.website %}
+                    <div>{{ company.website }}</div>
+                    {% endif %}
+                    {% if company.tax_id %}
+                    <div class="trn">VAT / TRN: {{ company.tax_id }}</div>
                     {% endif %}
                 </div>
             </div>
         </div>
-        
-        <!-- Items Table -->
+
         <table class="items-table">
             <thead>
                 <tr>
@@ -548,19 +470,16 @@
                 </tr>
                 {% empty %}
                 <tr>
-                    <td colspan="7" style="text-align: center; padding: 20px; color: #718096;">
-                        No items
-                    </td>
+                    <td colspan="7" style="text-align: center; padding: 20px; color: #737373;">No items</td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
-        
-        <!-- Totals Section -->
+
         <div class="totals-section">
             <div class="totals-table">
                 <div class="totals-row subtotal">
-                    <span class="totals-label">Subtotal (Excl. VAT)</span>
+                    <span class="totals-label">Subtotal (excl. VAT)</span>
                     <span class="totals-value">AED {{ invoice.subtotal|floatformat:2 }}</span>
                 </div>
                 {% for rate, amounts in vat_summary.items %}
@@ -574,95 +493,62 @@
                     <span class="totals-value">AED {{ invoice.vat_amount|floatformat:2 }}</span>
                 </div>
                 <div class="totals-row total">
-                    <span class="totals-label">TOTAL</span>
+                    <span class="totals-label">Grand total</span>
                     <span class="totals-value">AED {{ invoice.total_amount|floatformat:2 }}</span>
                 </div>
             </div>
         </div>
-        
-        <!-- Amount in Words -->
+
         {% if amount_words %}
         <div class="amount-words">
-            <div class="amount-words-label">Amount in Words</div>
-            <div class="amount-words-value">{{ amount_words }}</div>
+            <div class="amount-words-label">Amount in words</div>
+            <div>{{ amount_words }}</div>
         </div>
         {% endif %}
-        
-        <!-- VAT Summary Table (for detailed records) -->
-        <div class="vat-summary">
-            <div class="vat-summary-title">VAT Summary</div>
-            <table class="vat-summary-table">
-                <thead>
-                    <tr>
-                        <th>VAT Rate</th>
-                        <th>Taxable Amount (AED)</th>
-                        <th>VAT Amount (AED)</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for rate, amounts in vat_summary.items %}
-                    <tr>
-                        <td>{{ rate|floatformat:0 }}% {% if rate == 5 %}Standard Rate{% elif rate == 0 %}Zero Rated{% endif %}</td>
-                        <td class="text-right">{{ amounts.taxable|floatformat:2 }}</td>
-                        <td class="text-right">{{ amounts.vat|floatformat:2 }}</td>
-                    </tr>
-                    {% empty %}
-                    <tr>
-                        <td>5% Standard Rate</td>
-                        <td class="text-right">{{ invoice.subtotal|floatformat:2 }}</td>
-                        <td class="text-right">{{ invoice.vat_amount|floatformat:2 }}</td>
-                    </tr>
-                    {% endfor %}
-                    <tr style="font-weight: bold; background: #edf2f7;">
-                        <td>Total</td>
-                        <td class="text-right">{{ invoice.subtotal|floatformat:2 }}</td>
-                        <td class="text-right">{{ invoice.vat_amount|floatformat:2 }}</td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
-        
-        <!-- Notes Section -->
+
         {% if invoice.notes %}
         <div class="notes-section">
-            <div class="notes-title">Notes & Terms</div>
+            <div class="notes-title">Notes</div>
             <div class="notes-content">{{ invoice.notes|linebreaks }}</div>
         </div>
         {% endif %}
-        
-        <!-- Bank Details (if available) -->
+
         <div class="notes-section">
-            <div class="notes-title">Payment Information</div>
+            <div class="notes-title">Payment</div>
             <div class="notes-content">
-                <strong>Payment Terms:</strong> Due on {{ invoice.due_date|date:"d/m/Y" }}<br>
-                <strong>Currency:</strong> UAE Dirham (AED)<br>
-                {% if company.email %}
-                <strong>For queries:</strong> {{ company.email }}
-                {% endif %}
+                <strong>Due:</strong> {{ invoice.due_date|date:"d/m/Y" }} · <strong>Currency:</strong> UAE Dirham (AED)
+                {% if company.email %}<br><strong>Queries:</strong> {{ company.email }}{% endif %}
             </div>
         </div>
-        
-        <!-- Footer -->
-        <div class="footer">
-            <p>This is a computer-generated invoice and does not require a signature.</p>
-            
-            <div class="footer-legal">
-                <strong>Legal Notice:</strong> This Tax Invoice is issued in accordance with UAE Federal Decree-Law No. 8 of 2017 on Value Added Tax.
-                All amounts are in UAE Dirhams (AED). Payment of VAT is the responsibility of the recipient.
-                For any disputes regarding this invoice, please contact us within 7 days of receipt.
+
+        <footer class="doc-footer">
+            <div class="doc-footer-line">
+                <div class="doc-footer-company">
+                    <strong>{{ company.company_name }}</strong>
+                    {% if company.address %}<br>{{ company.address|linebreaksbr }}{% endif %}
+                    {% if company.phone %}<br>Tel: {{ company.phone }}{% endif %}
+                    {% if company.email %}<br>{{ company.email }}{% endif %}
+                    {% if company.website %}<br>{{ company.website }}{% endif %}
+                    {% if company.tax_id %}<br>VAT / TRN: {{ company.tax_id }}{% endif %}
+                </div>
+                <div class="doc-footer-page">
+                    Ref: {{ invoice.invoice_number }}
+                    <br>
+                    <span style="color:#a3a3a3;">Page</span> 1
+                </div>
             </div>
-        </div>
+            <p style="margin-top:10px;font-size:8px;line-height:1.5;color:#737373;">
+                Tax invoice issued in accordance with UAE Federal Decree-Law No. 8 of 2017 on Value Added Tax. Computer-generated document.
+            </p>
+            <p style="margin-top:8px;text-align:center;color:#a3a3a3;">Thank you for your business.</p>
+        </footer>
     </div>
-    
+
     <script>
-        // Auto-print if requested via URL parameter
         const urlParams = new URLSearchParams(window.location.search);
         if (urlParams.get('print') === '1') {
-            window.onload = function() {
-                window.print();
-            };
+            window.onload = function() { window.print(); };
         }
     </script>
 </body>
 </html>
-

@@ -137,8 +137,10 @@ class CompanySettingsForm(forms.ModelForm):
     class Meta:
         model = CompanySettings
         fields = [
-            'company_name', 'logo', 'address', 'phone', 'email',
-            'tax_id', 'fiscal_year_start', 'currency', 'date_format', 'timezone'
+            'company_name', 'logo', 'address', 'phone', 'email', 'website',
+            'tax_id', 'fiscal_year_start', 'currency', 'date_format', 'timezone',
+            'estimate_default_client_note', 'estimate_default_terms',
+            'contract_default_terms',
         ]
     
     def __init__(self, *args, **kwargs):
@@ -149,6 +151,9 @@ class CompanySettingsForm(forms.ModelForm):
             elif field_name == 'address':
                 field.widget.attrs['class'] = 'form-control'
                 field.widget.attrs['rows'] = 3
+            elif field_name in ('estimate_default_client_note', 'estimate_default_terms', 'contract_default_terms'):
+                field.widget.attrs['class'] = 'form-control'
+                field.widget.attrs['rows'] = 5
             else:
                 field.widget.attrs['class'] = 'form-control'
 

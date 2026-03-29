@@ -45,6 +45,7 @@ class Command(BaseCommand):
             ('projects', 'Projects'),
             ('hr', 'HR'),
             ('documents', 'Documents'),
+            ('contracts', 'Contracts'),
             ('settings', 'Settings'),
         ]
         
@@ -247,7 +248,7 @@ class Command(BaseCommand):
         series_data = [
             ('CUSTOMER', 'CUST', 4),
             ('VENDOR', 'VEND', 4),
-            ('QUOTATION', 'QUO', 4),
+            ('ESTIMATE', 'QUO', 4),
             ('INVOICE', 'INV', 4),
             ('PURCHASE_REQUEST', 'PR', 4),
             ('PURCHASE_ORDER', 'PO', 4),

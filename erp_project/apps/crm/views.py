@@ -6,8 +6,10 @@ from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.views.generic import ListView, CreateView, UpdateView, DeleteView, DetailView
 from django.urls import reverse_lazy
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponseNotAllowed
 from django.db.models import Q, Count
+
+from apps.projects.models import Project
 
 from .models import Customer
 from .forms import CustomerForm
@@ -58,7 +60,10 @@ class CustomerListView(PermissionRequiredMixin, ListView):
                 Q(company__icontains=search) |
                 Q(email__icontains=search) |
                 Q(phone__icontains=search) |
-                Q(customer_number__icontains=search)
+                Q(customer_number__icontains=search) |
+                Q(trn__icontains=search) |
+                Q(website__icontains=search) |
+                Q(job_type__icontains=search)
             )
         
         # Filter by type
@@ -76,7 +81,9 @@ class CustomerListView(PermissionRequiredMixin, ListView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['title'] = 'Customers'
-        context['form'] = CustomerForm()
+        context['form'] = CustomerForm(
+            projects_queryset=Project.objects.filter(is_active=True).order_by('name'),
+        )
         context['can_create'] = self.request.user.is_superuser or PermissionChecker.has_permission(
             self.request.user, 'crm', 'create'
         )
@@ -93,7 +100,11 @@ class CustomerListView(PermissionRequiredMixin, ListView):
         context['active_customers'] = customers.filter(status='active').count()
         context['total_leads'] = customers.filter(customer_type='lead').count()
         context['prospects'] = customers.filter(status='prospect').count()
-        
+        context['project_choices'] = Project.objects.filter(is_active=True).order_by('name')
+        context['scope_choices'] = Customer.SCOPE_CHOICES
+        context['crm_customer_type_choices'] = Customer.CUSTOMER_TYPE_CHOICES
+        context['crm_status_choices'] = Customer.STATUS_CHOICES
+
         return context
     
     def post(self, request, *args, **kwargs):
@@ -102,7 +113,10 @@ class CustomerListView(PermissionRequiredMixin, ListView):
             messages.error(request, 'You do not have permission to create customers.')
             return redirect('crm:customer_list')
         
-        form = CustomerForm(request.POST)
+        form = CustomerForm(
+            request.POST,
+            projects_queryset=Project.objects.filter(is_active=True).order_by('name'),
+        )
         if form.is_valid():
             customer = form.save()
             log_action(request.user, 'create', 'Customer', customer.id, {
@@ -118,6 +132,45 @@ class CustomerListView(PermissionRequiredMixin, ListView):
         return redirect('crm:customer_list')
 
 
+@login_required
+def customer_inline_update(request, pk):
+    """POST: update customer_type and/or status from list. One field per form."""
+    if request.method != 'POST':
+        return HttpResponseNotAllowed(['POST'])
+
+    customer = get_object_or_404(Customer, pk=pk)
+
+    if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'crm', 'edit')):
+        messages.error(request, 'Permission denied.')
+        return redirect('crm:customer_list')
+
+    next_url = request.POST.get('next', '').strip()
+    updated = False
+
+    if 'customer_type' in request.POST:
+        val = request.POST['customer_type']
+        if val in dict(Customer.CUSTOMER_TYPE_CHOICES) and customer.customer_type != val:
+            customer.customer_type = val
+            customer.save(update_fields=['customer_type'])
+            log_action(request.user, 'update', 'Customer', customer.id, {'customer_type': val})
+            updated = True
+
+    if 'status' in request.POST:
+        val = request.POST['status']
+        if val in dict(Customer.STATUS_CHOICES) and customer.status != val:
+            customer.status = val
+            customer.save(update_fields=['status'])
+            log_action(request.user, 'update', 'Customer', customer.id, {'status': val})
+            updated = True
+
+    if updated:
+        messages.success(request, f'Customer {customer.name} updated.')
+
+    if next_url and next_url.startswith('/') and not next_url.startswith('//'):
+        return redirect(next_url)
+    return redirect('crm:customer_detail', pk=pk)
+
+
 class CustomerDetailView(PermissionRequiredMixin, DetailView):
     """View customer details."""
     model = Customer
@@ -125,6 +178,9 @@ class CustomerDetailView(PermissionRequiredMixin, DetailView):
     context_object_name = 'customer'
     module_name = 'crm'
     permission_type = 'view'
+
+    def get_queryset(self):
+        return Customer.objects.select_related('primary_project').prefetch_related('projects')
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -142,10 +198,16 @@ class CustomerUpdateView(UpdatePermissionMixin, UpdateView):
     template_name = 'crm/customer_form.html'
     success_url = reverse_lazy('crm:customer_list')
     module_name = 'crm'
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs['projects_queryset'] = Project.objects.filter(is_active=True).order_by('name')
+        return kwargs
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['title'] = f'Edit Customer: {self.object.name}'
+        context['project_choices'] = Project.objects.filter(is_active=True).order_by('name')
         return context
     
     def form_valid(self, form):

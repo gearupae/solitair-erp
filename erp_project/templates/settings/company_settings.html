@@ -31,6 +31,10 @@
                     <label class="form-label">Phone</label>
                     <input type="text" name="phone" class="form-control" value="{{ object.phone }}">
                 </div>
+                <div class="col-md-6">
+                    <label class="form-label">Website</label>
+                    <input type="url" name="website" class="form-control" value="{{ object.website }}" placeholder="https://">
+                </div>
                 <div class="col-12">
                     <label class="form-label">Address</label>
                     <textarea name="address" class="form-control" rows="3">{{ object.address }}</textarea>
@@ -88,6 +92,34 @@
                         <option value="%m/%d/%Y" {% if object.date_format == '%m/%d/%Y' %}selected{% endif %}>MM/DD/YYYY</option>
                         <option value="%Y-%m-%d" {% if object.date_format == '%Y-%m-%d' %}selected{% endif %}>YYYY-MM-DD</option>
                     </select>
+                </div>
+            </div>
+
+            <hr class="my-4">
+            <h5 class="fw-semibold mb-2">
+                <i class="fas fa-file-invoice me-2 text-primary"></i>Sales estimates — defaults
+            </h5>
+            <p class="text-muted small mb-3">New estimates pre-fill from these fields. You can change text here anytime; updates apply to newly created estimates (existing estimates are unchanged).</p>
+            <div class="row g-3 mb-4">
+                <div class="col-12">
+                    <label class="form-label">Default client note</label>
+                    <textarea name="estimate_default_client_note" class="form-control" rows="4">{{ object.estimate_default_client_note }}</textarea>
+                </div>
+                <div class="col-12">
+                    <label class="form-label">Default terms &amp; conditions</label>
+                    <textarea name="estimate_default_terms" class="form-control" rows="5">{{ object.estimate_default_terms }}</textarea>
+                </div>
+            </div>
+
+            <hr class="my-4">
+            <h5 class="fw-semibold mb-2">
+                <i class="fas fa-file-contract me-2 text-primary"></i>Contracts — defaults
+            </h5>
+            <p class="text-muted small mb-3">New contracts pre-fill from this text. You can change it here anytime; existing contracts keep their own copy unless edited.</p>
+            <div class="row g-3 mb-4">
+                <div class="col-12">
+                    <label class="form-label">Default terms &amp; conditions (contracts)</label>
+                    <textarea name="contract_default_terms" class="form-control" rows="5">{{ object.contract_default_terms }}</textarea>
                 </div>
             </div>
             

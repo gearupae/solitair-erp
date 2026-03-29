@@ -17,6 +17,10 @@ DEBUG = config('DEBUG', default=True, cast=bool)
 
 ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1', cast=Csv())
 
+# CSRF - required when using HTTPS behind proxy (e.g. Cloudflare)
+# Add your HTTPS origins in .env: CSRF_TRUSTED_ORIGINS=https://yourdomain.com
+CSRF_TRUSTED_ORIGINS = config('CSRF_TRUSTED_ORIGINS', default='https://gear.telldb.com', cast=Csv())
+
 # Application definition
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -47,6 +51,7 @@ INSTALLED_APPS = [
     'apps.documents',
     'apps.assets',
     'apps.property',
+    'apps.contracts',
 ]
 
 MIDDLEWARE = [
@@ -166,7 +171,7 @@ MESSAGE_TAGS = {
 NUMBER_SERIES = {
     'CUSTOMER': {'prefix': 'CUST', 'padding': 4},
     'VENDOR': {'prefix': 'VEND', 'padding': 4},
-    'QUOTATION': {'prefix': 'QUO', 'padding': 4},
+    'ESTIMATE': {'prefix': 'QUO', 'padding': 4},
     'INVOICE': {'prefix': 'INV', 'padding': 4},
     'PURCHASE_REQUEST': {'prefix': 'PR', 'padding': 4},
     'SERVICE_REQUEST': {'prefix': 'SR', 'padding': 4},
@@ -175,6 +180,7 @@ NUMBER_SERIES = {
     'BILL': {'prefix': 'BILL', 'padding': 4},
     'EMPLOYEE': {'prefix': 'EMP', 'padding': 4},
     'PROJECT': {'prefix': 'PROJ', 'padding': 4},
+    'CONTRACT': {'prefix': 'CNT', 'padding': 4},
     'JOURNAL': {'prefix': 'DOC', 'padding': 4},
     'ITEM': {'prefix': 'ITEM', 'padding': 4},
 }

@@ -38,6 +38,7 @@ class Permission(models.Model):
         ('documents', 'Documents'),
         ('assets', 'Fixed Assets'),
         ('property', 'Property Management'),
+        ('contracts', 'Contracts'),
         ('settings', 'Settings'),
     ]
     
@@ -103,6 +104,7 @@ class ModulePermission(models.Model):
         ('assets', 'Fixed Assets'),
         ('property', 'Property Management'),
         ('service_request', 'Service Request'),
+        ('contracts', 'Contracts'),
         ('settings', 'Settings'),
     ]
     
@@ -164,12 +166,27 @@ class CompanySettings(models.Model):
     address = models.TextField(blank=True)
     phone = models.CharField(max_length=20, blank=True)
     email = models.EmailField(blank=True)
+    website = models.URLField(blank=True, help_text='Company website (shown on PDFs if set)')
     tax_id = models.CharField(max_length=50, blank=True, verbose_name='Tax ID / TRN')
     fiscal_year_start = models.IntegerField(default=1, help_text='Month (1-12)')
     currency = models.CharField(max_length=10, default='AED')
     date_format = models.CharField(max_length=20, default='%d/%m/%Y')
     timezone = models.CharField(max_length=50, default='Asia/Dubai')
-    
+
+    # Defaults for new sales estimates (editable per estimate; users append text here over time)
+    estimate_default_client_note = models.TextField(
+        blank=True,
+        help_text='Default client note appended to new estimates. Edit in Company Settings.',
+    )
+    estimate_default_terms = models.TextField(
+        blank=True,
+        help_text='Default terms & conditions for new estimates. Edit here; each estimate can still be customized.',
+    )
+    contract_default_terms = models.TextField(
+        blank=True,
+        help_text='Default terms & conditions for new contracts. Edit here; each contract can still be customized.',
+    )
+
     class Meta:
         verbose_name = 'Company Settings'
         verbose_name_plural = 'Company Settings'

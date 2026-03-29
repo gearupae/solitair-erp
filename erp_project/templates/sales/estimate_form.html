@@ -1,0 +1,599 @@
+{% extends 'base.html' %}
+
+{% block extra_css %}
+<style>
+/* Line items: fit card width — no horizontal scroll; action column stays visible */
+.line-items-table-wrap {
+    width: 100%;
+    box-sizing: border-box;
+    /* Inset from card edge: space before Group, space after × */
+    padding-left: 0.65rem;
+    padding-right: 0.65rem;
+}
+#itemsTable {
+    table-layout: fixed;
+    width: 100%;
+    margin-bottom: 0;
+    border-collapse: collapse;
+}
+#itemsTable th,
+#itemsTable td {
+    min-width: 0;
+    vertical-align: top;
+    /* Tighter horizontal padding = less gap between columns */
+    padding-left: 0.2rem;
+    padding-right: 0.2rem;
+}
+#itemsTable .form-control,
+#itemsTable .form-select {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    padding-top: 0.25rem;
+    padding-bottom: 0.25rem;
+    padding-left: 0.3rem;
+    padding-right: 0.3rem;
+}
+/* Percent widths sum to 100% — keeps table inside card (no overflow-x scroll) */
+#itemsTable .items-col-group {
+    width: 7%;
+}
+#itemsTable .items-col-group .form-control {
+    padding-left: 0.25rem;
+    padding-right: 0.25rem;
+    font-size: 0.75rem;
+}
+#itemsTable .items-col-inventory {
+    width: 13%;
+}
+#itemsTable .items-col-inventory .form-select {
+    font-size: 0.8rem;
+    padding-left: 0.25rem;
+    padding-right: 1.35rem;
+}
+#itemsTable .items-col-desc {
+    width: 23%;
+}
+/* Qty / Base / Profit / Profit # / Rate / Tax — a bit wider; totals 100% with other cols */
+#itemsTable .items-col-qty {
+    width: 7%;
+}
+#itemsTable .items-col-base {
+    width: 7%;
+}
+#itemsTable .items-col-profit {
+    width: 7%;
+}
+#itemsTable .items-col-profit .form-select {
+    font-size: 0.75rem;
+    padding-left: 0.2rem;
+    padding-right: 1.1rem;
+}
+#itemsTable .items-col-profit-num {
+    width: 6%;
+}
+#itemsTable .items-col-rate {
+    width: 6%;
+}
+#itemsTable .items-col-tax {
+    width: 7%;
+}
+#itemsTable .items-col-tax .form-select {
+    font-size: 0.72rem;
+    padding-left: 0.2rem;
+    padding-right: 1.1rem;
+}
+#itemsTable .items-col-net {
+    width: 6%;
+}
+#itemsTable .items-col-gross {
+    width: 6%;
+}
+#itemsTable .items-col-actions {
+    width: 3%;
+    padding-left: 0.15rem !important;
+    padding-right: 0.25rem !important;
+    vertical-align: middle;
+}
+#itemsTable .items-col-actions .btn {
+    padding: 0.15rem 0.25rem;
+    line-height: 1;
+}
+.estimate-internal-notes {
+    min-height: 8rem;
+    resize: vertical;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb mb-2">
+            <li class="breadcrumb-item"><a href="{% url 'sales:estimate_list' %}">Estimates</a></li>
+            <li class="breadcrumb-item active">{{ title }}</li>
+        </ol>
+    </nav>
+    <h4 class="mb-0 fw-bold">{{ title }}</h4>
+</div>
+
+{% if form.errors and form.errors.items %}
+<div class="alert alert-danger mb-4">
+    <h6 class="alert-heading mb-2"><i class="fas fa-exclamation-triangle me-2"></i>Please correct the errors below:</h6>
+    {% for field, errors in form.errors.items %}
+        <div><strong>{{ field }}:</strong> {{ errors|join:", " }}</div>
+    {% endfor %}
+</div>
+{% endif %}
+{% if items_formset.non_form_errors %}
+<div class="alert alert-danger mb-4">
+    <h6 class="alert-heading mb-2"><i class="fas fa-exclamation-triangle me-2"></i>Item Errors:</h6>
+    <div>{{ items_formset.non_form_errors|join:", " }}</div>
+</div>
+{% endif %}
+
+<form method="post" id="estimateForm" enctype="multipart/form-data">
+    {% csrf_token %}
+    
+    <div class="card mb-4">
+        <div class="card-header">
+            <h6 class="mb-0 fw-semibold"><i class="fas fa-info-circle me-2"></i>Estimate Details</h6>
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label">Customer <span class="text-danger">*</span></label>
+                    {{ form.customer }}
+                    {% if form.customer.errors %}<div class="text-danger small">{{ form.customer.errors|join:", " }}</div>{% endif %}
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Assigned to</label>
+                    {{ form.assigned_to }}
+                    {% if form.assigned_to.errors %}<div class="text-danger small">{{ form.assigned_to.errors|join:", " }}</div>{% endif %}
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Prepared by</label>
+                    {{ form.prepared_by }}
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Project</label>
+                    {{ form.project }}
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="{{ form.scope.id_for_label }}">Scope</label>
+                    {{ form.scope }}
+                    {% if form.scope.errors %}<div class="text-danger small">{{ form.scope.errors|join:", " }}</div>{% endif %}
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Date <span class="text-danger">*</span></label>
+                    {{ form.date }}
+                    {% if form.date.errors %}<div class="text-danger small">{{ form.date.errors|join:", " }}</div>{% endif %}
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Valid Until</label>
+                    {{ form.valid_until }}
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Status</label>
+                    {{ form.status }}
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Discount type</label>
+                    {{ form.discount_type }}
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Discount value</label>
+                    {{ form.discount_value }}
+                    <small class="text-muted d-block">Use % or fixed amount based on type</small>
+                </div>
+                <div class="col-12 mt-1">
+                    <div class="form-check form-switch">
+                        {{ form.show_rates_on_pdf }}
+                        <label class="form-check-label" for="{{ form.show_rates_on_pdf.id_for_label }}">Show rates &amp; line totals on PDF</label>
+                    </div>
+                    <small class="text-muted d-block ms-1">When off, the printed PDF shows each line as description and quantity only; total VAT and grand total still appear at the bottom.</small>
+                    {% if form.show_rates_on_pdf.errors %}<div class="text-danger small">{{ form.show_rates_on_pdf.errors|join:", " }}</div>{% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header">
+            <h6 class="mb-0 fw-semibold"><i class="fas fa-lock me-2 text-secondary"></i>Internal notes</h6>
+        </div>
+        <div class="card-body">
+            <p class="text-muted small mb-3">For your team only. Not shown on the estimate PDF and not sent to the client.</p>
+            {{ form.notes }}
+            {% if form.notes.errors %}<div class="text-danger small mt-2">{{ form.notes.errors|join:", " }}</div>{% endif %}
+        </div>
+    </div>
+    
+    <!-- Line Items -->
+    <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <h6 class="mb-0 fw-semibold"><i class="fas fa-list me-2"></i>Line items (group by repeating the same group name)</h6>
+            <button type="button" class="btn btn-sm btn-primary" onclick="addItemRow()">
+                <i class="fas fa-plus me-1"></i>Add line
+            </button>
+        </div>
+        <div class="px-3 pt-3">
+            <div class="alert alert-light border small mb-0 alert-permanent">
+                <div class="row g-2 align-items-start">
+                    <div class="col-lg-7">
+                        <strong>CSV import</strong>
+                        <p class="text-muted mb-2 mb-lg-0">
+                            Download the sample or export inventory for <code>item_code</code> values. Required column: <code>item_code</code>.
+                            Optional: <code>group_name</code>, <code>description</code>, <code>quantity</code>, <code>unit_price</code>,
+                            <code>profit_percent</code>, <code>profit_amount</code>.
+                            Line order in the file is the line order on the estimate. All imported lines use <strong>VAT 5%</strong> (tax code VAT5)
+                            and <strong>VAT-inclusive</strong> pricing. If both <code>profit_percent</code> and <code>profit_amount</code> are set, <strong>percent</strong> wins.
+                            On save with a CSV attached, imported lines replace manually entered rows (edit: replaces all existing lines).
+                        </p>
+                    </div>
+                    <div class="col-lg-5">
+                        <div class="d-flex flex-wrap gap-2 align-items-center justify-content-lg-end mb-2">
+                            <a href="{{ estimate_items_sample_csv_url }}" class="btn btn-sm btn-outline-secondary">Download sample CSV</a>
+                            <a href="{{ inventory_items_export_csv_url }}" class="btn btn-sm btn-outline-secondary">Export inventory (CSV)</a>
+                        </div>
+                        <label class="form-label small text-muted mb-0">Attach CSV (optional, then click Save estimate)</label>
+                        <input type="file" name="items_csv" accept=".csv,text/csv" class="form-control form-control-sm">
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="card-body p-0">
+            <p class="text-muted small px-3 pt-3 mb-2 mb-md-3">
+                <strong>How each line is calculated:</strong>
+                <strong>Rate</strong> = base per unit + profit — if profit is <strong>%</strong>, rate = base × (1 + %÷100) (e.g. base 10 and 100% → 20/unit).
+                If profit is <strong>Amt</strong>, rate = base + AED <em>per unit</em> (e.g. base 10 + 100 → 110/unit).
+                <strong>Net</strong> = qty × rate (excl. VAT). <strong>Gross</strong> includes VAT from the tax code (not shown per line).
+            </p>
+            {{ items_formset.management_form }}
+            <div class="line-items-table-wrap">
+                <table class="table mb-0 table-sm align-middle" id="itemsTable">
+                    <thead class="table-light">
+                        <tr>
+                            <th class="items-col-group">Group</th>
+                            <th class="items-col-inventory">Inventory</th>
+                            <th class="items-col-desc">Description</th>
+                            <th class="items-col-qty">Qty</th>
+                            <th class="items-col-base" title="Base price per unit">Base</th>
+                            <th class="items-col-profit">Profit</th>
+                            <th class="items-col-profit-num" title="% or AED per unit">Profit value</th>
+                            <th class="items-col-rate" title="Selling price per unit after profit">Rate</th>
+                            <th class="items-col-tax">Tax</th>
+                            <th class="items-col-net text-end" title="Quantity × rate (before VAT)">Net (excl.)</th>
+                            <th class="items-col-gross text-end" title="Net + VAT for this line">Gross (incl.)</th>
+                            <th class="items-col-actions"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="itemsBody">
+                        {% for item_form in items_formset %}
+                        <tr class="item-row" {% if item_form.DELETE.value %}style="display:none;"{% endif %}>
+                            <td class="items-col-group">
+                                {{ item_form.id }}
+                                {{ item_form.group_name }}
+                                {{ item_form.sort_order }}
+                            </td>
+                            <td class="items-col-inventory">{{ item_form.inventory_item }}</td>
+                            <td class="items-col-desc">{{ item_form.description }}</td>
+                            <td class="items-col-qty">{{ item_form.quantity }}</td>
+                            <td class="items-col-base">{{ item_form.unit_price }}</td>
+                            <td class="items-col-profit">{{ item_form.profit_type }}</td>
+                            <td class="items-col-profit-num">{{ item_form.profit_value }}</td>
+                            <td class="items-col-rate">{{ item_form.rate }}</td>
+                            <td class="items-col-tax">{{ item_form.tax_code }}</td>
+                            <td class="items-col-net text-end"><span class="row-net text-muted small">0.00</span></td>
+                            <td class="items-col-gross text-end"><span class="row-gross fw-medium">0.00</span></td>
+                            <td class="items-col-actions text-center">
+                                {{ item_form.is_vat_inclusive }}
+                                {% if item_form.DELETE %}
+                                {{ item_form.DELETE }}
+                                {% endif %}
+                                <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeItemRow(this)"><i class="fas fa-times"></i></button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot>
+                        <tr>
+                            <td colspan="9" class="text-end fw-medium">Subtotal net (excl. VAT &amp; discount):</td>
+                            <td class="text-end fw-medium" id="subtotal">0.00</td>
+                            <td></td>
+                            <td></td>
+                        </tr>
+                        <tr>
+                            <td colspan="9" class="text-end fw-medium">VAT:</td>
+                            <td></td>
+                            <td class="text-end fw-medium" id="vatTotal">0.00</td>
+                            <td></td>
+                        </tr>
+                        <tr>
+                            <td colspan="9" class="text-end fw-medium">Before discount (incl. VAT):</td>
+                            <td></td>
+                            <td class="text-end fw-medium" id="beforeDiscount">0.00</td>
+                            <td></td>
+                        </tr>
+                        <tr>
+                            <td colspan="9" class="text-end fw-medium text-danger">Discount:</td>
+                            <td></td>
+                            <td class="text-end fw-medium text-danger" id="discountDisplay">0.00</td>
+                            <td></td>
+                        </tr>
+                        <tr>
+                            <td colspan="9" class="text-end fw-bold">Total (incl. VAT):</td>
+                            <td></td>
+                            <td class="text-end fw-bold" id="grandTotal">0.00</td>
+                            <td></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+    </div>
+    
+    <div class="card mb-4">
+        <div class="card-header">
+            <h6 class="mb-0 fw-semibold"><i class="fas fa-comment me-2"></i>Client note</h6>
+        </div>
+        <div class="card-body">
+            {{ form.client_note }}
+            <small class="text-muted">Defaults come from <a href="{% url 'settings:company' %}">Company Settings</a>; edit per estimate as needed.</small>
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header">
+            <h6 class="mb-0 fw-semibold"><i class="fas fa-file-contract me-2"></i>Terms &amp; conditions</h6>
+        </div>
+        <div class="card-body">
+            {{ form.terms_and_conditions }}
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header">
+            <h6 class="mb-0 fw-semibold"><i class="fas fa-signature me-2"></i>Signatures</h6>
+        </div>
+        <div class="card-body row g-3">
+            <div class="col-md-6">
+                <label class="form-label">Authorized signature (image)</label>
+                {{ form.authorized_signature }}
+                {% if object.authorized_signature %}
+                <div class="mt-2"><img src="{{ object.authorized_signature.url }}" alt="" class="img-thumbnail" style="max-height:80px"></div>
+                {% endif %}
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Customer signature (image)</label>
+                {{ form.customer_signature }}
+                {% if object.customer_signature %}
+                <div class="mt-2"><img src="{{ object.customer_signature.url }}" alt="" class="img-thumbnail" style="max-height:80px"></div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-primary">
+            <i class="fas fa-save me-2"></i>Save Estimate
+        </button>
+        <a href="{% url 'sales:estimate_list' %}" class="btn btn-light">Cancel</a>
+    </div>
+</form>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const taxCodes = [
+    {% for tc in tax_codes %}
+    {id: {{ tc.id }}, code: '{{ tc.code|escapejs }}', name: '{{ tc.name|escapejs }}', rate: {{ tc.rate }}},
+    {% endfor %}
+];
+const inventoryItems = {{ inventory_items_json|safe }};
+const defaultTaxCodeId = {% if default_tax_code %}{{ default_tax_code.id }}{% else %}null{% endif %};
+const profitChoices = [
+    {v: 'none', l: 'None'},
+    {v: 'percent', l: '%'},
+    {v: 'amount', l: 'AED/u'},
+];
+
+let formCount = {{ items_formset.total_form_count }};
+
+function getTaxOptions(selectedId) {
+    let o = '<option value="">-- No Tax --</option>';
+    taxCodes.forEach(tc => {
+        const sel = selectedId && String(selectedId) === String(tc.id) ? 'selected' : '';
+        o += `<option value="${tc.id}" data-rate="${tc.rate}" ${sel}>${tc.code} (${tc.rate}%)</option>`;
+    });
+    return o;
+}
+
+function getInventoryOptions(selectedId) {
+    let o = '<option value="">-- Inventory --</option>';
+    inventoryItems.forEach(it => {
+        const sel = selectedId && String(selectedId) === String(it.id) ? 'selected' : '';
+        o += `<option value="${it.id}" ${sel}>${it.item_code} — ${it.name}</option>`;
+    });
+    return o;
+}
+
+function getProfitTypeOptions(val) {
+    let o = '';
+    profitChoices.forEach(p => {
+        const sel = val === p.v ? 'selected' : '';
+        o += `<option value="${p.v}" ${sel}>${p.l}</option>`;
+    });
+    return o;
+}
+
+function computeRate(row) {
+    const base = parseFloat(row.querySelector('.item-base-price')?.value) || 0;
+    const pt = row.querySelector('.item-profit-type')?.value || 'none';
+    const pv = parseFloat(row.querySelector('.item-profit-value')?.value) || 0;
+    let rate = base;
+    if (pt === 'percent') rate = base * (1 + pv / 100);
+    else if (pt === 'amount') rate = base + pv;
+    const r = row.querySelector('.item-rate');
+    if (r) r.value = rate.toFixed(2);
+    return rate;
+}
+
+/** VAT % for the row — Django-rendered tax selects have no data-rate on options; use taxCodes. */
+function getVatRatePercent(taxSel) {
+    if (!taxSel || !taxSel.value) return 0;
+    const tc = taxCodes.find(t => String(t.id) === String(taxSel.value));
+    return tc ? parseFloat(tc.rate) || 0 : 0;
+}
+
+function onInventoryChange(sel) {
+    const row = sel.closest('tr');
+    const id = sel.value;
+    if (!id) return;
+    fetch(`/sales/api/inventory-item/${id}/`, {headers: {'X-Requested-With': 'XMLHttpRequest'}})
+        .then(r => r.json())
+        .then(data => {
+            row.querySelector('input[name$="-description"]')?.setAttribute('value', data.name);
+            const desc = row.querySelector('input[name$="-description"]');
+            if (desc) desc.value = data.name;
+            const bp = row.querySelector('.item-base-price');
+            if (bp) bp.value = parseFloat(data.selling_price).toFixed(2);
+            const tc = row.querySelector('.item-tax-code');
+            if (tc && data.tax_code_id) {
+                tc.value = data.tax_code_id;
+            }
+            computeRate(row);
+            calculateRowTotal(row.querySelector('.item-qty'));
+        });
+}
+
+function addItemRow() {
+    const tbody = document.getElementById('itemsBody');
+    const tr = document.createElement('tr');
+    tr.className = 'item-row';
+    tr.innerHTML = `
+        <td class="items-col-group">
+            <input type="hidden" name="items-${formCount}-id" id="id_items-${formCount}-id">
+            <input type="text" name="items-${formCount}-group_name" class="form-control form-control-sm" placeholder="Group">
+            <input type="hidden" name="items-${formCount}-sort_order" value="${formCount}" id="id_items-${formCount}-sort_order">
+        </td>
+        <td class="items-col-inventory"><select name="items-${formCount}-inventory_item" class="form-select form-select-sm item-inventory">${getInventoryOptions()}</select></td>
+        <td class="items-col-desc"><input type="text" name="items-${formCount}-description" class="form-control form-control-sm"></td>
+        <td class="items-col-qty"><input type="number" name="items-${formCount}-quantity" value="1" step="0.01" min="0.01" class="form-control form-control-sm item-qty"></td>
+        <td class="items-col-base"><input type="number" name="items-${formCount}-unit_price" value="0" step="0.01" min="0" class="form-control form-control-sm item-base-price"></td>
+        <td class="items-col-profit"><select name="items-${formCount}-profit_type" class="form-select form-select-sm item-profit-type">${getProfitTypeOptions('none')}</select></td>
+        <td class="items-col-profit-num"><input type="number" name="items-${formCount}-profit_value" value="0" step="0.01" min="0" class="form-control form-control-sm item-profit-value"></td>
+        <td class="items-col-rate"><input type="number" name="items-${formCount}-rate" value="0" step="0.01" class="form-control form-control-sm item-rate" readonly></td>
+        <td class="items-col-tax"><select name="items-${formCount}-tax_code" class="form-select form-select-sm item-tax-code">${getTaxOptions(defaultTaxCodeId)}</select></td>
+        <td class="items-col-net text-end"><span class="row-net text-muted small">0.00</span></td>
+        <td class="items-col-gross text-end"><span class="row-gross fw-medium">0.00</span></td>
+        <td class="items-col-actions text-center">
+            <input type="hidden" name="items-${formCount}-is_vat_inclusive" value="false" id="id_items-${formCount}-is_vat_inclusive">
+            <input type="checkbox" name="items-${formCount}-DELETE" id="id_items-${formCount}-DELETE" class="d-none" aria-hidden="true">
+            <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeItemRow(this)"><i class="fas fa-times"></i></button>
+        </td>
+    `;
+    tbody.appendChild(tr);
+    formCount++;
+    document.getElementById('id_items-TOTAL_FORMS').value = formCount;
+    calculateRowTotal(tr.querySelector('.item-qty'));
+}
+
+function removeItemRow(btn) {
+    const row = btn.closest('tr');
+    const del = row.querySelector('input[name$="-DELETE"]');
+    if (del) {
+        del.checked = true;
+        row.style.display = 'none';
+    } else {
+        row.remove();
+    }
+    calculateTotals();
+}
+
+function calculateRowTotal(input) {
+    if (!input || !input.closest) return;
+    const row = input.closest('tr');
+    if (!row || !row.classList.contains('item-row')) return;
+    const rate = computeRate(row);
+    const qty = parseFloat(row.querySelector('.item-qty')?.value) || 0;
+    const taxSel = row.querySelector('.item-tax-code');
+    const vatRate = getVatRatePercent(taxSel);
+    const net = qty * rate;
+    const vat = net * (vatRate / 100);
+    const gross = net + vat;
+    const netEl = row.querySelector('.row-net');
+    const grossEl = row.querySelector('.row-gross');
+    if (netEl) netEl.textContent = net.toFixed(2);
+    if (grossEl) grossEl.textContent = gross.toFixed(2);
+    calculateTotals();
+}
+
+function calculateTotals() {
+    let subtotal = 0;
+    let vatTotal = 0;
+    document.querySelectorAll('#itemsBody .item-row').forEach(row => {
+        if (row.style.display === 'none') return;
+        const qty = parseFloat(row.querySelector('.item-qty')?.value) || 0;
+        const rate = computeRate(row);
+        const taxSel = row.querySelector('.item-tax-code');
+        const vatRate = getVatRatePercent(taxSel);
+        const net = qty * rate;
+        const vat = net * (vatRate / 100);
+        subtotal += net;
+        vatTotal += vat;
+    });
+    const beforeDisc = subtotal + vatTotal;
+    const dt = document.querySelector('[name="discount_type"]')?.value || 'none';
+    const dv = parseFloat(document.querySelector('[name="discount_value"]')?.value) || 0;
+    let disc = 0;
+    if (dt === 'percent' && dv > 0) disc = beforeDisc * (dv / 100);
+    else if (dt === 'amount' && dv > 0) disc = Math.min(dv, beforeDisc);
+    const grand = beforeDisc - disc;
+    document.getElementById('subtotal').textContent = subtotal.toFixed(2);
+    document.getElementById('vatTotal').textContent = vatTotal.toFixed(2);
+    document.getElementById('beforeDiscount').textContent = beforeDisc.toFixed(2);
+    document.getElementById('discountDisplay').textContent = disc.toFixed(2);
+    document.getElementById('grandTotal').textContent = grand.toFixed(2);
+}
+
+function bindLineItemsTableEvents() {
+    const tbody = document.getElementById('itemsBody');
+    if (!tbody) return;
+
+    tbody.addEventListener('input', function(e) {
+        const t = e.target;
+        if (!t.matches('.item-qty, .item-base-price, .item-profit-value')) return;
+        const row = t.closest('tr.item-row');
+        if (!row) return;
+        const q = row.querySelector('.item-qty');
+        if (q) calculateRowTotal(q);
+    });
+
+    tbody.addEventListener('change', function(e) {
+        const t = e.target;
+        if (t.matches('.item-inventory')) {
+            onInventoryChange(t);
+            return;
+        }
+        if (!t.matches('.item-qty, .item-profit-type, .item-tax-code')) return;
+        const row = t.closest('tr.item-row');
+        if (!row) return;
+        const q = row.querySelector('.item-qty');
+        if (q) calculateRowTotal(q);
+    });
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    bindLineItemsTableEvents();
+    document.querySelectorAll('#itemsBody .item-row').forEach(row => {
+        const q = row.querySelector('.item-qty');
+        if (q) calculateRowTotal(q);
+    });
+    document.querySelector('[name="discount_type"]')?.addEventListener('change', calculateTotals);
+    document.querySelector('[name="discount_value"]')?.addEventListener('input', calculateTotals);
+});
+</script>
+{% endblock %}

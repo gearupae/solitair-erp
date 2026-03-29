@@ -264,12 +264,12 @@
             </div>
         </div>
         
-        {% if invoice.quotation %}
+        {% if invoice.estimate %}
         <div class="card mb-4">
             <div class="card-body">
-                <h6 class="text-muted mb-3">Related Quotation</h6>
-                <a href="{% url 'sales:quotation_detail' invoice.quotation.pk %}" class="text-decoration-none">
-                    {{ invoice.quotation.quotation_number }}
+                <h6 class="text-muted mb-3">Related Estimate</h6>
+                <a href="{% url 'sales:estimate_detail' invoice.estimate.pk %}" class="text-decoration-none">
+                    {{ invoice.estimate.estimate_number }}
                 </a>
             </div>
         </div>

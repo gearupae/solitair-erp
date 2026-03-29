@@ -7,10 +7,13 @@ urlpatterns = [
     # Projects
     path('', views.ProjectListView.as_view(), name='project_list'),
     path('create/', views.ProjectCreateView.as_view(), name='project_create'),
+    path('tasks/', views.TaskListView.as_view(), name='task_list'),
+    path('<int:pk>/report/pdf/', views.project_report_pdf, name='project_report_pdf'),
     path('<int:pk>/', views.ProjectDetailView.as_view(), name='project_detail'),
     path('<int:pk>/edit/', views.ProjectUpdateView.as_view(), name='project_edit'),
     
     # Tasks
+    path('tasks/<int:pk>/set-status/', views.task_set_status, name='task_set_status'),
     path('tasks/<int:pk>/status/<str:status>/', views.task_update_status, name='task_status'),
     
     # Timesheets

@@ -1,4 +1,5 @@
 {% load static %}
+{% load humanize %}
 <style>
     /* Compact navbar menu items */
     .navbar .nav-link {
@@ -28,19 +29,12 @@
         <!-- Navigation Links -->
         <div class="collapse navbar-collapse" id="mainNavbar">
             <ul class="navbar-nav me-auto mb-2 mb-lg-0">
-                <!-- CRM -->
+                <!-- CRM → Customers (no submenu) -->
                 {% if is_superuser or 'crm' in user_permissions %}
-                <li class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle {% if 'crm' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
+                <li class="nav-item">
+                    <a class="nav-link {% if 'crm' in request.path %}active{% endif %}" href="{% url 'crm:customer_list' %}">
                         <i class="fas fa-users me-1"></i>CRM
                     </a>
-                    <ul class="dropdown-menu dropdown-menu-dark">
-                        <li>
-                            <a class="dropdown-item" href="{% url 'crm:customer_list' %}">
-                                <i class="fas fa-user-tie me-2"></i>Customers
-                            </a>
-                        </li>
-                    </ul>
                 </li>
                 {% endif %}
                 
@@ -52,8 +46,8 @@
                     </a>
                     <ul class="dropdown-menu dropdown-menu-dark">
                         <li>
-                            <a class="dropdown-item" href="{% url 'sales:quotation_list' %}">
-                                <i class="fas fa-file-invoice me-2"></i>Quotations
+                            <a class="dropdown-item" href="{% url 'sales:estimate_list' %}">
+                                <i class="fas fa-file-invoice me-2"></i>Estimates
                             </a>
                         </li>
                         <li>
@@ -378,6 +372,11 @@
                             </a>
                         </li>
                         <li>
+                            <a class="dropdown-item" href="{% url 'projects:task_list' %}">
+                                <i class="fas fa-list-check me-2"></i>All Tasks
+                            </a>
+                        </li>
+                        <li>
                             <a class="dropdown-item" href="{% url 'projects:timesheet_list' %}">
                                 <i class="fas fa-clock me-2"></i>Timesheets
                             </a>
@@ -443,6 +442,14 @@
                     </ul>
                 </li>
                 {% endif %}
+                
+                {% if is_superuser or 'contracts' in user_permissions %}
+                <li class="nav-item">
+                    <a class="nav-link {% if '/contracts/' in request.path %}active{% endif %}" href="{% url 'contracts:contract_list' %}">
+                        <i class="fas fa-file-contract me-1"></i>Contracts
+                    </a>
+                </li>
+                {% endif %}
             </ul>
             
             <!-- Right Side -->
@@ -485,31 +492,45 @@
                 </li>
                 {% endif %}
                 
-                <!-- Notifications -->
+                <!-- Notifications (in-app; see apps.settings_app.Notification) -->
+                {% if user.is_authenticated %}
                 <li class="nav-item dropdown">
-                    <a class="nav-link position-relative" href="#" data-bs-toggle="dropdown">
+                    <a class="nav-link position-relative" href="#" data-bs-toggle="dropdown" aria-expanded="false" title="Notifications">
                         <i class="fas fa-bell"></i>
-                        <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size: 0.6rem;">
-                            3
+                        {% if unread_notification_count %}
+                        <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size: 0.6rem; min-width: 1.1rem;">
+                            {{ unread_notification_count }}
                         </span>
+                        {% endif %}
                     </a>
-                    <ul class="dropdown-menu dropdown-menu-dark dropdown-menu-end" style="width: 300px;">
-                        <li><h6 class="dropdown-header">Notifications</h6></li>
+                    <ul class="dropdown-menu dropdown-menu-dark dropdown-menu-end" style="width: 320px; max-height: 70vh; overflow-y: auto;">
+                        <li><h6 class="dropdown-header mb-0">Notifications</h6></li>
+                        {% for n in header_notifications %}
                         <li>
-                            <a class="dropdown-item py-2" href="#">
-                                <div class="d-flex align-items-center">
-                                    <i class="fas fa-file-invoice text-primary me-3"></i>
-                                    <div>
-                                        <p class="mb-0 small">New quotation created</p>
-                                        <small class="text-muted">5 minutes ago</small>
-                                    </div>
-                                </div>
+                            <a class="dropdown-item py-2 {% if not n.is_read %}fw-semibold{% endif %}" href="{% url 'notification_open' n.pk %}">
+                                <div class="small text-white">{{ n.title }}</div>
+                                {% if n.message %}
+                                <div class="text-muted" style="font-size: 0.8rem;">{{ n.message|truncatechars:120 }}</div>
+                                {% endif %}
+                                <div class="text-muted" style="font-size: 0.7rem;">{{ n.created_at|naturaltime }}</div>
                             </a>
                         </li>
-                        <li><hr class="dropdown-divider"></li>
-                        <li><a class="dropdown-item text-center small" href="#">View All</a></li>
+                        {% empty %}
+                        <li><span class="dropdown-item-text text-muted small py-2">No notifications yet.</span></li>
+                        {% endfor %}
+                        {% if unread_notification_count %}
+                        <li><hr class="dropdown-divider my-1"></li>
+                        <li>
+                            <form method="post" action="{% url 'notifications_mark_all_read' %}" class="px-2 pb-1">
+                                {% csrf_token %}
+                                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                                <button type="submit" class="btn btn-sm btn-outline-light w-100">Mark all read</button>
+                            </form>
+                        </li>
+                        {% endif %}
                     </ul>
                 </li>
+                {% endif %}
                 
                 <!-- User Menu -->
                 <li class="nav-item dropdown">

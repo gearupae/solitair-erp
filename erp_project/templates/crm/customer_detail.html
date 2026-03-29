@@ -71,6 +71,50 @@
                             {% endif %}
                         </p>
                     </div>
+                    <div class="col-md-6">
+                        <label class="form-label text-muted small">VAT (TRN)</label>
+                        <p class="fw-medium mb-0">{{ customer.trn|default:"-" }}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label text-muted small">Website</label>
+                        <p class="mb-0">
+                            {% if customer.website %}
+                            <a href="{{ customer.website }}" target="_blank" rel="noopener noreferrer" class="text-decoration-none">
+                                <i class="fas fa-globe me-1"></i>{{ customer.website }}
+                            </a>
+                            {% else %}
+                            <span class="text-muted">-</span>
+                            {% endif %}
+                        </p>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label text-muted small">Scope</label>
+                        <p class="mb-0">
+                            {% if customer.scope_display_labels %}
+                                {% for label in customer.scope_display_labels %}
+                                <span class="badge bg-secondary-subtle text-secondary me-1">{{ label }}</span>
+                                {% endfor %}
+                            {% else %}
+                            <span class="text-muted">-</span>
+                            {% endif %}
+                        </p>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label text-muted small">Job type</label>
+                        <p class="fw-medium mb-0">{{ customer.job_type|default:"-" }}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label text-muted small">Project</label>
+                        <p class="mb-0">
+                            {% if customer.primary_project %}
+                            <a href="{% url 'projects:project_detail' customer.primary_project.pk %}" class="text-decoration-none fw-medium">
+                                <i class="fas fa-project-diagram me-1"></i>{{ customer.primary_project.project_code }} — {{ customer.primary_project.name }}
+                            </a>
+                            {% else %}
+                            <span class="text-muted">-</span>
+                            {% endif %}
+                        </p>
+                    </div>
                     <div class="col-12">
                         <label class="form-label text-muted small">Address</label>
                         <p class="mb-0">{{ customer.address|default:"-"|linebreaks }}</p>
@@ -97,7 +141,7 @@
                     <div class="col-md-4">
                         <div class="border rounded p-3 text-center">
                             <i class="fas fa-file-invoice text-warning fs-3 mb-2"></i>
-                            <p class="mb-0 small text-muted">Quotations</p>
+                            <p class="mb-0 small text-muted">Estimates</p>
                             <h4 class="mb-0">0</h4>
                         </div>
                     </div>
@@ -112,7 +156,7 @@
                         <div class="border rounded p-3 text-center">
                             <i class="fas fa-project-diagram text-info fs-3 mb-2"></i>
                             <p class="mb-0 small text-muted">Projects</p>
-                            <h4 class="mb-0">0</h4>
+                            <h4 class="mb-0">{{ customer.projects.count }}</h4>
                         </div>
                     </div>
                 </div>

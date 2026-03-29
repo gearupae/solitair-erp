@@ -49,7 +49,7 @@
                         </div>
                     </div>
                     <div class="flex-grow-1 ms-3">
-                        <p class="text-muted mb-1 small">Pending Quotations</p>
+                        <p class="text-muted mb-1 small">Pending Estimates</p>
                         <h3 class="mb-0 fw-bold">0</h3>
                     </div>
                 </div>
@@ -94,9 +94,9 @@
                         </a>
                     </div>
                     <div class="col-6">
-                        <a href="#" class="btn btn-outline-success w-100 py-3">
+                        <a href="{% url 'sales:estimate_create' %}" class="btn btn-outline-success w-100 py-3">
                             <i class="fas fa-file-invoice d-block mb-2 fs-4"></i>
-                            New Quotation
+                            New Estimate
                         </a>
                     </div>
                     <div class="col-6">
