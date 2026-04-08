@@ -29,6 +29,7 @@ urlpatterns = [
     path('orders/', views.PurchaseOrderListView.as_view(), name='po_list'),
     path('orders/create/', views.PurchaseOrderCreateView.as_view(), name='po_create'),
     path('orders/<int:pk>/', views.PurchaseOrderDetailView.as_view(), name='po_detail'),
+    path('orders/<int:pk>/pdf/', views.po_pdf, name='po_pdf'),
     path('orders/<int:pk>/edit/', views.PurchaseOrderUpdateView.as_view(), name='po_edit'),
     path('orders/<int:pk>/delete/', views.po_delete, name='po_delete'),
     path('orders/<int:pk>/items/', views.po_items_json, name='po_items_json'),

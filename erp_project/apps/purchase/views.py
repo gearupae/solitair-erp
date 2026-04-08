@@ -9,7 +9,8 @@ from django.views.generic import ListView, CreateView, UpdateView, DetailView
 from django.urls import reverse, reverse_lazy
 from django.db.models import Q, Sum
 from django.core.exceptions import ValidationError
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
+from django.template.loader import get_template
 from django.utils import timezone
 from datetime import date
 from decimal import Decimal
@@ -627,6 +628,98 @@ class PurchaseOrderDetailView(PermissionRequiredMixin, DetailView):
         context['title'] = f'PO: {self.object.po_number}'
         context['can_edit'] = self.request.user.is_superuser or PermissionChecker.has_permission(self.request.user, 'purchase', 'edit')
         return context
+
+
+@login_required
+def po_pdf(request, pk):
+    """
+    Purchase order PDF / printable HTML — same visual design as tax invoice PDF.
+    """
+    from apps.settings_app.models import CompanySettings
+
+    po = get_object_or_404(
+        PurchaseOrder.objects.filter(is_active=True)
+        .select_related('vendor', 'purchase_request', 'service_request')
+        .prefetch_related('items'),
+        pk=pk,
+    )
+
+    if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'purchase', 'view')):
+        messages.error(request, 'Permission denied.')
+        return redirect('purchase:po_list')
+
+    company = CompanySettings.get_settings()
+
+    def number_to_words(n):
+        ones = [
+            '', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine',
+            'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen',
+            'Seventeen', 'Eighteen', 'Nineteen',
+        ]
+        tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety']
+        if n < 20:
+            return ones[n]
+        if n < 100:
+            return tens[n // 10] + ('' if n % 10 == 0 else ' ' + ones[n % 10])
+        if n < 1000:
+            return ones[n // 100] + ' Hundred' + ('' if n % 100 == 0 else ' and ' + number_to_words(n % 100))
+        if n < 1000000:
+            return number_to_words(n // 1000) + ' Thousand' + ('' if n % 1000 == 0 else ' ' + number_to_words(n % 1000))
+        if n < 1000000000:
+            return (
+                number_to_words(n // 1000000) + ' Million'
+                + ('' if n % 1000000 == 0 else ' ' + number_to_words(n % 1000000))
+            )
+        return str(n)
+
+    try:
+        amount_whole = int(po.total_amount)
+        amount_decimal = int((po.total_amount - amount_whole) * 100)
+        amount_words = number_to_words(amount_whole)
+        if amount_decimal > 0:
+            amount_words += f' and {amount_decimal}/100'
+        amount_words += ' Dirhams Only'
+    except Exception:
+        amount_words = ''
+
+    vat_summary = {}
+    for item in po.items.all():
+        rate = float(item.vat_rate)
+        if rate not in vat_summary:
+            vat_summary[rate] = {'taxable': 0, 'vat': 0}
+        vat_summary[rate]['taxable'] += float(item.total)
+        vat_summary[rate]['vat'] += float(item.vat_amount)
+
+    logo_absolute_url = ''
+    if company.logo:
+        logo_absolute_url = request.build_absolute_uri(company.logo.url)
+
+    context = {
+        'po': po,
+        'company': company,
+        'amount_words': amount_words,
+        'vat_summary': vat_summary,
+        'logo_absolute_url': logo_absolute_url,
+        'is_pdf': True,
+    }
+
+    output_format = request.GET.get('format', 'html')
+    if output_format == 'pdf':
+        try:
+            from weasyprint import HTML
+
+            template = get_template('purchase/po_pdf.html')
+            html_string = template.render(context)
+            html = HTML(string=html_string, base_url=request.build_absolute_uri('/'))
+            pdf = html.write_pdf()
+            response = HttpResponse(pdf, content_type='application/pdf')
+            response['Content-Disposition'] = f'inline; filename="PO_{po.po_number}.pdf"'
+            return response
+        except ImportError:
+            messages.info(request, 'PDF generation requires WeasyPrint. Showing printable HTML version.')
+            return render(request, 'purchase/po_pdf.html', context)
+
+    return render(request, 'purchase/po_pdf.html', context)
 
 
 @login_required

@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Purchase Order — {{ po.po_number }}</title>
+    <style>
+        @page {
+            size: A4;
+            margin: 14mm;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --ink: #0a0a0a;
+            --ink-soft: #1a1a1a;
+            --graphite: #2a2a2a;
+            --silver: #a3a3a3;
+            --mist: #e5e5e5;
+            --paper: #fafafa;
+            --white: #ffffff;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            font-size: 11px;
+            line-height: 1.45;
+            color: var(--ink-soft);
+            background: var(--white);
+        }
+
+        .estimate-container {
+            max-width: 210mm;
+            margin: 0 auto;
+            padding: 16px 16px 28px;
+            background: var(--white);
+        }
+
+        .addr-grid {
+            display: flex;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 18px;
+            border: 1px solid var(--mist);
+            background: var(--paper);
+        }
+
+        .addr-block {
+            flex: 1;
+            padding: 14px 16px;
+            min-width: 0;
+        }
+
+        .addr-block + .addr-block {
+            border-left: 1px solid var(--mist);
+        }
+
+        .addr-label {
+            font-size: 9px;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            color: var(--silver);
+            margin-bottom: 10px;
+            font-weight: 700;
+        }
+
+        .addr-from-logo {
+            max-height: 56px;
+            max-width: 200px;
+            margin-bottom: 10px;
+            object-fit: contain;
+        }
+
+        .addr-name {
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--ink);
+            margin-bottom: 6px;
+        }
+
+        .addr-lines {
+            font-size: 10px;
+            color: #404040;
+            line-height: 1.55;
+        }
+
+        .addr-lines .trn {
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px dashed #ccc;
+            font-weight: 600;
+            color: var(--ink);
+        }
+
+        .title-strip {
+            background: #153a5c;
+            color: var(--white);
+            padding: 16px 18px;
+            margin-bottom: 16px;
+            border: 1px solid #0c2840;
+        }
+
+        .title-strip-main {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 6px;
+        }
+
+        .estimate-title-text {
+            font-size: 22px;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            line-height: 1.2;
+            color: #f1f5f9;
+        }
+
+        .estimate-number {
+            font-size: 17px;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            color: #e2e8f0;
+        }
+
+        .addr-to-estimate-details {
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px dashed #ccc;
+        }
+
+        .addr-to-estimate-details .addr-label {
+            margin-bottom: 8px;
+        }
+
+        .addr-to-detail-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            padding: 4px 0;
+            font-size: 9px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .addr-to-detail-row:last-child {
+            border-bottom: none;
+        }
+
+        .addr-to-detail-label {
+            color: #737373;
+            flex-shrink: 0;
+        }
+
+        .addr-to-detail-value {
+            font-weight: 600;
+            color: #404040;
+            text-align: right;
+        }
+
+        .items-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 18px;
+        }
+
+        .items-table thead th {
+            background: #153a5c;
+            color: #f5f5f5;
+            padding: 9px 6px;
+            text-align: left;
+            font-size: 9px;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            border: 1px solid #0c2840;
+        }
+
+        .items-table thead th.text-center { text-align: center; }
+        .items-table thead th.text-right { text-align: right; }
+
+        .items-table tbody td {
+            padding: 8px 6px;
+            border-bottom: 1px solid #e8e8e8;
+            font-size: 10px;
+        }
+
+        .items-table tbody td.text-center { text-align: center; }
+        .items-table tbody td.text-right { text-align: right; font-variant-numeric: tabular-nums; }
+
+        .items-table tbody tr:nth-child(even) {
+            background: #f7f7f7;
+        }
+
+        .item-number { color: #737373; font-size: 9px; }
+        .item-description { font-weight: 500; }
+
+        .totals-section {
+            display: flex;
+            justify-content: flex-end;
+            margin-bottom: 16px;
+        }
+
+        .totals-table {
+            width: 300px;
+        }
+
+        .totals-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 7px 12px;
+            border-bottom: 1px solid #e5e5e5;
+            font-size: 10px;
+        }
+
+        .totals-row.subtotal { background: #f5f5f5; }
+        .totals-row.vat-row { background: #ececec; }
+
+        .totals-row.total {
+            background: #153a5c;
+            color: #fff;
+            font-size: 13px;
+            font-weight: 700;
+            border: 1px solid #0c2840;
+        }
+
+        .totals-row.total .totals-label {
+            color: #e8eef5;
+        }
+
+        .totals-row.total .totals-value {
+            color: #fff;
+        }
+
+        .totals-label { color: #525252; }
+        .totals-value { font-variant-numeric: tabular-nums; font-weight: 600; }
+
+        .amount-words {
+            background: #f0f0f0;
+            border: 1px solid #ddd;
+            padding: 12px;
+            margin-bottom: 16px;
+            font-size: 10px;
+        }
+
+        .amount-words-label {
+            font-size: 9px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #525252;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+
+        .notes-section {
+            margin-bottom: 16px;
+        }
+
+        .notes-title {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #525252;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+
+        .notes-content {
+            background: #fafafa;
+            border: 1px solid #e5e5e5;
+            padding: 10px 12px;
+            font-size: 10px;
+            line-height: 1.55;
+        }
+
+        .doc-footer {
+            margin-top: 28px;
+            padding-top: 12px;
+            border-top: 1px solid #d4d4d4;
+            font-size: 9px;
+            color: #525252;
+        }
+
+        .doc-footer-line {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 8px;
+            margin-bottom: 6px;
+        }
+
+        .doc-footer-company {
+            flex: 1;
+            min-width: 200px;
+            line-height: 1.5;
+        }
+
+        .doc-footer-company strong {
+            color: #171717;
+            font-size: 10px;
+        }
+
+        .doc-footer-page {
+            font-variant-numeric: tabular-nums;
+            color: #737373;
+            white-space: nowrap;
+        }
+
+        @media print {
+            body {
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
+            .no-print { display: none !important; }
+            .estimate-container { padding: 0; max-width: none; }
+        }
+
+        .print-actions {
+            position: fixed;
+            top: 16px;
+            right: 16px;
+            display: flex;
+            gap: 10px;
+            z-index: 1000;
+            flex-wrap: wrap;
+            max-width: 90vw;
+            justify-content: flex-end;
+        }
+
+        .print-btn {
+            padding: 10px 18px;
+            border: 1px solid #0c2840;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            text-decoration: none;
+            background: #153a5c;
+            color: #fff;
+        }
+
+        .print-btn-secondary {
+            background: #f5f5f5;
+            color: #333;
+            border-color: #ccc;
+        }
+    </style>
+</head>
+<body>
+    <div class="print-actions no-print">
+        <button type="button" class="print-btn" onclick="window.print()">Print PO</button>
+        <a href="{% url 'purchase:po_pdf' po.pk %}?format=pdf" class="print-btn" style="background:#0d5c3d;border-color:#064e2f;">Download PDF</a>
+        <a href="{% url 'purchase:po_detail' po.pk %}" class="print-btn print-btn-secondary">Back to PO</a>
+    </div>
+
+    <div class="estimate-container">
+        <div class="title-strip">
+            <div class="title-strip-main">
+                <div class="estimate-title-text">PURCHASE ORDER</div>
+                <div class="estimate-number">{{ po.po_number }}</div>
+            </div>
+        </div>
+
+        <div class="addr-grid">
+            <div class="addr-block addr-to">
+                <div class="addr-label">Supplier (Ship to / Bill to)</div>
+                <div class="addr-name">{{ po.vendor.name }}</div>
+                {% if po.vendor.contact_person %}
+                <div class="addr-lines" style="font-weight:600;margin-bottom:4px;">Attn: {{ po.vendor.contact_person }}</div>
+                {% endif %}
+                <div class="addr-lines">
+                    {% if po.vendor.address %}
+                    <div>{{ po.vendor.address|linebreaksbr }}</div>
+                    {% endif %}
+                    {% if po.vendor.city or po.vendor.country %}
+                    <div>{% if po.vendor.city %}{{ po.vendor.city }}{% endif %}{% if po.vendor.city and po.vendor.country %}, {% endif %}{% if po.vendor.country %}{{ po.vendor.country }}{% endif %}</div>
+                    {% endif %}
+                    {% if po.vendor.phone %}
+                    <div>Tel: {{ po.vendor.phone }}</div>
+                    {% endif %}
+                    {% if po.vendor.email %}
+                    <div>{{ po.vendor.email }}</div>
+                    {% endif %}
+                    {% if po.vendor.trn %}
+                    <div class="trn">VAT / TRN: {{ po.vendor.trn }}</div>
+                    {% endif %}
+                </div>
+                <div class="addr-to-estimate-details">
+                    <div class="addr-label">Order details</div>
+                    <div class="addr-to-detail-row">
+                        <span class="addr-to-detail-label">Order date</span>
+                        <span class="addr-to-detail-value">{{ po.order_date|date:"d/m/Y" }}</span>
+                    </div>
+                    <div class="addr-to-detail-row">
+                        <span class="addr-to-detail-label">Expected delivery</span>
+                        <span class="addr-to-detail-value">{% if po.expected_delivery_date %}{{ po.expected_delivery_date|date:"d/m/Y" }}{% else %}—{% endif %}</span>
+                    </div>
+                    <div class="addr-to-detail-row">
+                        <span class="addr-to-detail-label">Status</span>
+                        <span class="addr-to-detail-value">{{ po.get_status_display }}</span>
+                    </div>
+                    {% if po.vendor.vendor_number %}
+                    <div class="addr-to-detail-row">
+                        <span class="addr-to-detail-label">Supplier ID</span>
+                        <span class="addr-to-detail-value">{{ po.vendor.vendor_number }}</span>
+                    </div>
+                    {% endif %}
+                    {% if po.purchase_request %}
+                    <div class="addr-to-detail-row">
+                        <span class="addr-to-detail-label">Purchase request</span>
+                        <span class="addr-to-detail-value">{{ po.purchase_request.pr_number }}</span>
+                    </div>
+                    {% endif %}
+                    {% if po.service_request %}
+                    <div class="addr-to-detail-row">
+                        <span class="addr-to-detail-label">Service request</span>
+                        <span class="addr-to-detail-value">{{ po.service_request.sr_number }}</span>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="addr-block addr-from">
+                <div class="addr-label">From (Buyer)</div>
+                {% if company.logo and logo_absolute_url %}
+                <img src="{{ logo_absolute_url }}" alt="{{ company.company_name }}" class="addr-from-logo">
+                {% endif %}
+                <div class="addr-name">{{ company.company_name }}</div>
+                <div class="addr-lines">
+                    {% if company.address %}
+                    <div>{{ company.address|linebreaksbr }}</div>
+                    {% endif %}
+                    {% if company.phone %}
+                    <div>Tel: {{ company.phone }}</div>
+                    {% endif %}
+                    {% if company.email %}
+                    <div>{{ company.email }}</div>
+                    {% endif %}
+                    {% if company.website %}
+                    <div>{{ company.website }}</div>
+                    {% endif %}
+                    {% if company.tax_id %}
+                    <div class="trn">VAT / TRN: {{ company.tax_id }}</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <table class="items-table">
+            <thead>
+                <tr>
+                    <th style="width: 30px;">#</th>
+                    <th>Description</th>
+                    <th class="text-center" style="width: 60px;">Qty</th>
+                    <th class="text-right" style="width: 100px;">Unit Price</th>
+                    <th class="text-center" style="width: 60px;">VAT %</th>
+                    <th class="text-right" style="width: 90px;">VAT Amt</th>
+                    <th class="text-right" style="width: 110px;">Total (AED)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in po.items.all %}
+                <tr>
+                    <td class="item-number">{{ forloop.counter }}</td>
+                    <td class="item-description">{{ item.description }}</td>
+                    <td class="text-center">{{ item.quantity|floatformat:2 }}</td>
+                    <td class="text-right">{{ item.unit_price|floatformat:2 }}</td>
+                    <td class="text-center">{{ item.vat_rate|floatformat:0 }}%</td>
+                    <td class="text-right">{{ item.vat_amount|floatformat:2 }}</td>
+                    <td class="text-right">{{ item.total|floatformat:2 }}</td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="7" style="text-align: center; padding: 20px; color: #737373;">No items</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <div class="totals-section">
+            <div class="totals-table">
+                <div class="totals-row subtotal">
+                    <span class="totals-label">Subtotal (excl. VAT)</span>
+                    <span class="totals-value">AED {{ po.subtotal|floatformat:2 }}</span>
+                </div>
+                {% for rate, amounts in vat_summary.items %}
+                <div class="totals-row vat-row">
+                    <span class="totals-label">VAT @ {{ rate|floatformat:0 }}%</span>
+                    <span class="totals-value">AED {{ amounts.vat|floatformat:2 }}</span>
+                </div>
+                {% endfor %}
+                <div class="totals-row">
+                    <span class="totals-label">Total VAT</span>
+                    <span class="totals-value">AED {{ po.vat_amount|floatformat:2 }}</span>
+                </div>
+                <div class="totals-row total">
+                    <span class="totals-label">Grand total</span>
+                    <span class="totals-value">AED {{ po.total_amount|floatformat:2 }}</span>
+                </div>
+            </div>
+        </div>
+
+        {% if amount_words %}
+        <div class="amount-words">
+            <div class="amount-words-label">Amount in words</div>
+            <div>{{ amount_words }}</div>
+        </div>
+        {% endif %}
+
+        {% if po.notes %}
+        <div class="notes-section">
+            <div class="notes-title">Notes</div>
+            <div class="notes-content">{{ po.notes|linebreaks }}</div>
+        </div>
+        {% endif %}
+
+        <div class="notes-section">
+            <div class="notes-title">Terms</div>
+            <div class="notes-content">
+                <strong>Currency:</strong> UAE Dirham (AED)
+                {% if po.vendor.payment_terms %}<br><strong>Payment terms (supplier):</strong> {{ po.vendor.payment_terms }}{% endif %}
+                {% if company.email %}<br><strong>Buyer contact:</strong> {{ company.email }}{% endif %}
+            </div>
+        </div>
+
+        <footer class="doc-footer">
+            <div class="doc-footer-line">
+                <div class="doc-footer-company">
+                    <strong>{{ company.company_name }}</strong>
+                    {% if company.address %}<br>{{ company.address|linebreaksbr }}{% endif %}
+                    {% if company.phone %}<br>Tel: {{ company.phone }}{% endif %}
+                    {% if company.email %}<br>{{ company.email }}{% endif %}
+                    {% if company.website %}<br>{{ company.website }}{% endif %}
+                    {% if company.tax_id %}<br>VAT / TRN: {{ company.tax_id }}{% endif %}
+                </div>
+                <div class="doc-footer-page">
+                    Ref: {{ po.po_number }}
+                    <br>
+                    <span style="color:#a3a3a3;">Page</span> 1
+                </div>
+            </div>
+            <p style="margin-top:10px;font-size:8px;line-height:1.5;color:#737373;">
+                This document is a purchase order issued by the buyer to the supplier. It is not a tax invoice. Official VAT documentation will be provided on the supplier’s tax invoice upon supply.
+            </p>
+            <p style="margin-top:8px;text-align:center;color:#a3a3a3;">Please acknowledge receipt and confirm delivery dates where applicable.</p>
+        </footer>
+    </div>
+
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('print') === '1') {
+            window.onload = function() { window.print(); };
+        }
+    </script>
+</body>
+</html>
