@@ -163,7 +163,27 @@ class Item(BaseModel):
     def is_low_stock(self):
         """Check if item is below minimum stock level."""
         return self.total_stock < self.minimum_stock
-    
+
+    def get_issue_unit_cost(self, warehouse=None):
+        """
+        Unit cost for stock-out when request/line cost is zero: use master
+        purchase price, else the latest positive stock-in cost for this item
+        (optionally scoped to a warehouse).
+        """
+        if self.purchase_price and self.purchase_price > 0:
+            return self.purchase_price
+        qs = StockMovement.objects.filter(
+            item=self,
+            movement_type='in',
+            unit_cost__gt=0,
+        )
+        if warehouse is not None:
+            qs = qs.filter(warehouse=warehouse)
+        last = qs.order_by('-movement_date', '-created_at').first()
+        if last and last.unit_cost > 0:
+            return last.unit_cost
+        return Decimal('0.00')
+
     def change_condition(self, new_status, notes='', user=None):
         """Change item condition and log the change."""
         from django.utils import timezone
@@ -762,9 +782,15 @@ class ConsumableRequest(BaseModel):
         movements = []
         line_items = list(self.items.all()) if self.items.exists() else []
         for idx, (item, qty) in enumerate(items_to_dispense):
-            unit_cost = line_items[idx].unit_cost if idx < len(line_items) else (
-                self.unit_cost if self.item else (item.purchase_price or Decimal('0.00'))
-            )
+            if idx < len(line_items):
+                unit_cost = line_items[idx].unit_cost
+            else:
+                unit_cost = self.unit_cost if self.item else (
+                    item.purchase_price or Decimal('0.00')
+                )
+            if unit_cost <= 0:
+                unit_cost = item.get_issue_unit_cost(dispense_warehouse)
+            allow_zero_cost = unit_cost <= 0
             try:
                 stock = Stock.objects.get(item=item, warehouse=dispense_warehouse)
                 if stock.quantity < qty:
@@ -786,7 +812,7 @@ class ConsumableRequest(BaseModel):
                 notes=f"Dispensed to: {self.requested_by.get_full_name() or self.requested_by.username}",
                 movement_date=date.today(),
             )
-            movement.execute(user=user)
+            movement.execute(user=user, allow_zero_cost=allow_zero_cost)
             movements.append(movement)
         
         self.status = 'dispensed'
