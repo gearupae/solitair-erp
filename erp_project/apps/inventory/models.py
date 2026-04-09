@@ -823,6 +823,10 @@ class ConsumableRequest(BaseModel):
         if not self.approved_by:
             self.approved_by = user
             self.approved_date = timezone.now()
+        if self.items.exists():
+            self.total_cost = sum(
+                (li.total_cost or Decimal('0')) for li in self.items.all()
+            ).quantize(Decimal('0.01'))
         self.save()
         
         return movements[0] if movements else None

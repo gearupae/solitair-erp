@@ -6,11 +6,13 @@ from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.views.generic import ListView, CreateView, UpdateView, DetailView
 from django.urls import reverse_lazy
-from django.db.models import Q, Sum, F, Value, DecimalField, Count, Avg, Prefetch
+from django.db.models import Q, Sum, F, Value, DecimalField, DateField, Count, Avg, Prefetch
 from django.db import models as db_models
-from django.db.models.functions import Coalesce
+from django.db.models.functions import Coalesce, TruncDate
 from django.db import transaction
+from django.utils.safestring import mark_safe
 import csv
+import json
 
 from django.http import HttpResponse, HttpResponseForbidden
 from decimal import Decimal
@@ -24,6 +26,28 @@ from .forms import (
 )
 from apps.core.mixins import PermissionRequiredMixin, CreatePermissionMixin, UpdatePermissionMixin
 from apps.core.utils import PermissionChecker
+
+
+def _consumable_with_consumption_date():
+    """Dispensed requests annotated with calendar date of consumption (dispense date, else request)."""
+    return ConsumableRequest.objects.filter(
+        is_active=True,
+        status='dispensed',
+    ).annotate(
+        _consumption_date=Coalesce(
+            TruncDate('dispensed_date'),
+            F('request_date'),
+            output_field=DateField(),
+        )
+    )
+
+
+def consumable_requests_in_consumption_period(month_start, month_end):
+    """Consumption date in [month_start, month_end)."""
+    return _consumable_with_consumption_date().filter(
+        _consumption_date__gte=month_start,
+        _consumption_date__lt=month_end,
+    )
 
 
 # ============ CATEGORY VIEWS ============
@@ -1231,13 +1255,9 @@ def consumable_monthly_consumption_report(request):
     else:
         month_end = date(year, month + 1, 1)
     
-    # Only dispensed requests count as consumption
-    consumption = ConsumableRequest.objects.filter(
-        is_active=True,
-        status='dispensed',
-        request_date__gte=month_start,
-        request_date__lt=month_end
-    ).values(
+    # Only dispensed requests; attribute to dispense date (not request_date) for trends
+    period_qs = consumable_requests_in_consumption_period(month_start, month_end)
+    consumption = period_qs.values(
         'item__id',
         'item__item_code',
         'item__name',
@@ -1249,12 +1269,7 @@ def consumable_monthly_consumption_report(request):
     ).order_by('-total_quantity')
     
     # Totals
-    totals = ConsumableRequest.objects.filter(
-        is_active=True,
-        status='dispensed',
-        request_date__gte=month_start,
-        request_date__lt=month_end
-    ).aggregate(
+    totals = period_qs.aggregate(
         total_quantity=Sum('quantity'),
         total_cost=Sum('total_cost'),
         total_requests=Count('id'),
@@ -1275,12 +1290,7 @@ def consumable_monthly_consumption_report(request):
     top_items_data = [float(c['total_quantity'] or 0) for c in top_items]
     
     # 2. Consumption by User (who orders more/less)
-    user_consumption = ConsumableRequest.objects.filter(
-        is_active=True,
-        status='dispensed',
-        request_date__gte=month_start,
-        request_date__lt=month_end
-    ).values(
+    user_consumption = period_qs.values(
         'requested_by__username',
         'requested_by__first_name',
         'requested_by__last_name'
@@ -1299,12 +1309,9 @@ def consumable_monthly_consumption_report(request):
     for i in range(5, -1, -1):
         m_date = month_start - relativedelta(months=i)
         m_end = m_date + relativedelta(months=1)
-        cost = ConsumableRequest.objects.filter(
-            is_active=True,
-            status='dispensed',
-            request_date__gte=m_date,
-            request_date__lt=m_end
-        ).aggregate(total=Sum('total_cost'))['total'] or 0
+        cost = consumable_requests_in_consumption_period(m_date, m_end).aggregate(
+            total=Sum('total_cost')
+        )['total'] or 0
         monthly_costs.append(float(cost))
         monthly_labels.append(m_date.strftime('%b %Y'))
     
@@ -1328,10 +1335,8 @@ def consumable_monthly_consumption_report(request):
     
     # 5. Inactive/Rarely Used Items (items with no consumption in last 3 months)
     three_months_ago = month_start - relativedelta(months=3)
-    consumed_item_ids = ConsumableRequest.objects.filter(
-        is_active=True,
-        status='dispensed',
-        request_date__gte=three_months_ago
+    consumed_item_ids = _consumable_with_consumption_date().filter(
+        _consumption_date__gte=three_months_ago
     ).values_list('item_id', flat=True).distinct()
     
     inactive_items = Item.objects.filter(
@@ -1354,17 +1359,17 @@ def consumable_monthly_consumption_report(request):
         'month_name': month_start.strftime('%B %Y'),
         'years': range(2024, timezone.localdate().year + 2),
         'months': [(i, date(2000, i, 1).strftime('%B')) for i in range(1, 13)],
-        # Chart data
-        'top_items_labels': top_items_labels,
-        'top_items_data': top_items_data,
-        'user_labels': user_labels,
-        'user_data': user_data,
-        'monthly_labels': monthly_labels,
-        'monthly_costs': monthly_costs,
+        # Chart data (JSON for valid Chart.js / JS parsing)
+        'monthly_labels_json': mark_safe(json.dumps(monthly_labels)),
+        'monthly_costs_json': mark_safe(json.dumps(monthly_costs)),
+        'cost_labels_json': mark_safe(json.dumps(cost_labels)),
+        'cost_data_json': mark_safe(json.dumps(cost_data)),
+        'top_items_labels_json': mark_safe(json.dumps(top_items_labels)),
+        'top_items_data_json': mark_safe(json.dumps(top_items_data)),
+        'user_labels_json': mark_safe(json.dumps(user_labels)),
+        'user_data_json': mark_safe(json.dumps(user_data)),
         'refill_items': refill_items,
         'inactive_items': inactive_items,
-        'cost_labels': cost_labels,
-        'cost_data': cost_data,
         'user_consumption': user_consumption,
     }
     
@@ -1391,13 +1396,9 @@ def consumable_monthly_cost_report(request):
     else:
         month_end = date(year, month + 1, 1)
     
+    period_qs = consumable_requests_in_consumption_period(month_start, month_end)
     # Cost breakdown by item
-    cost_breakdown = ConsumableRequest.objects.filter(
-        is_active=True,
-        status='dispensed',
-        request_date__gte=month_start,
-        request_date__lt=month_end
-    ).values(
+    cost_breakdown = period_qs.values(
         'item__id',
         'item__item_code',
         'item__name',
@@ -1408,24 +1409,22 @@ def consumable_monthly_cost_report(request):
         avg_unit_cost=Avg('unit_cost')
     ).order_by('-total_cost')
     
-    # Daily cost trend
-    daily_costs = ConsumableRequest.objects.filter(
-        is_active=True,
-        status='dispensed',
-        request_date__gte=month_start,
-        request_date__lt=month_end
-    ).values('request_date').annotate(
+    # Daily cost trend (by consumption date; template-friendly keys)
+    _daily_rows = period_qs.values('_consumption_date').annotate(
         daily_cost=Sum('total_cost'),
         daily_qty=Sum('quantity')
-    ).order_by('request_date')
+    ).order_by('_consumption_date')
+    daily_costs = [
+        {
+            'consumption_day': r['_consumption_date'],
+            'daily_cost': r['daily_cost'],
+            'daily_qty': r['daily_qty'],
+        }
+        for r in _daily_rows
+    ]
     
     # Totals
-    totals = ConsumableRequest.objects.filter(
-        is_active=True,
-        status='dispensed',
-        request_date__gte=month_start,
-        request_date__lt=month_end
-    ).aggregate(
+    totals = period_qs.aggregate(
         total_cost=Sum('total_cost'),
         total_quantity=Sum('quantity'),
         total_requests=Count('id'),

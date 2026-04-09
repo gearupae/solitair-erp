@@ -492,10 +492,10 @@ document.addEventListener('DOMContentLoaded', function() {
         new Chart(costTrendCtx, {
             type: 'line',
             data: {
-                labels: {{ monthly_labels|safe }},
+                labels: {{ monthly_labels_json }},
                 datasets: [{
                     label: 'Monthly Cost (AED)',
-                    data: {{ monthly_costs|safe }},
+                    data: {{ monthly_costs_json }},
                     borderColor: colors.primary,
                     backgroundColor: costGradient,
                     fill: true,
@@ -549,9 +549,9 @@ document.addEventListener('DOMContentLoaded', function() {
         new Chart(costBreakdownCtx, {
             type: 'doughnut',
             data: {
-                labels: {{ cost_labels|safe }},
+                labels: {{ cost_labels_json }},
                 datasets: [{
-                    data: {{ cost_data|safe }},
+                    data: {{ cost_data_json }},
                     backgroundColor: colors.chartColors,
                     borderWidth: 0,
                     hoverOffset: 10
@@ -588,10 +588,10 @@ document.addEventListener('DOMContentLoaded', function() {
         new Chart(topItemsCtx, {
             type: 'bar',
             data: {
-                labels: {{ top_items_labels|safe }},
+                labels: {{ top_items_labels_json }},
                 datasets: [{
                     label: 'Quantity Consumed',
-                    data: {{ top_items_data|safe }},
+                    data: {{ top_items_data_json }},
                     backgroundColor: function(context) {
                         const chart = context.chart;
                         const {ctx, chartArea} = chart;
@@ -631,10 +631,10 @@ document.addEventListener('DOMContentLoaded', function() {
         new Chart(userCtx, {
             type: 'bar',
             data: {
-                labels: {{ user_labels|safe }},
+                labels: {{ user_labels_json }},
                 datasets: [{
                     label: 'Requests Made',
-                    data: {{ user_data|safe }},
+                    data: {{ user_data_json }},
                     backgroundColor: function(context) {
                         const chart = context.chart;
                         const {ctx, chartArea} = chart;

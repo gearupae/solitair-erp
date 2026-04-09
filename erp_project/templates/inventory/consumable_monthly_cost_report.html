@@ -135,7 +135,7 @@ const ctx = document.getElementById('dailyCostChart').getContext('2d');
 new Chart(ctx, {
     type: 'bar',
     data: {
-        labels: [{% for dc in daily_costs %}'{{ dc.request_date|date:"d" }}'{% if not forloop.last %},{% endif %}{% endfor %}],
+        labels: [{% for dc in daily_costs %}'{{ dc.consumption_day|date:"d" }}'{% if not forloop.last %},{% endif %}{% endfor %}],
         datasets: [{
             label: 'Daily Cost (AED)',
             data: [{% for dc in daily_costs %}{{ dc.daily_cost|floatformat:2 }}{% if not forloop.last %},{% endif %}{% endfor %}],
