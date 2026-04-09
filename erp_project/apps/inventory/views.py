@@ -1262,9 +1262,16 @@ def consumable_monthly_consumption_report(request):
     
     # ===== CHART DATA =====
     
+    def _consumption_item_label(row, max_len):
+        """Legacy FK `item` may be null on multi-line requests; ORM can return null names."""
+        name = row.get('item__name')
+        code = row.get('item__item_code')
+        label = (name or '').strip() or (code or '').strip() or 'Unknown'
+        return label[:max_len]
+    
     # 1. Top 10 Most Consumed Items (for forecast)
     top_items = list(consumption[:10])
-    top_items_labels = [c['item__name'][:20] for c in top_items]
+    top_items_labels = [_consumption_item_label(c, 20) for c in top_items]
     top_items_data = [float(c['total_quantity'] or 0) for c in top_items]
     
     # 2. Consumption by User (who orders more/less)
@@ -1306,12 +1313,14 @@ def consumable_monthly_consumption_report(request):
     refill_items = []
     for item_data in consumption[:20]:
         item_id = item_data['item__id']
+        if item_id is None:
+            continue
         monthly_consumption = float(item_data['total_quantity'] or 0)
         current_stock = Stock.objects.filter(item_id=item_id).aggregate(total=Sum('quantity'))['total'] or 0
         # If current stock < 2 months of consumption, flag for refill
         if current_stock < (monthly_consumption * 2):
             refill_items.append({
-                'name': item_data['item__name'],
+                'name': _consumption_item_label(item_data, 200),
                 'monthly_consumption': monthly_consumption,
                 'current_stock': float(current_stock),
                 'months_left': round(float(current_stock) / monthly_consumption, 1) if monthly_consumption > 0 else 0
@@ -1333,7 +1342,7 @@ def consumable_monthly_consumption_report(request):
     
     # 6. Cost breakdown by item (pie chart)
     cost_breakdown = list(consumption[:8])
-    cost_labels = [c['item__name'][:15] for c in cost_breakdown]
+    cost_labels = [_consumption_item_label(c, 15) for c in cost_breakdown]
     cost_data = [float(c['total_cost'] or 0) for c in cost_breakdown]
     
     context = {
