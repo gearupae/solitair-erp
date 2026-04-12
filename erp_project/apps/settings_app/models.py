@@ -172,6 +172,16 @@ class CompanySettings(models.Model):
     currency = models.CharField(max_length=10, default='AED')
     date_format = models.CharField(max_length=20, default='%d/%m/%Y')
     timezone = models.CharField(max_length=50, default='Asia/Dubai')
+    INVENTORY_VALUATION_CHOICES = [
+        ('fifo', 'FIFO'),
+        ('weighted_average', 'Weighted Average'),
+    ]
+    inventory_valuation_method = models.CharField(
+        max_length=30,
+        choices=INVENTORY_VALUATION_CHOICES,
+        default='weighted_average',
+        help_text='Shown on inventory valuation reports.',
+    )
 
     # Defaults for new sales estimates (editable per estimate; users append text here over time)
     estimate_default_client_note = models.TextField(

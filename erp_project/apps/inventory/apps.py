@@ -6,6 +6,9 @@ class InventoryConfig(AppConfig):
     name = 'apps.inventory'
     verbose_name = 'Inventory'
 
+    def ready(self):
+        import apps.inventory.signals  # noqa: F401
+
 
 
 

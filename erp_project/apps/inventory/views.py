@@ -14,10 +14,24 @@ from django.utils.safestring import mark_safe
 import csv
 import json
 
-from django.http import HttpResponse, HttpResponseForbidden
+from django.http import HttpResponse, HttpResponseForbidden, JsonResponse
+from django.views.decorators.http import require_http_methods
 from decimal import Decimal
 
-from .models import Category, Warehouse, Item, Stock, StockMovement, ConsumableRequest, ConsumableRequestItem, ConsumableRequestAttachment, ConditionLog
+from .models import (
+    Category,
+    Warehouse,
+    StorageLocation,
+    Item,
+    Stock,
+    StockMovement,
+    ConsumableRequest,
+    ConsumableRequestItem,
+    ConsumableRequestAttachment,
+    ConditionLog,
+)
+from .consumable_inventory_reports import REPORT_BUILDERS, build_report
+from .consumable_report_export import export_report_pdf, export_report_xlsx
 from .forms import (
     CategoryForm, WarehouseForm, ItemForm, StockAdjustmentForm,
     ConsumableRequestForm, ConsumableRequestItemFormSet,
@@ -288,9 +302,11 @@ def item_export_csv(request):
             'tax_code',
             'minimum_stock',
             'status',
+            'barcode',
+            'storage_location',
         ]
     )
-    qs = Item.objects.filter(is_active=True).select_related('category', 'tax_code').order_by('item_code')
+    qs = Item.objects.filter(is_active=True).select_related('category', 'tax_code', 'storage_location_master').order_by('item_code')
     for item in qs:
         w.writerow(
             [
@@ -305,6 +321,8 @@ def item_export_csv(request):
                 item.tax_code.code if item.tax_code_id else '',
                 item.minimum_stock,
                 item.status,
+                item.barcode or '',
+                item.get_storage_shelf_label(),
             ]
         )
     return response
@@ -320,6 +338,7 @@ class ItemCreateView(CreatePermissionMixin, CreateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['title'] = 'Create Item'
+        context['storage_locations'] = StorageLocation.objects.filter(is_active=True).order_by('name')
         return context
     
     def form_valid(self, form):
@@ -337,6 +356,7 @@ class ItemUpdateView(UpdatePermissionMixin, UpdateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['title'] = f'Edit Item: {self.object.name}'
+        context['storage_locations'] = StorageLocation.objects.filter(is_active=True).order_by('name')
         return context
     
     def form_valid(self, form):
@@ -1443,4 +1463,156 @@ def consumable_monthly_cost_report(request):
     }
     
     return render(request, 'inventory/consumable_monthly_cost_report.html', context)
+
+
+def _consumable_report_perm(request):
+    return request.user.is_superuser or PermissionChecker.has_permission(request.user, 'inventory', 'view')
+
+
+def _parse_iso_date(s, default=None):
+    from datetime import datetime as dt
+    if not s:
+        return default
+    try:
+        return dt.strptime(s.strip(), '%Y-%m-%d').date()
+    except ValueError:
+        return default
+
+
+def _json_safe_floats(obj):
+    """Replace NaN/inf floats so JsonResponse never fails."""
+    import math
+
+    if isinstance(obj, dict):
+        return {k: _json_safe_floats(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_json_safe_floats(v) for v in obj]
+    if isinstance(obj, float) and (math.isnan(obj) or math.isinf(obj)):
+        return None
+    return obj
+
+
+@login_required
+def consumable_inventory_reports_page(request):
+    if not _consumable_report_perm(request):
+        messages.error(request, 'Permission denied.')
+        return redirect('dashboard')
+    return render(
+        request,
+        'inventory/consumable_inventory_reports.html',
+        {
+            'title': 'Consumables — Inventory Reports',
+            'report_keys': list(REPORT_BUILDERS.keys()),
+        },
+    )
+
+
+@login_required
+@require_http_methods(['GET'])
+def consumable_inventory_report_api(request):
+    if not _consumable_report_perm(request):
+        return JsonResponse({'ok': False, 'error': 'Permission denied'}, status=403)
+    report_key = request.GET.get('report', 'stock_summary')
+    if report_key not in REPORT_BUILDERS:
+        return JsonResponse({'ok': False, 'error': 'Unknown report'}, status=400)
+    date_from = _parse_iso_date(request.GET.get('date_from'))
+    date_to = _parse_iso_date(request.GET.get('date_to'))
+    if not date_from or not date_to:
+        return JsonResponse({'ok': False, 'error': 'date_from and date_to are required (YYYY-MM-DD)'}, status=400)
+    if date_from > date_to:
+        return JsonResponse({'ok': False, 'error': 'From date cannot be after To date'}, status=400)
+    warranty_filter = request.GET.get('warranty_filter', 'all')
+    movement_group = request.GET.get('movement_group', 'date')
+    try:
+        payload = build_report(report_key, date_from, date_to, warranty_filter=warranty_filter, movement_group=movement_group)
+    except Exception as exc:
+        return JsonResponse({'ok': False, 'error': str(exc)}, status=500)
+    # Strip internal id from row payloads for cleaner API
+    for row in payload.get('rows', []):
+        row.pop('item_id', None)
+    payload['ok'] = True
+    payload['date_from'] = date_from.isoformat()
+    payload['date_to'] = date_to.isoformat()
+    payload['generated_by'] = request.user.get_full_name() or request.user.username
+    return JsonResponse(_json_safe_floats(payload))
+
+
+@login_required
+@require_http_methods(['GET'])
+def consumable_inventory_report_export_pdf(request):
+    if not _consumable_report_perm(request):
+        return HttpResponseForbidden('Permission denied')
+    report_key = request.GET.get('report', 'stock_summary')
+    if report_key not in REPORT_BUILDERS:
+        return HttpResponseForbidden('Unknown report')
+    date_from = _parse_iso_date(request.GET.get('date_from'))
+    date_to = _parse_iso_date(request.GET.get('date_to'))
+    if not date_from or not date_to or date_from > date_to:
+        return HttpResponseForbidden('Invalid date range')
+    warranty_filter = request.GET.get('warranty_filter', 'all')
+    movement_group = request.GET.get('movement_group', 'date')
+    payload = build_report(report_key, date_from, date_to, warranty_filter=warranty_filter, movement_group=movement_group)
+    for row in payload.get('rows', []):
+        row.pop('item_id', None)
+    pdf_bytes = export_report_pdf(
+        payload,
+        date_from,
+        date_to,
+        request.user.get_full_name() or request.user.username,
+    )
+    resp = HttpResponse(pdf_bytes, content_type='application/pdf')
+    safe_name = ''.join(c if c.isalnum() or c in '-_' else '_' for c in report_key)
+    resp['Content-Disposition'] = f'attachment; filename="{safe_name}_{date_from}_{date_to}.pdf"'
+    return resp
+
+
+@login_required
+@require_http_methods(['GET'])
+def consumable_inventory_report_export_xlsx(request):
+    if not _consumable_report_perm(request):
+        return HttpResponseForbidden('Permission denied')
+    report_key = request.GET.get('report', 'stock_summary')
+    if report_key not in REPORT_BUILDERS:
+        return HttpResponseForbidden('Unknown report')
+    date_from = _parse_iso_date(request.GET.get('date_from'))
+    date_to = _parse_iso_date(request.GET.get('date_to'))
+    if not date_from or not date_to or date_from > date_to:
+        return HttpResponseForbidden('Invalid date range')
+    warranty_filter = request.GET.get('warranty_filter', 'all')
+    movement_group = request.GET.get('movement_group', 'date')
+    payload = build_report(report_key, date_from, date_to, warranty_filter=warranty_filter, movement_group=movement_group)
+    for row in payload.get('rows', []):
+        row.pop('item_id', None)
+    xlsx_bytes = export_report_xlsx(
+        payload,
+        date_from,
+        date_to,
+        request.user.get_full_name() or request.user.username,
+    )
+    resp = HttpResponse(
+        xlsx_bytes,
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )
+    safe_name = ''.join(c if c.isalnum() or c in '-_' else '_' for c in report_key)
+    resp['Content-Disposition'] = f'attachment; filename="{safe_name}_{date_from}_{date_to}.xlsx"'
+    return resp
+
+
+@login_required
+@require_http_methods(['POST'])
+def storage_location_create(request):
+    if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'inventory', 'create')):
+        return JsonResponse({'ok': False, 'error': 'Permission denied'}, status=403)
+    try:
+        body = json.loads(request.body.decode() or '{}')
+    except json.JSONDecodeError:
+        body = {}
+    name = (body.get('name') or '').strip()
+    description = (body.get('description') or '').strip()
+    if not name:
+        return JsonResponse({'ok': False, 'error': 'Name is required'}, status=400)
+    if StorageLocation.objects.filter(name__iexact=name).exists():
+        return JsonResponse({'ok': False, 'error': 'A location with this name already exists'}, status=400)
+    loc = StorageLocation.objects.create(name=name, description=description)
+    return JsonResponse({'ok': True, 'id': loc.id, 'name': loc.name})
 

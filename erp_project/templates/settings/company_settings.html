@@ -93,6 +93,13 @@
                         <option value="%Y-%m-%d" {% if object.date_format == '%Y-%m-%d' %}selected{% endif %}>YYYY-MM-DD</option>
                     </select>
                 </div>
+                <div class="col-md-4">
+                    <label class="form-label">Inventory valuation (reports)</label>
+                    <select name="inventory_valuation_method" class="form-select">
+                        <option value="fifo" {% if object.inventory_valuation_method == 'fifo' %}selected{% endif %}>FIFO</option>
+                        <option value="weighted_average" {% if object.inventory_valuation_method == 'weighted_average' %}selected{% endif %}>Weighted Average</option>
+                    </select>
+                </div>
             </div>
 
             <hr class="my-4">

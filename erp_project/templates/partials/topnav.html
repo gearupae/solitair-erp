@@ -422,13 +422,14 @@
                 </li>
                 {% endif %}
                 
-                <!-- Documents -->
-                {% if is_superuser or 'documents' in user_permissions %}
+                <!-- Documents (includes Contracts as submenu) -->
+                {% if is_superuser or 'documents' in user_permissions or 'contracts' in user_permissions %}
                 <li class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle {% if 'documents' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
+                    <a class="nav-link dropdown-toggle {% if 'documents' in request.path or '/contracts/' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
                         <i class="fas fa-folder-open me-1"></i>Documents
                     </a>
                     <ul class="dropdown-menu dropdown-menu-dark">
+                        {% if is_superuser or 'documents' in user_permissions %}
                         <li>
                             <a class="dropdown-item" href="{% url 'documents:document_list' %}">
                                 <i class="fas fa-file me-2"></i>All Documents
@@ -439,15 +440,18 @@
                                 <i class="fas fa-folder me-2"></i>Document Types
                             </a>
                         </li>
+                        {% endif %}
+                        {% if is_superuser or 'contracts' in user_permissions %}
+                        {% if is_superuser or 'documents' in user_permissions %}
+                        <li><hr class="dropdown-divider"></li>
+                        {% endif %}
+                        <li>
+                            <a class="dropdown-item" href="{% url 'contracts:contract_list' %}">
+                                <i class="fas fa-file-contract me-2"></i>Contracts
+                            </a>
+                        </li>
+                        {% endif %}
                     </ul>
-                </li>
-                {% endif %}
-                
-                {% if is_superuser or 'contracts' in user_permissions %}
-                <li class="nav-item">
-                    <a class="nav-link {% if '/contracts/' in request.path %}active{% endif %}" href="{% url 'contracts:contract_list' %}">
-                        <i class="fas fa-file-contract me-1"></i>Contracts
-                    </a>
                 </li>
                 {% endif %}
             </ul>

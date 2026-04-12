@@ -63,9 +63,47 @@
                         <p class="mb-0">{{ item.description }}</p>
                     </div>
                     {% endif %}
+                    <div class="col-md-6">
+                        <h6 class="text-muted mb-2">Storage Location</h6>
+                        <p class="mb-0">{{ item.get_storage_shelf_label|default:"—" }}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <h6 class="text-muted mb-2">Barcode / Asset Code</h6>
+                        <p class="mb-0 font-monospace">{{ item.barcode|default:"—" }}</p>
+                    </div>
                 </div>
             </div>
         </div>
+
+        {% if item.item_type == 'product' %}
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h6 class="mb-0 fw-semibold"><i class="fas fa-qrcode me-2"></i>Item label &amp; QR</h6>
+            </div>
+            <div class="card-body">
+                {% if item.qr_code %}
+                <div class="row g-3 align-items-center">
+                    <div class="col-sm-auto text-center">
+                        <img src="{{ item.qr_code.url }}" alt="Item QR code" class="img-fluid border rounded p-2 bg-white" style="max-width:200px;">
+                    </div>
+                    <div class="col-sm">
+                        <p class="text-muted small mb-2">Scanning encodes item id, name, SKU, and storage location for warehouse workflows.</p>
+                        <div class="d-flex flex-wrap gap-2">
+                            <a class="btn btn-outline-primary btn-sm" href="{{ item.qr_code.url }}" download="qr-{{ item.item_code }}.png">
+                                <i class="fas fa-download me-1"></i>Download QR Code
+                            </a>
+                            <button type="button" class="btn btn-primary btn-sm" id="btn-print-qr-label">
+                                <i class="fas fa-print me-1"></i>Print QR Label
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                {% else %}
+                <p class="text-muted mb-0 small">A QR code is created automatically when the item is saved.</p>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
         
         {% if item.item_type == 'product' %}
         <!-- Stock by Warehouse -->
@@ -418,5 +456,35 @@
         </div>
     </div>
 </div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+{% if item.item_type == 'product' and item.qr_code %}
+<script>
+(function () {
+    document.getElementById('btn-print-qr-label')?.addEventListener('click', function () {
+        const w = window.open('', 'qr_label_print');
+        if (!w) return;
+        const img = "{{ item.qr_code.url|escapejs }}";
+        const name = "{{ item.name|escapejs }}";
+        const code = "{{ item.item_code|escapejs }}";
+        const loc = "{{ item.get_storage_shelf_label|escapejs }}";
+        w.document.write('<!DOCTYPE html><html><head><title>Label</title><style>' +
+            '@page { size: 50mm 30mm; margin: 1.5mm }' +
+            'html,body{margin:0;padding:0;font-family:Inter,Helvetica,Arial,sans-serif;}' +
+            '.wrap{width:50mm;height:30mm;box-sizing:border-box;padding:1.5mm 2mm;display:flex;align-items:center;gap:2mm;border:0.2mm solid #e5e7eb;}' +
+            '.meta{flex:1;min-width:0;font-size:7pt;line-height:1.15;}' +
+            '.meta strong{display:block;font-size:8pt;margin-bottom:0.5mm;}' +
+            'img{width:14mm;height:14mm;object-fit:contain;}' +
+            '</style></head><body><div class="wrap"><img src="' + img + '" alt=""><div class="meta"><strong>' + code + '</strong>' +
+            '<span>' + name + '</span><br><span>' + (loc || '—') + '</span></div></div></body></html>');
+        w.document.close();
+        w.focus();
+        w.print();
+        w.close();
+    });
+})();
+</script>
 {% endif %}
 {% endblock %}

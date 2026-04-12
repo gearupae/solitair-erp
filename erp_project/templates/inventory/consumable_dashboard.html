@@ -15,6 +15,8 @@
                 <i class="fas fa-file-alt me-1"></i>Reports
             </button>
             <ul class="dropdown-menu dropdown-menu-end">
+                <li><a class="dropdown-item fw-semibold" href="{% url 'inventory:consumable_inventory_reports' %}"><i class="fas fa-table me-2"></i>Inventory reports (6)</a></li>
+                <li><hr class="dropdown-divider"></li>
                 <li><a class="dropdown-item" href="{% url 'inventory:consumable_monthly_request_report' %}"><i class="fas fa-users me-2"></i>Monthly Requests</a></li>
                 <li><a class="dropdown-item" href="{% url 'inventory:consumable_monthly_consumption_report' %}"><i class="fas fa-chart-bar me-2"></i>Monthly Consumption</a></li>
                 <li><a class="dropdown-item" href="{% url 'inventory:consumable_monthly_cost_report' %}"><i class="fas fa-dollar-sign me-2"></i>Monthly Cost</a></li>

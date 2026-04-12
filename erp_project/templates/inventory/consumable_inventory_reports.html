@@ -1,0 +1,537 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block extra_css %}
+<style>
+    .inventory-reports-page {
+        max-width: 1400px;
+        margin: 0 auto;
+    }
+    #report-panel .card-body {
+        min-height: 320px;
+    }
+    .reports-toolbar .form-control,
+    .reports-toolbar .form-select { min-height: 38px; }
+    .report-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .report-loading-overlay {
+        display: none;
+        align-items: center;
+        justify-content: center;
+        min-height: 220px;
+        background: rgba(255,255,255,0.92);
+        border-radius: 0.5rem;
+        z-index: 2;
+    }
+    .report-loading-overlay.show { display: flex; }
+    .empty-reports-illus { max-width: 280px; opacity: 0.85; }
+    .chart-box { position: relative; height: 260px; width: 100%; }
+    #report-tabs {
+        gap: 0.25rem;
+        row-gap: 0.35rem;
+    }
+    #report-tabs .nav-item { margin: 0; }
+    #report-tabs .nav-link {
+        border: 1px solid var(--gray-200, #e5e5e5);
+        border-radius: 6px;
+        color: var(--gray-700, #404040);
+        background: var(--white, #fff);
+        font-weight: 500;
+        font-size: 0.8125rem;
+        padding: 0.45rem 0.65rem;
+        white-space: nowrap;
+    }
+    #report-tabs .nav-link:hover {
+        background: var(--gray-100, #f5f5f5);
+        color: var(--black, #111);
+        border-color: var(--gray-300, #d4d4d4);
+    }
+    #report-tabs .nav-link.active {
+        background: var(--black, #111);
+        color: var(--white, #fff);
+        border-color: var(--black, #111);
+    }
+    @media (max-width: 767.98px) {
+        .reports-toolbar .btn { width: 100%; margin-bottom: 0.35rem; }
+        .chart-box { height: 220px; }
+        #report-tabs {
+            flex-wrap: nowrap;
+            overflow-x: auto;
+            overflow-y: hidden;
+            padding-bottom: 0.25rem;
+            -webkit-overflow-scrolling: touch;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="inventory-reports-page">
+    <div class="d-flex flex-column flex-md-row flex-wrap align-items-start justify-content-between gap-3 mb-3">
+        <div class="min-w-0">
+            <h4 class="mb-1 fw-bold">{{ title }}</h4>
+            <p class="text-muted mb-0 small">Stock summary, valuation, analytics, warranty, movement, and balance — PDF and Excel after generate.</p>
+        </div>
+        <div class="d-flex flex-shrink-0 ms-md-auto">
+            <a href="{% url 'inventory:consumable_dashboard' %}" class="btn btn-outline-dark btn-sm">
+                <i class="fas fa-tachometer-alt me-1"></i>Dashboard
+            </a>
+        </div>
+    </div>
+
+    <div class="card mb-3 border shadow-sm">
+        <div class="card-header bg-white py-3 border-bottom">
+            <div class="small text-muted text-uppercase fw-semibold mb-2" style="letter-spacing: 0.04em;">Report type</div>
+            <ul class="nav nav-pills flex-column flex-sm-row flex-sm-wrap" id="report-tabs" role="tablist">
+                <li class="nav-item"><button type="button" class="nav-link active" data-report="stock_summary" data-title="Stock summary">Stock summary</button></li>
+                <li class="nav-item"><button type="button" class="nav-link" data-report="inventory_analytics" data-title="Analytics">Analytics</button></li>
+                <li class="nav-item"><button type="button" class="nav-link" data-report="inventory_valuation" data-title="Valuation">Valuation</button></li>
+                <li class="nav-item"><button type="button" class="nav-link" data-report="warranty" data-title="Warranty">Warranty</button></li>
+                <li class="nav-item"><button type="button" class="nav-link" data-report="stock_movement" data-title="Movement">Movement</button></li>
+                <li class="nav-item"><button type="button" class="nav-link" data-report="stock_balance" data-title="Balance">Balance</button></li>
+            </ul>
+        </div>
+        <div class="card-body py-3 reports-toolbar">
+            <div class="row g-2 g-md-3 align-items-end">
+                <div class="col-6 col-lg-2">
+                    <label class="form-label small mb-1">Period</label>
+                    <select id="period-preset" class="form-select form-select-sm">
+                        <option value="custom">Custom</option>
+                        <option value="this_week">This week</option>
+                        <option value="this_month" selected>This month</option>
+                        <option value="last_month">Last month</option>
+                        <option value="this_quarter">This quarter</option>
+                        <option value="this_year">This year</option>
+                    </select>
+                </div>
+                <div class="col-6 col-lg-2">
+                    <label class="form-label small mb-1">From</label>
+                    <input type="date" id="date-from" class="form-control form-control-sm">
+                </div>
+                <div class="col-6 col-lg-2">
+                    <label class="form-label small mb-1">To</label>
+                    <input type="date" id="date-to" class="form-control form-control-sm">
+                </div>
+                <div class="col-12 col-lg-2 d-none" id="warranty-filter-wrap">
+                    <label class="form-label small mb-1">Warranty filter</label>
+                    <select id="warranty-filter" class="form-select form-select-sm">
+                        <option value="all">All</option>
+                        <option value="expired">Expired</option>
+                        <option value="expiring_soon">Expiring soon</option>
+                    </select>
+                </div>
+                <div class="col-12 col-lg-2 d-none" id="movement-group-wrap">
+                    <label class="form-label small mb-1">Group by</label>
+                    <select id="movement-group" class="form-select form-select-sm">
+                        <option value="date">Date</option>
+                        <option value="item">Item</option>
+                    </select>
+                </div>
+                <div class="col-12 col-lg-auto ms-lg-auto">
+                    <div class="d-flex flex-column flex-sm-row flex-wrap gap-2 justify-content-lg-end">
+                        <button type="button" id="btn-generate" class="btn btn-dark btn-sm">
+                            <span id="generate-label"><i class="fas fa-sync-alt me-1"></i>Generate</span>
+                            <span id="generate-spinner" class="d-none spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                        </button>
+                        <button type="button" id="btn-pdf" class="btn btn-outline-danger btn-sm" disabled>
+                            <i class="fas fa-file-pdf me-1"></i>PDF
+                        </button>
+                        <button type="button" id="btn-xlsx" class="btn btn-outline-success btn-sm" disabled>
+                            <i class="fas fa-file-excel me-1"></i>Excel
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div id="date-range-error" class="text-danger small mt-2 d-none"></div>
+        </div>
+    </div>
+
+    <div id="report-panel" class="card border shadow-sm position-relative">
+        <div class="card-body position-relative">
+            <div id="report-result-heading" class="d-none small text-muted mb-2 fw-semibold"></div>
+
+            <div id="report-intro" class="text-center text-muted py-5 px-2">
+                <i class="fas fa-table fa-2x mb-3 opacity-50 d-block text-secondary"></i>
+                <p class="mb-0 small">Pick a report above, adjust dates if needed, then click <strong>Generate</strong>. Exports unlock after data loads.</p>
+            </div>
+
+            <div id="report-loading" class="report-loading-overlay position-absolute top-0 start-0 w-100 bottom-0">
+                <div class="text-center text-muted small px-3">
+                    <div class="spinner-border text-dark mb-2" role="status"></div>
+                    <div class="loading-message">Generating…</div>
+                </div>
+            </div>
+
+            <div id="report-empty" class="text-center py-5 d-none">
+                <svg class="empty-reports-illus mb-3" viewBox="0 0 200 160" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                    <rect x="20" y="30" width="160" height="100" rx="8" fill="#f1f5f9" stroke="#cbd5e1"/>
+                    <path d="M50 55h100M50 75h80M50 95h60" stroke="#94a3b8" stroke-width="4" stroke-linecap="round"/>
+                    <circle cx="160" cy="50" r="18" fill="#e0e7ff"/>
+                    <path d="M154 50l4 4 8-10" stroke="#4338ca" stroke-width="3" fill="none" stroke-linecap="round"/>
+                </svg>
+                <h6 class="fw-semibold">No rows for this report</h6>
+                <p class="text-muted small mb-0">There are no active product items, or nothing matches the filters and date range.</p>
+            </div>
+
+            <div id="report-analytics-extras" class="d-none mb-4">
+                <div class="row g-3 mb-3">
+                    <div class="col-6 col-lg-3">
+                        <div class="card h-100 border-0 bg-light"><div class="card-body py-3">
+                            <div class="text-muted small">Total items</div>
+                            <div class="fs-4 fw-bold" id="kpi-items">—</div>
+                        </div></div>
+                    </div>
+                    <div class="col-6 col-lg-3">
+                        <div class="card h-100 border-0 bg-light"><div class="card-body py-3">
+                            <div class="text-muted small">Total value</div>
+                            <div class="fs-4 fw-bold" id="kpi-value">—</div>
+                        </div></div>
+                    </div>
+                    <div class="col-6 col-lg-3">
+                        <div class="card h-100 border-0 bg-light"><div class="card-body py-3">
+                            <div class="text-muted small">Low stock</div>
+                            <div class="fs-4 fw-bold text-danger" id="kpi-low">—</div>
+                        </div></div>
+                    </div>
+                    <div class="col-6 col-lg-3">
+                        <div class="card h-100 border-0 bg-light"><div class="card-body py-3">
+                            <div class="text-muted small">Avg turnover</div>
+                            <div class="fs-4 fw-bold" id="kpi-turn">—</div>
+                        </div></div>
+                    </div>
+                </div>
+                <div class="row g-3">
+                    <div class="col-lg-6"><div class="card border-0 bg-white shadow-sm"><div class="card-body">
+                        <h6 class="small text-muted mb-2">Monthly consumption (out)</h6>
+                        <div class="chart-box"><canvas id="chart-monthly"></canvas></div>
+                    </div></div></div>
+                    <div class="col-lg-3"><div class="card border-0 bg-white shadow-sm"><div class="card-body">
+                        <h6 class="small text-muted mb-2">Stock health</h6>
+                        <div class="chart-box"><canvas id="chart-pie"></canvas></div>
+                    </div></div></div>
+                    <div class="col-lg-3"><div class="card border-0 bg-white shadow-sm"><div class="card-body">
+                        <h6 class="small text-muted mb-2">Top consumed</h6>
+                        <div class="chart-box"><canvas id="chart-bar"></canvas></div>
+                    </div></div></div>
+                </div>
+            </div>
+
+            <div id="report-table-wrap" class="report-table-wrap d-none">
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover align-middle mb-0" id="report-table">
+                        <thead class="table-light"><tr id="report-thead"></tr></thead>
+                        <tbody id="report-tbody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+(function () {
+    /* Same-origin paths only — avoids fetch CORS when host differs from build_absolute_uri (e.g. localhost vs 127.0.0.1). */
+    const API = "{% url 'inventory:consumable_inventory_report_api' %}";
+    const PDF = "{% url 'inventory:consumable_inventory_report_export_pdf' %}";
+    const XLSX = "{% url 'inventory:consumable_inventory_report_export_xlsx' %}";
+
+    let currentReport = 'stock_summary';
+    let currentTitle = 'Stock summary';
+    let lastPayload = null;
+    let chartMonthly, chartPie, chartBar;
+
+    function apiBase(path) {
+        if (path.indexOf('http') === 0) return path;
+        var p = path.charAt(0) === '/' ? path : ('/' + path);
+        return window.location.origin + p;
+    }
+
+    function pad(n) { return n < 10 ? '0' + n : '' + n; }
+    function toISO(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+
+    function toNum(v) {
+        if (v === undefined || v === null || v === '') return NaN;
+        if (typeof v === 'number') return v;
+        var n = parseFloat(String(v).replace(/,/g, ''));
+        return n;
+    }
+
+    function fmtCell(v, col) {
+        if (v === undefined || v === null) return '';
+        if (col.format === 'money' || col.format === 'number') {
+            var n = toNum(v);
+            if (!isNaN(n)) {
+                if (col.format === 'money') {
+                    return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                }
+                return n.toLocaleString(undefined, { maximumFractionDigits: 6 });
+            }
+        }
+        return String(v);
+    }
+
+    function applyPreset() {
+        var p = document.getElementById('period-preset').value;
+        var today = new Date();
+        var start = new Date(today);
+        var end = new Date(today);
+        if (p === 'this_week') {
+            var wd = today.getDay();
+            var diff = (wd + 6) % 7;
+            start.setDate(today.getDate() - diff);
+        } else if (p === 'this_month') {
+            start = new Date(today.getFullYear(), today.getMonth(), 1);
+        } else if (p === 'last_month') {
+            start = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+            end = new Date(today.getFullYear(), today.getMonth(), 0);
+        } else if (p === 'this_quarter') {
+            var q = Math.floor(today.getMonth() / 3);
+            start = new Date(today.getFullYear(), q * 3, 1);
+        } else if (p === 'this_year') {
+            start = new Date(today.getFullYear(), 0, 1);
+        } else {
+            return;
+        }
+        document.getElementById('date-from').value = toISO(start);
+        document.getElementById('date-to').value = toISO(end);
+    }
+
+    function validateDates() {
+        var df = document.getElementById('date-from').value;
+        var dt = document.getElementById('date-to').value;
+        var err = document.getElementById('date-range-error');
+        err.classList.add('d-none');
+        if (!df || !dt) return true;
+        if (df > dt) {
+            err.textContent = 'From date cannot be after To date.';
+            err.classList.remove('d-none');
+            return false;
+        }
+        return true;
+    }
+
+    function setTabFilters() {
+        document.getElementById('warranty-filter-wrap').classList.toggle('d-none', currentReport !== 'warranty');
+        document.getElementById('movement-group-wrap').classList.toggle('d-none', currentReport !== 'stock_movement');
+    }
+
+    function destroyCharts() {
+        [chartMonthly, chartPie, chartBar].forEach(function (c) {
+            try { if (c) c.destroy(); } catch (e) {}
+        });
+        chartMonthly = chartPie = chartBar = null;
+    }
+
+    function renderTable(payload) {
+        var thead = document.getElementById('report-thead');
+        var tbody = document.getElementById('report-tbody');
+        thead.innerHTML = '';
+        tbody.innerHTML = '';
+        (payload.columns || []).forEach(function (col) {
+            var th = document.createElement('th');
+            th.className = 'text-nowrap';
+            th.textContent = col.label;
+            thead.appendChild(th);
+        });
+        (payload.rows || []).forEach(function (row) {
+            var tr = document.createElement('tr');
+            (payload.columns || []).forEach(function (col) {
+                var td = document.createElement('td');
+                var v = row[col.key];
+                if (col.key === 'status' && row.status_key) {
+                    var badge = document.createElement('span');
+                    badge.className = 'badge ' + (
+                        row.status_key === 'danger' ? 'bg-danger' :
+                        row.status_key === 'warning' ? 'bg-warning text-dark' :
+                        row.status_key === 'secondary' ? 'bg-secondary' : 'bg-success');
+                    badge.textContent = (v === undefined || v === null) ? '' : String(v);
+                    td.appendChild(badge);
+                } else {
+                    td.textContent = fmtCell(v, col);
+                }
+                tr.appendChild(td);
+            });
+            tbody.appendChild(tr);
+        });
+    }
+
+    function fmtKpiNum(v, money) {
+        if (v === undefined || v === null || v === '') return '—';
+        var n = toNum(v);
+        if (isNaN(n)) return String(v);
+        if (money) {
+            return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+        return n.toLocaleString(undefined, { maximumFractionDigits: 4 });
+    }
+
+    function renderAnalytics(payload) {
+        var wrap = document.getElementById('report-analytics-extras');
+        if (payload.report !== 'inventory_analytics') {
+            wrap.classList.add('d-none');
+            destroyCharts();
+            return;
+        }
+        wrap.classList.remove('d-none');
+        var k = payload.kpi || {};
+        document.getElementById('kpi-items').textContent = (k.total_items !== undefined && k.total_items !== null) ? String(k.total_items) : '—';
+        document.getElementById('kpi-value').textContent = fmtKpiNum(k.total_value, true);
+        document.getElementById('kpi-low').textContent = (k.low_stock_count !== undefined && k.low_stock_count !== null) ? String(k.low_stock_count) : '—';
+        document.getElementById('kpi-turn').textContent = fmtKpiNum(k.avg_turnover_rate, false);
+        destroyCharts();
+        var ch = payload.charts || {};
+        var pie = ch.pie || {};
+        var brand = '#111111';
+        if (typeof Chart === 'undefined') {
+            return;
+        }
+        chartMonthly = new Chart(document.getElementById('chart-monthly'), {
+            type: 'line',
+            data: { labels: ch.monthly_labels || [], datasets: [{ label: 'Qty out', data: ch.monthly_qty || [], borderColor: brand, tension: 0.25, fill: false }] },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+        });
+        chartPie = new Chart(document.getElementById('chart-pie'), {
+            type: 'pie',
+            data: { labels: pie.labels || [], datasets: [{ data: pie.data || [], backgroundColor: ['#ef4444', '#22c55e', '#f59e0b'] }] },
+            options: { responsive: true, maintainAspectRatio: false }
+        });
+        chartBar = new Chart(document.getElementById('chart-bar'), {
+            type: 'bar',
+            data: { labels: ch.top_labels || [], datasets: [{ label: 'Qty', data: ch.top_data || [], backgroundColor: brand }] },
+            options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y', plugins: { legend: { display: false } } }
+        });
+    }
+
+    function setExportEnabled(on) {
+        document.getElementById('btn-pdf').disabled = !on;
+        document.getElementById('btn-xlsx').disabled = !on;
+    }
+
+    function setResultHeading(text) {
+        var el = document.getElementById('report-result-heading');
+        el.textContent = text || '';
+        el.classList.toggle('d-none', !text);
+    }
+
+    async function generate() {
+        if (!validateDates()) return;
+        var df = document.getElementById('date-from').value;
+        var dt = document.getElementById('date-to').value;
+        if (!df || !dt) {
+            if (window.toastr) toastr.warning('Please choose From and To dates.');
+            return;
+        }
+        document.getElementById('report-empty').classList.add('d-none');
+        document.getElementById('report-table-wrap').classList.add('d-none');
+        document.getElementById('report-intro').classList.add('d-none');
+        setResultHeading('');
+        document.getElementById('report-loading').classList.add('show');
+        var lm = document.querySelector('#report-loading .loading-message');
+        if (lm) lm.textContent = 'Generating…';
+        document.getElementById('generate-label').classList.add('d-none');
+        document.getElementById('generate-spinner').classList.remove('d-none');
+        setExportEnabled(false);
+        var qs = 'report=' + encodeURIComponent(currentReport) + '&date_from=' + encodeURIComponent(df) + '&date_to=' + encodeURIComponent(dt);
+        if (currentReport === 'warranty') qs += '&warranty_filter=' + encodeURIComponent(document.getElementById('warranty-filter').value);
+        if (currentReport === 'stock_movement') qs += '&movement_group=' + encodeURIComponent(document.getElementById('movement-group').value);
+        try {
+            var url = apiBase(API) + '?' + qs;
+            var res = await fetch(url, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } });
+            var raw = await res.text();
+            var data;
+            try {
+                data = JSON.parse(raw);
+            } catch (parseErr) {
+                throw new Error(res.status + ' ' + res.statusText + ' (response was not JSON)');
+            }
+            if (!res.ok) throw new Error((data && data.error) ? data.error : ('HTTP ' + res.status));
+            if (!data.ok) throw new Error(data.error || 'Request failed');
+            lastPayload = data;
+            document.getElementById('report-loading').classList.remove('show');
+            document.getElementById('generate-label').classList.remove('d-none');
+            document.getElementById('generate-spinner').classList.add('d-none');
+            if (!data.rows || data.rows.length === 0) {
+                document.getElementById('report-intro').classList.add('d-none');
+                document.getElementById('report-empty').classList.remove('d-none');
+                document.getElementById('report-analytics-extras').classList.add('d-none');
+                destroyCharts();
+                setExportEnabled(false);
+                return;
+            }
+            document.getElementById('report-intro').classList.add('d-none');
+            document.getElementById('report-table-wrap').classList.remove('d-none');
+            var heading = currentTitle;
+            if (data.title) heading = data.title;
+            setResultHeading(heading + ' · ' + df + ' → ' + dt);
+            renderTable(data);
+            try {
+                renderAnalytics(data);
+            } catch (chartErr) {
+                if (window.console) console.warn(chartErr);
+                if (window.toastr) toastr.warning('Table loaded; charts could not be drawn.');
+            }
+            setExportEnabled(true);
+        } catch (e) {
+            document.getElementById('report-loading').classList.remove('show');
+            document.getElementById('report-intro').classList.remove('d-none');
+            document.getElementById('generate-label').classList.remove('d-none');
+            document.getElementById('generate-spinner').classList.add('d-none');
+            if (window.toastr) toastr.error(e.message || 'Error');
+            else alert(e.message || 'Error');
+        }
+    }
+
+    function exportUrl(base) {
+        var df = document.getElementById('date-from').value;
+        var dt = document.getElementById('date-to').value;
+        var qs = 'report=' + encodeURIComponent(currentReport) + '&date_from=' + encodeURIComponent(df) + '&date_to=' + encodeURIComponent(dt);
+        if (currentReport === 'warranty') qs += '&warranty_filter=' + encodeURIComponent(document.getElementById('warranty-filter').value);
+        if (currentReport === 'stock_movement') qs += '&movement_group=' + encodeURIComponent(document.getElementById('movement-group').value);
+        return apiBase(base) + '?' + qs;
+    }
+
+    document.querySelectorAll('#report-tabs .nav-link').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            document.querySelectorAll('#report-tabs .nav-link').forEach(function (b) { b.classList.remove('active'); });
+            this.classList.add('active');
+            currentReport = this.getAttribute('data-report');
+            currentTitle = this.getAttribute('data-title') || currentReport;
+            setTabFilters();
+            lastPayload = null;
+            document.getElementById('report-table-wrap').classList.add('d-none');
+            document.getElementById('report-analytics-extras').classList.add('d-none');
+            document.getElementById('report-empty').classList.add('d-none');
+            document.getElementById('report-loading').classList.remove('show');
+            document.getElementById('report-intro').classList.remove('d-none');
+            setResultHeading('');
+            destroyCharts();
+            setExportEnabled(false);
+        });
+    });
+
+    document.getElementById('period-preset').addEventListener('change', function () {
+        if (this.value !== 'custom') applyPreset();
+    });
+
+    document.getElementById('date-from').addEventListener('change', validateDates);
+    document.getElementById('date-to').addEventListener('change', validateDates);
+
+    document.getElementById('btn-generate').addEventListener('click', generate);
+    document.getElementById('btn-pdf').addEventListener('click', function () {
+        if (!validateDates() || !lastPayload || !lastPayload.rows || !lastPayload.rows.length) return;
+        window.location.href = exportUrl(PDF);
+    });
+    document.getElementById('btn-xlsx').addEventListener('click', function () {
+        if (!validateDates() || !lastPayload || !lastPayload.rows || !lastPayload.rows.length) return;
+        window.location.href = exportUrl(XLSX);
+    });
+
+    applyPreset();
+    setTabFilters();
+})();
+});
+</script>
+{% endblock %}

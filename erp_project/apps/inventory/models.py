@@ -41,6 +41,22 @@ class Category(BaseModel):
         super().save(*args, **kwargs)
 
 
+class StorageLocation(BaseModel):
+    """
+    Master list of storage shelves / bins (consumables & inventory labelling).
+    """
+    name = models.CharField(max_length=200, unique=True)
+    description = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['name']
+        verbose_name = 'Storage location'
+        verbose_name_plural = 'Storage locations'
+
+    def __str__(self):
+        return self.name
+
+
 class Warehouse(BaseModel):
     """
     Warehouse/Location model.
@@ -135,6 +151,35 @@ class Item(BaseModel):
     )
     # Computed VAT rate from tax_code (read-only, for display/reporting)
     vat_rate = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal('0.00'))
+
+    # Shelf / storage (consumables labelling & reports)
+    storage_location_master = models.ForeignKey(
+        'StorageLocation',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='items',
+        help_text='Optional preset from the locations master list',
+    )
+    storage_location = models.CharField(
+        max_length=200,
+        blank=True,
+        default='',
+        help_text='Shelf, rack, or free-text location (e.g. Shelf A3, Rack 2)',
+    )
+    barcode = models.CharField(
+        max_length=120,
+        blank=True,
+        default='',
+        verbose_name='Barcode / Asset Code',
+    )
+    qr_code = models.ImageField(upload_to='inventory/item_qr/', blank=True, null=True)
+
+    # Warranty / batch (warranty report)
+    brand = models.CharField(max_length=120, blank=True, default='')
+    serial_batch_number = models.CharField(max_length=120, blank=True, default='')
+    purchase_date = models.DateField(null=True, blank=True)
+    warranty_expiry = models.DateField(null=True, blank=True)
     
     class Meta:
         ordering = ['name']
@@ -146,6 +191,15 @@ class Item(BaseModel):
         if not self.item_code:
             self.item_code = generate_number('ITEM', Item, 'item_code')
         super().save(*args, **kwargs)
+
+    def get_storage_shelf_label(self):
+        """Combined preset + free-text storage label for QR and reports."""
+        parts = []
+        if self.storage_location_master_id:
+            parts.append(self.storage_location_master.name)
+        if self.storage_location:
+            parts.append(self.storage_location)
+        return ' — '.join(parts) if parts else ''
     
     @property
     def total_stock(self):
@@ -700,7 +754,9 @@ class ConsumableRequest(BaseModel):
         return []
     
     def __str__(self):
-        return f"{self.request_number}: {self.item.name} ({self.quantity})"
+        if self.item_id and self.quantity is not None:
+            return f"{self.request_number}: {self.item.name} ({self.quantity})"
+        return self.request_number
     
     def save(self, *args, **kwargs):
         if not self.request_number:

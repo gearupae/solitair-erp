@@ -2,7 +2,17 @@
 Inventory Forms
 """
 from django import forms
-from .models import Category, Warehouse, Item, Stock, StockMovement, ConsumableRequest, ConsumableRequestItem, ConditionLog
+from .models import (
+    Category,
+    Warehouse,
+    StorageLocation,
+    Item,
+    Stock,
+    StockMovement,
+    ConsumableRequest,
+    ConsumableRequestItem,
+    ConditionLog,
+)
 
 
 class LocaleDecimalField(forms.DecimalField):
@@ -67,25 +77,44 @@ class ItemForm(forms.ModelForm):
             'name', 'description', 'category', 'item_type', 'status',
             'purchase_price', 'selling_price', 'unit', 'minimum_stock', 'tax_code',
             'condition_status', 'condition_notes',
+            'storage_location', 'storage_location_master', 'barcode',
+            'brand', 'serial_batch_number', 'purchase_date', 'warranty_expiry',
         ]
         widgets = {
             'description': forms.Textarea(attrs={'rows': 2}),
             'purchase_price': forms.NumberInput(attrs={'step': 'any', 'min': '0', 'placeholder': '0.00'}),
             'selling_price': forms.NumberInput(attrs={'step': 'any', 'min': '0', 'placeholder': '0.00'}),
             'minimum_stock': forms.NumberInput(attrs={'step': 'any', 'min': '0', 'placeholder': '0.00'}),
+            'storage_location': forms.TextInput(
+                attrs={'placeholder': 'e.g., Shelf A3, Rack 2, Storeroom B', 'list': 'storage-location-options', 'autocomplete': 'off'}
+            ),
+            'barcode': forms.TextInput(attrs={'id': 'id_barcode', 'autocomplete': 'off'}),
+            'purchase_date': forms.DateInput(attrs={'type': 'date'}),
+            'warranty_expiry': forms.DateInput(attrs={'type': 'date'}),
         }
     
     def __init__(self, *args, **kwargs):
         from apps.finance.models import TaxCode
         super().__init__(*args, **kwargs)
         for field_name, field in self.fields.items():
-            if field_name in ['category', 'item_type', 'status', 'tax_code', 'condition_status']:
+            if field_name in ['category', 'item_type', 'status', 'tax_code', 'condition_status', 'storage_location_master']:
                 field.widget.attrs['class'] = 'form-select'
             elif field_name == 'condition_notes':
                 field.widget = forms.Textarea(attrs={'class': 'form-control', 'rows': 2, 'placeholder': 'e.g., Assigned to John, Bay 3 / Sent for repair on...'})
+            elif field_name in ('purchase_date', 'warranty_expiry'):
+                field.widget.attrs['class'] = 'form-control'
             else:
                 field.widget.attrs['class'] = 'form-control'
         self.fields['category'].queryset = Category.objects.filter(is_active=True)
+        self.fields['storage_location_master'].queryset = StorageLocation.objects.filter(is_active=True)
+        self.fields['storage_location_master'].required = False
+        self.fields['storage_location_master'].empty_label = '— Preset location (optional) —'
+        self.fields['barcode'].required = False
+        self.fields['storage_location'].required = False
+        self.fields['brand'].required = False
+        self.fields['serial_batch_number'].required = False
+        self.fields['purchase_date'].required = False
+        self.fields['warranty_expiry'].required = False
         
         # Tax Code queryset and default
         self.fields['tax_code'].queryset = TaxCode.objects.filter(is_active=True)

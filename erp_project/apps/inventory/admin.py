@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Category, Warehouse, Item, Stock, StockMovement
+from .models import Category, Warehouse, StorageLocation, Item, Stock, StockMovement
 
 
 @admin.register(Category)
@@ -8,6 +8,13 @@ class CategoryAdmin(admin.ModelAdmin):
     list_filter = ['is_active']
     search_fields = ['name', 'code']
     readonly_fields = ['code']
+
+
+@admin.register(StorageLocation)
+class StorageLocationAdmin(admin.ModelAdmin):
+    list_display = ['name', 'is_active']
+    list_filter = ['is_active']
+    search_fields = ['name', 'description']
 
 
 @admin.register(Warehouse)

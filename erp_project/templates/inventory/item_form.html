@@ -79,10 +79,296 @@
             </div>
         </div>
     </div>
+
+    <div class="card mb-4">
+        <div class="card-header"><h6 class="mb-0 fw-semibold">Storage &amp; identification</h6></div>
+        <div class="card-body">
+            <datalist id="storage-location-options">
+                {% for loc in storage_locations %}
+                <option value="{{ loc.name }}"></option>
+                {% endfor %}
+            </datalist>
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label class="form-label">Storage Location</label>
+                    {{ form.storage_location }}
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Preset from list</label>
+                    {{ form.storage_location_master }}
+                    <small class="text-muted d-block mt-1">Optional — narrows common shelves</small>
+                </div>
+                <div class="col-12">
+                    <a href="#" class="small text-decoration-none" data-bs-toggle="modal" data-bs-target="#addLocationModal">
+                        <i class="fas fa-plus-circle me-1"></i>Add Location
+                    </a>
+                </div>
+                <div class="col-md-8">
+                    <label class="form-label">Barcode / Asset Code</label>
+                    <div class="input-group">
+                        {{ form.barcode }}
+                        <button class="btn btn-outline-secondary" type="button" data-bs-toggle="modal" data-bs-target="#barcodeScanModal">
+                            <i class="fas fa-camera me-1"></i>Scan
+                        </button>
+                    </div>
+                    <small class="text-muted">Manual entry, camera scan (when supported), or a USB scanner (keyboard wedge).</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header"><h6 class="mb-0 fw-semibold">Warranty / batch</h6></div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label">Brand</label>
+                    {{ form.brand }}
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Serial / Batch No</label>
+                    {{ form.serial_batch_number }}
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Purchase date</label>
+                    {{ form.purchase_date }}
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Warranty expiry</label>
+                    {{ form.warranty_expiry }}
+                </div>
+            </div>
+        </div>
+    </div>
     
     <button type="submit" class="btn btn-primary"><i class="fas fa-save me-2"></i>Save</button>
     <a href="{% url 'inventory:item_list' %}" class="btn btn-light">Cancel</a>
 </form>
+
+<div class="modal fade" id="addLocationModal" tabindex="-1" aria-labelledby="addLocationModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="addLocationModalLabel"><i class="fas fa-map-marker-alt me-2"></i>New storage location</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">Name <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="new-location-name" maxlength="200" placeholder="e.g. Storeroom B">
+                </div>
+                <div class="mb-0">
+                    <label class="form-label">Description</label>
+                    <textarea class="form-control" id="new-location-desc" rows="2" placeholder="Optional"></textarea>
+                </div>
+                <div class="alert alert-danger d-none mt-3 mb-0 py-2 small" id="new-location-error"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="new-location-save"><i class="fas fa-check me-1"></i>Save location</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="barcodeScanModal" tabindex="-1" aria-labelledby="barcodeScanModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="barcodeScanModalLabel"><i class="fas fa-barcode me-2"></i>Barcode / Asset Code</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="d-flex flex-wrap align-items-center gap-3 mb-3">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="scan-mode-toggle">
+                        <label class="form-check-label" for="scan-mode-toggle">Scanner mode (camera)</label>
+                    </div>
+                    <div id="scanning-indicator" class="d-none text-primary small">
+                        <span class="spinner-border spinner-border-sm me-1" role="status"></span>Scanning…
+                    </div>
+                </div>
+                <div id="barcode-manual-panel">
+                    <label class="form-label">Type or paste code</label>
+                    <input type="text" class="form-control" id="barcode-manual-input" placeholder="Code128, Code39, EAN-13, QR…">
+                    <button type="button" class="btn btn-primary mt-2" id="barcode-manual-apply">Apply to field</button>
+                </div>
+                <div id="barcode-video-panel" class="d-none">
+                    <video id="barcode-video" class="w-100 rounded border" playsinline style="max-height:320px;background:#111;"></video>
+                    <p class="text-muted small mt-2 mb-0">Point the camera at a barcode or QR code. Supported formats depend on your browser.</p>
+                </div>
+                <div class="alert alert-warning d-none mt-3 mb-0 small" id="barcode-scan-fallback"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-light" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    const csrftoken = document.querySelector('[name=csrfmiddlewaretoken]')?.value;
+
+    function hideBsModal(elId) {
+        const el = document.getElementById(elId);
+        if (!el || !window.bootstrap) return;
+        let m = bootstrap.Modal.getInstance(el);
+        if (!m) m = new bootstrap.Modal(el);
+        m.hide();
+    }
+
+    document.getElementById('new-location-save')?.addEventListener('click', async function () {
+        const name = document.getElementById('new-location-name').value.trim();
+        const description = document.getElementById('new-location-desc').value.trim();
+        const err = document.getElementById('new-location-error');
+        err.classList.add('d-none');
+        if (!name) {
+            err.textContent = 'Name is required.';
+            err.classList.remove('d-none');
+            return;
+        }
+        try {
+            const res = await fetch('{% url "inventory:storage_location_create" %}', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrftoken },
+                body: JSON.stringify({ name, description }),
+            });
+            const data = await res.json();
+            if (!data.ok) {
+                err.textContent = data.error || 'Could not save.';
+                err.classList.remove('d-none');
+                return;
+            }
+            const dl = document.getElementById('storage-location-options');
+            const opt = document.createElement('option');
+            opt.value = data.name;
+            dl.appendChild(opt);
+            const sel = document.getElementById('id_storage_location_master');
+            if (sel) {
+                const o = document.createElement('option');
+                o.value = data.id;
+                o.textContent = data.name;
+                sel.appendChild(o);
+                sel.value = String(data.id);
+            }
+            document.getElementById('new-location-name').value = '';
+            document.getElementById('new-location-desc').value = '';
+            hideBsModal('addLocationModal');
+            if (window.toastr) toastr.success('Location added.');
+        } catch (e) {
+            err.textContent = 'Network error.';
+            err.classList.remove('d-none');
+        }
+    });
+
+    let zxingReader = null;
+    let scanTimer = null;
+
+    function stopScanner() {
+        if (scanTimer) {
+            clearInterval(scanTimer);
+            scanTimer = null;
+        }
+        if (zxingReader) {
+            try { zxingReader.reset(); } catch (e) {}
+            zxingReader = null;
+        }
+        const v = document.getElementById('barcode-video');
+        if (v && v.srcObject) {
+            v.srcObject.getTracks().forEach(t => t.stop());
+            v.srcObject = null;
+        }
+        document.getElementById('scanning-indicator')?.classList.add('d-none');
+    }
+
+    async function startBarcodeDetector() {
+        const video = document.getElementById('barcode-video');
+        const fallback = document.getElementById('barcode-scan-fallback');
+        fallback.classList.add('d-none');
+        if (!('BarcodeDetector' in window)) return false;
+        const formats = ['code_128', 'code_39', 'ean_13', 'ean_8', 'qr_code'];
+        let detector;
+        try {
+            detector = new BarcodeDetector({ formats });
+        } catch (e) {
+            return false;
+        }
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+        video.srcObject = stream;
+        await video.play();
+        document.getElementById('scanning-indicator')?.classList.remove('d-none');
+        scanTimer = setInterval(async () => {
+            try {
+                const codes = await detector.detect(video);
+                if (codes && codes.length) {
+                    document.getElementById('id_barcode').value = codes[0].rawValue;
+                    stopScanner();
+                    hideBsModal('barcodeScanModal');
+                    if (window.toastr) toastr.success('Barcode captured.');
+                }
+            } catch (e) {}
+        }, 400);
+        return true;
+    }
+
+    async function startZXing() {
+        const video = document.getElementById('barcode-video');
+        const fallback = document.getElementById('barcode-scan-fallback');
+        try {
+            const mod = await import('https://esm.sh/@zxing/browser@0.1.5');
+            const reader = new mod.BrowserMultiFormatReader();
+            zxingReader = reader;
+            document.getElementById('scanning-indicator')?.classList.remove('d-none');
+            await reader.decodeFromVideoDevice(undefined, 'barcode-video', (result, err) => {
+                if (result) {
+                    document.getElementById('id_barcode').value = result.getText();
+                    stopScanner();
+                    hideBsModal('barcodeScanModal');
+                    if (window.toastr) toastr.success('Barcode captured.');
+                }
+            });
+            return true;
+        } catch (e) {
+            fallback.textContent = 'Camera scanning is not available in this browser. Please type or paste the code, or use a USB scanner.';
+            fallback.classList.remove('d-none');
+            return false;
+        }
+    }
+
+    document.getElementById('scan-mode-toggle')?.addEventListener('change', async function () {
+        const manual = document.getElementById('barcode-manual-panel');
+        const vid = document.getElementById('barcode-video-panel');
+        const fb = document.getElementById('barcode-scan-fallback');
+        fb.classList.add('d-none');
+        stopScanner();
+        if (this.checked) {
+            manual.classList.add('d-none');
+            vid.classList.remove('d-none');
+            const ok = await startBarcodeDetector();
+            if (!ok) await startZXing();
+        } else {
+            manual.classList.remove('d-none');
+            vid.classList.add('d-none');
+        }
+    });
+
+    document.getElementById('barcode-manual-apply')?.addEventListener('click', function () {
+        const v = document.getElementById('barcode-manual-input').value.trim();
+        if (v) document.getElementById('id_barcode').value = v;
+        hideBsModal('barcodeScanModal');
+    });
+
+    document.getElementById('barcodeScanModal')?.addEventListener('hidden.bs.modal', function () {
+        document.getElementById('scan-mode-toggle').checked = false;
+        document.getElementById('barcode-manual-panel').classList.remove('d-none');
+        document.getElementById('barcode-video-panel').classList.add('d-none');
+        stopScanner();
+    });
+})();
+</script>
 {% endblock %}
 
 

@@ -54,6 +54,11 @@ urlpatterns = [
     path('consumables/reports/monthly-requests/', views.consumable_monthly_request_report, name='consumable_monthly_request_report'),
     path('consumables/reports/monthly-consumption/', views.consumable_monthly_consumption_report, name='consumable_monthly_consumption_report'),
     path('consumables/reports/monthly-cost/', views.consumable_monthly_cost_report, name='consumable_monthly_cost_report'),
+    path('consumables/reports/inventory/', views.consumable_inventory_reports_page, name='consumable_inventory_reports'),
+    path('consumables/reports/inventory/api/', views.consumable_inventory_report_api, name='consumable_inventory_report_api'),
+    path('consumables/reports/inventory/export/pdf/', views.consumable_inventory_report_export_pdf, name='consumable_inventory_report_export_pdf'),
+    path('consumables/reports/inventory/export/xlsx/', views.consumable_inventory_report_export_xlsx, name='consumable_inventory_report_export_xlsx'),
+    path('storage-locations/create/', views.storage_location_create, name='storage_location_create'),
 ]
 
 

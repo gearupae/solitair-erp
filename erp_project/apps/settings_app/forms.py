@@ -139,6 +139,7 @@ class CompanySettingsForm(forms.ModelForm):
         fields = [
             'company_name', 'logo', 'address', 'phone', 'email', 'website',
             'tax_id', 'fiscal_year_start', 'currency', 'date_format', 'timezone',
+            'inventory_valuation_method',
             'estimate_default_client_note', 'estimate_default_terms',
             'contract_default_terms',
         ]
@@ -154,6 +155,8 @@ class CompanySettingsForm(forms.ModelForm):
             elif field_name in ('estimate_default_client_note', 'estimate_default_terms', 'contract_default_terms'):
                 field.widget.attrs['class'] = 'form-control'
                 field.widget.attrs['rows'] = 5
+            elif field_name == 'inventory_valuation_method':
+                field.widget.attrs['class'] = 'form-select'
             else:
                 field.widget.attrs['class'] = 'form-control'
 

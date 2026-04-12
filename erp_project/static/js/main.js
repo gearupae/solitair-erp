@@ -159,7 +159,8 @@ document.addEventListener('DOMContentLoaded', function() {
     document.addEventListener('click', function(e) {
         const sidebar = document.querySelector('.sidebar');
         const sidebarToggle = document.getElementById('sidebarToggle');
-        
+        if (!sidebar) return;
+
         if (window.innerWidth < 992 && 
             sidebar.classList.contains('show') && 
             !sidebar.contains(e.target) && 
