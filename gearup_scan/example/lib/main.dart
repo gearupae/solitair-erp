@@ -277,7 +277,10 @@ class _ScanPageState extends State<ScanPage> {
   final TextEditingController _wedge = TextEditingController();
   final FocusNode _wedgeFocus = FocusNode();
   final ValueNotifier<_ScanFooter> _footer = ValueNotifier(const _ScanFooter());
+  /// Brief green/red tint over the preview (success = green, no sound; failure = red + sound).
+  final ValueNotifier<Color?> _pulseOverlay = ValueNotifier<Color?>(null);
   Timer? _wedgeIdle;
+  Timer? _pulseTimer;
 
   /// Drop camera callbacks while a network round-trip is in progress (avoids piling work on the UI isolate).
   bool _scanBusy = false;
@@ -286,6 +289,24 @@ class _ScanPageState extends State<ScanPage> {
   DateTime _lastCameraFire = DateTime.fromMillisecondsSinceEpoch(0);
 
   static const _wedgeIdleFlush = Duration(milliseconds: 320);
+
+  void _pulseSuccess() {
+    _pulseTimer?.cancel();
+    _pulseOverlay.value = Colors.green.withValues(alpha: 0.38);
+    _pulseTimer = Timer(const Duration(milliseconds: 400), () {
+      _pulseOverlay.value = null;
+    });
+  }
+
+  void _pulseNegative() {
+    _pulseTimer?.cancel();
+    SystemSound.play(SystemSoundType.alert);
+    HapticFeedback.heavyImpact();
+    _pulseOverlay.value = Colors.red.withValues(alpha: 0.48);
+    _pulseTimer = Timer(const Duration(milliseconds: 520), () {
+      _pulseOverlay.value = null;
+    });
+  }
 
   @override
   void initState() {
@@ -318,14 +339,18 @@ class _ScanPageState extends State<ScanPage> {
           ok: 'ok',
           message: '${r.itemName ?? r.sku} · actual ${r.actualQty} (exp ${r.expectedQty})',
         );
+        _pulseSuccess();
       } else if (r.ok && r.unknown == true) {
         _footer.value = _ScanFooter(ok: 'bad', message: 'Unknown: $raw');
+        _pulseNegative();
       } else {
         _footer.value = _ScanFooter(ok: 'bad', message: r.error ?? 'Failed');
+        _pulseNegative();
       }
     } catch (e) {
       if (!mounted) return;
       _footer.value = _ScanFooter(ok: 'bad', message: e.toString());
+      _pulseNegative();
     } finally {
       _scanBusy = false;
     }
@@ -333,16 +358,19 @@ class _ScanPageState extends State<ScanPage> {
 
   @override
   void dispose() {
+    _pulseTimer?.cancel();
     _wedgeIdle?.cancel();
     _wedge.removeListener(_scheduleWedgeIdleFlush);
     _wedge.dispose();
     _wedgeFocus.dispose();
     _footer.dispose();
+    _pulseOverlay.dispose();
     _cam.dispose();
     super.dispose();
   }
 
-  Future<void> _onDetect(BarcodeCapture cap) async {
+  /// Sync handler for the barcode stream — must return quickly; never `await` here.
+  void _onDetect(BarcodeCapture cap) {
     if (_scanBusy) return;
     final codes = cap.barcodes.where((b) => (b.rawValue ?? '').trim().isNotEmpty).toList();
     if (codes.isEmpty) return;
@@ -350,7 +378,7 @@ class _ScanPageState extends State<ScanPage> {
     final now = DateTime.now();
     if (now.difference(_lastCameraFire) < const Duration(milliseconds: 900)) return;
     _lastCameraFire = now;
-    await _pushScan(raw);
+    unawaited(_pushScan(raw));
   }
 
   @override
@@ -384,7 +412,24 @@ class _ScanPageState extends State<ScanPage> {
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(12),
                 child: RepaintBoundary(
-                  child: MobileScanner(controller: _cam, onDetect: _onDetect),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      MobileScanner(controller: _cam, onDetect: _onDetect),
+                      ValueListenableBuilder<Color?>(
+                        valueListenable: _pulseOverlay,
+                        builder: (context, tint, _) {
+                          if (tint == null) return const SizedBox.shrink();
+                          return IgnorePointer(
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(color: tint),
+                              child: const SizedBox.expand(),
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
