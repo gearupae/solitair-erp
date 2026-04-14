@@ -30,6 +30,8 @@ class GearupScanExampleApp extends StatelessWidget {
   }
 }
 
+// ─────────────────────────────────────────── Login ───────────────────────────
+
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
 
@@ -70,22 +72,17 @@ class _LoginPageState extends State<LoginPage> {
   Future<void> _login() async {
     final origin = _base.text.trim();
     if (origin.isEmpty) {
-      setState(() => _error = 'Enter your ERP server URL (same network as this phone).');
+      setState(() => _error = 'Enter your ERP server URL.');
       return;
     }
-    setState(() {
-      _busy = true;
-      _error = null;
-    });
+    setState(() { _busy = true; _error = null; });
     try {
       final client = GearupScanClient(baseUrl: origin);
       await client.login(username: _user.text.trim(), password: _pass.text);
       await _savePrefs();
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute<void>(
-          builder: (_) => SessionListPage(client: client),
-        ),
+        MaterialPageRoute<void>(builder: (_) => SessionListPage(client: client)),
       );
     } on GearupScanException catch (e) {
       setState(() => _error = e.message);
@@ -115,7 +112,7 @@ class _LoginPageState extends State<LoginPage> {
         padding: const EdgeInsets.all(24),
         children: [
           Text(
-            'Sign in with your ERP username and password. Use your computer\'s LAN address so this phone can reach the server (not localhost).',
+            'Sign in with your ERP username and password.',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
@@ -125,8 +122,7 @@ class _LoginPageState extends State<LoginPage> {
             controller: _base,
             decoration: const InputDecoration(
               labelText: 'ERP server URL',
-              hintText: 'http://192.168.1.10:8000',
-              helperText: 'Android emulator: http://10.0.2.2:PORT',
+              hintText: 'https://gear.telldb.com',
             ),
             keyboardType: TextInputType.url,
             autocorrect: false,
@@ -161,9 +157,10 @@ class _LoginPageState extends State<LoginPage> {
   }
 }
 
+// ────────────────────────────────────── Session list ─────────────────────────
+
 class SessionListPage extends StatefulWidget {
   const SessionListPage({super.key, required this.client});
-
   final GearupScanClient client;
 
   @override
@@ -182,24 +179,22 @@ class _SessionListPageState extends State<SessionListPage> {
   }
 
   Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+    if (!mounted) return;
+    setState(() { _loading = true; _error = null; });
     try {
       final list = await widget.client.listStockTakeSessions();
-      setState(() => _sessions = list);
+      if (mounted) setState(() => _sessions = list);
     } on GearupScanException catch (e) {
-      setState(() => _error = e.message);
+      if (mounted) setState(() => _error = e.message);
     } catch (e) {
-      setState(() => _error = e.toString());
+      if (mounted) setState(() => _error = e.toString());
     } finally {
       if (mounted) setState(() => _loading = false);
     }
   }
 
   Future<void> _logout() async {
-    await widget.client.logout();
+    try { await widget.client.logout(); } catch (_) {}
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute<void>(builder: (_) => const LoginPage()),
@@ -229,27 +224,35 @@ class _SessionListPageState extends State<SessionListPage> {
                         final s = _sessions![i];
                         return ListTile(
                           title: Text(s.clientName),
-                          subtitle: Text('${s.location} · ${s.sessionDate} · ${_sessionLines(s.lineCount)}'),
+                          subtitle: Text('${s.location} · ${s.sessionDate} · ${_lines(s.lineCount)}'),
                           trailing: const Icon(Icons.chevron_right),
-                          onTap: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute<void>(
-                                builder: (_) =>
-                                    ScanPage(client: widget.client, sessionId: s.id, title: s.clientName),
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => ScanPage(
+                                client: widget.client,
+                                sessionId: s.id,
+                                title: s.clientName,
                               ),
-                            );
-                          },
+                            ),
+                          ),
                         );
                       },
                     ),
     );
   }
 
-  static String _sessionLines(int n) => n == 1 ? '1 line' : '$n lines';
+  static String _lines(int n) => n == 1 ? '1 line' : '$n lines';
 }
 
+// ─────────────────────────────────────────── Scan ────────────────────────────
+
 class ScanPage extends StatefulWidget {
-  const ScanPage({super.key, required this.client, required this.sessionId, required this.title});
+  const ScanPage({
+    super.key,
+    required this.client,
+    required this.sessionId,
+    required this.title,
+  });
 
   final GearupScanClient client;
   final int sessionId;
@@ -259,168 +262,161 @@ class ScanPage extends StatefulWidget {
   State<ScanPage> createState() => _ScanPageState();
 }
 
-/// Last line shown under the camera — kept outside [setState] so the camera widget is not rebuilt every scan.
-class _ScanFooter {
-  const _ScanFooter({this.message = '—', this.ok});
+/// Immutable last-scan display — updated via ValueNotifier only, never triggers camera rebuild.
+class _ScanResult {
+  const _ScanResult({this.message = 'Point at a barcode to scan', this.ok});
   final String message;
-  /// `'ok'` | `'bad'` | neutral
-  final String? ok;
+  final bool? ok; // true = matched, false = unknown/error, null = idle
 }
 
 class _ScanPageState extends State<ScanPage> {
-  /// Lighter preview + longer gap between ML Kit passes (Android is sensitive to camera + JS thread load).
-  final MobileScannerController _cam = MobileScannerController(
-    detectionSpeed: DetectionSpeed.normal,
-    detectionTimeoutMs: 1200,
-    facing: CameraFacing.back,
-    cameraResolution: const Size(640, 480),
-  );
+  // ── Controller is nullable; assigned AFTER first frame to avoid ANR at widget construction ──
+  MobileScannerController? _cam;
+  StreamSubscription<BarcodeCapture>? _sub;
 
   final TextEditingController _wedge = TextEditingController();
   final FocusNode _wedgeFocus = FocusNode();
-  final ValueNotifier<_ScanFooter> _footer = ValueNotifier(const _ScanFooter());
-  /// Brief green/red tint over the preview (success = green, no sound; failure = red + sound).
-  final ValueNotifier<Color?> _pulseOverlay = ValueNotifier<Color?>(null);
-  Timer? _wedgeIdle;
-  Timer? _pulseTimer;
+  final ValueNotifier<_ScanResult> _result = ValueNotifier(const _ScanResult());
+  final ValueNotifier<Color?> _flash = ValueNotifier<Color?>(null);
 
-  /// Own subscription so we can [pause] while the server round-trip runs — stops ML Kit flooding the UI isolate.
-  StreamSubscription<BarcodeCapture>? _barcodeSub;
-
-  /// Drop camera callbacks while a network round-trip is in progress (avoids piling work on the UI isolate).
-  bool _scanBusy = false;
-
-  /// Throttle duplicate camera frame reads of the same barcode.
-  DateTime _lastCameraFire = DateTime.fromMillisecondsSinceEpoch(0);
-
-  static const _wedgeIdleFlush = Duration(milliseconds: 320);
-
+  Timer? _idleTimer;
+  Timer? _flashTimer;
+  bool _busy = false;
   bool _alive = true;
 
-  void _pulseSuccess() {
-    if (!_alive || !mounted) return;
-    _pulseTimer?.cancel();
-    _pulseOverlay.value = Colors.green.withValues(alpha: 0.38);
-    _pulseTimer = Timer(const Duration(milliseconds: 400), () {
-      if (_alive && mounted) _pulseOverlay.value = null;
-    });
-  }
-
-  void _pulseNegative() {
-    if (!_alive || !mounted) return;
-    _pulseTimer?.cancel();
-    _pulseOverlay.value = Colors.red.withValues(alpha: 0.48);
-    scheduleMicrotask(() {
-      if (!_alive || !mounted) return;
-      try {
-        SystemSound.play(SystemSoundType.alert);
-      } catch (_) {}
-      try {
-        HapticFeedback.heavyImpact();
-      } catch (_) {}
-    });
-    _pulseTimer = Timer(const Duration(milliseconds: 520), () {
-      if (_alive && mounted) _pulseOverlay.value = null;
-    });
-  }
+  // ─────────── lifecycle ───────────
 
   @override
   void initState() {
     super.initState();
-    _wedge.addListener(_scheduleWedgeIdleFlush);
-    // Do not use MobileScanner.onDetect — it cannot be paused; native keeps emitting while we await HTTP.
-    _barcodeSub = _cam.barcodes.listen(_onBarcodeFromStream, cancelOnError: false);
-  }
-
-  void _scheduleWedgeIdleFlush() {
-    _wedgeIdle?.cancel();
-    _wedgeIdle = Timer(_wedgeIdleFlush, _flushWedgeIfNonEmpty);
-  }
-
-  void _flushWedgeIfNonEmpty() {
-    _wedgeIdle?.cancel();
-    _wedgeIdle = null;
-    final raw = _wedge.text.trim();
-    _wedge.clear();
-    if (raw.isEmpty) return;
-    unawaited(_pushScan(raw));
-  }
-
-  Future<void> _pushScan(String raw) async {
-    if (_scanBusy || !_alive) return;
-    _scanBusy = true;
-    _barcodeSub?.pause();
-    try {
-      final r = await widget.client.submitScan(widget.sessionId, barcode: raw);
+    _wedge.addListener(_onWedgeInput);
+    // Defer camera creation so widget tree renders first — avoids UI-thread block (ANR).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_alive || !mounted) return;
-      if (r.ok && r.matched == true) {
-        _footer.value = _ScanFooter(
-          ok: 'ok',
-          message: '${r.itemName ?? r.sku} · actual ${r.actualQty} (exp ${r.expectedQty})',
-        );
-        _pulseSuccess();
-      } else if (r.ok && r.unknown == true) {
-        _footer.value = _ScanFooter(ok: 'bad', message: 'Unknown: $raw');
-        _pulseNegative();
-      } else {
-        _footer.value = _ScanFooter(ok: 'bad', message: r.error ?? 'Failed');
-        _pulseNegative();
-      }
-    } catch (e) {
-      if (!_alive || !mounted) return;
-      _footer.value = _ScanFooter(ok: 'bad', message: e.toString());
-      _pulseNegative();
-    } finally {
-      if (_alive) {
-        _scanBusy = false;
-        _barcodeSub?.resume();
-      }
-    }
+      final cam = MobileScannerController(
+        // noDuplicates: native fires only when a NEW barcode is seen.
+        // This eliminates the need for timestamp throttling and keeps the stream quiet.
+        detectionSpeed: DetectionSpeed.noDuplicates,
+        facing: CameraFacing.back,
+        // No cameraResolution: requesting unsupported sizes crashes some devices.
+      );
+      // Subscribe to the controller stream directly so we can pause/resume around HTTP.
+      _sub = cam.barcodes.listen(_onBarcode, cancelOnError: false);
+      setState(() => _cam = cam);
+    });
   }
 
   @override
   void dispose() {
     _alive = false;
-    _pulseTimer?.cancel();
-    _wedgeIdle?.cancel();
-    _barcodeSub?.cancel();
-    _barcodeSub = null;
-    _wedge.removeListener(_scheduleWedgeIdleFlush);
+    _flashTimer?.cancel();
+    _idleTimer?.cancel();
+    _sub?.cancel();
+    _sub = null;
+    _cam?.dispose();
+    _cam = null;
+    _wedge.removeListener(_onWedgeInput);
     _wedge.dispose();
     _wedgeFocus.dispose();
-    _cam.dispose();
-    _footer.dispose();
-    _pulseOverlay.dispose();
+    _result.dispose();
+    _flash.dispose();
     super.dispose();
   }
 
-  static String _barcodeText(Barcode b) {
-    final a = (b.rawValue ?? '').trim();
-    if (a.isNotEmpty) return a;
-    return (b.displayValue ?? '').trim();
+  // ─────────── barcode camera stream ───────────
+
+  static String _raw(Barcode b) {
+    final v = (b.rawValue ?? '').trim();
+    return v.isNotEmpty ? v : (b.displayValue ?? '').trim();
   }
 
-  /// Barcode stream — keep synchronous; [pause] happens inside [_pushScan].
-  void _onBarcodeFromStream(BarcodeCapture cap) {
-    if (_scanBusy || !_alive) return;
-    final codes = cap.barcodes.where((b) => _barcodeText(b).isNotEmpty).toList();
-    if (codes.isEmpty) return;
-    final raw = _barcodeText(codes.first);
+  void _onBarcode(BarcodeCapture cap) {
+    if (_busy || !_alive) return;
+    final raw = cap.barcodes.map(_raw).firstWhere((s) => s.isNotEmpty, orElse: () => '');
     if (raw.isEmpty) return;
-    final now = DateTime.now();
-    if (now.difference(_lastCameraFire) < const Duration(milliseconds: 900)) return;
-    _lastCameraFire = now;
-    unawaited(_pushScan(raw));
+    unawaited(_submit(raw));
   }
+
+  // ─────────── wedge (USB / BT keyboard) ───────────
+
+  void _onWedgeInput() {
+    _idleTimer?.cancel();
+    // Flush 300 ms after last character (no-suffix scanners).
+    _idleTimer = Timer(const Duration(milliseconds: 300), _flushWedge);
+  }
+
+  void _flushWedge() {
+    _idleTimer?.cancel();
+    final raw = _wedge.text.trim();
+    _wedge.clear();
+    if (raw.isNotEmpty) unawaited(_submit(raw));
+  }
+
+  // ─────────── submit to ERP ───────────
+
+  Future<void> _submit(String raw) async {
+    if (_busy || !_alive) return;
+    _busy = true;
+    _sub?.pause(); // stop ML Kit events while HTTP round-trip is running
+    try {
+      final r = await widget.client.submitScan(widget.sessionId, barcode: raw);
+      if (!_alive || !mounted) return;
+      if (r.ok && r.matched == true) {
+        _result.value = _ScanResult(
+          ok: true,
+          message: '✓  ${r.itemName ?? r.sku} — actual: ${r.actualQty}  (expected: ${r.expectedQty})',
+        );
+        _doFlash(Colors.green.withValues(alpha: 0.35), durationMs: 380);
+      } else if (r.ok && r.unknown == true) {
+        _result.value = _ScanResult(ok: false, message: 'Unknown barcode: $raw');
+        _doFlash(Colors.red.withValues(alpha: 0.45), durationMs: 500, beep: true);
+      } else {
+        _result.value = _ScanResult(ok: false, message: r.error ?? 'Scan failed');
+        _doFlash(Colors.red.withValues(alpha: 0.45), durationMs: 500, beep: true);
+      }
+    } catch (e) {
+      if (!_alive || !mounted) return;
+      _result.value = _ScanResult(ok: false, message: 'Error: $e');
+      _doFlash(Colors.red.withValues(alpha: 0.45), durationMs: 500, beep: true);
+    } finally {
+      if (_alive) {
+        _busy = false;
+        _sub?.resume();
+      }
+    }
+  }
+
+  // ─────────── flash feedback ───────────
+
+  void _doFlash(Color color, {required int durationMs, bool beep = false}) {
+    if (!_alive || !mounted) return;
+    _flashTimer?.cancel();
+    _flash.value = color;
+    if (beep) {
+      try { HapticFeedback.heavyImpact(); } catch (_) {}
+      try { SystemSound.play(SystemSoundType.alert); } catch (_) {}
+    }
+    _flashTimer = Timer(Duration(milliseconds: durationMs), () {
+      if (_alive && mounted) _flash.value = null;
+    });
+  }
+
+  // ─────────── build ───────────
 
   @override
   Widget build(BuildContext context) {
+    final cam = _cam;
+    final cs = Theme.of(context).colorScheme;
+
     return Scaffold(
+      backgroundColor: Colors.black,
       appBar: AppBar(
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
         title: Text(widget.title),
         actions: [
           IconButton(
-            tooltip: 'Focus USB / Bluetooth scanner',
+            tooltip: 'Focus USB / BT scanner',
             onPressed: () => _wedgeFocus.requestFocus(),
             icon: const Icon(Icons.keyboard_alt_outlined),
           ),
@@ -428,98 +424,79 @@ class _ScanPageState extends State<ScanPage> {
       ),
       body: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-            child: Text(
-              'Camera: common 1D and 2D codes. USB or Bluetooth scanners: tap the keyboard icon, '
-              'then scan (works like the ERP web page — each scan adds one to the matched line).',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-            ),
-          ),
+          // ── Camera preview (takes most of the screen) ──
           Expanded(
-            child: Padding(
-              padding: const EdgeInsets.all(8),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: RepaintBoundary(
-                  child: Stack(
+            child: cam == null
+                ? const Center(child: CircularProgressIndicator(color: Colors.white54))
+                : Stack(
                     fit: StackFit.expand,
                     children: [
-                      MobileScanner(controller: _cam),
+                      MobileScanner(controller: cam),
+                      // Flash overlay — tiny widget, only its layer repaints
                       ValueListenableBuilder<Color?>(
-                        valueListenable: _pulseOverlay,
-                        builder: (context, tint, _) {
-                          if (tint == null) return const SizedBox.shrink();
-                          return IgnorePointer(
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(color: tint),
-                              child: const SizedBox.expand(),
-                            ),
-                          );
-                        },
+                        valueListenable: _flash,
+                        builder: (_, tint, __) => tint == null
+                            ? const SizedBox.shrink()
+                            : IgnorePointer(
+                                child: ColoredBox(
+                                  color: tint,
+                                  child: const SizedBox.expand(),
+                                ),
+                              ),
                       ),
                     ],
                   ),
-                ),
-              ),
+          ),
+
+          // ── Status card ──
+          ColoredBox(
+            color: Colors.black,
+            child: ValueListenableBuilder<_ScanResult>(
+              valueListenable: _result,
+              builder: (_, res, __) {
+                final Color textColor = res.ok == true
+                    ? Colors.green.shade300
+                    : res.ok == false
+                        ? cs.error
+                        : Colors.white70;
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+                  child: Text(
+                    res.message,
+                    style: TextStyle(
+                      color: textColor,
+                      fontSize: 15,
+                      fontWeight: res.ok != null ? FontWeight.w600 : FontWeight.normal,
+                    ),
+                  ),
+                );
+              },
             ),
           ),
-          // Captures HID “keyboard wedge” scanners (same behavior as ERP web hidden field).
+
+          // ── Wedge hidden input — Offstage = no compositing layer, no render overhead ──
           Focus(
             focusNode: _wedgeFocus,
-            onKeyEvent: (node, event) {
-              if (event is! KeyDownEvent) return KeyEventResult.ignored;
-              if (event.logicalKey == LogicalKeyboardKey.tab) {
-                _flushWedgeIfNonEmpty();
+            onKeyEvent: (_, event) {
+              if (event is KeyDownEvent &&
+                  (event.logicalKey == LogicalKeyboardKey.enter ||
+                   event.logicalKey == LogicalKeyboardKey.tab ||
+                   event.logicalKey == LogicalKeyboardKey.numpadEnter)) {
+                _flushWedge();
                 return KeyEventResult.handled;
               }
               return KeyEventResult.ignored;
             },
-            child: Opacity(
-              opacity: 0.01,
-              child: SizedBox(
-                height: 1,
-                child: TextField(
-                  controller: _wedge,
-                  focusNode: _wedgeFocus,
-                  maxLines: 1,
-                  keyboardType: TextInputType.visiblePassword,
-                  enableSuggestions: false,
-                  autocorrect: false,
-                  textInputAction: TextInputAction.done,
-                  decoration: const InputDecoration.collapsed(hintText: ''),
-                  style: const TextStyle(height: 0.01, fontSize: 1),
-                  onSubmitted: (_) => _flushWedgeIfNonEmpty(),
-                ),
+            child: Offstage(
+              offstage: true,
+              child: TextField(
+                controller: _wedge,
+                focusNode: _wedgeFocus,
+                enableSuggestions: false,
+                autocorrect: false,
+                onSubmitted: (_) => _flushWedge(),
               ),
             ),
-          ),
-          ValueListenableBuilder<_ScanFooter>(
-            valueListenable: _footer,
-            builder: (context, fb, _) {
-              return Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text('Last scan', style: Theme.of(context).textTheme.labelSmall),
-                    const SizedBox(height: 4),
-                    Text(
-                      fb.message,
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            color: fb.ok == 'ok'
-                                ? Colors.green.shade800
-                                : fb.ok == 'bad'
-                                    ? Theme.of(context).colorScheme.error
-                                    : null,
-                          ),
-                    ),
-                  ],
-                ),
-              );
-            },
           ),
         ],
       ),
