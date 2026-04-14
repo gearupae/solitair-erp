@@ -267,11 +267,12 @@ class _ScanFooter {
 }
 
 class _ScanPageState extends State<ScanPage> {
-  /// Empty [formats] = all symbologies (same as explicit `all`, less native overhead).
+  /// Lighter preview + longer gap between ML Kit passes (Android is sensitive to camera + JS thread load).
   final MobileScannerController _cam = MobileScannerController(
     detectionSpeed: DetectionSpeed.normal,
-    detectionTimeoutMs: 650,
+    detectionTimeoutMs: 1200,
     facing: CameraFacing.back,
+    cameraResolution: const Size(640, 480),
   );
 
   final TextEditingController _wedge = TextEditingController();
@@ -290,21 +291,32 @@ class _ScanPageState extends State<ScanPage> {
 
   static const _wedgeIdleFlush = Duration(milliseconds: 320);
 
+  bool _alive = true;
+
   void _pulseSuccess() {
+    if (!_alive || !mounted) return;
     _pulseTimer?.cancel();
     _pulseOverlay.value = Colors.green.withValues(alpha: 0.38);
     _pulseTimer = Timer(const Duration(milliseconds: 400), () {
-      _pulseOverlay.value = null;
+      if (_alive && mounted) _pulseOverlay.value = null;
     });
   }
 
   void _pulseNegative() {
+    if (!_alive || !mounted) return;
     _pulseTimer?.cancel();
-    SystemSound.play(SystemSoundType.alert);
-    HapticFeedback.heavyImpact();
     _pulseOverlay.value = Colors.red.withValues(alpha: 0.48);
+    scheduleMicrotask(() {
+      if (!_alive || !mounted) return;
+      try {
+        SystemSound.play(SystemSoundType.alert);
+      } catch (_) {}
+      try {
+        HapticFeedback.heavyImpact();
+      } catch (_) {}
+    });
     _pulseTimer = Timer(const Duration(milliseconds: 520), () {
-      _pulseOverlay.value = null;
+      if (_alive && mounted) _pulseOverlay.value = null;
     });
   }
 
@@ -329,11 +341,11 @@ class _ScanPageState extends State<ScanPage> {
   }
 
   Future<void> _pushScan(String raw) async {
-    if (_scanBusy) return;
+    if (_scanBusy || !_alive) return;
     _scanBusy = true;
     try {
       final r = await widget.client.submitScan(widget.sessionId, barcode: raw);
-      if (!mounted) return;
+      if (!_alive || !mounted) return;
       if (r.ok && r.matched == true) {
         _footer.value = _ScanFooter(
           ok: 'ok',
@@ -348,37 +360,45 @@ class _ScanPageState extends State<ScanPage> {
         _pulseNegative();
       }
     } catch (e) {
-      if (!mounted) return;
+      if (!_alive || !mounted) return;
       _footer.value = _ScanFooter(ok: 'bad', message: e.toString());
       _pulseNegative();
     } finally {
-      _scanBusy = false;
+      if (_alive) _scanBusy = false;
     }
   }
 
   @override
   void dispose() {
+    _alive = false;
     _pulseTimer?.cancel();
     _wedgeIdle?.cancel();
     _wedge.removeListener(_scheduleWedgeIdleFlush);
     _wedge.dispose();
     _wedgeFocus.dispose();
+    _cam.dispose();
     _footer.dispose();
     _pulseOverlay.dispose();
-    _cam.dispose();
     super.dispose();
   }
 
-  /// Sync handler for the barcode stream — must return quickly; never `await` here.
+  static String _barcodeText(Barcode b) {
+    final a = (b.rawValue ?? '').trim();
+    if (a.isNotEmpty) return a;
+    return (b.displayValue ?? '').trim();
+  }
+
+  /// Sync handler for the barcode stream — return immediately; defer work to a microtask.
   void _onDetect(BarcodeCapture cap) {
-    if (_scanBusy) return;
-    final codes = cap.barcodes.where((b) => (b.rawValue ?? '').trim().isNotEmpty).toList();
+    if (_scanBusy || !_alive) return;
+    final codes = cap.barcodes.where((b) => _barcodeText(b).isNotEmpty).toList();
     if (codes.isEmpty) return;
-    final raw = codes.first.rawValue!.trim();
+    final raw = _barcodeText(codes.first);
+    if (raw.isEmpty) return;
     final now = DateTime.now();
     if (now.difference(_lastCameraFire) < const Duration(milliseconds: 900)) return;
     _lastCameraFire = now;
-    unawaited(_pushScan(raw));
+    unawaited(Future.microtask(() => _pushScan(raw)));
   }
 
   @override

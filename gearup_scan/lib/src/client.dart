@@ -122,7 +122,11 @@ class GearupScanClient {
     final r = await _dio.post<Map<String, dynamic>>(
       _u('/stock-take/sessions/$sessionId/scan/'),
       data: body,
-      options: Options(contentType: Headers.jsonContentType),
+      options: Options(
+        contentType: Headers.jsonContentType,
+        sendTimeout: const Duration(seconds: 12),
+        receiveTimeout: const Duration(seconds: 20),
+      ),
     );
     final data = r.data ?? {};
     return ScanSubmitResult.fromJson(data);
