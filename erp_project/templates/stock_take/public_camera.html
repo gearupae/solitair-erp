@@ -41,7 +41,7 @@
       The expected stock list has not been uploaded for this session yet. Ask your coordinator to upload the Excel file in the ERP first.
     </div>
     {% else %}
-    <p class="small text-muted mb-2">Camera works on HTTPS or localhost. Bluetooth scanners: tap “Focus scanner”, then scan.</p>
+    <p class="small text-muted mb-2">Camera works on HTTPS or localhost. USB / Bluetooth <strong>keyboard-wedge</strong> scanners: tap “Focus scanner”, then scan — any 1D/2D symbology the hardware decodes is sent as text. <kbd>Enter</kbd> or <kbd>Tab</kbd> suffix supported; no-suffix readers still flush shortly after the last character.</p>
     <div class="d-flex flex-wrap gap-2 mb-3">
       <button type="button" class="btn btn-primary st-big-btn" id="st-pub-cam-start"><i class="fas fa-camera me-2"></i>Start camera</button>
       <button type="button" class="btn btn-outline-secondary st-big-btn" id="st-pub-cam-stop" disabled><i class="fas fa-stop me-2"></i>Stop camera</button>
@@ -215,22 +215,31 @@
       this.disabled = true;
     });
 
-    let wedgeBuf = '';
-    function flushWedge() {
-      const s = wedgeBuf.trim();
-      wedgeBuf = '';
+    const wedgeEl = document.getElementById('st-pub-wedge');
+    let wedgeTimer = null;
+    function clearWedgeTimer() {
+      if (wedgeTimer) { clearTimeout(wedgeTimer); wedgeTimer = null; }
+    }
+    function flushWedgeFromField() {
+      clearWedgeTimer();
+      if (!wedgeEl) return;
+      const s = wedgeEl.value.trim();
+      wedgeEl.value = '';
       if (s.length >= 1) handleBarcode(s);
     }
-    document.getElementById('st-pub-wedge').addEventListener('keydown', function(e) {
-      if (e.key === 'Enter') {
+    function scheduleWedgeIdle() {
+      clearWedgeTimer();
+      wedgeTimer = setTimeout(flushWedgeFromField, 320);
+    }
+    wedgeEl.addEventListener('input', scheduleWedgeIdle);
+    wedgeEl.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' || e.key === 'Tab') {
         e.preventDefault();
-        flushWedge();
-        return;
+        flushWedgeFromField();
       }
-      if (e.key.length === 1) wedgeBuf += e.key;
     });
     document.getElementById('st-pub-focus-wedge').addEventListener('click', () => {
-      document.getElementById('st-pub-wedge').focus();
+      wedgeEl.focus();
     });
 
     document.getElementById('st-pub-manual-set').addEventListener('click', async function() {

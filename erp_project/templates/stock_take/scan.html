@@ -73,7 +73,7 @@
   <div class="card mb-3 border-primary border-opacity-50">
     <div class="card-header fw-semibold">2. Hardware scanner (wedge)</div>
     <div class="card-body">
-      <p class="small text-muted mb-2">Scans match each line’s <strong>Barcode or scan code</strong> when set in the sheet; otherwise they match <strong>SKU</strong>. Use a USB or Bluetooth scanner that types into the focused field, or tap <strong>Focus scanner</strong> first.</p>
+      <p class="small text-muted mb-2">Scans match each line’s <strong>Barcode or scan code</strong> when set in the sheet; otherwise they match <strong>SKU</strong>. USB or Bluetooth <strong>keyboard-wedge</strong> readers work: they send digits and letters like a keyboard (1D, 2D, QR, GS1 — any symbology the device decodes). Tap <strong>Focus scanner</strong> first. Suffix <kbd>Enter</kbd> or <kbd>Tab</kbd> is supported; if your reader has no suffix, the line still submits a moment after the last character.</p>
       <div class="d-flex flex-wrap align-items-end gap-2 mb-2">
         <div class="flex-grow-1" style="min-width: 12rem;">
           <label class="form-label small text-muted mb-0">Scanner capture</label>
@@ -241,19 +241,28 @@
     }
   }
 
-  let wedgeBuf = '';
-  function flushWedge() {
-    const s = wedgeBuf.trim();
-    wedgeBuf = '';
+  const wedgeEl = document.getElementById('st-wedge');
+  let wedgeTimer = null;
+  function clearWedgeTimer() {
+    if (wedgeTimer) { clearTimeout(wedgeTimer); wedgeTimer = null; }
+  }
+  function flushWedgeFromField() {
+    clearWedgeTimer();
+    if (!wedgeEl) return;
+    const s = wedgeEl.value.trim();
+    wedgeEl.value = '';
     if (s.length >= 1) handleBarcode(s);
   }
-  document.getElementById('st-wedge')?.addEventListener('keydown', function(e) {
-    if (e.key === 'Enter') {
+  function scheduleWedgeIdle() {
+    clearWedgeTimer();
+    wedgeTimer = setTimeout(flushWedgeFromField, 320);
+  }
+  wedgeEl?.addEventListener('input', scheduleWedgeIdle);
+  wedgeEl?.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' || e.key === 'Tab') {
       e.preventDefault();
-      flushWedge();
-      return;
+      flushWedgeFromField();
     }
-    if (e.key.length === 1) wedgeBuf += e.key;
   });
   document.getElementById('st-btn-focus-wedge')?.addEventListener('click', () => {
     document.getElementById('st-wedge')?.focus();

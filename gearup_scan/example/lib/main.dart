@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:gearup_scan/gearup_scan.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -256,27 +259,45 @@ class ScanPage extends StatefulWidget {
 }
 
 class _ScanPageState extends State<ScanPage> {
+  /// All symbologies ML Kit exposes through this plugin (1D + 2D).
   final MobileScannerController _cam = MobileScannerController(
     detectionSpeed: DetectionSpeed.normal,
     facing: CameraFacing.back,
+    formats: const [BarcodeFormat.all],
   );
+
+  final TextEditingController _wedge = TextEditingController();
+  final FocusNode _wedgeFocus = FocusNode();
+  Timer? _wedgeIdle;
+
   String _last = '—';
   String? _lastOk;
-  DateTime _lastFire = DateTime.fromMillisecondsSinceEpoch(0);
+  /// Throttle duplicate camera frame reads of the same barcode.
+  DateTime _lastCameraFire = DateTime.fromMillisecondsSinceEpoch(0);
+
+  static const _wedgeIdleFlush = Duration(milliseconds: 320);
 
   @override
-  void dispose() {
-    _cam.dispose();
-    super.dispose();
+  void initState() {
+    super.initState();
+    _wedge.addListener(_scheduleWedgeIdleFlush);
   }
 
-  Future<void> _onDetect(BarcodeCapture cap) async {
-    final codes = cap.barcodes.where((b) => (b.rawValue ?? '').trim().isNotEmpty).toList();
-    if (codes.isEmpty) return;
-    final raw = codes.first.rawValue!.trim();
-    final now = DateTime.now();
-    if (now.difference(_lastFire) < const Duration(milliseconds: 900)) return;
-    _lastFire = now;
+  void _scheduleWedgeIdleFlush() {
+    _wedgeIdle?.cancel();
+    _wedgeIdle = Timer(_wedgeIdleFlush, _flushWedgeIfNonEmpty);
+  }
+
+  void _flushWedgeIfNonEmpty() {
+    _wedgeIdle?.cancel();
+    _wedgeIdle = null;
+    final raw = _wedge.text.trim();
+    _wedge.clear();
+    if (raw.isEmpty) return;
+    _pushScan(raw);
+  }
+
+  Future<void> _pushScan(String raw) async {
     try {
       final r = await widget.client.submitScan(widget.sessionId, barcode: raw);
       if (!mounted) return;
@@ -302,17 +323,86 @@ class _ScanPageState extends State<ScanPage> {
   }
 
   @override
+  void dispose() {
+    _wedgeIdle?.cancel();
+    _wedge.removeListener(_scheduleWedgeIdleFlush);
+    _wedge.dispose();
+    _wedgeFocus.dispose();
+    _cam.dispose();
+    super.dispose();
+  }
+
+  Future<void> _onDetect(BarcodeCapture cap) async {
+    final codes = cap.barcodes.where((b) => (b.rawValue ?? '').trim().isNotEmpty).toList();
+    if (codes.isEmpty) return;
+    final raw = codes.first.rawValue!.trim();
+    final now = DateTime.now();
+    if (now.difference(_lastCameraFire) < const Duration(milliseconds: 900)) return;
+    _lastCameraFire = now;
+    await _pushScan(raw);
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(widget.title)),
+      appBar: AppBar(
+        title: Text(widget.title),
+        actions: [
+          IconButton(
+            tooltip: 'Focus USB / Bluetooth scanner',
+            onPressed: () => _wedgeFocus.requestFocus(),
+            icon: const Icon(Icons.keyboard_alt_outlined),
+          ),
+        ],
+      ),
       body: Column(
         children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: Text(
+              'Camera: common 1D and 2D codes. USB or Bluetooth scanners: tap the keyboard icon, '
+              'then scan (works like the ERP web page — each scan adds one to the matched line).',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+            ),
+          ),
           Expanded(
             child: Padding(
               padding: const EdgeInsets.all(8),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(12),
                 child: MobileScanner(controller: _cam, onDetect: _onDetect),
+              ),
+            ),
+          ),
+          // Captures HID “keyboard wedge” scanners (same behavior as ERP web hidden field).
+          Focus(
+            focusNode: _wedgeFocus,
+            onKeyEvent: (node, event) {
+              if (event is! KeyDownEvent) return KeyEventResult.ignored;
+              if (event.logicalKey == LogicalKeyboardKey.tab) {
+                _flushWedgeIfNonEmpty();
+                return KeyEventResult.handled;
+              }
+              return KeyEventResult.ignored;
+            },
+            child: Opacity(
+              opacity: 0.01,
+              child: SizedBox(
+                height: 1,
+                child: TextField(
+                  controller: _wedge,
+                  focusNode: _wedgeFocus,
+                  maxLines: 1,
+                  keyboardType: TextInputType.visiblePassword,
+                  enableSuggestions: false,
+                  autocorrect: false,
+                  textInputAction: TextInputAction.done,
+                  decoration: const InputDecoration.collapsed(hintText: ''),
+                  style: const TextStyle(height: 0.01, fontSize: 1),
+                  onSubmitted: (_) => _flushWedgeIfNonEmpty(),
+                ),
               ),
             ),
           ),

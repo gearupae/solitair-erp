@@ -104,7 +104,9 @@ celerybeat.pid
 # mypy
 .mypy_cache/
 
-# Flutter — scan example (regenerate with: cd gearup_scan/example && flutter create .)
+# Flutter — scan package + example (regenerate example Android with: cd gearup_scan/example && flutter create .)
+gearup_scan/.dart_tool/
+gearup_scan/.flutter-plugins-dependencies
 gearup_scan/example/android/
 gearup_scan/example/ios/
 gearup_scan/example/linux/

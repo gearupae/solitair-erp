@@ -16,8 +16,25 @@
   </div>
 </div>
 
-<div class="card mb-3" id="st-report-header">
-  <div class="card-body">
+<div class="card mb-3 border-0 shadow-sm overflow-hidden" id="st-report-header">
+  <div class="px-4 py-3 text-white" style="background: linear-gradient(115deg, #0d9488 0%, #0f766e 45%, #134e4a 100%);">
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
+      <div class="d-flex align-items-center gap-3">
+        {% if stock_take_logo_url %}
+        <img src="{{ stock_take_logo_url }}" alt="" class="bg-white rounded-2 p-1 shadow-sm" style="max-height: 56px; max-width: 180px; object-fit: contain;">
+        {% endif %}
+        <div>
+          <div class="text-white-50 small text-uppercase" style="letter-spacing: 0.06em;">Stock take</div>
+          <div class="fs-5 fw-bold">{{ company.company_name|default:"Company" }}</div>
+        </div>
+      </div>
+      <div class="text-end small text-white-50">
+        <div>Report generated</div>
+        <div class="fw-semibold text-white">{{ request.user.get_username }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="card-body bg-light">
     <div class="row g-3">
       <div class="col-md-4">
         <div class="text-muted small">Client</div>
@@ -28,8 +45,16 @@
         <div class="fw-semibold">{{ session.location }}</div>
       </div>
       <div class="col-md-4">
-        <div class="text-muted small">Date</div>
+        <div class="text-muted small">Count date</div>
         <div class="fw-semibold">{{ session.session_date|date:"d/m/Y" }}</div>
+      </div>
+      <div class="col-md-6 col-lg-4">
+        <div class="text-muted small">Period start</div>
+        <div class="fw-semibold font-monospace">{{ period_start_display }}</div>
+      </div>
+      <div class="col-md-6 col-lg-4">
+        <div class="text-muted small">Period end</div>
+        <div class="fw-semibold font-monospace">{{ period_end_display }}</div>
       </div>
       {% if session.notes %}
       <div class="col-12">
@@ -142,60 +167,189 @@
   const LINES = {{ lines_json|safe }};
   const SUMMARY = {{ summary_json|safe }};
   const UNK = {{ unknown_json|safe }};
+  const LOGO_URL = "{{ stock_take_logo_url|escapejs }}";
+  const COMPANY_NAME = "{{ company.company_name|default:'Company'|escapejs }}";
   const HDR = {
     client: "{{ session.client_name|escapejs }}",
     location: "{{ session.location|escapejs }}",
     date: "{{ session.session_date|date:'d/m/Y' }}",
+    periodStart: "{{ period_start_display|escapejs }}",
+    periodEnd: "{{ period_end_display|escapejs }}",
   };
-  document.getElementById('st-pdf-export').addEventListener('click', function() {
+  const PRIMARY = [13, 148, 136];
+  const PRIMARY_DARK = [15, 118, 110];
+  const MUTED = [71, 85, 105];
+
+  function addPageFooters(doc, footerLeft) {
+    const n = doc.internal.getNumberOfPages();
+    const pageW = doc.internal.pageSize.getWidth();
+    const pageH = doc.internal.pageSize.getHeight();
+    for (let i = 1; i <= n; i++) {
+      doc.setPage(i);
+      doc.setDrawColor(226, 232, 240);
+      doc.setLineWidth(0.2);
+      doc.line(14, pageH - 14, pageW - 14, pageH - 14);
+      doc.setFontSize(7.5);
+      doc.setTextColor.apply(null, MUTED);
+      doc.setFont(undefined, 'normal');
+      doc.text(footerLeft, pageH - 9);
+      doc.text('Page ' + i + ' of ' + n, pageW - 14, pageH - 9, { align: 'right' });
+    }
+  }
+
+  async function fetchLogoDataUrl(url) {
+    if (!url) return null;
+    try {
+      const res = await fetch(url, { credentials: 'same-origin' });
+      if (!res.ok) return null;
+      const blob = await res.blob();
+      return await new Promise(function(resolve, reject) {
+        const r = new FileReader();
+        r.onloadend = function() { resolve(r.result); };
+        r.onerror = reject;
+        r.readAsDataURL(blob);
+      });
+    } catch (e) {
+      return null;
+    }
+  }
+
+  document.getElementById('st-pdf-export').addEventListener('click', async function() {
     if (!window.jspdf || !window.jspdf.jsPDF) { alert('PDF library failed to load.'); return; }
-    const { jsPDF } = window.jspdf;
-    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-    let y = 14;
-    doc.setFontSize(16);
-    doc.text('Stock Take Report', 14, y);
-    y += 8;
-    doc.setFontSize(10);
-    doc.text('Client: ' + HDR.client, 14, y); y += 5;
-    doc.text('Location: ' + HDR.location, 14, y); y += 5;
-    doc.text('Date: ' + HDR.date, 14, y); y += 6;
-    doc.setFontSize(9);
-    doc.text('Total SKUs: ' + SUMMARY.total_skus + '  |  Matched: ' + SUMMARY.matched +
-      '  |  Short: ' + SUMMARY.short + '  |  Excess: ' + SUMMARY.excess +
-      '  |  Unidentified scans: ' + SUMMARY.unidentified, 14, y);
-    y += 8;
-    const body = LINES.map(function(r) {
-      return [
-        String(r.sku),
-        r.scan_code ? String(r.scan_code) : '—',
-        String(r.item_name),
-        String(r.expected_qty),
-        String(r.actual_qty),
-        String(r.variance),
-        String(r.status),
-      ];
-    });
-    doc.autoTable({
-      startY: y,
-      head: [['SKU', 'Scan code', 'Item name', 'Expected', 'Actual', 'Variance', 'Status']],
-      body: body,
-      styles: { fontSize: 8 },
-      headStyles: { fillColor: [33, 37, 41] },
-    });
-    y = doc.lastAutoTable.finalY + 8;
-    if (UNK.length) {
+    const btn = this;
+    const prevHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Building PDF…';
+
+    try {
+      const logoData = await fetchLogoDataUrl(LOGO_URL);
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+      const pageW = doc.internal.pageSize.getWidth();
+      const margin = 14;
+      const headerH = 28;
+
+      doc.setFillColor.apply(null, PRIMARY_DARK);
+      doc.rect(0, 0, pageW, headerH, 'F');
+      doc.setFillColor.apply(null, PRIMARY);
+      doc.rect(pageW * 0.58, 0, pageW * 0.42, headerH, 'F');
+
+      var titleX = margin;
+      if (logoData) {
+        try {
+          var fmt = (String(logoData).indexOf('image/jpeg') >= 0 || String(logoData).indexOf('image/jpg') >= 0) ? 'JPEG' : 'PNG';
+          doc.setFillColor(255, 255, 255);
+          doc.roundedRect(margin, 5, 34, 18, 1.5, 1.5, 'F');
+          doc.addImage(logoData, fmt, margin + 1, 6, 32, 16);
+          titleX = margin + 40;
+        } catch (e) { /* skip bad image */ }
+      }
+
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(18);
+      doc.setFont(undefined, 'bold');
+      doc.text('Stock Take Report', titleX, 13);
+      doc.setFontSize(9);
+      doc.setFont(undefined, 'normal');
+      doc.setTextColor(220, 245, 243);
+      doc.text(COMPANY_NAME, titleX, 20);
+      doc.setTextColor(255, 255, 255);
+
+      var y = headerH + 10;
+      doc.setTextColor.apply(null, PRIMARY_DARK);
       doc.setFontSize(11);
-      doc.text('Unidentified barcodes', 14, y);
-      y += 5;
+      doc.setFont(undefined, 'bold');
+      doc.text('Session summary', margin, y);
+      y += 6;
+      doc.setFont(undefined, 'normal');
+      doc.setFontSize(9.5);
+      doc.setTextColor(30, 41, 59);
+      var metaRows = [
+        ['Client', HDR.client],
+        ['Location', HDR.location],
+        ['Count date', HDR.date],
+        ['Period start', HDR.periodStart],
+        ['Period end', HDR.periodEnd],
+      ];
+      metaRows.forEach(function(row) {
+        doc.setFont(undefined, 'bold');
+        doc.setTextColor.apply(null, MUTED);
+        doc.text(row[0] + ':', margin, y);
+        doc.setFont(undefined, 'normal');
+        doc.setTextColor(30, 41, 59);
+        doc.text(String(row[1]), margin + 34, y);
+        y += 5.2;
+      });
+
+      y += 3;
+      doc.setFillColor(241, 245, 249);
+      doc.roundedRect(margin, y - 2, pageW - margin * 2, 10, 1, 1, 'F');
+      doc.setFontSize(8.5);
+      doc.setTextColor.apply(null, MUTED);
+      doc.text(
+        'SKUs: ' + SUMMARY.total_skus + '   Matched: ' + SUMMARY.matched + '   Short: ' + SUMMARY.short +
+        '   Excess: ' + SUMMARY.excess + '   Unidentified scans: ' + SUMMARY.unidentified,
+        margin + 2,
+        y + 4.5
+      );
+      y += 14;
+
+      const body = LINES.map(function(r) {
+        return [
+          String(r.sku),
+          r.scan_code ? String(r.scan_code) : '—',
+          String(r.item_name),
+          String(r.expected_qty),
+          String(r.actual_qty),
+          String(r.variance),
+          String(r.status),
+        ];
+      });
       doc.autoTable({
         startY: y,
-        head: [['Barcode', 'Time (UTC)']],
-        body: UNK.map(function(u) { return [String(u.barcode_raw), String(u.timestamp)]; }),
-        styles: { fontSize: 8 },
-        headStyles: { fillColor: [108, 117, 125] },
+        head: [['SKU', 'Scan code', 'Item name', 'Expected', 'Actual', 'Variance', 'Status']],
+        body: body,
+        theme: 'striped',
+        margin: { left: margin, right: margin },
+        styles: { fontSize: 8, cellPadding: 2.2, textColor: [30, 41, 59], lineColor: [226, 232, 240], lineWidth: 0.1 },
+        headStyles: { fillColor: PRIMARY, textColor: 255, fontStyle: 'bold', halign: 'left' },
+        alternateRowStyles: { fillColor: [248, 250, 252] },
+        columnStyles: {
+          3: { halign: 'right' },
+          4: { halign: 'right' },
+          5: { halign: 'right' },
+        },
       });
+      y = doc.lastAutoTable.finalY + 10;
+
+      if (UNK.length) {
+        doc.setFontSize(11);
+        doc.setFont(undefined, 'bold');
+        doc.setTextColor.apply(null, PRIMARY_DARK);
+        doc.text('Unidentified barcodes', margin, y);
+        y += 5;
+        doc.autoTable({
+          startY: y,
+          head: [['Barcode', 'Time']],
+          body: UNK.map(function(u) { return [String(u.barcode_raw), String(u.timestamp)]; }),
+          theme: 'striped',
+          margin: { left: margin, right: margin },
+          styles: { fontSize: 8, cellPadding: 2, textColor: [30, 41, 59], lineColor: [226, 232, 240] },
+          headStyles: { fillColor: MUTED, textColor: 255, fontStyle: 'bold' },
+          alternateRowStyles: { fillColor: [248, 250, 252] },
+        });
+      }
+
+      var genAt = new Date();
+      var footerLine = COMPANY_NAME + ' — Stock take report — Generated ' +
+        genAt.toLocaleDateString() + ' ' + genAt.toLocaleTimeString();
+      addPageFooters(doc, footerLine);
+
+      doc.save('stock-take-report.pdf');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = prevHtml;
     }
-    doc.save('stock-take-report.pdf');
   });
 })();
 </script>

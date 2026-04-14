@@ -18,6 +18,7 @@ from django.views.generic import CreateView, ListView, TemplateView
 
 from apps.core.mixins import PermissionRequiredMixin
 from apps.core.utils import PermissionChecker
+from apps.settings_app.models import CompanySettings
 
 from .models import (
     StockTakeLine,
@@ -276,6 +277,21 @@ class ReportView(PermissionRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
         s = self.session_obj
+        company = CompanySettings.get_settings()
+        ctx['company'] = company
+        ctx['stock_take_logo_url'] = (
+            self.request.build_absolute_uri(company.logo.url) if company.logo else ''
+        )
+
+        def _fmt_ts(dt):
+            if not dt:
+                return ''
+            t = timezone.localtime(dt) if timezone.is_aware(dt) else dt
+            return t.strftime('%d/%m/%Y %H:%M')
+
+        ctx['period_start_display'] = _fmt_ts(s.created_at)
+        ctx['period_end_display'] = _fmt_ts(s.completed_at) if s.completed_at else '—'
+
         ctx['title'] = f'Stock Take Report — {s.client_name}'
         ctx['session'] = s
         lines = []
