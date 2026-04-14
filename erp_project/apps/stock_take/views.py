@@ -8,7 +8,7 @@ from io import BytesIO
 
 from django import forms
 from django.contrib.auth.decorators import login_required
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import F, Q
 from django.http import FileResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect
@@ -504,19 +504,31 @@ def _record_scan_payload(session, data):
 
     with transaction.atomic():
         line = _line_for_scan_lookup(session, raw)
-        if not line:
-            StockTakeUnknownScan.objects.create(session=session, barcode_raw=raw)
-            StockTakeScanLog.objects.create(
-                session=session,
-                sku='',
-                barcode_raw=raw,
-                actual_qty_after=Decimal('0'),
-                matched=False,
-            )
-            return ({'ok': True, 'matched': False, 'unknown': True}, 200)
+        auto_created = False
+        if line:
+            StockTakeLine.objects.filter(pk=line.pk).update(actual_qty=F('actual_qty') + 1)
+            line.refresh_from_db()
+        else:
+            # Not in expected list: add a new line (unknown item, expected 0, count from 1).
+            sku_key = raw[:120]
+            sc_key = raw[:200]
+            try:
+                line = StockTakeLine.objects.create(
+                    session=session,
+                    sku=sku_key,
+                    scan_code=sc_key,
+                    item_name='Unknown',
+                    expected_qty=Decimal('0'),
+                    actual_qty=Decimal('1'),
+                )
+                auto_created = True
+            except IntegrityError:
+                line = _line_for_scan_lookup(session, raw)
+                if line is None:
+                    raise
+                StockTakeLine.objects.filter(pk=line.pk).update(actual_qty=F('actual_qty') + 1)
+                line.refresh_from_db()
 
-        StockTakeLine.objects.filter(pk=line.pk).update(actual_qty=F('actual_qty') + 1)
-        line.refresh_from_db()
         StockTakeScanLog.objects.create(
             session=session,
             sku=line.sku,
@@ -533,6 +545,7 @@ def _record_scan_payload(session, data):
             'item_name': line.item_name,
             'expected_qty': str(line.expected_qty),
             'actual_qty': str(line.actual_qty),
+            'auto_created': auto_created,
         },
         200,
     )
