@@ -107,7 +107,10 @@ celerybeat.pid
 # Flutter — scan package + example (regenerate example Android with: cd gearup_scan/example && flutter create .)
 gearup_scan/.dart_tool/
 gearup_scan/.flutter-plugins-dependencies
-gearup_scan/example/android/
+# Track example/android (Kotlin ML Kit + CameraX); ignore Gradle cache + local SDK path
+gearup_scan/example/android/.gradle/
+gearup_scan/example/android/**/build/
+gearup_scan/example/android/local.properties
 gearup_scan/example/ios/
 gearup_scan/example/linux/
 gearup_scan/example/macos/

@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:gearup_scan/gearup_scan.dart';
@@ -270,9 +272,15 @@ class _ScanResult {
 }
 
 class _ScanPageState extends State<ScanPage> {
-  // Controller is nullable — created AFTER first frame to avoid blocking widget construction (ANR).
+  /// Android APK uses native ML Kit + CameraX ([AndroidView]); iOS/other use [mobile_scanner].
+  static bool get _useNativeAndroidScanner => !kIsWeb && Platform.isAndroid;
+
+  // Controller is nullable — created AFTER first frame (mobile_scanner path only).
   MobileScannerController? _cam;
   StreamSubscription<BarcodeCapture>? _sub;
+  MethodChannel? _nativeBarcodeChannel;
+  /// Torch state for Android native path (Flutter toggles via [MethodChannel] `setTorch`).
+  bool _torchOn = false;
 
   final TextEditingController _wedge = TextEditingController();
   final FocusNode _wedgeFocus = FocusNode();
@@ -299,8 +307,83 @@ class _ScanPageState extends State<ScanPage> {
   void initState() {
     super.initState();
     _wedge.addListener(_onWedgeInput);
-    // Defer camera creation to after the first frame so the UI renders before heavy init starts.
-    WidgetsBinding.instance.addPostFrameCallback((_) => _startCamera());
+    if (!_useNativeAndroidScanner) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _startCamera());
+    }
+  }
+
+  void _onScannerViewCreated(int id) {
+    _nativeBarcodeChannel = MethodChannel('gearup_barcode_scanner/$id');
+    _nativeBarcodeChannel!.setMethodCallHandler((call) async {
+      if (!_alive) return;
+      if (call.method == 'onBarcode') {
+        final raw = call.arguments;
+        if (raw is String && raw.isNotEmpty) {
+          // Native layer: 1s cooldown per barcode + ML Kit off UI thread; submit when not busy.
+          if (!_busy) unawaited(_submit(raw));
+        }
+      }
+    });
+  }
+
+  Future<void> _toggleTorch() async {
+    if (!_alive || !mounted) return;
+    try {
+      if (_useNativeAndroidScanner) {
+        final next = !_torchOn;
+        await _nativeBarcodeChannel?.invokeMethod<void>('setTorch', next);
+        if (_alive && mounted) setState(() => _torchOn = next);
+      } else {
+        final c = _cam;
+        if (c != null) {
+          await c.toggleTorch();
+          if (_alive && mounted) setState(() {});
+        }
+      }
+    } catch (_) {
+      if (_useNativeAndroidScanner && _alive && mounted) {
+        setState(() {});
+      }
+    }
+  }
+
+  void _showManualBarcodeDialog() {
+    if (!_alive || !mounted) return;
+    final manual = TextEditingController();
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Enter barcode'),
+        content: TextField(
+          controller: manual,
+          autofocus: true,
+          keyboardType: TextInputType.visiblePassword,
+          autocorrect: false,
+          decoration: const InputDecoration(
+            hintText: 'Type or paste SKU / barcode',
+          ),
+          onSubmitted: (s) {
+            Navigator.of(ctx).pop();
+            final t = s.trim();
+            if (t.isNotEmpty) unawaited(_submit(t));
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              final t = manual.text.trim();
+              if (t.isNotEmpty) unawaited(_submit(t));
+            },
+            child: const Text('Submit'),
+          ),
+        ],
+      ),
+    ).whenComplete(manual.dispose);
   }
 
   void _startCamera() {
@@ -322,6 +405,8 @@ class _ScanPageState extends State<ScanPage> {
   @override
   void dispose() {
     _alive = false;
+    _nativeBarcodeChannel?.setMethodCallHandler(null);
+    _nativeBarcodeChannel = null;
     _flashTimer?.cancel();
     _idleTimer?.cancel();
     _sub?.cancel();
@@ -435,6 +520,22 @@ class _ScanPageState extends State<ScanPage> {
         title: Text(widget.title),
         actions: [
           IconButton(
+            tooltip: 'Enter barcode manually',
+            onPressed: _showManualBarcodeDialog,
+            icon: const Icon(Icons.keyboard),
+          ),
+          IconButton(
+            tooltip: _useNativeAndroidScanner
+                ? (_torchOn ? 'Turn off flashlight' : 'Turn on flashlight')
+                : 'Toggle flashlight',
+            onPressed: _toggleTorch,
+            icon: Icon(
+              _useNativeAndroidScanner
+                  ? (_torchOn ? Icons.flashlight_on : Icons.flashlight_off_outlined)
+                  : Icons.flashlight_on,
+            ),
+          ),
+          IconButton(
             tooltip: 'Focus USB / BT scanner',
             onPressed: () => _wedgeFocus.requestFocus(),
             icon: const Icon(Icons.keyboard_alt_outlined),
@@ -445,13 +546,14 @@ class _ScanPageState extends State<ScanPage> {
         children: [
           // ── Camera preview (takes most of the screen) ──
           Expanded(
-            child: cam == null
-                ? const Center(child: CircularProgressIndicator(color: Colors.white54))
-                : Stack(
+            child: _useNativeAndroidScanner
+                ? Stack(
                     fit: StackFit.expand,
                     children: [
-                      MobileScanner(controller: cam),
-                      // Flash overlay — tiny widget, only its layer repaints
+                      AndroidView(
+                        viewType: 'gearup_barcode_scanner',
+                        onPlatformViewCreated: _onScannerViewCreated,
+                      ),
                       ValueListenableBuilder<Color?>(
                         valueListenable: _flash,
                         builder: (_, tint, __) => tint == null
@@ -464,7 +566,26 @@ class _ScanPageState extends State<ScanPage> {
                               ),
                       ),
                     ],
-                  ),
+                  )
+                : cam == null
+                    ? const Center(child: CircularProgressIndicator(color: Colors.white54))
+                    : Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          MobileScanner(controller: cam),
+                          ValueListenableBuilder<Color?>(
+                            valueListenable: _flash,
+                            builder: (_, tint, __) => tint == null
+                                ? const SizedBox.shrink()
+                                : IgnorePointer(
+                                    child: ColoredBox(
+                                      color: tint,
+                                      child: const SizedBox.expand(),
+                                    ),
+                                  ),
+                          ),
+                        ],
+                      ),
           ),
 
           // ── Status card ──

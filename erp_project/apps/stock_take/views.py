@@ -1,6 +1,7 @@
 import base64
 import json
 import mimetypes
+import re
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from io import BytesIO
@@ -36,6 +37,21 @@ def _can_inventory_view(user):
 
 def _can_inventory_edit(user):
     return user.is_superuser or PermissionChecker.has_permission(user, 'inventory', 'edit')
+
+
+def _normalize_barcode_scan_key(s: str) -> str:
+    """
+    Align scanner output with Excel numeric cells.
+
+    Excel often stores GTIN/EAN as a number; openpyxl / str() yields '4104220122019.0'
+    while a scan is '4104220122019'. Alphanumeric codes (e.g. ABC-abc-1234) are unchanged.
+    """
+    t = (s or '').strip()
+    if not t:
+        return ''
+    if re.fullmatch(r'-?\d+\.0', t):
+        return t[:-2]
+    return t
 
 
 def _parse_expected_workbook(upload_file):
@@ -87,7 +103,7 @@ def _parse_expected_workbook(upload_file):
     for row in rows[1:]:
         if not row or ic_sku >= len(row) or row[ic_sku] is None:
             continue
-        sku = str(row[ic_sku]).strip()
+        sku = _normalize_barcode_scan_key(str(row[ic_sku]).strip())
         if not sku:
             continue
         name = ''
@@ -95,7 +111,7 @@ def _parse_expected_workbook(upload_file):
             name = str(row[ic_name]).strip()
         scan_code = ''
         if ic_code is not None and ic_code < len(row) and row[ic_code] is not None:
-            scan_code = str(row[ic_code]).strip()
+            scan_code = _normalize_barcode_scan_key(str(row[ic_code]).strip())
         raw_exp = row[ic_exp] if ic_exp < len(row) else 0
         try:
             exp = Decimal(str(raw_exp))
@@ -366,6 +382,7 @@ class ReportView(PermissionRequiredMixin, TemplateView):
 @login_required
 @require_POST
 def session_upload_expected(request, pk):
+    """Parse .xlsx in the web worker for this HTTP request (does not run on the mobile UI thread)."""
     if not _can_inventory_edit(request.user):
         return JsonResponse({'ok': False, 'error': 'Permission denied.'}, status=403)
     session = get_object_or_404(
@@ -408,17 +425,36 @@ def session_upload_expected(request, pk):
 
 def _line_for_scan_lookup(session, raw_norm):
     """Match shelf label: non-empty scan_code first (case-insensitive), then SKU."""
+    raw_norm = _normalize_barcode_scan_key((raw_norm or '').strip())
+    if not raw_norm:
+        return None
     qs = StockTakeLine.objects.select_for_update().filter(session=session)
-    line = qs.filter(~Q(scan_code=''), scan_code__iexact=raw_norm).first()
-    if line:
-        return line
-    return qs.filter(sku__iexact=raw_norm).first()
+    # Legacy rows may still have Excel float strings (e.g. '....0') in the DB
+    variants = [raw_norm]
+    if raw_norm.isdigit():
+        variants.append(f'{raw_norm}.0')
+    seen = set()
+    uniq = []
+    for v in variants:
+        k = v.casefold()
+        if k not in seen:
+            seen.add(k)
+            uniq.append(v)
+    for v in uniq:
+        line = qs.filter(~Q(scan_code=''), scan_code__iexact=v).first()
+        if line:
+            return line
+    for v in uniq:
+        line = qs.filter(sku__iexact=v).first()
+        if line:
+            return line
+    return None
 
 
 def _record_scan_payload(session, data):
     """Barcode increment or manual set_actual. Returns (body_dict, http_status)."""
     if 'set_actual' in data:
-        sku_key = (data.get('sku') or '').strip()
+        sku_key = _normalize_barcode_scan_key((data.get('sku') or '').strip())
         if not sku_key:
             return ({'ok': False, 'error': 'SKU is required.'}, 400)
         try:
@@ -462,7 +498,7 @@ def _record_scan_payload(session, data):
             200,
         )
 
-    raw = (data.get('barcode') or '').strip()
+    raw = _normalize_barcode_scan_key((data.get('barcode') or '').strip())
     if not raw:
         return ({'ok': False, 'error': 'Empty barcode.'}, 400)
 
