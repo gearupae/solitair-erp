@@ -258,20 +258,30 @@ class ScanPage extends StatefulWidget {
   State<ScanPage> createState() => _ScanPageState();
 }
 
+/// Last line shown under the camera — kept outside [setState] so the camera widget is not rebuilt every scan.
+class _ScanFooter {
+  const _ScanFooter({this.message = '—', this.ok});
+  final String message;
+  /// `'ok'` | `'bad'` | neutral
+  final String? ok;
+}
+
 class _ScanPageState extends State<ScanPage> {
-  /// All symbologies ML Kit exposes through this plugin (1D + 2D).
+  /// Empty [formats] = all symbologies (same as explicit `all`, less native overhead).
   final MobileScannerController _cam = MobileScannerController(
     detectionSpeed: DetectionSpeed.normal,
+    detectionTimeoutMs: 650,
     facing: CameraFacing.back,
-    formats: const [BarcodeFormat.all],
   );
 
   final TextEditingController _wedge = TextEditingController();
   final FocusNode _wedgeFocus = FocusNode();
+  final ValueNotifier<_ScanFooter> _footer = ValueNotifier(const _ScanFooter());
   Timer? _wedgeIdle;
 
-  String _last = '—';
-  String? _lastOk;
+  /// Drop camera callbacks while a network round-trip is in progress (avoids piling work on the UI isolate).
+  bool _scanBusy = false;
+
   /// Throttle duplicate camera frame reads of the same barcode.
   DateTime _lastCameraFire = DateTime.fromMillisecondsSinceEpoch(0);
 
@@ -294,31 +304,30 @@ class _ScanPageState extends State<ScanPage> {
     final raw = _wedge.text.trim();
     _wedge.clear();
     if (raw.isEmpty) return;
-    _pushScan(raw);
+    unawaited(_pushScan(raw));
   }
 
   Future<void> _pushScan(String raw) async {
+    if (_scanBusy) return;
+    _scanBusy = true;
     try {
       final r = await widget.client.submitScan(widget.sessionId, barcode: raw);
       if (!mounted) return;
-      setState(() {
-        if (r.ok && r.matched == true) {
-          _lastOk = 'ok';
-          _last = '${r.itemName ?? r.sku} · actual ${r.actualQty} (exp ${r.expectedQty})';
-        } else if (r.ok && r.unknown == true) {
-          _lastOk = 'bad';
-          _last = 'Unknown: $raw';
-        } else {
-          _lastOk = 'bad';
-          _last = r.error ?? 'Failed';
-        }
-      });
+      if (r.ok && r.matched == true) {
+        _footer.value = _ScanFooter(
+          ok: 'ok',
+          message: '${r.itemName ?? r.sku} · actual ${r.actualQty} (exp ${r.expectedQty})',
+        );
+      } else if (r.ok && r.unknown == true) {
+        _footer.value = _ScanFooter(ok: 'bad', message: 'Unknown: $raw');
+      } else {
+        _footer.value = _ScanFooter(ok: 'bad', message: r.error ?? 'Failed');
+      }
     } catch (e) {
       if (!mounted) return;
-      setState(() {
-        _lastOk = 'bad';
-        _last = e.toString();
-      });
+      _footer.value = _ScanFooter(ok: 'bad', message: e.toString());
+    } finally {
+      _scanBusy = false;
     }
   }
 
@@ -328,11 +337,13 @@ class _ScanPageState extends State<ScanPage> {
     _wedge.removeListener(_scheduleWedgeIdleFlush);
     _wedge.dispose();
     _wedgeFocus.dispose();
+    _footer.dispose();
     _cam.dispose();
     super.dispose();
   }
 
   Future<void> _onDetect(BarcodeCapture cap) async {
+    if (_scanBusy) return;
     final codes = cap.barcodes.where((b) => (b.rawValue ?? '').trim().isNotEmpty).toList();
     if (codes.isEmpty) return;
     final raw = codes.first.rawValue!.trim();
@@ -372,7 +383,9 @@ class _ScanPageState extends State<ScanPage> {
               padding: const EdgeInsets.all(8),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(12),
-                child: MobileScanner(controller: _cam, onDetect: _onDetect),
+                child: RepaintBoundary(
+                  child: MobileScanner(controller: _cam, onDetect: _onDetect),
+                ),
               ),
             ),
           ),
@@ -406,25 +419,30 @@ class _ScanPageState extends State<ScanPage> {
               ),
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text('Last scan', style: Theme.of(context).textTheme.labelSmall),
-                const SizedBox(height: 4),
-                Text(
-                  _last,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        color: _lastOk == 'ok'
-                            ? Colors.green.shade800
-                            : _lastOk == 'bad'
-                                ? Theme.of(context).colorScheme.error
-                                : null,
-                      ),
+          ValueListenableBuilder<_ScanFooter>(
+            valueListenable: _footer,
+            builder: (context, fb, _) {
+              return Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text('Last scan', style: Theme.of(context).textTheme.labelSmall),
+                    const SizedBox(height: 4),
+                    Text(
+                      fb.message,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            color: fb.ok == 'ok'
+                                ? Colors.green.shade800
+                                : fb.ok == 'bad'
+                                    ? Theme.of(context).colorScheme.error
+                                    : null,
+                          ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              );
+            },
           ),
         ],
       ),
