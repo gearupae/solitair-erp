@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load static %}
 
 {% block content %}
 <div class="page-header">
@@ -16,25 +17,8 @@
   </div>
 </div>
 
-<div class="card mb-3 border-0 shadow-sm overflow-hidden" id="st-report-header">
-  <div class="px-4 py-3 text-white" style="background: linear-gradient(115deg, #0d9488 0%, #0f766e 45%, #134e4a 100%);">
-    <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
-      <div class="d-flex align-items-center gap-3">
-        {% if stock_take_logo_url %}
-        <img src="{{ stock_take_logo_url }}" alt="" class="bg-white rounded-2 p-1 shadow-sm" style="max-height: 56px; max-width: 180px; object-fit: contain;">
-        {% endif %}
-        <div>
-          <div class="text-white-50 small text-uppercase" style="letter-spacing: 0.06em;">Stock take</div>
-          <div class="fs-5 fw-bold">{{ company.company_name|default:"Company" }}</div>
-        </div>
-      </div>
-      <div class="text-end small text-white-50">
-        <div>Report generated</div>
-        <div class="fw-semibold text-white">{{ request.user.get_username }}</div>
-      </div>
-    </div>
-  </div>
-  <div class="card-body bg-light">
+<div class="card mb-3" id="st-report-header">
+  <div class="card-body">
     <div class="row g-3">
       <div class="col-md-4">
         <div class="text-muted small">Client</div>
@@ -48,13 +32,8 @@
         <div class="text-muted small">Count date</div>
         <div class="fw-semibold">{{ session.session_date|date:"d/m/Y" }}</div>
       </div>
-      <div class="col-md-6 col-lg-4">
-        <div class="text-muted small">Period start</div>
-        <div class="fw-semibold font-monospace">{{ period_start_display }}</div>
-      </div>
-      <div class="col-md-6 col-lg-4">
-        <div class="text-muted small">Period end</div>
-        <div class="fw-semibold font-monospace">{{ period_end_display }}</div>
+      <div class="col-12">
+        <p class="text-muted small mb-0">Use <strong>Export PDF</strong> for a printable copy with company logo and period start / end.</p>
       </div>
       {% if session.notes %}
       <div class="col-12">
@@ -160,14 +139,19 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" crossorigin="anonymous"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js" crossorigin="anonymous"></script>
+<script src="{% static 'js/vendor/jspdf.umd.min.js' %}"></script>
+<script src="{% static 'js/vendor/jspdf.plugin.autotable.min.js' %}"></script>
+<script type="application/json" id="st-pdf-logo-data">{{ stock_take_logo_data_url_json|safe }}</script>
 <script>
 (function() {
   const LINES = {{ lines_json|safe }};
   const SUMMARY = {{ summary_json|safe }};
   const UNK = {{ unknown_json|safe }};
-  const LOGO_URL = "{{ stock_take_logo_url|escapejs }}";
+  var _logoEl = document.getElementById('st-pdf-logo-data');
+  var LOGO_DATA = '';
+  try {
+    LOGO_DATA = _logoEl ? JSON.parse(_logoEl.textContent || '""') : '';
+  } catch (e1) { LOGO_DATA = ''; }
   const COMPANY_NAME = "{{ company.company_name|default:'Company'|escapejs }}";
   const HDR = {
     client: "{{ session.client_name|escapejs }}",
@@ -197,34 +181,23 @@
     }
   }
 
-  async function fetchLogoDataUrl(url) {
-    if (!url) return null;
-    try {
-      const res = await fetch(url, { credentials: 'same-origin' });
-      if (!res.ok) return null;
-      const blob = await res.blob();
-      return await new Promise(function(resolve, reject) {
-        const r = new FileReader();
-        r.onloadend = function() { resolve(r.result); };
-        r.onerror = reject;
-        r.readAsDataURL(blob);
-      });
-    } catch (e) {
-      return null;
-    }
-  }
-
   document.getElementById('st-pdf-export').addEventListener('click', async function() {
-    if (!window.jspdf || !window.jspdf.jsPDF) { alert('PDF library failed to load.'); return; }
+    if (!window.jspdf || !window.jspdf.jsPDF) {
+      alert('PDF library failed to load. Try a hard refresh (Ctrl+Shift+R).');
+      return;
+    }
     const btn = this;
     const prevHtml = btn.innerHTML;
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Building PDF…';
 
     try {
-      const logoData = await fetchLogoDataUrl(LOGO_URL);
+      const logoData = (LOGO_DATA && String(LOGO_DATA).trim().indexOf('data:') === 0) ? LOGO_DATA : null;
       const { jsPDF } = window.jspdf;
       const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+      if (typeof doc.autoTable !== 'function') {
+        throw new Error('PDF table plugin failed to load.');
+      }
       const pageW = doc.internal.pageSize.getWidth();
       const margin = 14;
       const headerH = 28;
@@ -346,6 +319,9 @@
       addPageFooters(doc, footerLine);
 
       doc.save('stock-take-report.pdf');
+    } catch (err) {
+      console.error(err);
+      alert('Could not build PDF: ' + (err && err.message ? err.message : String(err)));
     } finally {
       btn.disabled = false;
       btn.innerHTML = prevHtml;

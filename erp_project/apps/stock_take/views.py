@@ -1,4 +1,6 @@
+import base64
 import json
+import mimetypes
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from io import BytesIO
@@ -282,6 +284,25 @@ class ReportView(PermissionRequiredMixin, TemplateView):
         ctx['stock_take_logo_url'] = (
             self.request.build_absolute_uri(company.logo.url) if company.logo else ''
         )
+
+        def _logo_data_url_for_pdf() -> str:
+            """Inline data URL so PDF export works without fetch (same-origin / CDN issues)."""
+            if not company.logo:
+                return ''
+            max_bytes = 900_000
+            try:
+                with company.logo.open('rb') as fh:
+                    raw = fh.read()
+            except OSError:
+                return ''
+            if not raw or len(raw) > max_bytes:
+                return ''
+            mime, _ = mimetypes.guess_type(company.logo.name)
+            mime = mime or 'image/png'
+            b64 = base64.b64encode(raw).decode('ascii')
+            return f'data:{mime};base64,{b64}'
+
+        ctx['stock_take_logo_data_url_json'] = json.dumps(_logo_data_url_for_pdf())
 
         def _fmt_ts(dt):
             if not dt:
