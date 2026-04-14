@@ -270,7 +270,7 @@ class _ScanResult {
 }
 
 class _ScanPageState extends State<ScanPage> {
-  // ── Controller is nullable; assigned AFTER first frame to avoid ANR at widget construction ──
+  // Controller is nullable — created AFTER first frame to avoid blocking widget construction (ANR).
   MobileScannerController? _cam;
   StreamSubscription<BarcodeCapture>? _sub;
 
@@ -281,8 +281,17 @@ class _ScanPageState extends State<ScanPage> {
 
   Timer? _idleTimer;
   Timer? _flashTimer;
+
+  // Guard against overlapping HTTP calls — checked in _onBarcode, NOT via stream pause/resume.
+  // pause()/resume() on a platform-channel broadcast stream can deadlock on some Android versions.
   bool _busy = false;
   bool _alive = true;
+
+  // Debounce same-barcode: prevents continuous counting when a label is held in front of the camera.
+  // User can intentionally scan the same item again after _kSameBarcodeCooldown.
+  String _lastRaw = '';
+  DateTime _lastScanAt = DateTime.fromMillisecondsSinceEpoch(0);
+  static const _kSameBarcodeCooldown = Duration(milliseconds: 2500);
 
   // ─────────── lifecycle ───────────
 
@@ -290,20 +299,24 @@ class _ScanPageState extends State<ScanPage> {
   void initState() {
     super.initState();
     _wedge.addListener(_onWedgeInput);
-    // Defer camera creation so widget tree renders first — avoids UI-thread block (ANR).
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_alive || !mounted) return;
-      final cam = MobileScannerController(
-        // noDuplicates: native fires only when a NEW barcode is seen.
-        // This eliminates the need for timestamp throttling and keeps the stream quiet.
-        detectionSpeed: DetectionSpeed.noDuplicates,
-        facing: CameraFacing.back,
-        // No cameraResolution: requesting unsupported sizes crashes some devices.
-      );
-      // Subscribe to the controller stream directly so we can pause/resume around HTTP.
-      _sub = cam.barcodes.listen(_onBarcode, cancelOnError: false);
-      setState(() => _cam = cam);
-    });
+    // Defer camera creation to after the first frame so the UI renders before heavy init starts.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _startCamera());
+  }
+
+  void _startCamera() {
+    if (!_alive || !mounted) return;
+    final cam = MobileScannerController(
+      // normal + detectionTimeoutMs: ML Kit runs at most every 1500 ms.
+      // noDuplicates was removed — it silently blocks re-scanning the same item,
+      // which is wrong for stock-take where you scan multiple identical items.
+      detectionSpeed: DetectionSpeed.normal,
+      detectionTimeoutMs: 1500,
+      facing: CameraFacing.back,
+      // No cameraResolution — requesting unsupported sizes crashes some devices.
+    );
+    // Listen to the stream. We do NOT pause/resume — we gate via _busy instead.
+    _sub = cam.barcodes.listen(_onBarcode, cancelOnError: false);
+    setState(() => _cam = cam);
   }
 
   @override
@@ -323,7 +336,7 @@ class _ScanPageState extends State<ScanPage> {
     super.dispose();
   }
 
-  // ─────────── barcode camera stream ───────────
+  // ─────────── camera stream ───────────
 
   static String _raw(Barcode b) {
     final v = (b.rawValue ?? '').trim();
@@ -334,6 +347,14 @@ class _ScanPageState extends State<ScanPage> {
     if (_busy || !_alive) return;
     final raw = cap.barcodes.map(_raw).firstWhere((s) => s.isNotEmpty, orElse: () => '');
     if (raw.isEmpty) return;
+
+    // Debounce: same barcode within cooldown window → skip (prevents continuous multi-count
+    // when a label is held steady in front of the camera lens).
+    final now = DateTime.now();
+    if (raw == _lastRaw && now.difference(_lastScanAt) < _kSameBarcodeCooldown) return;
+    _lastRaw = raw;
+    _lastScanAt = now;
+
     unawaited(_submit(raw));
   }
 
@@ -341,7 +362,6 @@ class _ScanPageState extends State<ScanPage> {
 
   void _onWedgeInput() {
     _idleTimer?.cancel();
-    // Flush 300 ms after last character (no-suffix scanners).
     _idleTimer = Timer(const Duration(milliseconds: 300), _flushWedge);
   }
 
@@ -357,7 +377,8 @@ class _ScanPageState extends State<ScanPage> {
   Future<void> _submit(String raw) async {
     if (_busy || !_alive) return;
     _busy = true;
-    _sub?.pause(); // stop ML Kit events while HTTP round-trip is running
+    // No stream pause here — pausing a platform-channel stream buffers native events,
+    // causing a burst-delivery and potential deadlock on resume.
     try {
       final r = await widget.client.submitScan(widget.sessionId, barcode: raw);
       if (!_alive || !mounted) return;
@@ -379,10 +400,8 @@ class _ScanPageState extends State<ScanPage> {
       _result.value = _ScanResult(ok: false, message: 'Error: $e');
       _doFlash(Colors.red.withValues(alpha: 0.45), durationMs: 500, beep: true);
     } finally {
-      if (_alive) {
-        _busy = false;
-        _sub?.resume();
-      }
+      // Always clear busy so new scans can come in.
+      if (_alive) _busy = false;
     }
   }
 
