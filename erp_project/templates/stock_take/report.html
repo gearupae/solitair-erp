@@ -176,7 +176,9 @@
       doc.setFontSize(7.5);
       doc.setTextColor.apply(null, MUTED);
       doc.setFont(undefined, 'normal');
-      doc.text(footerLeft, pageH - 9);
+      var footMaxW = pageW - 14 - 52;
+      var footLines = doc.splitTextToSize(String(footerLeft), footMaxW);
+      doc.text(footLines, 14, pageH - 9);
       doc.text('Page ' + i + ' of ' + n, pageW - 14, pageH - 9, { align: 'right' });
     }
   }
