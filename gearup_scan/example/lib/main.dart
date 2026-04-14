@@ -10,6 +10,7 @@ const _kPrefBaseUrl = 'gearup_scan_base_url';
 const _kPrefUsername = 'gearup_scan_username';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
   runApp(const GearupScanExampleApp());
 }
 
@@ -283,6 +284,9 @@ class _ScanPageState extends State<ScanPage> {
   Timer? _wedgeIdle;
   Timer? _pulseTimer;
 
+  /// Own subscription so we can [pause] while the server round-trip runs — stops ML Kit flooding the UI isolate.
+  StreamSubscription<BarcodeCapture>? _barcodeSub;
+
   /// Drop camera callbacks while a network round-trip is in progress (avoids piling work on the UI isolate).
   bool _scanBusy = false;
 
@@ -324,6 +328,8 @@ class _ScanPageState extends State<ScanPage> {
   void initState() {
     super.initState();
     _wedge.addListener(_scheduleWedgeIdleFlush);
+    // Do not use MobileScanner.onDetect — it cannot be paused; native keeps emitting while we await HTTP.
+    _barcodeSub = _cam.barcodes.listen(_onBarcodeFromStream, cancelOnError: false);
   }
 
   void _scheduleWedgeIdleFlush() {
@@ -343,6 +349,7 @@ class _ScanPageState extends State<ScanPage> {
   Future<void> _pushScan(String raw) async {
     if (_scanBusy || !_alive) return;
     _scanBusy = true;
+    _barcodeSub?.pause();
     try {
       final r = await widget.client.submitScan(widget.sessionId, barcode: raw);
       if (!_alive || !mounted) return;
@@ -364,7 +371,10 @@ class _ScanPageState extends State<ScanPage> {
       _footer.value = _ScanFooter(ok: 'bad', message: e.toString());
       _pulseNegative();
     } finally {
-      if (_alive) _scanBusy = false;
+      if (_alive) {
+        _scanBusy = false;
+        _barcodeSub?.resume();
+      }
     }
   }
 
@@ -373,6 +383,8 @@ class _ScanPageState extends State<ScanPage> {
     _alive = false;
     _pulseTimer?.cancel();
     _wedgeIdle?.cancel();
+    _barcodeSub?.cancel();
+    _barcodeSub = null;
     _wedge.removeListener(_scheduleWedgeIdleFlush);
     _wedge.dispose();
     _wedgeFocus.dispose();
@@ -388,8 +400,8 @@ class _ScanPageState extends State<ScanPage> {
     return (b.displayValue ?? '').trim();
   }
 
-  /// Sync handler for the barcode stream — return immediately; defer work to a microtask.
-  void _onDetect(BarcodeCapture cap) {
+  /// Barcode stream — keep synchronous; [pause] happens inside [_pushScan].
+  void _onBarcodeFromStream(BarcodeCapture cap) {
     if (_scanBusy || !_alive) return;
     final codes = cap.barcodes.where((b) => _barcodeText(b).isNotEmpty).toList();
     if (codes.isEmpty) return;
@@ -398,7 +410,7 @@ class _ScanPageState extends State<ScanPage> {
     final now = DateTime.now();
     if (now.difference(_lastCameraFire) < const Duration(milliseconds: 900)) return;
     _lastCameraFire = now;
-    unawaited(Future.microtask(() => _pushScan(raw)));
+    unawaited(_pushScan(raw));
   }
 
   @override
@@ -435,7 +447,7 @@ class _ScanPageState extends State<ScanPage> {
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
-                      MobileScanner(controller: _cam, onDetect: _onDetect),
+                      MobileScanner(controller: _cam),
                       ValueListenableBuilder<Color?>(
                         valueListenable: _pulseOverlay,
                         builder: (context, tint, _) {

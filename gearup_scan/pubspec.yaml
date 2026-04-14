@@ -1,6 +1,6 @@
 name: gearup_scan
 description: Flutter SDK for Gearup ERP stock-take scanning — same session login as the web app.
-version: 0.1.4
+version: 0.1.5
 publish_to: none
 
 environment:
