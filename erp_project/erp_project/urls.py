@@ -22,6 +22,8 @@ urlpatterns = [
     path('sales/', include('apps.sales.urls')),
     path('purchase/', include('apps.purchase.urls')),
     path('inventory/', include('apps.inventory.urls')),
+    path('stock-take/', include('apps.stock_take.urls')),
+    path('api/scan/v1/', include('apps.scan_api.urls', namespace='scan_api')),
     path('finance/', include('apps.finance.urls')),
     path('projects/', include('apps.projects.urls')),
     path('assets/', include('apps.assets.urls')),

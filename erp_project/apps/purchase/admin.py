@@ -16,6 +16,7 @@ class VendorAdmin(admin.ModelAdmin):
 class PurchaseRequestItemInline(admin.TabularInline):
     model = PurchaseRequestItem
     extra = 1
+    autocomplete_fields = ['inventory_item']
 
 
 @admin.register(PurchaseRequest)
@@ -30,6 +31,7 @@ class PurchaseRequestAdmin(admin.ModelAdmin):
 class PurchaseOrderItemInline(admin.TabularInline):
     model = PurchaseOrderItem
     extra = 1
+    autocomplete_fields = ['inventory_item']
 
 
 @admin.register(PurchaseOrder)

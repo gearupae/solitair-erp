@@ -124,11 +124,18 @@ class PurchaseRequestItem(models.Model):
         ('set', 'Set'),
         ('other', 'Other'),
     ]
-    
+
     purchase_request = models.ForeignKey(
         PurchaseRequest,
         on_delete=models.CASCADE,
         related_name='items'
+    )
+    inventory_item = models.ForeignKey(
+        'inventory.Item',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='purchase_request_lines',
     )
     description = models.CharField(max_length=500)
     quantity = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('1.00'))
@@ -140,12 +147,15 @@ class PurchaseRequestItem(models.Model):
         ordering = ['id']
     
     def save(self, *args, **kwargs):
+        if self.inventory_item_id:
+            inv = self.inventory_item
+            self.description = f"{inv.item_code} - {inv.name}"[:500]
         self.total = (self.quantity * self.estimated_price).quantize(Decimal('0.01'))
         super().save(*args, **kwargs)
 
 
 class PurchaseRequestAttachment(models.Model):
-    """Attachments for purchase requests."""
+    """Attachments for purchase requests (files + optional vendor quote fields)."""
     purchase_request = models.ForeignKey(
         PurchaseRequest,
         on_delete=models.CASCADE,
@@ -153,6 +163,14 @@ class PurchaseRequestAttachment(models.Model):
     )
     file = models.FileField(upload_to='purchase_request_attachments/%Y/%m/')
     filename = models.CharField(max_length=255, blank=True)
+    vendor = models.CharField(max_length=500, blank=True, default='')
+    total_price = models.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text='Quoted total from vendor (optional, free text workflow)',
+    )
     uploaded_at = models.DateTimeField(auto_now_add=True)
     uploaded_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -241,6 +259,13 @@ class PurchaseOrderItem(models.Model):
         on_delete=models.CASCADE,
         related_name='items'
     )
+    inventory_item = models.ForeignKey(
+        'inventory.Item',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='purchase_order_lines',
+    )
     description = models.CharField(max_length=500)
     quantity = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('1.00'))
     unit_price = models.DecimalField(max_digits=15, decimal_places=2)
@@ -267,6 +292,10 @@ class PurchaseOrderItem(models.Model):
         ordering = ['id']
     
     def save(self, *args, **kwargs):
+        if self.inventory_item_id:
+            inv = self.inventory_item
+            self.description = f"{inv.item_code} - {inv.name}"[:500]
+
         # Derive VAT rate from Tax Code (No Tax Code = 0%)
         if self.tax_code:
             self.vat_rate = self.tax_code.rate

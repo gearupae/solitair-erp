@@ -10,10 +10,13 @@ from django.urls import reverse, reverse_lazy
 from django.db.models import Q, Sum
 from django.core.exceptions import ValidationError
 from django.http import JsonResponse, HttpResponse
-from django.template.loader import get_template
 from django.utils import timezone
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
+from pathlib import Path
+import json
+
+from django.views.decorators.http import require_POST
 
 from .models import (
     Vendor, PurchaseRequest, PurchaseRequestItem, PurchaseRequestAttachment,
@@ -28,7 +31,52 @@ from .forms import (
     RecurringExpenseForm
 )
 from apps.core.mixins import PermissionRequiredMixin, CreatePermissionMixin, UpdatePermissionMixin
+
+
+def _active_inventory_items_json():
+    """Active inventory items for PR/PO line dropdowns (embedded in forms)."""
+    from apps.inventory.models import Item
+
+    rows = Item.objects.filter(is_active=True, status='active').order_by('name')
+    return json.dumps(
+        [
+            {
+                'id': r.pk,
+                'label': str(r),
+                'unit': (r.unit or 'pcs').strip(),
+                'purchase_price': str(r.purchase_price),
+            }
+            for r in rows
+        ]
+    )
+
+
+def _pr_inventory_items_json():
+    return _active_inventory_items_json()
 from apps.core.utils import PermissionChecker
+
+
+def _can_manage_pr_vendor_attachments(user, pr) -> bool:
+    if not user.is_authenticated:
+        return False
+    if user.is_superuser:
+        return True
+    if pr.requested_by_id == user.id:
+        return True
+    return PermissionChecker.has_permission(user, 'purchase', 'edit')
+
+
+def _serialize_pr_vendor_attachment(att):
+    name = att.filename or ''
+    if not name and att.file:
+        name = Path(att.file.name).name
+    return {
+        'id': att.pk,
+        'vendor': att.vendor or '',
+        'total_price': str(att.total_price) if att.total_price is not None else '',
+        'filename': name,
+        'file_url': att.file.url if att.file else '',
+    }
 
 
 # ============ VENDOR VIEWS ============
@@ -164,6 +212,7 @@ class PurchaseRequestCreateView(CreatePermissionMixin, CreateView):
                 context['items_formset'] = PurchaseRequestItemFormSet()
         else:
             context['items_formset'] = kwargs['items_formset']
+        context['pr_inventory_items_json'] = _pr_inventory_items_json()
         return context
     
     def post(self, request, *args, **kwargs):
@@ -217,6 +266,7 @@ class PurchaseRequestUpdateView(UpdatePermissionMixin, UpdateView):
                 context['items_formset'] = PurchaseRequestItemFormSet(instance=self.object)
         else:
             context['items_formset'] = kwargs['items_formset']
+        context['pr_inventory_items_json'] = _pr_inventory_items_json()
         return context
     
     def post(self, request, *args, **kwargs):
@@ -257,6 +307,13 @@ class PurchaseRequestDetailView(PermissionRequiredMixin, DetailView):
     context_object_name = 'pr'
     module_name = 'purchase'
     permission_type = 'view'
+
+    def get_queryset(self):
+        return (
+            PurchaseRequest.objects.filter(is_active=True)
+            .select_related('requested_by', 'department')
+            .prefetch_related('items', 'attachments')
+        )
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -278,7 +335,97 @@ class PurchaseRequestDetailView(PermissionRequiredMixin, DetailView):
             self.request.user.is_superuser or
             PermissionChecker.has_permission(self.request.user, 'purchase', 'create')
         ) and self.object.status == 'approved'
+        context['can_manage_vendor_quotes'] = _can_manage_pr_vendor_attachments(
+            self.request.user, self.object
+        )
+        context['quote_attachments'] = self.object.attachments.order_by('id')
+        context['pr_vendor_upload_url'] = reverse(
+            'purchase:pr_vendor_attachment_upload', args=[self.object.pk]
+        )
+        _ph = 999_999_999
+        context['pr_vendor_update_url_pattern'] = reverse(
+            'purchase:pr_vendor_attachment_update',
+            args=[self.object.pk, _ph],
+        ).replace(str(_ph), '__ATT_ID__')
         return context
+
+
+@login_required
+@require_POST
+def pr_vendor_attachment_upload(request, pk):
+    """Upload one or more vendor quote files (PDF / Excel) for a purchase request."""
+    pr = get_object_or_404(PurchaseRequest, pk=pk, is_active=True)
+    if not _can_manage_pr_vendor_attachments(request.user, pr):
+        return JsonResponse({'ok': False, 'error': 'Permission denied.'}, status=403)
+    allowed_ext = {'.pdf', '.xlsx', '.xls'}
+    files = request.FILES.getlist('files')
+    if not files:
+        return JsonResponse({'ok': False, 'error': 'No files uploaded.'}, status=400)
+    for f in files:
+        ext = Path(f.name).suffix.lower()
+        if ext not in allowed_ext:
+            return JsonResponse(
+                {
+                    'ok': False,
+                    'error': (
+                        f'File type not allowed: {f.name}. '
+                        'Use PDF or Excel (.xlsx, .xls).'
+                    ),
+                },
+                status=400,
+            )
+    created = []
+    for f in files:
+        att = PurchaseRequestAttachment.objects.create(
+            purchase_request=pr,
+            file=f,
+            filename=f.name,
+            uploaded_by=request.user,
+        )
+        created.append(att)
+    return JsonResponse(
+        {
+            'ok': True,
+            'attachments': [_serialize_pr_vendor_attachment(a) for a in created],
+        }
+    )
+
+
+@login_required
+@require_POST
+def pr_vendor_attachment_update(request, pk, attachment_id):
+    """Auto-save vendor name and total price for one attachment (JSON body)."""
+    ct = (request.content_type or '').split(';')[0].strip().lower()
+    if ct != 'application/json':
+        return JsonResponse({'ok': False, 'error': 'Expected application/json.'}, status=400)
+    pr = get_object_or_404(PurchaseRequest, pk=pk, is_active=True)
+    if not _can_manage_pr_vendor_attachments(request.user, pr):
+        return JsonResponse({'ok': False, 'error': 'Permission denied.'}, status=403)
+    att = get_object_or_404(PurchaseRequestAttachment, pk=attachment_id, purchase_request=pr)
+    try:
+        data = json.loads(request.body.decode('utf-8') or '{}')
+    except json.JSONDecodeError:
+        return JsonResponse({'ok': False, 'error': 'Invalid JSON.'}, status=400)
+    update_fields = []
+    if 'vendor' in data:
+        att.vendor = (data.get('vendor') or '')[:500]
+        update_fields.append('vendor')
+    if 'total_price' in data:
+        raw = data.get('total_price')
+        if raw is None or raw == '':
+            att.total_price = None
+        else:
+            try:
+                att.total_price = Decimal(str(raw))
+            except (InvalidOperation, TypeError, ValueError):
+                return JsonResponse({'ok': False, 'error': 'Invalid total price.'}, status=400)
+        update_fields.append('total_price')
+    if not update_fields:
+        return JsonResponse({'ok': False, 'error': 'No fields to update.'}, status=400)
+    att.save(update_fields=update_fields)
+    payload = _serialize_pr_vendor_attachment(att)
+    payload['ok'] = True
+    return JsonResponse(payload)
 
 
 @login_required
@@ -447,6 +594,7 @@ def pr_items_json(request, pk):
             # Use estimated_price as unit_price, and default VAT to 5%
             'unit_price': str(item.estimated_price),
             'vat_rate': '5.00',
+            'inventory_item_id': item.inventory_item_id,
         })
     return JsonResponse({'items': items})
 
@@ -462,6 +610,7 @@ def po_items_json(request, pk):
             'quantity': str(item.quantity),
             'unit_price': str(item.unit_price),
             'vat_rate': str(item.vat_rate),
+            'inventory_item_id': item.inventory_item_id,
         })
     return JsonResponse({
         'items': items,
@@ -535,6 +684,7 @@ class PurchaseOrderCreateView(CreatePermissionMixin, CreateView):
                 context['items_formset'] = PurchaseOrderItemFormSet()
         else:
             context['items_formset'] = kwargs['items_formset']
+        context['po_inventory_items_json'] = _active_inventory_items_json()
         return context
     
     def post(self, request, *args, **kwargs):
@@ -590,6 +740,7 @@ class PurchaseOrderUpdateView(UpdatePermissionMixin, UpdateView):
                 context['items_formset'] = PurchaseOrderItemFormSet(instance=self.object)
         else:
             context['items_formset'] = kwargs['items_formset']
+        context['po_inventory_items_json'] = _active_inventory_items_json()
         return context
     
     def post(self, request, *args, **kwargs):
@@ -622,11 +773,40 @@ class PurchaseOrderDetailView(PermissionRequiredMixin, DetailView):
     context_object_name = 'po'
     module_name = 'purchase'
     permission_type = 'view'
+
+    def get_queryset(self):
+        return (
+            PurchaseOrder.objects.filter(is_active=True)
+            .select_related('vendor', 'purchase_request', 'service_request')
+            .prefetch_related('items')
+        )
     
     def get_context_data(self, **kwargs):
+        from apps.settings_app.models import CompanySettings
+
+        from .email_outbound import outgoing_mail_hint
+
         context = super().get_context_data(**kwargs)
         context['title'] = f'PO: {self.object.po_number}'
         context['can_edit'] = self.request.user.is_superuser or PermissionChecker.has_permission(self.request.user, 'purchase', 'edit')
+        company = CompanySettings.get_settings()
+        context['po_email_hint'] = outgoing_mail_hint(company)
+        context['can_send_po_email'] = (
+            self.request.user.is_superuser
+            or PermissionChecker.has_permission(self.request.user, 'purchase', 'edit')
+        ) and self.object.status != 'cancelled'
+        context['po_email_send_url'] = reverse('purchase:po_send_email', args=[self.object.pk])
+        context['po_email_default_subject'] = f'Purchase Order {self.object.po_number}'
+        vendor_name = self.object.vendor.name if self.object.vendor_id else 'Vendor'
+        context['po_email_default_body'] = (
+            f'Dear {vendor_name},\n\n'
+            f'Please find attached Purchase Order {self.object.po_number} for your reference.\n\n'
+            f'Kind regards,\n{company.company_name}'
+        )
+        ve = ''
+        if self.object.vendor_id and (self.object.vendor.email or '').strip():
+            ve = self.object.vendor.email.strip()
+        context['po_email_default_to'] = ve
         return context
 
 
@@ -635,7 +815,7 @@ def po_pdf(request, pk):
     """
     Purchase order PDF / printable HTML — same visual design as tax invoice PDF.
     """
-    from apps.settings_app.models import CompanySettings
+    from .po_pdf_render import build_po_pdf_context, render_po_pdf_bytes
 
     po = get_object_or_404(
         PurchaseOrder.objects.filter(is_active=True)
@@ -648,78 +828,95 @@ def po_pdf(request, pk):
         messages.error(request, 'Permission denied.')
         return redirect('purchase:po_list')
 
-    company = CompanySettings.get_settings()
-
-    def number_to_words(n):
-        ones = [
-            '', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine',
-            'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen',
-            'Seventeen', 'Eighteen', 'Nineteen',
-        ]
-        tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety']
-        if n < 20:
-            return ones[n]
-        if n < 100:
-            return tens[n // 10] + ('' if n % 10 == 0 else ' ' + ones[n % 10])
-        if n < 1000:
-            return ones[n // 100] + ' Hundred' + ('' if n % 100 == 0 else ' and ' + number_to_words(n % 100))
-        if n < 1000000:
-            return number_to_words(n // 1000) + ' Thousand' + ('' if n % 1000 == 0 else ' ' + number_to_words(n % 1000))
-        if n < 1000000000:
-            return (
-                number_to_words(n // 1000000) + ' Million'
-                + ('' if n % 1000000 == 0 else ' ' + number_to_words(n % 1000000))
-            )
-        return str(n)
-
-    try:
-        amount_whole = int(po.total_amount)
-        amount_decimal = int((po.total_amount - amount_whole) * 100)
-        amount_words = number_to_words(amount_whole)
-        if amount_decimal > 0:
-            amount_words += f' and {amount_decimal}/100'
-        amount_words += ' Dirhams Only'
-    except Exception:
-        amount_words = ''
-
-    vat_summary = {}
-    for item in po.items.all():
-        rate = float(item.vat_rate)
-        if rate not in vat_summary:
-            vat_summary[rate] = {'taxable': 0, 'vat': 0}
-        vat_summary[rate]['taxable'] += float(item.total)
-        vat_summary[rate]['vat'] += float(item.vat_amount)
-
-    logo_absolute_url = ''
-    if company.logo:
-        logo_absolute_url = request.build_absolute_uri(company.logo.url)
-
-    context = {
-        'po': po,
-        'company': company,
-        'amount_words': amount_words,
-        'vat_summary': vat_summary,
-        'logo_absolute_url': logo_absolute_url,
-        'is_pdf': True,
-    }
+    context = build_po_pdf_context(request, po)
 
     output_format = request.GET.get('format', 'html')
     if output_format == 'pdf':
-        try:
-            from weasyprint import HTML
-
-            template = get_template('purchase/po_pdf.html')
-            html_string = template.render(context)
-            html = HTML(string=html_string, base_url=request.build_absolute_uri('/'))
-            pdf = html.write_pdf()
+        pdf, err = render_po_pdf_bytes(request, po)
+        if pdf is not None:
             response = HttpResponse(pdf, content_type='application/pdf')
             response['Content-Disposition'] = f'inline; filename="PO_{po.po_number}.pdf"'
             return response
-        except ImportError:
-            messages.info(request, 'PDF generation requires WeasyPrint. Showing printable HTML version.')
-            return render(request, 'purchase/po_pdf.html', context)
+        if err:
+            messages.info(request, err)
+        return render(request, 'purchase/po_pdf.html', context)
 
     return render(request, 'purchase/po_pdf.html', context)
+
+
+@login_required
+@require_POST
+def po_send_email(request, pk):
+    """Send purchase order by email with PO PDF attached (SMTP from Company Settings or env)."""
+    from apps.settings_app.models import CompanySettings
+
+    from .email_outbound import (
+        company_outgoing_from_email,
+        get_smtp_connection_or_default,
+        validate_cc_addresses,
+        validate_to_addresses,
+    )
+    from .po_pdf_render import render_po_pdf_bytes
+
+    if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'purchase', 'edit')):
+        return JsonResponse({'ok': False, 'error': 'Permission denied.'}, status=403)
+
+    po = get_object_or_404(
+        PurchaseOrder.objects.filter(is_active=True)
+        .select_related('vendor', 'purchase_request', 'service_request')
+        .prefetch_related('items'),
+        pk=pk,
+    )
+    if po.status == 'cancelled':
+        return JsonResponse({'ok': False, 'error': 'Cannot email a cancelled purchase order.'}, status=400)
+
+    subject = (request.POST.get('subject') or '').strip()
+    body = (request.POST.get('body') or '').strip()
+    to_raw = request.POST.get('to', '')
+    cc_raw = request.POST.get('cc', '')
+
+    if not subject:
+        return JsonResponse({'ok': False, 'error': 'Subject is required.'}, status=400)
+    if not body:
+        return JsonResponse({'ok': False, 'error': 'Message body is required.'}, status=400)
+
+    try:
+        to_list = validate_to_addresses(to_raw)
+        cc_list = validate_cc_addresses(cc_raw)
+    except ValueError as exc:
+        return JsonResponse({'ok': False, 'error': str(exc)}, status=400)
+
+    company = CompanySettings.get_settings()
+    pdf, pdf_err = render_po_pdf_bytes(request, po)
+    if not pdf:
+        return JsonResponse(
+            {'ok': False, 'error': pdf_err or 'Could not generate PDF attachment.'},
+            status=400,
+        )
+
+    from django.core.mail import EmailMessage
+
+    connection = get_smtp_connection_or_default(company)
+    from_email = company_outgoing_from_email(company)
+
+    msg = EmailMessage(
+        subject=subject,
+        body=body,
+        from_email=from_email,
+        to=to_list,
+        cc=cc_list,
+        connection=connection,
+    )
+    msg.content_subtype = 'plain'
+    safe_name = ''.join(c for c in po.po_number if c.isalnum() or c in ('-', '_')) or str(po.pk)
+    msg.attach(f'PO_{safe_name}.pdf', pdf, 'application/pdf')
+
+    try:
+        msg.send(fail_silently=False)
+    except Exception as exc:
+        return JsonResponse({'ok': False, 'error': f'Could not send email: {exc}'}, status=502)
+
+    return JsonResponse({'ok': True, 'message': 'Email sent.'})
 
 
 @login_required

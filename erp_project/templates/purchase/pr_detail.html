@@ -132,19 +132,68 @@
             </div>
         </div>
     </div>
-    
-    {% if pr.attachments.exists %}
-    <div class="card mb-4">
-        <div class="card-header"><h6 class="mb-0 fw-semibold">Attachments</h6></div>
-        <div class="card-body">
-            <ul class="mb-0">
-                {% for att in pr.attachments.all %}
-                <li><a href="{{ att.file.url }}" target="_blank">{{ att.filename|default:att.file.name }}</a></li>
-                {% endfor %}
-            </ul>
+
+    <div class="col-lg-4">
+        <div class="card mb-4 border-primary border-opacity-25">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h6 class="mb-0 fw-semibold">Vendor quotes &amp; files</h6>
+                <span class="badge bg-light text-dark border" id="vendor-quote-save-hint" style="display:none;"></span>
+            </div>
+            <div class="card-body">
+                <p class="text-muted small mb-2">
+                    Each PDF or Excel file is one row. Vendor and total price save automatically when you change them (no save button).
+                </p>
+                {% if can_manage_vendor_quotes %}
+                <div class="mb-3">
+                    <label class="form-label small fw-semibold">Add files (PDF, .xlsx, .xls)</label>
+                    <input type="file" id="pr-vendor-file-input" class="form-control form-control-sm" multiple
+                           accept=".pdf,.xlsx,.xls,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel">
+                </div>
+                {% endif %}
+                <div class="table-responsive">
+                    <table class="table table-sm table-bordered align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Vendor</th>
+                                <th class="text-end" style="min-width:7rem;">Total (AED)</th>
+                                <th style="min-width:6.5rem;">File</th>
+                            </tr>
+                        </thead>
+                        <tbody id="vendor-quote-tbody">
+                            {% for att in quote_attachments %}
+                            <tr data-attachment-id="{{ att.pk }}">
+                                <td>
+                                    <input type="text" class="form-control form-control-sm quote-vendor"
+                                           value="{{ att.vendor }}"
+                                           {% if not can_manage_vendor_quotes %}readonly{% endif %}
+                                           maxlength="500" placeholder="Vendor name">
+                                </td>
+                                <td>
+                                    <input type="number" class="form-control form-control-sm text-end quote-total" step="0.01" min="0"
+                                           value="{% if att.total_price is not None %}{{ att.total_price }}{% endif %}"
+                                           {% if not can_manage_vendor_quotes %}readonly{% endif %}
+                                           placeholder="0.00">
+                                </td>
+                                <td class="small">
+                                    {% if att.file %}
+                                    <a href="{{ att.file.url }}" target="_blank" rel="noopener" class="d-block">View</a>
+                                    <a href="{{ att.file.url }}" download class="d-block">Download</a>
+                                    {% else %}
+                                    —
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr id="vendor-quote-empty-row">
+                                <td colspan="3" class="text-center text-muted py-3">No attachments yet.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
     </div>
-    {% endif %}
 </div>
 
 {% if can_reject or can_return %}
@@ -174,4 +223,147 @@
 {% endif %}
 
 <a href="{% url 'purchase:pr_list' %}" class="btn btn-light"><i class="fas fa-arrow-left me-2"></i>Back to List</a>
+
+{% if can_manage_vendor_quotes %}{% csrf_token %}{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+{% if can_manage_vendor_quotes %}
+<script>
+(function() {
+    const CSRF = document.querySelector('[name=csrfmiddlewaretoken]')?.value || '';
+    const UPLOAD_URL = "{{ pr_vendor_upload_url|escapejs }}";
+    const UPDATE_URL_PATTERN = "{{ pr_vendor_update_url_pattern|escapejs }}";
+    const saveTimers = {};
+
+    function updateUrl(id) {
+        return UPDATE_URL_PATTERN.replace('__ATT_ID__', String(id));
+    }
+
+    function showSaveHint(text) {
+        const el = document.getElementById('vendor-quote-save-hint');
+        if (!el) return;
+        el.style.display = 'inline-block';
+        el.textContent = text;
+        if (text === 'Saved') {
+            setTimeout(() => { el.style.display = 'none'; }, 2000);
+        }
+    }
+
+    function scheduleSave(tr) {
+        const id = tr.getAttribute('data-attachment-id');
+        if (!id) return;
+        clearTimeout(saveTimers[id]);
+        showSaveHint('Saving…');
+        saveTimers[id] = setTimeout(() => {
+            const vendor = tr.querySelector('.quote-vendor')?.value ?? '';
+            const totalEl = tr.querySelector('.quote-total');
+            const totalRaw = totalEl ? totalEl.value.trim() : '';
+            fetch(updateUrl(id), {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': CSRF,
+                },
+                body: JSON.stringify({
+                    vendor: vendor,
+                    total_price: totalRaw === '' ? null : totalRaw,
+                }),
+            })
+                .then(r => r.json().then(data => ({ ok: r.ok, data })))
+                .then(({ ok, data }) => {
+                    if (!ok || !data.ok) {
+                        toastr.error(data.error || 'Could not save.');
+                        showSaveHint('');
+                        return;
+                    }
+                    showSaveHint('Saved');
+                })
+                .catch(() => {
+                    toastr.error('Network error while saving.');
+                    showSaveHint('');
+                });
+        }, 450);
+    }
+
+    function bindRow(tr) {
+        tr.querySelectorAll('.quote-vendor, .quote-total').forEach(inp => {
+            inp.addEventListener('input', () => scheduleSave(tr));
+            inp.addEventListener('change', () => scheduleSave(tr));
+        });
+    }
+
+    function appendAttachmentRow(a) {
+        const tbody = document.getElementById('vendor-quote-tbody');
+        document.getElementById('vendor-quote-empty-row')?.remove();
+        const tr = document.createElement('tr');
+        tr.setAttribute('data-attachment-id', String(a.id));
+
+        const tdV = document.createElement('td');
+        const inpV = document.createElement('input');
+        inpV.type = 'text';
+        inpV.className = 'form-control form-control-sm quote-vendor';
+        inpV.maxLength = 500;
+        inpV.placeholder = 'Vendor name';
+        inpV.value = a.vendor || '';
+        tdV.appendChild(inpV);
+
+        const tdT = document.createElement('td');
+        const inpT = document.createElement('input');
+        inpT.type = 'number';
+        inpT.className = 'form-control form-control-sm text-end quote-total';
+        inpT.step = '0.01';
+        inpT.min = '0';
+        inpT.placeholder = '0.00';
+        inpT.value = (a.total_price != null && a.total_price !== '') ? String(a.total_price) : '';
+        tdT.appendChild(inpT);
+
+        const tdF = document.createElement('td');
+        tdF.className = 'small';
+        const linkView = document.createElement('a');
+        linkView.href = a.file_url;
+        linkView.target = '_blank';
+        linkView.rel = 'noopener';
+        linkView.className = 'd-block';
+        linkView.textContent = 'View';
+        const linkDl = document.createElement('a');
+        linkDl.href = a.file_url;
+        linkDl.download = '';
+        linkDl.className = 'd-block';
+        linkDl.textContent = 'Download';
+        tdF.appendChild(linkView);
+        tdF.appendChild(linkDl);
+
+        tr.appendChild(tdV);
+        tr.appendChild(tdT);
+        tr.appendChild(tdF);
+        tbody.appendChild(tr);
+        bindRow(tr);
+    }
+
+    document.querySelectorAll('#vendor-quote-tbody tr[data-attachment-id]').forEach(bindRow);
+
+    const fileInput = document.getElementById('pr-vendor-file-input');
+    if (fileInput) {
+        fileInput.addEventListener('change', function() {
+            if (!this.files || !this.files.length) return;
+            const fd = new FormData();
+            for (const f of this.files) fd.append('files', f);
+            fetch(UPLOAD_URL, { method: 'POST', headers: { 'X-CSRFToken': CSRF }, body: fd })
+                .then(r => r.json().then(data => ({ ok: r.ok, data })))
+                .then(({ ok, data }) => {
+                    if (!ok || !data.ok) {
+                        toastr.error(data.error || 'Upload failed.');
+                        return;
+                    }
+                    (data.attachments || []).forEach(appendAttachmentRow);
+                    toastr.success('File(s) uploaded.');
+                    fileInput.value = '';
+                })
+                .catch(() => toastr.error('Upload failed.'));
+        });
+    }
+})();
+</script>
+{% endif %}
 {% endblock %}

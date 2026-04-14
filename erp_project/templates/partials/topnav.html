@@ -110,7 +110,7 @@
                 <!-- Inventory -->
                 {% if is_superuser or 'inventory' in user_permissions %}
                 <li class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle {% if 'inventory' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
+                    <a class="nav-link dropdown-toggle {% if 'inventory' in request.path or 'stock-take' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
                         <i class="fas fa-boxes me-1"></i>Inventory
                     </a>
                     <ul class="dropdown-menu dropdown-menu-dark">
@@ -137,6 +137,11 @@
                         <li>
                             <a class="dropdown-item" href="{% url 'inventory:movement_list' %}">
                                 <i class="fas fa-exchange-alt me-2"></i>Movements
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'stock_take:session_list' %}">
+                                <i class="fas fa-clipboard-check me-2"></i>Stock Take
                             </a>
                         </li>
                         <li><hr class="dropdown-divider"></li>

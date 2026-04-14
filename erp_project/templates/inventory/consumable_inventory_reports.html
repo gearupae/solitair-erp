@@ -3,10 +3,6 @@
 
 {% block extra_css %}
 <style>
-    .inventory-reports-page {
-        max-width: 1400px;
-        margin: 0 auto;
-    }
     #report-panel .card-body {
         min-height: 320px;
     }
@@ -65,7 +61,6 @@
 {% endblock %}
 
 {% block content %}
-<div class="inventory-reports-page">
     <div class="d-flex flex-column flex-md-row flex-wrap align-items-start justify-content-between gap-3 mb-3">
         <div class="min-w-0">
             <h4 class="mb-1 fw-bold">{{ title }}</h4>
@@ -225,7 +220,6 @@
             </div>
         </div>
     </div>
-</div>
 {% endblock %}
 
 {% block extra_js %}

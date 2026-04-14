@@ -106,7 +106,7 @@
                 <table class="table mb-0">
                     <thead>
                         <tr>
-                            <th style="width:35%">Description</th>
+                            <th style="width:35%">Inventory item</th>
                             <th style="width:10%">Qty</th>
                             <th style="width:12%">Unit Price</th>
                             <th style="width:18%">Tax Code</th>
@@ -120,27 +120,32 @@
                         <tr class="item-row" {% if item_form.DELETE.value %}style="display:none;"{% endif %}>
                             <td>
                                 {{ item_form.id }}
-                                <input type="text" name="{{ item_form.prefix }}-description" class="form-control form-control-sm" 
-                                       value="{{ item_form.description.value|default:'' }}" placeholder="Item description">
+                                {{ item_form.is_vat_inclusive }}
+                                {{ item_form.inventory_item }}
+                                {% if item_form.inventory_item.errors %}
+                                <div class="text-danger small">{{ item_form.inventory_item.errors|join:", " }}</div>
+                                {% endif %}
+                                {% if item_form.non_field_errors %}
+                                <div class="text-danger small">{{ item_form.non_field_errors|join:", " }}</div>
+                                {% endif %}
                             </td>
                             <td>
-                                <input type="number" name="{{ item_form.prefix }}-quantity" class="form-control form-control-sm item-qty" 
-                                       value="{{ item_form.quantity.value|default:1 }}" step="0.01" min="0.01" onchange="calculateRowTotal(this)">
+                                {{ item_form.quantity }}
+                                {% if item_form.quantity.errors %}
+                                <div class="text-danger small">{{ item_form.quantity.errors|join:", " }}</div>
+                                {% endif %}
                             </td>
                             <td>
-                                <input type="number" name="{{ item_form.prefix }}-unit_price" class="form-control form-control-sm item-price" 
-                                       value="{{ item_form.unit_price.value|default:0 }}" step="0.01" min="0" onchange="calculateRowTotal(this)">
+                                {{ item_form.unit_price }}
+                                {% if item_form.unit_price.errors %}
+                                <div class="text-danger small">{{ item_form.unit_price.errors|join:", " }}</div>
+                                {% endif %}
                             </td>
                             <td>
-                                <select name="{{ item_form.prefix }}-tax_code" class="form-select form-select-sm item-tax-code" onchange="calculateRowTotal(this)">
-                                    <option value="">-- No Tax --</option>
-                                    {% for tc in tax_codes %}
-                                    <option value="{{ tc.id }}" data-rate="{{ tc.rate }}"
-                                            {% if item_form.tax_code.value == tc.id|stringformat:"s" or item_form.instance.tax_code_id == tc.id %}selected{% endif %}>
-                                        {{ tc.code }} - {{ tc.name }} ({{ tc.rate }}%)
-                                    </option>
-                                    {% endfor %}
-                                </select>
+                                {{ item_form.tax_code }}
+                                {% if item_form.tax_code.errors %}
+                                <div class="text-danger small">{{ item_form.tax_code.errors|join:", " }}</div>
+                                {% endif %}
                             </td>
                             <td class="text-end">
                                 <span class="row-vat text-muted small">0.00</span>
@@ -193,34 +198,91 @@ const taxCodes = [
     {% endfor %}
 ];
 const defaultTaxCodeId = {% if default_tax_code %}{{ default_tax_code.id }}{% else %}null{% endif %};
+const PO_INVENTORY_ITEMS = {{ po_inventory_items_json|safe }};
 
 let formCount = {{ items_formset.total_form_count }};
 
 function getTaxCodeOptions(selectedId) {
     let options = '<option value="">-- No Tax (Out of Scope) --</option>';
     taxCodes.forEach(tc => {
-        const selected = selectedId && parseInt(selectedId) === tc.id ? 'selected' : '';
+        const selected = selectedId && parseInt(selectedId, 10) === tc.id ? 'selected' : '';
         options += `<option value="${tc.id}" data-rate="${tc.rate}" ${selected}>${tc.code} - ${tc.name} (${tc.rate}%)</option>`;
     });
     return options;
 }
 
-function addItemRow(description = '', quantity = '1', unitPrice = '0', taxCodeId = null) {
+function hydrateTaxCodeDataRates() {
+    document.querySelectorAll('select.item-tax-code').forEach(sel => {
+        Array.from(sel.options).forEach(opt => {
+            if (!opt.value) {
+                opt.dataset.rate = '0';
+                return;
+            }
+            const tc = taxCodes.find(t => t.id === parseInt(opt.value, 10));
+            opt.dataset.rate = tc ? String(tc.rate) : '0';
+        });
+    });
+}
+
+function buildInventorySelect(name, selectedId) {
+    const sel = document.createElement('select');
+    sel.name = name;
+    sel.className = 'form-select form-select-sm item-inventory-select';
+    sel.add(new Option('— Select inventory item —', '', !selectedId, !selectedId));
+    PO_INVENTORY_ITEMS.forEach(row => {
+        const opt = new Option(row.label, String(row.id));
+        if (selectedId && parseInt(String(selectedId), 10) === row.id) opt.selected = true;
+        sel.add(opt);
+    });
+    sel.addEventListener('change', () => applyInventoryDefaults(sel, sel.closest('tr')));
+    return sel;
+}
+
+function applyInventoryDefaults(selectEl, row) {
+    const id = parseInt(selectEl.value, 10);
+    if (!id) return;
+    const meta = PO_INVENTORY_ITEMS.find(x => x.id === id);
+    if (!meta) return;
+    const price = row.querySelector('.item-price');
+    if (price) {
+        const cur = parseFloat(price.value);
+        if (!cur || cur === 0) {
+            const p = parseFloat(meta.purchase_price);
+            price.value = (isNaN(p) ? 0 : p).toFixed(2);
+        }
+    }
+    const qtyInput = row.querySelector('.item-qty');
+    if (qtyInput) calculateRowTotal(qtyInput);
+}
+
+function addItemRow(inventoryItemId = null, quantity = '0', unitPrice = '0', taxCodeId = null) {
     const tbody = document.getElementById('itemsBody');
     const newRow = document.createElement('tr');
     newRow.className = 'item-row';
+    const idx = formCount;
+    const hasInv = inventoryItemId != null && inventoryItemId !== '';
     newRow.innerHTML = `
-        <td><input type="text" name="items-${formCount}-description" class="form-control form-control-sm" value="${description}" placeholder="Item description"></td>
-        <td><input type="number" name="items-${formCount}-quantity" class="form-control form-control-sm item-qty" value="${quantity}" step="0.01" min="0.01" onchange="calculateRowTotal(this)"></td>
-        <td><input type="number" name="items-${formCount}-unit_price" class="form-control form-control-sm item-price" value="${unitPrice}" step="0.01" min="0" onchange="calculateRowTotal(this)"></td>
-        <td><select name="items-${formCount}-tax_code" class="form-select form-select-sm item-tax-code" onchange="calculateRowTotal(this)">${getTaxCodeOptions(taxCodeId || defaultTaxCodeId)}</select></td>
+        <td class="td-inv"></td>
+        <td><input type="number" name="items-${idx}-quantity" class="form-control form-control-sm item-qty" value="${quantity}" step="0.01" min="0"></td>
+        <td><input type="number" name="items-${idx}-unit_price" class="form-control form-control-sm item-price" value="${unitPrice}" step="0.01" min="0"></td>
+        <td><select name="items-${idx}-tax_code" class="form-select form-select-sm item-tax-code">${getTaxCodeOptions(taxCodeId || defaultTaxCodeId)}</select></td>
         <td class="text-end"><span class="row-vat text-muted small">0.00</span></td>
         <td class="text-end"><span class="row-total fw-medium">0.00</span></td>
         <td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger" onclick="removeItemRow(this)"><i class="fas fa-times"></i></button></td>
     `;
     tbody.appendChild(newRow);
+    const tdInv = newRow.querySelector('.td-inv');
+    const hiddenVat = document.createElement('input');
+    hiddenVat.type = 'hidden';
+    hiddenVat.name = `items-${idx}-is_vat_inclusive`;
+    hiddenVat.value = 'false';
+    tdInv.appendChild(hiddenVat);
+    const invSel = buildInventorySelect(`items-${idx}-inventory_item`, hasInv ? inventoryItemId : null);
+    tdInv.appendChild(invSel);
     formCount++;
     document.getElementById('id_items-TOTAL_FORMS').value = formCount;
+    hydrateTaxCodeDataRates();
+    if (hasInv) applyInventoryDefaults(invSel, newRow);
     const qtyInput = newRow.querySelector('.item-qty');
     if (qtyInput) calculateRowTotal(qtyInput);
 }
@@ -235,13 +297,15 @@ function removeItemRow(btn) {
 
 function calculateRowTotal(input) {
     const row = input.closest('tr');
-    const qty = parseFloat(row.querySelector('.item-qty').value) || 0;
-    const price = parseFloat(row.querySelector('.item-price').value) || 0;
+    const qtyEl = row.querySelector('.item-qty');
+    const priceEl = row.querySelector('.item-price');
+    const qty = parseFloat(qtyEl && qtyEl.value) || 0;
+    const price = parseFloat(priceEl && priceEl.value) || 0;
     const taxCodeSelect = row.querySelector('.item-tax-code');
     
     // Get VAT rate from selected Tax Code
     let vatRate = 0;
-    if (taxCodeSelect && taxCodeSelect.selectedOptions[0]) {
+    if (taxCodeSelect && taxCodeSelect.selectedOptions.length) {
         vatRate = parseFloat(taxCodeSelect.selectedOptions[0].dataset.rate) || 0;
     }
     
@@ -262,7 +326,7 @@ function calculateTotals() {
         const taxCodeSelect = row.querySelector('.item-tax-code');
         
         let vatRate = 0;
-        if (taxCodeSelect && taxCodeSelect.selectedOptions[0]) {
+        if (taxCodeSelect && taxCodeSelect.selectedOptions.length) {
             vatRate = parseFloat(taxCodeSelect.selectedOptions[0].dataset.rate) || 0;
         }
         
@@ -296,9 +360,11 @@ function loadPRItems(prId) {
             
             if (data.items && data.items.length > 0) {
                 data.items.forEach(item => {
+                    const invId = item.inventory_item_id != null && item.inventory_item_id !== ''
+                        ? item.inventory_item_id : null;
                     addItemRow(
-                        item.description || '',
-                        item.quantity || '1',
+                        invId,
+                        item.quantity || '0',
                         item.unit_price || item.estimated_price || '0',
                         item.tax_code_id || defaultTaxCodeId
                     );
@@ -307,6 +373,7 @@ function loadPRItems(prId) {
                 addItemRow();
             }
             
+            hydrateTaxCodeDataRates();
             calculateTotals();
         })
         .catch(error => {
@@ -335,9 +402,11 @@ function loadSRItems(srId) {
             
             if (data.items && data.items.length > 0) {
                 data.items.forEach(item => {
+                    const invId = item.inventory_item_id != null && item.inventory_item_id !== ''
+                        ? item.inventory_item_id : null;
                     addItemRow(
-                        item.description || '',
-                        item.quantity || '1',
+                        invId,
+                        item.quantity || '0',
                         item.unit_price || item.estimated_price || '0',
                         defaultTaxCodeId
                     );
@@ -346,6 +415,7 @@ function loadSRItems(srId) {
                 addItemRow();
             }
             
+            hydrateTaxCodeDataRates();
             calculateTotals();
         })
         .catch(error => {
@@ -355,6 +425,23 @@ function loadSRItems(srId) {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
+    hydrateTaxCodeDataRates();
+    const itemsBody = document.getElementById('itemsBody');
+    itemsBody.addEventListener('change', function(e) {
+        const t = e.target;
+        if (t.classList.contains('item-inventory-select')) {
+            applyInventoryDefaults(t, t.closest('tr'));
+            return;
+        }
+        if (t.matches('.item-qty, .item-price, .item-tax-code')) {
+            calculateRowTotal(t);
+        }
+    });
+    itemsBody.addEventListener('input', function(e) {
+        if (e.target.matches('.item-qty, .item-price')) {
+            calculateRowTotal(e.target);
+        }
+    });
     document.querySelectorAll('.item-row').forEach(row => {
         const qty = row.querySelector('.item-qty');
         if (qty) calculateRowTotal(qty);
@@ -362,20 +449,6 @@ document.addEventListener('DOMContentLoaded', function() {
     
     const prSelect = document.getElementById('id_purchase_request');
     const srSelect = document.getElementById('id_service_request');
-    
-    function loadFromSource() {
-        const prId = prSelect ? prSelect.value : '';
-        const srId = srSelect ? srSelect.value : '';
-        if (prId) {
-            if (srId && srSelect) srSelect.value = '';
-            loadPRItems(prId);
-        } else if (srId) {
-            if (prSelect) prSelect.value = '';
-            loadSRItems(srId);
-        } else {
-            loadPRItems(null);
-        }
-    }
     
     if (prSelect) {
         prSelect.addEventListener('change', function() {

@@ -1,0 +1,202 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="page-header">
+  <nav aria-label="breadcrumb">
+    <ol class="breadcrumb mb-2">
+      <li class="breadcrumb-item"><a href="{% url 'stock_take:session_list' %}">Stock Take</a></li>
+      <li class="breadcrumb-item active">Report</li>
+    </ol>
+  </nav>
+  <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+    <h4 class="fw-bold mb-0">{{ title }}</h4>
+    <button type="button" class="btn btn-danger" id="st-pdf-export">
+      <i class="fas fa-file-pdf me-2"></i>Export PDF
+    </button>
+  </div>
+</div>
+
+<div class="card mb-3" id="st-report-header">
+  <div class="card-body">
+    <div class="row g-3">
+      <div class="col-md-4">
+        <div class="text-muted small">Client</div>
+        <div class="fw-semibold">{{ session.client_name }}</div>
+      </div>
+      <div class="col-md-4">
+        <div class="text-muted small">Location</div>
+        <div class="fw-semibold">{{ session.location }}</div>
+      </div>
+      <div class="col-md-4">
+        <div class="text-muted small">Date</div>
+        <div class="fw-semibold">{{ session.session_date|date:"d/m/Y" }}</div>
+      </div>
+      {% if session.notes %}
+      <div class="col-12">
+        <div class="text-muted small">Notes</div>
+        <div>{{ session.notes }}</div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-6 col-md">
+    <div class="card h-100"><div class="card-body py-3 text-center">
+      <div class="text-muted small">Total SKUs</div>
+      <div class="fs-4 fw-bold">{{ summary.total_skus }}</div>
+    </div></div>
+  </div>
+  <div class="col-6 col-md">
+    <div class="card h-100 border-success"><div class="card-body py-3 text-center">
+      <div class="text-muted small">Matched</div>
+      <div class="fs-4 fw-bold text-success">{{ summary.matched }}</div>
+    </div></div>
+  </div>
+  <div class="col-6 col-md">
+    <div class="card h-100 border-warning"><div class="card-body py-3 text-center">
+      <div class="text-muted small">Short</div>
+      <div class="fs-4 fw-bold text-warning">{{ summary.short }}</div>
+    </div></div>
+  </div>
+  <div class="col-6 col-md">
+    <div class="card h-100 border-danger"><div class="card-body py-3 text-center">
+      <div class="text-muted small">Excess</div>
+      <div class="fs-4 fw-bold text-danger">{{ summary.excess }}</div>
+    </div></div>
+  </div>
+  <div class="col-6 col-md">
+    <div class="card h-100 border-secondary"><div class="card-body py-3 text-center">
+      <div class="text-muted small">Unidentified scans</div>
+      <div class="fs-4 fw-bold">{{ summary.unidentified }}</div>
+    </div></div>
+  </div>
+</div>
+
+<div class="card mb-3">
+  <div class="card-header fw-semibold">Expected lines</div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm mb-0" id="st-report-lines">
+        <thead class="table-light">
+          <tr>
+            <th>SKU</th>
+            <th>Scan code</th>
+            <th>Item name</th>
+            <th class="text-end">Expected</th>
+            <th class="text-end">Actual</th>
+            <th class="text-end">Variance</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in lines %}
+          <tr>
+            <td class="font-monospace">{{ row.sku }}</td>
+            <td class="font-monospace small">{% if row.scan_code %}{{ row.scan_code }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+            <td>{{ row.item_name }}</td>
+            <td class="text-end">{{ row.expected_qty }}</td>
+            <td class="text-end">{{ row.actual_qty }}</td>
+            <td class="text-end">{{ row.variance }}</td>
+            <td>
+              {% if row.status == 'Match' %}<span class="badge bg-success">Match</span>
+              {% elif row.status == 'Short' %}<span class="badge bg-warning text-dark">Short</span>
+              {% else %}<span class="badge bg-danger">Excess</span>{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header fw-semibold">Unidentified barcodes</div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm mb-0">
+        <thead class="table-light"><tr><th>Barcode</th><th>Time</th></tr></thead>
+        <tbody>
+          {% for u in unknown_scans %}
+          <tr>
+            <td class="font-monospace">{{ u.barcode_raw }}</td>
+            <td>{{ u.timestamp|date:"d/m/Y H:i:s" }}</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="2" class="text-center text-muted py-3">None</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js" crossorigin="anonymous"></script>
+<script>
+(function() {
+  const LINES = {{ lines_json|safe }};
+  const SUMMARY = {{ summary_json|safe }};
+  const UNK = {{ unknown_json|safe }};
+  const HDR = {
+    client: "{{ session.client_name|escapejs }}",
+    location: "{{ session.location|escapejs }}",
+    date: "{{ session.session_date|date:'d/m/Y' }}",
+  };
+  document.getElementById('st-pdf-export').addEventListener('click', function() {
+    if (!window.jspdf || !window.jspdf.jsPDF) { alert('PDF library failed to load.'); return; }
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    let y = 14;
+    doc.setFontSize(16);
+    doc.text('Stock Take Report', 14, y);
+    y += 8;
+    doc.setFontSize(10);
+    doc.text('Client: ' + HDR.client, 14, y); y += 5;
+    doc.text('Location: ' + HDR.location, 14, y); y += 5;
+    doc.text('Date: ' + HDR.date, 14, y); y += 6;
+    doc.setFontSize(9);
+    doc.text('Total SKUs: ' + SUMMARY.total_skus + '  |  Matched: ' + SUMMARY.matched +
+      '  |  Short: ' + SUMMARY.short + '  |  Excess: ' + SUMMARY.excess +
+      '  |  Unidentified scans: ' + SUMMARY.unidentified, 14, y);
+    y += 8;
+    const body = LINES.map(function(r) {
+      return [
+        String(r.sku),
+        r.scan_code ? String(r.scan_code) : '—',
+        String(r.item_name),
+        String(r.expected_qty),
+        String(r.actual_qty),
+        String(r.variance),
+        String(r.status),
+      ];
+    });
+    doc.autoTable({
+      startY: y,
+      head: [['SKU', 'Scan code', 'Item name', 'Expected', 'Actual', 'Variance', 'Status']],
+      body: body,
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [33, 37, 41] },
+    });
+    y = doc.lastAutoTable.finalY + 8;
+    if (UNK.length) {
+      doc.setFontSize(11);
+      doc.text('Unidentified barcodes', 14, y);
+      y += 5;
+      doc.autoTable({
+        startY: y,
+        head: [['Barcode', 'Time (UTC)']],
+        body: UNK.map(function(u) { return [String(u.barcode_raw), String(u.timestamp)]; }),
+        styles: { fontSize: 8 },
+        headStyles: { fillColor: [108, 117, 125] },
+      });
+    }
+    doc.save('stock-take-report.pdf');
+  });
+})();
+</script>
+{% endblock %}

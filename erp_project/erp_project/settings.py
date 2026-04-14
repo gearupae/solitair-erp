@@ -53,6 +53,8 @@ INSTALLED_APPS = [
     'apps.sales',
     'apps.purchase',
     'apps.inventory',
+    'apps.stock_take',
+    'apps.scan_api',
     'apps.finance',
     'apps.projects',
     'apps.hr',

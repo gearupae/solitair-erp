@@ -1,0 +1,15 @@
+# Build APK without local Flutter. From repository root:
+#
+#   docker build -f gearup_scan/Dockerfile.apk -t gearup-scan-apk .
+#   id=$(docker create gearup-scan-apk)
+#   docker cp "$id:/src/gearup_scan/example/build/app/outputs/flutter-apk/app-release.apk" ./gearup-scan.apk
+#   docker rm "$id"
+#
+FROM ghcr.io/cirruslabs/flutter:stable
+WORKDIR /src
+COPY gearup_scan /src/gearup_scan
+WORKDIR /src/gearup_scan/example
+RUN flutter create . --project-name gearup_scan_example --org com.gearup
+RUN flutter pub get
+RUN sed -i 's/<application/<application android:usesCleartextTraffic="true" /' android/app/src/main/AndroidManifest.xml
+RUN flutter build apk --release

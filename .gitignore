@@ -11,6 +11,10 @@ downloads/
 eggs/
 .eggs/
 lib/
+!gearup_scan/lib/
+!gearup_scan/lib/**
+!gearup_scan/example/lib/
+!gearup_scan/example/lib/**
 lib64/
 parts/
 sdist/
@@ -100,6 +104,15 @@ celerybeat.pid
 # mypy
 .mypy_cache/
 
-
-
+# Flutter — scan example (regenerate with: cd gearup_scan/example && flutter create .)
+gearup_scan/example/android/
+gearup_scan/example/ios/
+gearup_scan/example/linux/
+gearup_scan/example/macos/
+gearup_scan/example/windows/
+gearup_scan/example/web/
+gearup_scan/example/.dart_tool/
+gearup_scan/example/build/
+gearup_scan/example/*.iml
+gearup_scan/example/.flutter-plugins-dependencies
 

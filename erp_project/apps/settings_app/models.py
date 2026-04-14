@@ -166,6 +166,23 @@ class CompanySettings(models.Model):
     address = models.TextField(blank=True)
     phone = models.CharField(max_length=20, blank=True)
     email = models.EmailField(blank=True)
+    smtp_host = models.CharField(
+        max_length=200,
+        blank=True,
+        help_text='SMTP server (e.g. smtp.office365.com). Leave blank to use server default email settings.',
+    )
+    smtp_port = models.PositiveIntegerField(default=587)
+    smtp_username = models.CharField(max_length=200, blank=True)
+    smtp_password = models.CharField(
+        max_length=200,
+        blank=True,
+        help_text='SMTP password. Leave blank when saving to keep the existing password.',
+    )
+    smtp_use_tls = models.BooleanField(default=True)
+    smtp_from_email = models.EmailField(
+        blank=True,
+        help_text='From address for outbound mail. If empty, Company email is used.',
+    )
     website = models.URLField(blank=True, help_text='Company website (shown on PDFs if set)')
     tax_id = models.CharField(max_length=50, blank=True, verbose_name='Tax ID / TRN')
     fiscal_year_start = models.IntegerField(default=1, help_text='Month (1-12)')

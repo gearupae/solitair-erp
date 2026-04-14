@@ -91,7 +91,7 @@
                 <table class="table mb-0">
                     <thead>
                         <tr>
-                            <th style="width:40%">Description</th>
+                            <th style="width:40%">Inventory item</th>
                             <th style="width:10%">Qty</th>
                             <th style="width:12%">Unit</th>
                             <th style="width:13%">Est. Price</th>
@@ -104,17 +104,26 @@
                         <tr class="item-row" {% if item_form.DELETE.value %}style="display:none;"{% endif %}>
                             <td>
                                 {{ item_form.id }}
-                                <input type="text" name="{{ item_form.prefix }}-description" class="form-control" 
-                                       value="{{ item_form.description.value|default:'' }}" placeholder="Item description">
+                                {{ item_form.inventory_item }}
+                                {% if item_form.inventory_item.errors %}
+                                <div class="text-danger small">{{ item_form.inventory_item.errors|join:", " }}</div>
+                                {% endif %}
+                                {% if item_form.non_field_errors %}
+                                <div class="text-danger small">{{ item_form.non_field_errors|join:", " }}</div>
+                                {% endif %}
                             </td>
                             <td>
-                                <input type="number" name="{{ item_form.prefix }}-quantity" class="form-control item-qty" 
-                                       value="{{ item_form.quantity.value|default:1 }}" step="0.01" min="0.01">
+                                {{ item_form.quantity }}
+                                {% if item_form.quantity.errors %}
+                                <div class="text-danger small">{{ item_form.quantity.errors|join:", " }}</div>
+                                {% endif %}
                             </td>
                             <td>{{ item_form.unit }}</td>
                             <td>
-                                <input type="number" name="{{ item_form.prefix }}-estimated_price" class="form-control item-cost" 
-                                       value="{{ item_form.estimated_price.value|default:0 }}" step="0.01" min="0">
+                                {{ item_form.estimated_price }}
+                                {% if item_form.estimated_price.errors %}
+                                <div class="text-danger small">{{ item_form.estimated_price.errors|join:", " }}</div>
+                                {% endif %}
                             </td>
                             <td class="item-total align-middle">0.00</td>
                             <td class="text-center">
@@ -158,6 +167,8 @@
 
 {% block extra_js %}
 <script>
+const PR_INVENTORY_ITEMS = {{ pr_inventory_items_json|safe }};
+const PR_UNIT_KEYS = new Set(['pcs', 'box', 'kg', 'ltr', 'set', 'other']);
 let formCount = {{ items_formset.total_form_count }};
 
 function updateRowTotal(row) {
@@ -168,26 +179,64 @@ function updateRowTotal(row) {
     if (totalCell) totalCell.textContent = total;
 }
 
+function applyInventoryDefaults(selectEl, row) {
+    const id = parseInt(selectEl.value, 10);
+    if (!id) return;
+    const meta = PR_INVENTORY_ITEMS.find(x => x.id === id);
+    if (!meta) return;
+    const cost = row.querySelector('.item-cost');
+    if (cost) {
+        const cur = parseFloat(cost.value);
+        if (!cur || cur === 0) {
+            const p = parseFloat(meta.purchase_price);
+            cost.value = (isNaN(p) ? 0 : p).toFixed(2);
+        }
+    }
+    const unitSel = row.querySelector('select[name$="-unit"]');
+    if (unitSel) {
+        let u = (meta.unit || 'pcs').toLowerCase();
+        if (!PR_UNIT_KEYS.has(u)) u = 'other';
+        unitSel.value = u;
+    }
+    updateRowTotal(row);
+}
+
+function buildInventorySelect(name) {
+    const sel = document.createElement('select');
+    sel.name = name;
+    sel.className = 'form-select item-inventory-select';
+    sel.add(new Option('— Select inventory item —', '', true, false));
+    PR_INVENTORY_ITEMS.forEach(row => sel.add(new Option(row.label, String(row.id))));
+    sel.addEventListener('change', () => applyInventoryDefaults(sel, sel.closest('tr')));
+    return sel;
+}
+
 function addItemRow() {
     const tbody = document.getElementById('itemsBody');
     const newRow = document.createElement('tr');
     newRow.className = 'item-row';
+    const idx = formCount;
     newRow.innerHTML = `
-        <td><input type="text" name="items-${formCount}-description" class="form-control" placeholder="Item description"></td>
-        <td><input type="number" name="items-${formCount}-quantity" class="form-control item-qty" value="1" step="0.01" min="0.01"></td>
-        <td><select name="items-${formCount}-unit" class="form-select"><option value="pcs">Pcs</option><option value="box">Box</option><option value="kg">Kg</option><option value="ltr">Ltr</option><option value="set">Set</option><option value="other">Other</option></select></td>
-        <td><input type="number" name="items-${formCount}-estimated_price" class="form-control item-cost" value="0" step="0.01" min="0"></td>
+        <td class="td-inv"></td>
+        <td><input type="number" name="items-${idx}-quantity" class="form-control item-qty" value="0" step="0.01" min="0"></td>
+        <td><select name="items-${idx}-unit" class="form-select"><option value="pcs">Pcs</option><option value="box">Box</option><option value="kg">Kg</option><option value="ltr">Ltr</option><option value="set">Set</option><option value="other">Other</option></select></td>
+        <td><input type="number" name="items-${idx}-estimated_price" class="form-control item-cost" value="0" step="0.01" min="0"></td>
         <td class="item-total align-middle">0.00</td>
         <td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger" onclick="removeItemRow(this)"><i class="fas fa-times"></i></button></td>
     `;
     tbody.appendChild(newRow);
+    const tdInv = newRow.querySelector('.td-inv');
+    tdInv.appendChild(buildInventorySelect(`items-${idx}-inventory_item`));
     formCount++;
     document.getElementById('id_items-TOTAL_FORMS').value = formCount;
     newRow.querySelectorAll('.item-qty, .item-cost').forEach(el => el.addEventListener('input', () => updateRowTotal(newRow)));
+    updateRowTotal(newRow);
 }
 
 document.querySelectorAll('.item-row').forEach(row => {
     row.querySelectorAll('.item-qty, .item-cost').forEach(el => el.addEventListener('input', () => updateRowTotal(row)));
+    const invSel = row.querySelector('.item-inventory-select');
+    if (invSel) invSel.addEventListener('change', () => applyInventoryDefaults(invSel, row));
     updateRowTotal(row);
 });
 

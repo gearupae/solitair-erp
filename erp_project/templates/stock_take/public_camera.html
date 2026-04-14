@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% if invalid %}Stock take{% else %}Scan — {{ session.client_name }}{% endif %}</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet">
+  <style>
+    .st-big-btn { min-height: 3.25rem; font-size: 1.15rem; padding: 0.75rem 1.25rem; }
+    .st-last-scan { min-height: 5rem; }
+    .st-flash-red { animation: stFlashRed 0.45s ease-out; }
+    @keyframes stFlashRed {
+      0% { box-shadow: inset 0 0 0 6px rgba(220,38,38,0.85); }
+      100% { box-shadow: inset 0 0 0 0 transparent; }
+    }
+    /* Large preview so codes are easy to frame (especially on phones). */
+    #st-pub-reader {
+      width: 100%;
+      min-height: min(72vh, 720px);
+      max-height: 85vh;
+      border-radius: 12px;
+      overflow: hidden;
+      background: #111;
+    }
+    .st-wedge { position: fixed; left: -100vw; width: 1px; height: 1px; opacity: 0; }
+  </style>
+</head>
+<body class="bg-light">
+{% if invalid %}
+  <div class="container py-5">
+    <div class="alert alert-danger mb-0">{{ message }}</div>
+  </div>
+{% else %}
+  <div class="container-fluid px-3 py-3">
+    <h5 class="fw-bold mb-1">{{ session.client_name }}</h5>
+    <p class="text-muted small mb-3">{{ session.location }} · {{ session.session_date|date:"d/m/Y" }}</p>
+
+    {% if not has_lines %}
+    <div class="alert alert-warning">
+      The expected stock list has not been uploaded for this session yet. Ask your coordinator to upload the Excel file in the ERP first.
+    </div>
+    {% else %}
+    <p class="small text-muted mb-2">Camera works on HTTPS or localhost. Bluetooth scanners: tap “Focus scanner”, then scan.</p>
+    <div class="d-flex flex-wrap gap-2 mb-3">
+      <button type="button" class="btn btn-primary st-big-btn" id="st-pub-cam-start"><i class="fas fa-camera me-2"></i>Start camera</button>
+      <button type="button" class="btn btn-outline-secondary st-big-btn" id="st-pub-cam-stop" disabled><i class="fas fa-stop me-2"></i>Stop camera</button>
+      <button type="button" class="btn btn-outline-dark st-big-btn" id="st-pub-focus-wedge"><i class="fas fa-keyboard me-2"></i>Focus scanner</button>
+    </div>
+    <div id="st-pub-reader" class="mb-1"></div>
+    <p class="small text-muted mb-3">
+      In-browser camera decoding (ZXing): <strong>UPC-A/E</strong>, <strong>EAN-8/13</strong>, <strong>Code 39 / 93 / 128</strong>, <strong>ITF</strong>, <strong>Codabar</strong>,
+      <strong>GS1 DataBar</strong> (RSS-14 &amp; RSS Expanded), <strong>QR</strong>, <strong>Data Matrix</strong>, <strong>PDF417</strong>, <strong>Aztec</strong>, <strong>MaxiCode</strong>.
+      <strong>MSI Plessey</strong> is not supported by this web library — use the wedge field with a hardware scanner for MSI labels.
+    </p>
+    <label class="form-label small text-muted">Scanner / wedge</label>
+    <input type="text" class="form-control form-control-lg st-wedge" id="st-pub-wedge" autocomplete="off" autocorrect="off" spellcheck="false" aria-label="Barcode input">
+
+    <div class="card bg-white shadow-sm mt-3 st-last-scan">
+      <div class="card-body py-3">
+        <div class="text-muted small">Last scan</div>
+        <div id="st-pub-last-msg" class="fs-5 fw-semibold">—</div>
+      </div>
+    </div>
+
+    <div class="card mt-3 shadow-sm">
+      <div class="card-header fw-semibold small">Manual count</div>
+      <div class="card-body row g-2 align-items-end">
+        <div class="col-12 col-sm-5">
+          <label class="form-label small">SKU or scan code</label>
+          <input type="text" class="form-control form-control-lg" id="st-pub-manual-sku" placeholder="Value the scanner reads">
+        </div>
+        <div class="col-12 col-sm-4">
+          <label class="form-label small">Actual qty</label>
+          <input type="number" class="form-control form-control-lg" id="st-pub-manual-qty" min="0" step="0.001" placeholder="0">
+        </div>
+        <div class="col-12 col-sm-3">
+          <button type="button" class="btn btn-warning st-big-btn w-100" id="st-pub-manual-set">Set</button>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  {% if has_lines %}
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js" crossorigin="anonymous"></script>
+  <script>
+  (function() {
+    const SCAN_URL = "{{ scan_url|escapejs }}";
+
+    function playBeep() {
+      try {
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        if (!Ctx) return;
+        const ctx = new Ctx();
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.connect(g); g.connect(ctx.destination);
+        o.frequency.value = 880;
+        g.gain.setValueAtTime(0.07, ctx.currentTime);
+        o.start();
+        o.stop(ctx.currentTime + 0.07);
+      } catch (e) {}
+    }
+
+    function flashRed() {
+      document.body.classList.add('st-flash-red');
+      setTimeout(() => document.body.classList.remove('st-flash-red'), 500);
+    }
+
+    function setLast(msg, ok) {
+      const el = document.getElementById('st-pub-last-msg');
+      if (!el) return;
+      el.textContent = msg;
+      el.className = 'fs-5 fw-semibold ' + (ok === false ? 'text-danger' : ok === true ? 'text-success' : '');
+    }
+
+    async function postScan(body) {
+      const r = await fetch(SCAN_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await r.json().catch(() => ({}));
+      return { ok: r.ok && data.ok, data };
+    }
+
+    async function handleBarcode(text) {
+      const code = (text || '').trim();
+      if (!code) return;
+      const { ok, data } = await postScan({ barcode: code });
+      if (ok && data.matched) {
+        playBeep();
+        setLast(data.item_name + ' · Actual ' + data.actual_qty + ' (exp ' + data.expected_qty + ')', true);
+      } else if (ok && data.unknown) {
+        flashRed();
+        setLast('Unknown: ' + code, false);
+      } else {
+        flashRed();
+        setLast(data.error || 'Scan failed', false);
+      }
+    }
+
+    let html5QrCode = null;
+    document.getElementById('st-pub-cam-start').addEventListener('click', async function() {
+      if (!window.Html5Qrcode) { alert('Camera library failed to load.'); return; }
+      try {
+        const F = window.Html5QrcodeSupportedFormats;
+        var formatsToSupport = [];
+        if (F && typeof F === 'object') {
+          formatsToSupport = Object.keys(F)
+            .filter(function(k) { return !/^\d+$/.test(k); })
+            .map(function(k) { return F[k]; })
+            .filter(function(v) { return typeof v === 'number'; });
+          formatsToSupport = formatsToSupport.filter(function(v, i, a) { return a.indexOf(v) === i; });
+        }
+        const readerConfig = {
+          verbose: false,
+          experimentalFeatures: { useBarCodeDetectorIfSupported: false },
+        };
+        if (formatsToSupport.length) {
+          readerConfig.formatsToSupport = formatsToSupport;
+        }
+        html5QrCode = new Html5Qrcode('st-pub-reader', readerConfig);
+        const qrboxFn = function(viewfinderWidth, viewfinderHeight) {
+          const w = viewfinderWidth || 300;
+          const h = viewfinderHeight || 300;
+          const edge = Math.floor(Math.min(w, h) * 0.92);
+          return { width: edge, height: edge };
+        };
+        const scanConfig = { fps: 12, qrbox: qrboxFn };
+        const onScan = function(decodedText) { handleBarcode(decodedText); };
+        const onFail = function() {};
+        async function tryStartCamera(config) {
+          await html5QrCode.start(config, scanConfig, onScan, onFail);
+        }
+        var started = false;
+        var lastErr = null;
+        const tryConfigs = [
+          { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
+          { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+          { facingMode: 'environment' },
+        ];
+        for (var ci = 0; ci < tryConfigs.length; ci++) {
+          try {
+            await tryStartCamera(tryConfigs[ci]);
+            started = true;
+            break;
+          } catch (eTry) {
+            lastErr = eTry;
+            try { await html5QrCode.stop(); } catch (e0) {}
+          }
+        }
+        if (!started) {
+          const cams = await Html5Qrcode.getCameras();
+          if (!cams || !cams.length) { throw lastErr || new Error('No camera'); }
+          await tryStartCamera({ deviceId: { exact: cams[0].id } });
+        }
+        document.getElementById('st-pub-cam-stop').disabled = false;
+        this.disabled = true;
+      } catch (e) {
+        alert('Camera error: ' + e);
+      }
+    });
+    document.getElementById('st-pub-cam-stop').addEventListener('click', async function() {
+      if (html5QrCode) {
+        try {
+          await html5QrCode.stop();
+          if (typeof html5QrCode.clear === 'function') await html5QrCode.clear();
+        } catch (e) {}
+        html5QrCode = null;
+      }
+      document.getElementById('st-pub-cam-start').disabled = false;
+      this.disabled = true;
+    });
+
+    let wedgeBuf = '';
+    function flushWedge() {
+      const s = wedgeBuf.trim();
+      wedgeBuf = '';
+      if (s.length >= 1) handleBarcode(s);
+    }
+    document.getElementById('st-pub-wedge').addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        flushWedge();
+        return;
+      }
+      if (e.key.length === 1) wedgeBuf += e.key;
+    });
+    document.getElementById('st-pub-focus-wedge').addEventListener('click', () => {
+      document.getElementById('st-pub-wedge').focus();
+    });
+
+    document.getElementById('st-pub-manual-set').addEventListener('click', async function() {
+      const sku = document.getElementById('st-pub-manual-sku').value.trim();
+      const qty = document.getElementById('st-pub-manual-qty').value.trim();
+      if (!sku || qty === '') { alert('Enter SKU and quantity.'); return; }
+      const { ok, data } = await postScan({ sku, set_actual: qty });
+      if (ok && data.matched) {
+        playBeep();
+        setLast('Set ' + data.sku + ' to ' + data.actual_qty, true);
+      } else if (ok && data.unknown) {
+        flashRed();
+        setLast('Unknown SKU: ' + sku, false);
+      } else {
+        flashRed();
+        setLast(data.error || 'Failed', false);
+      }
+    });
+  })();
+  </script>
+  {% endif %}
+{% endif %}
+</body>
+</html>

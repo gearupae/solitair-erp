@@ -125,7 +125,7 @@
             </div>
         </div>
         
-        <div class="card">
+        <div class="card mb-4">
             <div class="card-body">
                 <h6 class="text-muted mb-3">Summary</h6>
                 <div class="d-flex justify-content-between mb-2">
@@ -143,8 +143,96 @@
                 </div>
             </div>
         </div>
+
+        {% if can_send_po_email %}
+        <div class="card border-primary border-opacity-25">
+            <div class="card-header">
+                <h6 class="mb-0 fw-semibold"><i class="fas fa-envelope me-2 text-primary"></i>Email this purchase order</h6>
+            </div>
+            <div class="card-body">
+                {% if po_email_hint %}
+                <div class="alert alert-warning py-2 small mb-3">{{ po_email_hint }}</div>
+                {% endif %}
+                <p class="text-muted small mb-3">
+                    The PO is sent as a <strong>PDF attachment</strong> (same as Download PDF). Configure SMTP under
+                    <a href="{% url 'settings:company' %}">Settings → Company</a> unless your server already provides email via environment variables.
+                </p>
+                {% csrf_token %}
+                <div class="mb-2">
+                    <label class="form-label small fw-semibold" for="po-email-subject">Subject</label>
+                    <input type="text" class="form-control form-control-sm" id="po-email-subject" value="{{ po_email_default_subject }}">
+                </div>
+                <div class="mb-2">
+                    <label class="form-label small fw-semibold" for="po-email-to">To</label>
+                    <input type="text" class="form-control form-control-sm" id="po-email-to" value="{{ po_email_default_to }}" placeholder="email@example.com (comma-separated for multiple)">
+                </div>
+                <div class="mb-2">
+                    <label class="form-label small fw-semibold" for="po-email-cc">Cc</label>
+                    <input type="text" class="form-control form-control-sm" id="po-email-cc" placeholder="Optional, comma-separated">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small fw-semibold" for="po-email-body">Message</label>
+                    <textarea class="form-control form-control-sm" id="po-email-body" rows="6">{{ po_email_default_body }}</textarea>
+                </div>
+                <button type="button" class="btn btn-primary btn-sm" id="po-email-send-btn">
+                    <i class="fas fa-paper-plane me-1"></i>Send email with PDF
+                </button>
+                <span class="text-muted small ms-2" id="po-email-send-status"></span>
+            </div>
+        </div>
+        {% endif %}
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+{% if can_send_po_email %}
+<script>
+(function() {
+    const btn = document.getElementById('po-email-send-btn');
+    if (!btn) return;
+    const csrf = document.querySelector('[name=csrfmiddlewaretoken]')?.value || '';
+    const statusEl = document.getElementById('po-email-send-status');
+    const url = "{{ po_email_send_url|escapejs }}";
+
+    btn.addEventListener('click', function() {
+        const subject = document.getElementById('po-email-subject')?.value?.trim() || '';
+        const to = document.getElementById('po-email-to')?.value?.trim() || '';
+        const cc = document.getElementById('po-email-cc')?.value?.trim() || '';
+        const body = document.getElementById('po-email-body')?.value?.trim() || '';
+        if (!subject || !to || !body) {
+            toastr.error('Please fill in subject, To, and message.');
+            return;
+        }
+        btn.disabled = true;
+        if (statusEl) statusEl.textContent = 'Sending…';
+        const fd = new FormData();
+        fd.append('csrfmiddlewaretoken', csrf);
+        fd.append('subject', subject);
+        fd.append('to', to);
+        fd.append('cc', cc);
+        fd.append('body', body);
+        fetch(url, { method: 'POST', headers: { 'X-CSRFToken': csrf }, body: fd })
+            .then(r => r.json().then(data => ({ ok: r.ok, data })))
+            .then(({ ok, data }) => {
+                btn.disabled = false;
+                if (!ok || !data.ok) {
+                    if (statusEl) statusEl.textContent = '';
+                    toastr.error(data.error || 'Send failed.');
+                    return;
+                }
+                if (statusEl) statusEl.textContent = 'Sent.';
+                toastr.success(data.message || 'Email sent.');
+            })
+            .catch(() => {
+                btn.disabled = false;
+                if (statusEl) statusEl.textContent = '';
+                toastr.error('Network error.');
+            });
+    });
+})();
+</script>
+{% endif %}
 {% endblock %}
 
 

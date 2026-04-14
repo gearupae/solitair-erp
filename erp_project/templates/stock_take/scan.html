@@ -1,0 +1,342 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block extra_css %}
+<style>
+  .st-last-scan { min-height: 4rem; }
+  .st-var-ok { color: #15803d; font-weight: 700; }
+  .st-var-short { color: #a16207; font-weight: 700; }
+  .st-var-excess { color: #b91c1c; font-weight: 700; }
+  .st-flash-red { animation: stFlashRed 0.45s ease-out; }
+  @keyframes stFlashRed {
+    0% { box-shadow: inset 0 0 0 6px rgba(220,38,38,0.85); }
+    100% { box-shadow: inset 0 0 0 0 transparent; }
+  }
+  .st-wedge { position: fixed; left: -100vw; width: 1px; height: 1px; opacity: 0; }
+  @media (max-width: 576px) {
+    .st-table-wrap { font-size: 0.85rem; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+  <nav aria-label="breadcrumb">
+    <ol class="breadcrumb mb-2">
+      <li class="breadcrumb-item"><a href="{% url 'stock_take:session_list' %}">Stock Take</a></li>
+      <li class="breadcrumb-item active">Scan</li>
+    </ol>
+  </nav>
+
+  <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+    <div>
+      <h4 class="fw-bold mb-1">{{ session.client_name }}</h4>
+      <p class="text-muted mb-0">{{ session.location }} · {{ session.session_date|date:"d/m/Y" }}</p>
+    </div>
+    {% if can_scan and has_lines %}
+    <div class="d-flex flex-wrap gap-2 align-items-center">
+      {% if public_scan_url %}
+      <button type="button" class="btn btn-outline-secondary" id="st-copy-public" data-url="{{ public_scan_url }}" title="Copy public scan URL" aria-label="Copy public scan URL">
+        <i class="fas fa-link"></i>
+      </button>
+      {% endif %}
+      <button type="button" class="btn btn-success" id="st-btn-complete">
+        <i class="fas fa-check-circle me-1"></i>Mark complete &amp; report
+      </button>
+    </div>
+    {% endif %}
+  </div>
+
+  {% if not can_scan %}
+  <div class="alert alert-info">You have view-only access. Scanning requires inventory edit permission.</div>
+  {% endif %}
+
+  {% if can_scan and not has_lines %}
+  <div class="card mb-3">
+    <div class="card-header fw-semibold">1. Upload expected stock (.xlsx)</div>
+    <div class="card-body">
+      <p class="small text-muted mb-2">First row headers: <strong>SKU</strong>, <strong>Item Name</strong> (optional), <strong>Barcode or scan code</strong> (optional — 1D/2D/QR, GTIN, etc.; if set, the scanner must read this value), <strong>Expected Quantity</strong>. One sheet.</p>
+      <p class="mb-3">
+        <a href="{{ expected_template_url }}" class="btn btn-outline-secondary">
+          <i class="fas fa-file-download me-2"></i>Download Excel template
+        </a>
+        <span class="small text-muted ms-2">Same column layout as the importer; replace sample rows with your stock.</span>
+      </p>
+      <input type="file" id="st-file-xlsx" class="form-control" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+      <div class="mt-2 small" id="st-upload-msg"></div>
+    </div>
+  </div>
+  {% elif can_scan and has_lines %}
+  <div class="alert alert-success py-2 mb-3"><i class="fas fa-check me-2"></i>Expected list loaded ({{ lines|length }} lines). To change the file, create a new session.</div>
+  {% endif %}
+
+  {% if can_scan and has_lines %}
+  <div class="card mb-3 border-primary border-opacity-50">
+    <div class="card-header fw-semibold">2. Hardware scanner (wedge)</div>
+    <div class="card-body">
+      <p class="small text-muted mb-2">Scans match each line’s <strong>Barcode or scan code</strong> when set in the sheet; otherwise they match <strong>SKU</strong>. Use a USB or Bluetooth scanner that types into the focused field, or tap <strong>Focus scanner</strong> first.</p>
+      <div class="d-flex flex-wrap align-items-end gap-2 mb-2">
+        <div class="flex-grow-1" style="min-width: 12rem;">
+          <label class="form-label small text-muted mb-0">Scanner capture</label>
+          <input type="text" class="form-control st-wedge" id="st-wedge" autocomplete="off" autocorrect="off" spellcheck="false" aria-label="Barcode scanner input">
+        </div>
+        <button type="button" class="btn btn-outline-secondary" id="st-btn-focus-wedge"><i class="fas fa-keyboard me-1"></i>Focus scanner</button>
+      </div>
+
+      <div class="card bg-light mt-3 st-last-scan">
+        <div class="card-body py-2">
+          <div class="text-muted small">Last scan</div>
+          <div id="st-last-msg" class="fw-semibold">—</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-header fw-semibold">Manual count (damaged label)</div>
+    <div class="card-body row g-2 align-items-end">
+      <div class="col-md-5">
+        <label class="form-label">SKU or barcode / scan code</label>
+        <input type="text" class="form-control" id="st-manual-sku" placeholder="Same value the scanner would read">
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">Actual quantity</label>
+        <input type="number" class="form-control" id="st-manual-qty" min="0" step="0.001" placeholder="0">
+      </div>
+      <div class="col-md-3">
+        <button type="button" class="btn btn-warning w-100" id="st-manual-set">Set actual</button>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <span class="fw-semibold">Live counts</span>
+      <span class="badge bg-secondary">Unknown scans: {{ unknown_count }}</span>
+    </div>
+    <div class="card-body p-0 st-table-wrap">
+      <div class="table-responsive">
+        <table class="table table-sm table-striped mb-0 align-middle" id="st-lines-table">
+          <thead class="table-light">
+            <tr>
+              <th>SKU</th>
+              <th>Scan code</th>
+              <th>Item</th>
+              <th class="text-end">Expected</th>
+              <th class="text-end">Actual</th>
+              <th class="text-end">Variance</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in lines %}
+            <tr data-sku="{{ row.sku|escape }}">
+              <td class="font-monospace">{{ row.sku }}</td>
+              <td class="font-monospace small">{% if row.scan_code %}{{ row.scan_code }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+              <td>{{ row.item_name }}</td>
+              <td class="text-end st-exp">{{ row.expected_qty }}</td>
+              <td class="text-end st-act">{{ row.actual_qty }}</td>
+              <td class="text-end st-var">—</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="6" class="text-center py-4 text-muted">Upload a spreadsheet to see lines.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+{% csrf_token %}
+{% endblock %}
+
+{% block extra_js %}
+{% if can_scan %}
+<script>
+(function() {
+  const CSRF = document.querySelector('[name=csrfmiddlewaretoken]').value;
+  const SCAN_URL = "{{ scan_url|escapejs }}";
+  const UPLOAD_URL = "{{ upload_url|escapejs }}";
+  const COMPLETE_URL = "{{ complete_url|escapejs }}";
+  const LINES_INIT = {{ lines_json|safe }};
+
+  function playBeep() {
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      const ctx = new Ctx();
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.connect(g); g.connect(ctx.destination);
+      o.frequency.value = 880;
+      g.gain.setValueAtTime(0.07, ctx.currentTime);
+      o.start();
+      o.stop(ctx.currentTime + 0.07);
+    } catch (e) {}
+  }
+
+  function flashRed() {
+    document.body.classList.add('st-flash-red');
+    setTimeout(() => document.body.classList.remove('st-flash-red'), 500);
+  }
+
+  function varianceClass(v) {
+    if (v === 0) return 'st-var-ok';
+    if (v < 0) return 'st-var-short';
+    return 'st-var-excess';
+  }
+
+  function updateRow(sku, expected, actual) {
+    let tr = null;
+    document.querySelectorAll('#st-lines-table tbody tr[data-sku]').forEach((row) => {
+      if (row.getAttribute('data-sku') === sku) tr = row;
+    });
+    if (!tr) return;
+    const exp = parseFloat(expected);
+    const act = parseFloat(actual);
+    const v = act - exp;
+    tr.querySelector('.st-exp').textContent = expected;
+    tr.querySelector('.st-act').textContent = actual;
+    const vc = tr.querySelector('.st-var');
+    vc.textContent = (v >= 0 ? '+' : '') + v.toFixed(3);
+    vc.className = 'text-end st-var ' + varianceClass(v);
+  }
+
+  function recalcAllFromData(rows) {
+    rows.forEach(r => updateRow(r.sku, String(r.expected_qty), String(r.actual_qty)));
+  }
+
+  recalcAllFromData(LINES_INIT);
+
+  function setLast(msg, ok) {
+    const el = document.getElementById('st-last-msg');
+    if (!el) return;
+    el.textContent = msg;
+    el.className = 'fw-semibold ' + (ok === false ? 'text-danger' : ok === true ? 'text-success' : '');
+  }
+
+  async function postScan(body) {
+    const r = await fetch(SCAN_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+      body: JSON.stringify(body),
+    });
+    const data = await r.json().catch(() => ({}));
+    return { ok: r.ok && data.ok, data };
+  }
+
+  async function handleBarcode(text) {
+    const code = (text || '').trim();
+    if (!code) return;
+    const { ok, data } = await postScan({ barcode: code });
+    if (ok && data.matched) {
+      playBeep();
+      setLast(data.item_name + ' · Actual ' + data.actual_qty + ' (exp ' + data.expected_qty + ')', true);
+      updateRow(data.sku, data.expected_qty, data.actual_qty);
+    } else if (ok && data.unknown) {
+      flashRed();
+      setLast('Unknown: ' + code, false);
+    } else {
+      flashRed();
+      setLast(data.error || 'Scan failed', false);
+    }
+  }
+
+  let wedgeBuf = '';
+  function flushWedge() {
+    const s = wedgeBuf.trim();
+    wedgeBuf = '';
+    if (s.length >= 1) handleBarcode(s);
+  }
+  document.getElementById('st-wedge')?.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      flushWedge();
+      return;
+    }
+    if (e.key.length === 1) wedgeBuf += e.key;
+  });
+  document.getElementById('st-btn-focus-wedge')?.addEventListener('click', () => {
+    document.getElementById('st-wedge')?.focus();
+  });
+
+  document.getElementById('st-manual-set')?.addEventListener('click', async function() {
+    const sku = document.getElementById('st-manual-sku').value.trim();
+    const qty = document.getElementById('st-manual-qty').value.trim();
+    if (!sku || qty === '') { alert('Enter SKU and quantity.'); return; }
+    const { ok, data } = await postScan({ sku, set_actual: qty });
+    if (ok && data.matched) {
+      playBeep();
+      setLast('Set ' + data.sku + ' to ' + data.actual_qty, true);
+      updateRow(data.sku, data.expected_qty, data.actual_qty);
+    } else if (ok && data.unknown) {
+      flashRed();
+      setLast('Unknown SKU: ' + sku, false);
+    } else {
+      flashRed();
+      setLast(data.error || 'Failed', false);
+    }
+  });
+
+  document.getElementById('st-file-xlsx')?.addEventListener('change', async function() {
+    const f = this.files && this.files[0];
+    const msg = document.getElementById('st-upload-msg');
+    if (!f) return;
+    const fd = new FormData();
+    fd.append('csrfmiddlewaretoken', CSRF);
+    fd.append('file', f);
+    msg.textContent = 'Uploading…';
+    const r = await fetch(UPLOAD_URL, { method: 'POST', headers: { 'X-CSRFToken': CSRF }, body: fd });
+    const data = await r.json().catch(() => ({}));
+    if (r.ok && data.ok) {
+      msg.textContent = 'Loaded ' + data.count + ' lines. Reloading…';
+      location.reload();
+    } else {
+      msg.textContent = data.error || 'Upload failed';
+      msg.className = 'mt-2 small text-danger';
+    }
+    this.value = '';
+  });
+
+  document.getElementById('st-btn-complete') && document.getElementById('st-btn-complete').addEventListener('click', async function() {
+    if (!confirm('Mark this session complete and open the report?')) return;
+    const fd = new FormData();
+    fd.append('csrfmiddlewaretoken', CSRF);
+    const r = await fetch(COMPLETE_URL, { method: 'POST', headers: { 'X-CSRFToken': CSRF }, body: fd });
+    const data = await r.json().catch(() => ({}));
+    if (r.ok && data.ok && data.redirect) {
+      window.location = data.redirect;
+    } else {
+      alert(data.error || 'Could not complete.');
+    }
+  });
+})();
+</script>
+{% endif %}
+<script>
+(function() {
+  var btn = document.getElementById('st-copy-public');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var url = btn.getAttribute('data-url') || '';
+    var label = btn.innerHTML;
+    function copied() {
+      btn.innerHTML = '<i class="fas fa-check"></i>';
+      setTimeout(function() { btn.innerHTML = label; }, 2000);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).then(copied).catch(copied);
+    } else {
+      var ta = document.createElement('textarea');
+      ta.value = url;
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); } catch (e) {}
+      document.body.removeChild(ta);
+      copied();
+    }
+  });
+})();
+</script>
+{% endblock %}

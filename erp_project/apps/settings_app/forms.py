@@ -137,7 +137,10 @@ class CompanySettingsForm(forms.ModelForm):
     class Meta:
         model = CompanySettings
         fields = [
-            'company_name', 'logo', 'address', 'phone', 'email', 'website',
+            'company_name', 'logo', 'address', 'phone', 'email',
+            'smtp_host', 'smtp_port', 'smtp_username', 'smtp_password',
+            'smtp_use_tls', 'smtp_from_email',
+            'website',
             'tax_id', 'fiscal_year_start', 'currency', 'date_format', 'timezone',
             'inventory_valuation_method',
             'estimate_default_client_note', 'estimate_default_terms',
@@ -146,6 +149,12 @@ class CompanySettingsForm(forms.ModelForm):
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields['smtp_password'].required = False
+        self.fields['smtp_password'].widget = forms.PasswordInput(
+            render_value=False,
+            attrs={'class': 'form-control', 'placeholder': 'Leave blank to keep unchanged'},
+        )
+        self.fields['smtp_use_tls'].widget.attrs['class'] = 'form-check-input'
         for field_name, field in self.fields.items():
             if field_name == 'logo':
                 field.widget.attrs['class'] = 'form-control'
@@ -157,7 +166,19 @@ class CompanySettingsForm(forms.ModelForm):
                 field.widget.attrs['rows'] = 5
             elif field_name == 'inventory_valuation_method':
                 field.widget.attrs['class'] = 'form-select'
+            elif field_name in ('smtp_password', 'smtp_use_tls'):
+                continue
+            elif field_name.startswith('smtp_'):
+                field.widget.attrs['class'] = 'form-control'
             else:
                 field.widget.attrs['class'] = 'form-control'
+
+    def clean_smtp_password(self):
+        val = self.cleaned_data.get('smtp_password')
+        if val:
+            return val
+        if self.instance.pk:
+            return self.instance.smtp_password
+        return ''
 
 

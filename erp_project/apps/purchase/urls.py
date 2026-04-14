@@ -24,12 +24,23 @@ urlpatterns = [
     path('requests/<int:pk>/reject/', views.pr_reject, name='pr_reject'),
     path('requests/<int:pk>/convert/', views.pr_convert, name='pr_convert'),
     path('requests/<int:pk>/items/', views.pr_items_json, name='pr_items_json'),
+    path(
+        'requests/<int:pk>/vendor-attachments/upload/',
+        views.pr_vendor_attachment_upload,
+        name='pr_vendor_attachment_upload',
+    ),
+    path(
+        'requests/<int:pk>/vendor-attachments/<int:attachment_id>/',
+        views.pr_vendor_attachment_update,
+        name='pr_vendor_attachment_update',
+    ),
     
     # Purchase Orders
     path('orders/', views.PurchaseOrderListView.as_view(), name='po_list'),
     path('orders/create/', views.PurchaseOrderCreateView.as_view(), name='po_create'),
     path('orders/<int:pk>/', views.PurchaseOrderDetailView.as_view(), name='po_detail'),
     path('orders/<int:pk>/pdf/', views.po_pdf, name='po_pdf'),
+    path('orders/<int:pk>/send-email/', views.po_send_email, name='po_send_email'),
     path('orders/<int:pk>/edit/', views.PurchaseOrderUpdateView.as_view(), name='po_edit'),
     path('orders/<int:pk>/delete/', views.po_delete, name='po_delete'),
     path('orders/<int:pk>/items/', views.po_items_json, name='po_items_json'),

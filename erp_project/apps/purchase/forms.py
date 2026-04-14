@@ -6,6 +6,8 @@ VAT LOGIC (Tax Code Driven - SAP/Oracle Standard):
 - No Tax Code = No VAT (Out of Scope)
 - VAT rate is read-only, computed from Tax Code
 """
+from decimal import Decimal
+
 from django import forms
 from django.db.models import Q
 from django.core.exceptions import ValidationError
@@ -66,20 +68,85 @@ class PurchaseRequestForm(forms.ModelForm):
 class PurchaseRequestItemForm(forms.ModelForm):
     class Meta:
         model = PurchaseRequestItem
-        fields = ['description', 'quantity', 'unit', 'estimated_price']
-    
+        fields = ['inventory_item', 'quantity', 'unit', 'estimated_price']
+        widgets = {
+            'estimated_price': forms.NumberInput(attrs={'step': '0.01', 'min': '0'}),
+            'quantity': forms.NumberInput(attrs={'step': '0.01', 'min': '0'}),
+        }
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        from apps.inventory.models import Item
+
+        self.fields['inventory_item'].queryset = Item.objects.filter(
+            is_active=True, status='active'
+        ).order_by('name')
+        self.fields['inventory_item'].required = False
+        self.fields['inventory_item'].empty_label = '— Select inventory item —'
+        self.fields['inventory_item'].widget.attrs['class'] = 'form-select item-inventory-select'
+
         self.fields['unit'].widget.attrs['class'] = 'form-select'
-        for field in self.fields.values():
+        for name, field in self.fields.items():
+            if name in ('inventory_item', 'unit'):
+                continue
             if field.widget.attrs.get('class') != 'form-select':
                 field.widget.attrs['class'] = 'form-control'
+
+        if not self.instance.pk:
+            self.fields['quantity'].initial = Decimal('0')
+
+        self.fields['quantity'].widget.attrs.update(
+            {'class': 'form-control item-qty', 'step': '0.01', 'min': '0'}
+        )
+        self.fields['estimated_price'].widget.attrs.update(
+            {'class': 'form-control item-cost', 'step': '0.01', 'min': '0'}
+        )
+
+    def clean(self):
+        cleaned = super().clean()
+        if cleaned.get('DELETE'):
+            return cleaned
+
+        inv = cleaned.get('inventory_item')
+        qty = cleaned.get('quantity')
+        if qty is None:
+            qty = Decimal('0')
+        price = cleaned.get('estimated_price')
+        if price is None:
+            price = Decimal('0')
+
+        if inv:
+            if qty <= 0:
+                raise forms.ValidationError({'quantity': 'Enter a quantity greater than zero.'})
+            return cleaned
+
+        if self.instance.pk and (self.instance.description or '').strip():
+            return cleaned
+
+        if qty > 0 or price > 0:
+            raise forms.ValidationError(
+                {'inventory_item': 'Select an inventory item for each line.'}
+            )
+        return cleaned
+
+
+class BasePurchaseRequestItemFormSet(forms.BaseInlineFormSet):
+    """Skip unsaved rows with no catalog item selected (matches dynamic Add Item rows)."""
+
+    def _should_delete_form(self, form):
+        if super()._should_delete_form(form):
+            return True
+        if not form.instance.pk and form.cleaned_data:
+            if not form.cleaned_data.get('inventory_item'):
+                return True
+        return False
 
 
 PurchaseRequestItemFormSet = forms.inlineformset_factory(
     PurchaseRequest,
     PurchaseRequestItem,
     form=PurchaseRequestItemForm,
+    formset=BasePurchaseRequestItemFormSet,
     extra=1,
     can_delete=True
 )
@@ -153,49 +220,74 @@ class PurchaseOrderItemForm(forms.ModelForm):
     
     class Meta:
         model = PurchaseOrderItem
-        fields = ['description', 'quantity', 'unit_price', 'tax_code', 'is_vat_inclusive']
+        fields = ['inventory_item', 'quantity', 'unit_price', 'tax_code', 'is_vat_inclusive']
+        widgets = {
+            'quantity': forms.NumberInput(attrs={'step': '0.01', 'min': '0'}),
+            'unit_price': forms.NumberInput(attrs={'step': '0.01', 'min': '0'}),
+        }
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        for field_name, field in self.fields.items():
-            if field_name in ['tax_code']:
-                field.widget.attrs['class'] = 'form-select'
-            elif field_name == 'is_vat_inclusive':
-                field.widget.attrs['class'] = 'form-check-input'
-            else:
-                field.widget.attrs['class'] = 'form-control'
-        
-        # Set Tax Code queryset and default
+        from apps.inventory.models import Item
+
+        self.fields['inventory_item'].queryset = Item.objects.filter(
+            is_active=True, status='active'
+        ).order_by('name')
+        self.fields['inventory_item'].required = False
+        self.fields['inventory_item'].empty_label = '— Select inventory item —'
+        self.fields['inventory_item'].widget.attrs['class'] = (
+            'form-select form-select-sm item-inventory-select'
+        )
+
         self.fields['tax_code'].queryset = TaxCode.objects.filter(is_active=True)
         self.fields['tax_code'].required = False
-        self.fields['tax_code'].empty_label = "-- No Tax (Out of Scope) --"
-        
-        # Description optional for empty extra rows (validated in clean)
-        self.fields['description'].required = False
-        
-        # Pre-select default tax code if creating new item
+        self.fields['tax_code'].empty_label = '-- No Tax (Out of Scope) --'
+        self.fields['tax_code'].widget.attrs['class'] = (
+            'form-select form-select-sm item-tax-code'
+        )
+
+        self.fields['is_vat_inclusive'].widget = forms.HiddenInput()
+        self.fields['is_vat_inclusive'].initial = False
+
+        self.fields['quantity'].widget.attrs.update(
+            {'class': 'form-control form-control-sm item-qty', 'step': '0.01', 'min': '0'}
+        )
+        self.fields['unit_price'].widget.attrs.update(
+            {'class': 'form-control form-control-sm item-price', 'step': '0.01', 'min': '0'}
+        )
+
         if not self.instance.pk:
+            self.fields['quantity'].initial = Decimal('0')
+            self.fields['unit_price'].initial = Decimal('0')
             default_tax_code = TaxCode.objects.filter(is_active=True, is_default=True).first()
             if default_tax_code:
                 self.fields['tax_code'].initial = default_tax_code
     
     def clean(self):
         cleaned = super().clean()
-        desc = (cleaned.get('description') or '').strip()
-        qty = cleaned.get('quantity')
-        price = cleaned.get('unit_price')
-        # Empty row: no description and no meaningful price - allow (will be skipped on save)
-        # (qty=1 is often template default for empty extra row)
-        if not desc and (price is None or price == 0):
+        if cleaned.get('DELETE'):
             return cleaned
-        # Partial row: has price but no description - require description
-        if not desc and price and price > 0:
-            raise forms.ValidationError('Description is required when price is entered.')
-        # Has description but no qty/price - use defaults
-        if desc and (qty is None or qty == 0):
-            cleaned['quantity'] = cleaned.get('quantity') or 1
-        if desc and (price is None or price < 0):
-            cleaned['unit_price'] = cleaned.get('unit_price') or 0
+
+        inv = cleaned.get('inventory_item')
+        qty = cleaned.get('quantity')
+        if qty is None:
+            qty = Decimal('0')
+        price = cleaned.get('unit_price')
+        if price is None:
+            price = Decimal('0')
+
+        if inv:
+            if qty <= 0:
+                raise forms.ValidationError({'quantity': 'Enter a quantity greater than zero.'})
+            return cleaned
+
+        if self.instance.pk and (self.instance.description or '').strip():
+            return cleaned
+
+        if qty > 0 or price > 0:
+            raise forms.ValidationError(
+                {'inventory_item': 'Select an inventory item for each line.'}
+            )
         return cleaned
 
 
@@ -205,12 +297,8 @@ class BasePurchaseOrderItemFormSet(forms.BaseInlineFormSet):
     def _should_delete_form(self, form):
         if super()._should_delete_form(form):
             return True
-        # Treat empty new forms as "delete" - don't save them
         if not form.instance.pk and form.cleaned_data:
-            desc = (form.cleaned_data.get('description') or '').strip()
-            qty = form.cleaned_data.get('quantity') or 0
-            price = form.cleaned_data.get('unit_price') or 0
-            if not desc and (not qty or qty == 0) and (not price or price == 0):
+            if not form.cleaned_data.get('inventory_item'):
                 return True
         return False
 
