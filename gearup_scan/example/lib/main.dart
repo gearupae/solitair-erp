@@ -468,12 +468,9 @@ class _ScanPageState extends State<ScanPage> {
       final r = await widget.client.submitScan(widget.sessionId, barcode: raw);
       if (!_alive || !mounted) return;
       if (r.ok && r.matched == true) {
-        final added = r.autoCreated == true;
         _result.value = _ScanResult(
           ok: true,
-          message: added
-              ? '✓  New line — ${r.itemName ?? 'Unknown'} — actual: ${r.actualQty} (expected: ${r.expectedQty})'
-              : '✓  ${r.itemName ?? r.sku} — actual: ${r.actualQty}  (expected: ${r.expectedQty})',
+          message: '✓  ${r.itemName ?? r.sku} — actual: ${r.actualQty}  (expected: ${r.expectedQty})',
         );
         _doFlash(Colors.green.withValues(alpha: 0.35), durationMs: 380);
       } else if (r.ok && r.unknown == true) {

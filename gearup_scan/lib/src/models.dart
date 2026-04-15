@@ -112,7 +112,6 @@ class ScanSubmitResult {
     required this.ok,
     this.matched,
     this.unknown,
-    this.autoCreated,
     this.sku,
     this.itemName,
     this.expectedQty,
@@ -123,8 +122,6 @@ class ScanSubmitResult {
   final bool ok;
   final bool? matched;
   final bool? unknown;
-  /// Server added a new [StockTakeLine] for a barcode not in the expected list.
-  final bool? autoCreated;
   final String? sku;
   final String? itemName;
   final String? expectedQty;
@@ -136,7 +133,6 @@ class ScanSubmitResult {
       ok: j['ok'] as bool? ?? false,
       matched: j['matched'] as bool?,
       unknown: j['unknown'] as bool?,
-      autoCreated: j['auto_created'] as bool?,
       sku: j['sku'] as String?,
       itemName: j['item_name'] as String?,
       expectedQty: j['expected_qty']?.toString(),
