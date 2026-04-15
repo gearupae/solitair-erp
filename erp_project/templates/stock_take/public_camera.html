@@ -41,11 +41,11 @@
       The expected stock list has not been uploaded for this session yet. Ask your coordinator to upload the Excel file in the ERP first.
     </div>
     {% else %}
-    <p class="small text-muted mb-2">Camera works on HTTPS or localhost. USB / Bluetooth <strong>keyboard-wedge</strong> scanners: tap “Focus scanner”, then scan — any 1D/2D symbology the hardware decodes is sent as text. <kbd>Enter</kbd> or <kbd>Tab</kbd> suffix supported; no-suffix readers still flush shortly after the last character.</p>
+    <p class="small text-muted mb-2">Camera works on HTTPS or localhost. USB / Bluetooth <strong>keyboard-wedge</strong> scanners: tap <strong>Prepare scanner</strong>, then scan — any 1D/2D symbology the hardware decodes is sent as text. <kbd>Enter</kbd> or <kbd>Tab</kbd> suffix supported; no-suffix readers still flush shortly after the last character. On phones, we avoid opening the on-screen keyboard where possible (hardware scanners still work).</p>
     <div class="d-flex flex-wrap gap-2 mb-3">
       <button type="button" class="btn btn-primary st-big-btn" id="st-pub-cam-start"><i class="fas fa-camera me-2"></i>Start camera</button>
       <button type="button" class="btn btn-outline-secondary st-big-btn" id="st-pub-cam-stop" disabled><i class="fas fa-stop me-2"></i>Stop camera</button>
-      <button type="button" class="btn btn-outline-dark st-big-btn" id="st-pub-focus-wedge"><i class="fas fa-keyboard me-2"></i>Focus scanner</button>
+      <button type="button" class="btn btn-outline-dark st-big-btn" id="st-pub-focus-wedge" title="Route the next scans from your USB/BT wedge into this page (no typing needed)"><i class="fas fa-barcode me-2"></i>Prepare scanner</button>
     </div>
     <div id="st-pub-reader" class="mb-1"></div>
     <p class="small text-muted mb-3">
@@ -54,7 +54,7 @@
       <strong>MSI Plessey</strong> is not supported by this web library — use the wedge field with a hardware scanner for MSI labels.
     </p>
     <label class="form-label small text-muted">Scanner / wedge</label>
-    <input type="text" class="form-control form-control-lg st-wedge" id="st-pub-wedge" autocomplete="off" autocorrect="off" spellcheck="false" aria-label="Barcode input">
+    <input type="text" class="form-control form-control-lg st-wedge" id="st-pub-wedge" inputmode="none" enterkeyhint="done" autocomplete="off" autocorrect="off" spellcheck="false" aria-label="Hardware barcode scanner capture (keyboard wedge)">
 
     <div class="card bg-white shadow-sm mt-3 st-last-scan">
       <div class="card-body py-3">
@@ -238,8 +238,18 @@
         flushWedgeFromField();
       }
     });
-    document.getElementById('st-pub-focus-wedge').addEventListener('click', () => {
-      wedgeEl.focus();
+    document.getElementById('st-pub-focus-wedge').addEventListener('click', function(ev) {
+      ev.preventDefault();
+      try {
+        wedgeEl.focus({ preventScroll: true });
+      } catch (e) {
+        wedgeEl.focus();
+      }
+      try {
+        if (navigator.virtualKeyboard && typeof navigator.virtualKeyboard.hide === 'function') {
+          navigator.virtualKeyboard.hide();
+        }
+      } catch (e) {}
     });
 
     document.getElementById('st-pub-manual-set').addEventListener('click', async function() {

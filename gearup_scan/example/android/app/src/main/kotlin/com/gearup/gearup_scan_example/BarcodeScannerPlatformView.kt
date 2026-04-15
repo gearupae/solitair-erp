@@ -23,16 +23,13 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
-import androidx.lifecycle.lifecycleScope
 import com.google.mlkit.vision.barcode.BarcodeScanner
 import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 import io.flutter.embedding.android.FlutterActivity
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import com.google.mlkit.vision.common.InputImage
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.platform.PlatformView
@@ -55,6 +52,7 @@ internal class BarcodeScannerPlatformView(
     private val viewId: Int,
     messenger: io.flutter.plugin.common.BinaryMessenger,
     private val activity: FlutterActivity,
+    initialCameraMode: Boolean = true,
 ) : PlatformView {
 
     companion object {
@@ -63,8 +61,12 @@ internal class BarcodeScannerPlatformView(
         private const val CHANNEL_PREFIX = "gearup_barcode_scanner"
 
         /**
-         * Explicit symbologies — avoids relying on default/ALL where some devices miss Code 39 / EAN / ITF.
-         * Order: first + varargs (ML Kit API).
+         * Fallback when [BarcodeScanning.getClient] (no args) fails — explicit symbologies only.
+         * Prefer the default client first: ML Kit enables **all** formats by default, which often
+         * helps marginal reads (glare, angle). Curved/wet labels remain a physics limit for any camera.
+         *
+         * Note: [BarcodeScannerOptions.Builder.enableAllPotentialBarcodes] returns regions where
+         * decode failed ([Barcode.getRawValue] null) — useful for zoom UX, not for our string-only API path.
          */
         private fun buildBarcodeScannerOptions(): BarcodeScannerOptions =
             BarcodeScannerOptions.Builder()
@@ -88,8 +90,20 @@ internal class BarcodeScannerPlatformView(
 
     private val root: FrameLayout = FrameLayout(context)
     private val previewView: PreviewView = PreviewView(context).apply {
-        implementationMode = PreviewView.ImplementationMode.PERFORMANCE
+        // COMPATIBLE (TextureView) is more stable inside Flutter PlatformView than PERFORMANCE
+        // (SurfaceView): fewer native crashes / ANRs when composited with the Flutter surface.
+        implementationMode = PreviewView.ImplementationMode.COMPATIBLE
         scaleType = PreviewView.ScaleType.FILL_CENTER
+    }
+    /** Physical USB/BT scanner (HID) — camera off, same result path via Activity wedge + Flutter. */
+    private val scannerReadyBanner: TextView = TextView(context).apply {
+        setBackgroundColor(Color.BLACK)
+        setTextColor(Color.WHITE)
+        gravity = Gravity.CENTER
+        textSize = 17f
+        setPadding(48, 48, 48, 48)
+        text = "Scanner ready — scan now"
+        visibility = View.GONE
     }
     private val overlay: TextView = TextView(context).apply {
         setBackgroundColor(0xCC000000.toInt())
@@ -102,9 +116,10 @@ internal class BarcodeScannerPlatformView(
 
     private val methodChannel = MethodChannel(messenger, "$CHANNEL_PREFIX/$viewId")
 
-    /** Created on [Dispatchers.IO] so ML Kit native init never blocks the UI thread (ANR). */
+    /** Lazy-init on [analysisExecutor] only — avoids races where CameraX delivers frames before async ML Kit init finished (all scans were dropped). */
     @Volatile
     private var scanner: BarcodeScanner? = null
+    private val scannerInitLock = Any()
 
     private val analysisExecutor: ExecutorService = Executors.newSingleThreadExecutor { r ->
         Thread(r, "gearup-mlkit-analysis").apply { isDaemon = true }
@@ -119,12 +134,20 @@ internal class BarcodeScannerPlatformView(
     private var lastBarcodeForCooldown = ""
     private var lastBarcodeClockMs = 0L
 
+    /** When false, camera is unbound and [scannerReadyBanner] is shown (HID wedge handles input). */
+    private var isCameraMode = initialCameraMode
+
     private val lifecycleObserver = object : DefaultLifecycleObserver {
         override fun onPause(owner: LifecycleOwner) {
             releaseCameraUseCases("onPause")
         }
 
         override fun onResume(owner: LifecycleOwner) {
+            if (!isCameraMode) {
+                overlay.visibility = View.GONE
+                applyCameraModeUi()
+                return
+            }
             if (CameraPermissionHelper.hasPermission(activity)) {
                 overlay.visibility = View.GONE
                 tryBindCamera("onResume")
@@ -147,6 +170,13 @@ internal class BarcodeScannerPlatformView(
             ),
         )
         root.addView(
+            scannerReadyBanner,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT,
+            ),
+        )
+        root.addView(
             overlay,
             FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
@@ -162,49 +192,25 @@ internal class BarcodeScannerPlatformView(
 
         overlay.setOnClickListener {
             try {
-                requestCameraAndBind()
+                if (isCameraMode) {
+                    requestCameraAndBind()
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "overlay click", e)
             }
         }
 
-        // Defer camera + permission to next frame so the PlatformView / Flutter frame can finish (reduces startup ANR).
-        previewView.post {
-            try {
-                requestCameraAndBind()
-            } catch (e: Exception) {
-                Log.e(TAG, "init bind", e)
-                showPermissionPlaceholder()
-            }
+        // Match UI to mode before first frame — avoids a flash of camera preview when Flutter
+        // recreates the view while the user is in Scanner mode (default used to be camera=true).
+        if (!isCameraMode) {
+            applyCameraModeUi()
         }
 
-        // ML Kit client on background thread — first launch may load models; must not block main.
-        activity.lifecycleScope.launch {
-            val created = withContext(Dispatchers.IO) {
-                try {
-                    BarcodeScanning.getClient(buildBarcodeScannerOptions())
-                } catch (e: Exception) {
-                    Log.e(TAG, "BarcodeScanning explicit formats", e)
-                    try {
-                        BarcodeScanning.getClient()
-                    } catch (e2: Exception) {
-                        Log.e(TAG, "BarcodeScanning default client", e2)
-                        null
-                    }
-                }
-            }
-            if (isReleased.get()) {
-                try {
-                    created?.close()
-                } catch (_: Exception) {
-                }
-                return@launch
-            }
-            scanner = created
-            if (scanner == null) {
-                Log.e(TAG, "Barcode scanner failed to initialize")
-            }
-        }
+        // Do not call requestCameraAndBind() here: it raced Flutter's setCameraMode from
+        // onPlatformViewCreated and could start the camera before "Scanner" mode was applied.
+        // First bind: Flutter invokes setCameraMode(true) after the method channel is ready.
+        // ML Kit client is created lazily on the analysis thread (see [ensureScanner]) so the first
+        // frames are never processed with scanner == null.
 
         // Flutter -> native: torch (Dart [invokeMethod]); native -> Flutter: onBarcode ([invokeMethod] from here).
         methodChannel.setMethodCallHandler { call, result ->
@@ -219,12 +225,54 @@ internal class BarcodeScannerPlatformView(
                         result.error("TORCH", e.message, null)
                     }
                 }
+                "setCameraMode" -> {
+                    try {
+                        val cameraOn = call.arguments == true
+                        setCameraMode(cameraOn)
+                        result.success(null)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "setCameraMode", e)
+                        result.error("MODE", e.message, null)
+                    }
+                }
                 else -> result.notImplemented()
             }
         }
     }
 
+    private fun applyCameraModeUi() {
+        if (isCameraMode) {
+            previewView.visibility = View.VISIBLE
+            scannerReadyBanner.visibility = View.GONE
+        } else {
+            previewView.visibility = View.GONE
+            scannerReadyBanner.visibility = View.VISIBLE
+            overlay.visibility = View.GONE
+        }
+    }
+
+    private fun setCameraMode(cameraOn: Boolean) {
+        if (isReleased.get()) return
+        isCameraMode = cameraOn
+        activity.runOnUiThread {
+            if (isReleased.get()) return@runOnUiThread
+            if (cameraOn) {
+                applyCameraModeUi()
+                if (CameraPermissionHelper.hasPermission(activity)) {
+                    overlay.visibility = View.GONE
+                    tryBindCamera("setCameraMode")
+                } else {
+                    requestCameraAndBind()
+                }
+            } else {
+                releaseCameraUseCases("setCameraMode-scanner")
+                applyCameraModeUi()
+            }
+        }
+    }
+
     private fun showPermissionPlaceholder() {
+        if (!isCameraMode) return
         try {
             overlay.text =
                 "Camera permission is required for scanning.\n\nTap here to grant permission."
@@ -255,8 +303,19 @@ internal class BarcodeScannerPlatformView(
         }
     }
 
-    private fun tryBindCamera(reason: String) {
+    private fun tryBindCamera(reason: String, allowDefer: Boolean = true) {
         if (isReleased.get()) return
+        if (!canBindCameraNow()) {
+            if (allowDefer) {
+                previewView.post {
+                    if (isReleased.get()) return@post
+                    tryBindCamera("$reason-deferred", allowDefer = false)
+                }
+            } else {
+                Log.w(TAG, "skip tryBindCamera ($reason): lifecycle=${activity.lifecycle.currentState}")
+            }
+            return
+        }
         if (!CameraPermissionHelper.hasPermission(activity)) {
             showPermissionPlaceholder()
             return
@@ -273,6 +332,7 @@ internal class BarcodeScannerPlatformView(
             {
                 if (isReleased.get()) return@addListener
                 try {
+                    // Listener runs when the future completes — get() must not block here.
                     val provider = future.get()
                     cameraProvider = provider
                     bindUseCases(provider, reason)
@@ -288,8 +348,16 @@ internal class BarcodeScannerPlatformView(
         )
     }
 
+    /** CameraX requires the activity lifecycle to be at least STARTED to bind use cases. */
+    private fun canBindCameraNow(): Boolean =
+        activity.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+
     private fun bindUseCases(provider: ProcessCameraProvider, reason: String) {
         if (isReleased.get()) return
+        if (!canBindCameraNow()) {
+            Log.w(TAG, "skip bindUseCases ($reason): bad lifecycle")
+            return
+        }
         val lifecycleOwner = activity
         try {
             provider.unbindAll()
@@ -310,11 +378,20 @@ internal class BarcodeScannerPlatformView(
 
         val imageAnalysis = ImageAnalysis.Builder()
             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+            .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
             .build()
 
         try {
             imageAnalysis.setAnalyzer(analysisExecutor) { imageProxy ->
-                analyzeImageSafe(imageProxy)
+                try {
+                    analyzeImageSafe(imageProxy)
+                } catch (t: Throwable) {
+                    Log.e(TAG, "analyzer throwable", t)
+                    try {
+                        imageProxy.close()
+                    } catch (_: Exception) {
+                    }
+                }
             }
         } catch (e: Exception) {
             Log.e(TAG, "setAnalyzer", e)
@@ -365,9 +442,41 @@ internal class BarcodeScannerPlatformView(
         }
     }
 
+    /**
+     * Must only be called from [analysisExecutor]. Initializes ML Kit on first use on this thread
+     * so we never drop frames while an async init (old lifecycleScope launch) was still running.
+     */
+    private fun ensureScanner(): BarcodeScanner? {
+        scanner?.let { return it }
+        synchronized(scannerInitLock) {
+            if (isReleased.get()) return null
+            scanner?.let { return it }
+            return try {
+                val created = try {
+                    BarcodeScanning.getClient()
+                } catch (e: Exception) {
+                    Log.w(TAG, "BarcodeScanning.getClient() default", e)
+                    BarcodeScanning.getClient(buildBarcodeScannerOptions())
+                }
+                scanner = created
+                created
+            } catch (e: Exception) {
+                Log.e(TAG, "BarcodeScanning failed (default + explicit fallback)", e)
+                null
+            }
+        }
+    }
+
     private fun analyzeImageSafe(imageProxy: ImageProxy) {
-        val sc = scanner
-        if (sc == null || isReleased.get()) {
+        if (isReleased.get()) {
+            try {
+                imageProxy.close()
+            } catch (_: Exception) {
+            }
+            return
+        }
+        val sc = ensureScanner()
+        if (sc == null) {
             try {
                 imageProxy.close()
             } catch (_: Exception) {

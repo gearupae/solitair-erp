@@ -73,13 +73,13 @@
   <div class="card mb-3 border-primary border-opacity-50">
     <div class="card-header fw-semibold">2. Hardware scanner (wedge)</div>
     <div class="card-body">
-      <p class="small text-muted mb-2">Scans match each line’s <strong>Barcode or scan code</strong> when set in the sheet; otherwise they match <strong>SKU</strong>. USB or Bluetooth <strong>keyboard-wedge</strong> readers work: they send digits and letters like a keyboard (1D, 2D, QR, GS1 — any symbology the device decodes). Tap <strong>Focus scanner</strong> first. Suffix <kbd>Enter</kbd> or <kbd>Tab</kbd> is supported; if your reader has no suffix, the line still submits a moment after the last character.</p>
+      <p class="small text-muted mb-2">Scans match each line’s <strong>Barcode or scan code</strong> when set in the sheet; otherwise they match <strong>SKU</strong>. USB or Bluetooth <strong>keyboard-wedge</strong> readers work: they send digits and letters like a keyboard (1D, 2D, QR, GS1 — any symbology the device decodes). Tap <strong>Prepare scanner</strong> first. Suffix <kbd>Enter</kbd> or <kbd>Tab</kbd> is supported; if your reader has no suffix, the line still submits a moment after the last character. On phones we try not to open the on-screen keyboard for this capture field.</p>
       <div class="d-flex flex-wrap align-items-end gap-2 mb-2">
         <div class="flex-grow-1" style="min-width: 12rem;">
           <label class="form-label small text-muted mb-0">Scanner capture</label>
-          <input type="text" class="form-control st-wedge" id="st-wedge" autocomplete="off" autocorrect="off" spellcheck="false" aria-label="Barcode scanner input">
+          <input type="text" class="form-control st-wedge" id="st-wedge" inputmode="none" enterkeyhint="done" autocomplete="off" autocorrect="off" spellcheck="false" aria-label="Hardware barcode scanner capture (keyboard wedge)">
         </div>
-        <button type="button" class="btn btn-outline-secondary" id="st-btn-focus-wedge"><i class="fas fa-keyboard me-1"></i>Focus scanner</button>
+        <button type="button" class="btn btn-outline-secondary" id="st-btn-focus-wedge" title="Prepare capture for USB/BT wedge (hardware scanner)"><i class="fas fa-barcode me-1"></i>Prepare scanner</button>
       </div>
 
       <div class="card bg-light mt-3 st-last-scan">
@@ -264,8 +264,20 @@
       flushWedgeFromField();
     }
   });
-  document.getElementById('st-btn-focus-wedge')?.addEventListener('click', () => {
-    document.getElementById('st-wedge')?.focus();
+  document.getElementById('st-btn-focus-wedge')?.addEventListener('click', function(ev) {
+    ev.preventDefault();
+    const el = document.getElementById('st-wedge');
+    if (!el) return;
+    try {
+      el.focus({ preventScroll: true });
+    } catch (e) {
+      el.focus();
+    }
+    try {
+      if (navigator.virtualKeyboard && typeof navigator.virtualKeyboard.hide === 'function') {
+        navigator.virtualKeyboard.hide();
+      }
+    } catch (e) {}
   });
 
   document.getElementById('st-manual-set')?.addEventListener('click', async function() {

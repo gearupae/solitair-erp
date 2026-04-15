@@ -16,11 +16,16 @@ internal class BarcodeScannerViewFactory(
 ) : PlatformViewFactory(StandardMessageCodec.INSTANCE) {
 
     override fun create(context: Context, viewId: Int, args: Any?): PlatformView {
+        val initialCameraMode = when (args) {
+            is Map<*, *> -> (args["cameraMode"] as? Boolean) ?: true
+            else -> true
+        }
         return BarcodeScannerPlatformView(
             context = context,
             viewId = viewId,
             messenger = messenger,
             activity = activity,
+            initialCameraMode = initialCameraMode,
         )
     }
 }

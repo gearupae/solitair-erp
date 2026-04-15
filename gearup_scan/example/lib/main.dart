@@ -271,6 +271,9 @@ class _ScanResult {
   final bool? ok; // true = matched, false = unknown/error, null = idle
 }
 
+/// Camera (ML Kit / mobile_scanner) vs physical HID scanner (USB / BT keyboard wedge).
+enum _ScanInputMode { camera, scanner }
+
 class _ScanPageState extends State<ScanPage> {
   /// Android APK uses native ML Kit + CameraX ([AndroidView]); iOS/other use [mobile_scanner].
   static bool get _useNativeAndroidScanner => !kIsWeb && Platform.isAndroid;
@@ -284,6 +287,8 @@ class _ScanPageState extends State<ScanPage> {
   MethodChannel? _hidWedgeRx;
   /// Torch state for Android native path (Flutter toggles via [MethodChannel] `setTorch`).
   bool _torchOn = false;
+
+  _ScanInputMode _inputMode = _ScanInputMode.camera;
 
   final TextEditingController _wedge = TextEditingController();
   final FocusNode _wedgeFocus = FocusNode();
@@ -323,7 +328,8 @@ class _ScanPageState extends State<ScanPage> {
           }
         }
       });
-      unawaited(_hidControl!.invokeMethod<void>('setWedgeCapture', true));
+      // Wedge only in Scanner mode — camera mode uses ML Kit only (no double counts).
+      unawaited(_hidControl!.invokeMethod<void>('setWedgeCapture', false));
     }
     if (!_useNativeAndroidScanner) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _startCamera());
@@ -342,6 +348,54 @@ class _ScanPageState extends State<ScanPage> {
         }
       }
     });
+    unawaited(_invokeNativeSetCameraMode());
+  }
+
+  /// Syncs Camera / Scanner mode to native after [AndroidView] is ready (retry once — avoids no-op bind).
+  Future<void> _invokeNativeSetCameraMode() async {
+    if (!_useNativeAndroidScanner) return;
+    final ch = _nativeBarcodeChannel;
+    if (ch == null) return;
+    final camera = _inputMode == _ScanInputMode.camera;
+    try {
+      await ch.invokeMethod<void>('setCameraMode', camera);
+    } catch (_) {
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      if (!_alive || !mounted) return;
+      try {
+        await _nativeBarcodeChannel?.invokeMethod<void>('setCameraMode', camera);
+      } catch (_) {}
+    }
+  }
+
+  void _setInputMode(_ScanInputMode mode) {
+    if (_inputMode == mode) return;
+    if (!_useNativeAndroidScanner && mode == _ScanInputMode.scanner) {
+      _sub?.cancel();
+      _sub = null;
+      _cam?.dispose();
+      _cam = null;
+    }
+    setState(() {
+      _inputMode = mode;
+      if (mode == _ScanInputMode.scanner) _torchOn = false;
+    });
+    if (!kIsWeb && Platform.isAndroid) {
+      unawaited(
+        _hidControl?.invokeMethod<void>(
+          'setWedgeCapture',
+          mode == _ScanInputMode.scanner,
+        ),
+      );
+      unawaited(_invokeNativeSetCameraMode());
+    }
+    if (!_useNativeAndroidScanner && mode == _ScanInputMode.camera) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_alive) return;
+        if (_inputMode != _ScanInputMode.camera) return;
+        if (_cam == null) _startCamera();
+      });
+    }
   }
 
   Future<void> _toggleTorch() async {
@@ -539,33 +593,87 @@ class _ScanPageState extends State<ScanPage> {
     final cs = Theme.of(context).colorScheme;
 
     return Scaffold(
+      // Reduces relayout / PlatformView churn when the soft keyboard or IME toggles (ANRs on some devices).
+      resizeToAvoidBottomInset: false,
       backgroundColor: Colors.black,
       appBar: AppBar(
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
         title: Text(widget.title),
+        // Camera / Scanner toggle lives in the app bar so it stays *above* the Android
+        // PlatformView. A native view in the body is often composited on top of Flutter
+        // siblings after the first frame, which made the old in-body control vanish.
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(56),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: SegmentedButton<_ScanInputMode>(
+                showSelectedIcon: false,
+                emptySelectionAllowed: false,
+                style: ButtonStyle(
+                  visualDensity: VisualDensity.compact,
+                  side: WidgetStateProperty.all(BorderSide(color: Colors.white.withValues(alpha: 0.35))),
+                  backgroundColor: WidgetStateProperty.resolveWith((states) {
+                    if (states.contains(WidgetState.selected)) {
+                      return cs.primary;
+                    }
+                    return Colors.white.withValues(alpha: 0.08);
+                  }),
+                  foregroundColor: WidgetStateProperty.resolveWith((states) {
+                    if (states.contains(WidgetState.selected)) {
+                      return cs.onPrimary;
+                    }
+                    return Colors.white.withValues(alpha: 0.88);
+                  }),
+                ),
+                segments: const [
+                  ButtonSegment<_ScanInputMode>(
+                    value: _ScanInputMode.camera,
+                    label: Text('Camera'),
+                    icon: Icon(Icons.photo_camera_outlined),
+                  ),
+                  ButtonSegment<_ScanInputMode>(
+                    value: _ScanInputMode.scanner,
+                    label: Text('Scanner'),
+                    icon: Icon(Icons.keyboard_alt_outlined),
+                  ),
+                ],
+                selected: {_inputMode},
+                onSelectionChanged: (Set<_ScanInputMode> next) {
+                  if (next.isEmpty) return;
+                  _setInputMode(next.first);
+                },
+              ),
+            ),
+          ),
+        ),
         actions: [
           IconButton(
             tooltip: 'Enter barcode manually',
             onPressed: _showManualBarcodeDialog,
             icon: const Icon(Icons.keyboard),
           ),
-          IconButton(
-            tooltip: _useNativeAndroidScanner
-                ? (_torchOn ? 'Turn off flashlight' : 'Turn on flashlight')
-                : 'Toggle flashlight',
-            onPressed: _toggleTorch,
-            icon: Icon(
-              _useNativeAndroidScanner
-                  ? (_torchOn ? Icons.flashlight_on : Icons.flashlight_off_outlined)
-                  : Icons.flashlight_on,
+          if (!_useNativeAndroidScanner || _inputMode == _ScanInputMode.camera)
+            IconButton(
+              tooltip: _useNativeAndroidScanner
+                  ? (_torchOn ? 'Turn off flashlight' : 'Turn on flashlight')
+                  : 'Toggle flashlight',
+              onPressed: _toggleTorch,
+              icon: Icon(
+                _useNativeAndroidScanner
+                    ? (_torchOn ? Icons.flashlight_on : Icons.flashlight_off_outlined)
+                    : Icons.flashlight_on,
+              ),
             ),
-          ),
-          IconButton(
-            tooltip: 'Focus USB / BT scanner',
-            onPressed: () => _wedgeFocus.requestFocus(),
-            icon: const Icon(Icons.keyboard_alt_outlined),
-          ),
+          if (!_useNativeAndroidScanner)
+            IconButton(
+              tooltip: 'Focus USB / BT scanner',
+              onPressed: () => _wedgeFocus.requestFocus(),
+              icon: const Icon(Icons.keyboard_alt_outlined),
+            ),
         ],
       ),
       body: Column(
@@ -577,6 +685,7 @@ class _ScanPageState extends State<ScanPage> {
                     fit: StackFit.expand,
                     children: [
                       AndroidView(
+                        key: const ValueKey<Object>('gearup_barcode_scanner'),
                         viewType: 'gearup_barcode_scanner',
                         onPlatformViewCreated: _onScannerViewCreated,
                       ),
@@ -593,9 +702,21 @@ class _ScanPageState extends State<ScanPage> {
                       ),
                     ],
                   )
-                : cam == null
-                    ? const Center(child: CircularProgressIndicator(color: Colors.white54))
-                    : Stack(
+                : _inputMode == _ScanInputMode.scanner
+                    ? Center(
+                        child: Text(
+                          'Scanner ready — scan now',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.92),
+                            fontSize: 18,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      )
+                    : cam == null
+                        ? const Center(child: CircularProgressIndicator(color: Colors.white54))
+                        : Stack(
                         fit: StackFit.expand,
                         children: [
                           MobileScanner(controller: cam),
