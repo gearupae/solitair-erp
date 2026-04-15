@@ -23,7 +23,23 @@
       overflow: hidden;
       background: #111;
     }
-    .st-wedge { position: fixed; left: -100vw; width: 1px; height: 1px; opacity: 0; }
+    /* Wedge field must stay in/near the viewport: browsers often refuse .focus() on -100vw off-screen inputs. */
+    .st-wedge {
+      position: fixed;
+      right: 8px;
+      bottom: 8px;
+      width: 4px;
+      height: 4px;
+      margin: 0;
+      padding: 0;
+      opacity: 0.03;
+      z-index: 10050;
+      font-size: 16px;
+      border: 0;
+      color: transparent;
+      caret-color: transparent;
+      background: transparent;
+    }
   </style>
 </head>
 <body class="bg-light">
@@ -54,7 +70,7 @@
       <strong>MSI Plessey</strong> is not supported by this web library — use the wedge field with a hardware scanner for MSI labels.
     </p>
     <label class="form-label small text-muted">Scanner / wedge</label>
-    <input type="text" class="form-control form-control-lg st-wedge" id="st-pub-wedge" inputmode="none" enterkeyhint="done" autocomplete="off" autocorrect="off" spellcheck="false" aria-label="Hardware barcode scanner capture (keyboard wedge)">
+    <input type="text" class="form-control form-control-lg st-wedge" id="st-pub-wedge" enterkeyhint="done" autocomplete="off" autocorrect="off" spellcheck="false" aria-label="Hardware barcode scanner capture (keyboard wedge)">
 
     <div class="card bg-white shadow-sm mt-3 st-last-scan">
       <div class="card-body py-3">
@@ -216,6 +232,7 @@
     });
 
     const wedgeEl = document.getElementById('st-pub-wedge');
+    const focusWedgeBtn = document.getElementById('st-pub-focus-wedge');
     let wedgeTimer = null;
     function clearWedgeTimer() {
       if (wedgeTimer) { clearTimeout(wedgeTimer); wedgeTimer = null; }
@@ -231,26 +248,44 @@
       clearWedgeTimer();
       wedgeTimer = setTimeout(flushWedgeFromField, 320);
     }
-    wedgeEl.addEventListener('input', scheduleWedgeIdle);
-    wedgeEl.addEventListener('keydown', function(e) {
-      if (e.key === 'Enter' || e.key === 'Tab') {
-        e.preventDefault();
-        flushWedgeFromField();
-      }
-    });
-    document.getElementById('st-pub-focus-wedge').addEventListener('click', function(ev) {
-      ev.preventDefault();
-      try {
-        wedgeEl.focus({ preventScroll: true });
-      } catch (e) {
-        wedgeEl.focus();
-      }
-      try {
-        if (navigator.virtualKeyboard && typeof navigator.virtualKeyboard.hide === 'function') {
-          navigator.virtualKeyboard.hide();
+    if (wedgeEl) {
+      wedgeEl.addEventListener('input', scheduleWedgeIdle);
+      wedgeEl.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' || e.key === 'Tab') {
+          e.preventDefault();
+          flushWedgeFromField();
         }
-      } catch (e) {}
-    });
+      });
+    }
+    function focusWedgeCapture() {
+      if (!wedgeEl) return;
+      function tryFocus() {
+        try {
+          wedgeEl.focus({ preventScroll: true });
+        } catch (e) {
+          try { wedgeEl.focus(); } catch (e2) {}
+        }
+      }
+      tryFocus();
+      requestAnimationFrame(tryFocus);
+      setTimeout(tryFocus, 50);
+      setTimeout(function() {
+        try {
+          if (navigator.virtualKeyboard && typeof navigator.virtualKeyboard.hide === 'function') {
+            navigator.virtualKeyboard.hide();
+          }
+        } catch (e) {}
+        if (document.activeElement !== wedgeEl) {
+          tryFocus();
+        }
+      }, 100);
+    }
+    if (focusWedgeBtn && wedgeEl) {
+      focusWedgeBtn.addEventListener('click', function(ev) {
+        ev.preventDefault();
+        focusWedgeCapture();
+      });
+    }
 
     document.getElementById('st-pub-manual-set').addEventListener('click', async function() {
       const sku = document.getElementById('st-pub-manual-sku').value.trim();
