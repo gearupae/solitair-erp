@@ -279,6 +279,9 @@ class _ScanPageState extends State<ScanPage> {
   MobileScannerController? _cam;
   StreamSubscription<BarcodeCapture>? _sub;
   MethodChannel? _nativeBarcodeChannel;
+  /// Android Activity-level HID wedge (USB/BT scanner); see [MainActivity.dispatchKeyEvent].
+  MethodChannel? _hidControl;
+  MethodChannel? _hidWedgeRx;
   /// Torch state for Android native path (Flutter toggles via [MethodChannel] `setTorch`).
   bool _torchOn = false;
 
@@ -307,6 +310,21 @@ class _ScanPageState extends State<ScanPage> {
   void initState() {
     super.initState();
     _wedge.addListener(_onWedgeInput);
+    // Android: capture USB/BT HID scanner at Activity level (camera PlatformView often steals focus).
+    if (!kIsWeb && Platform.isAndroid) {
+      _hidControl = const MethodChannel('gearup_hid_control');
+      _hidWedgeRx = const MethodChannel('gearup_hid_wedge');
+      _hidWedgeRx!.setMethodCallHandler((call) async {
+        if (!_alive || !mounted) return;
+        if (call.method == 'barcode') {
+          final a = call.arguments;
+          if (a is String && a.trim().isNotEmpty && !_busy) {
+            unawaited(_submit(a.trim()));
+          }
+        }
+      });
+      unawaited(_hidControl!.invokeMethod<void>('setWedgeCapture', true));
+    }
     if (!_useNativeAndroidScanner) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _startCamera());
     }
@@ -405,6 +423,14 @@ class _ScanPageState extends State<ScanPage> {
   @override
   void dispose() {
     _alive = false;
+    if (!kIsWeb && Platform.isAndroid) {
+      _hidWedgeRx?.setMethodCallHandler(null);
+      _hidWedgeRx = null;
+      try {
+        _hidControl?.invokeMethod<void>('setWedgeCapture', false);
+      } catch (_) {}
+      _hidControl = null;
+    }
     _nativeBarcodeChannel?.setMethodCallHandler(null);
     _nativeBarcodeChannel = null;
     _flashTimer?.cancel();
