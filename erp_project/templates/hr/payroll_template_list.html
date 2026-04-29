@@ -11,18 +11,20 @@
 </div>
 {% endif %}
 <div class="card"><div class="card-body p-0">
-<table class="table table-hover mb-0"><thead class="table-light"><tr><th>Name</th><th>Company</th><th>Location</th><th class="text-end">Basic</th>{% if can_edit %}<th></th>{% endif %}</tr></thead>
+<table class="table table-hover mb-0"><thead class="table-light"><tr><th>Name</th><th>Company</th><th>Location</th><th class="text-end">Allowances</th><th class="text-end">Basic <span class="text-muted fw-normal">(opt.)</span></th><th class="text-end">Total package</th>{% if can_edit %}<th></th>{% endif %}</tr></thead>
 <tbody>
 {% for t in templates %}
 <tr>
     <td>{{ t.name }}</td>
     <td>{{ t.company|default:"—" }}</td>
     <td>{{ t.get_location_display }}</td>
-    <td class="text-end">{{ t.basic_salary|floatformat:2 }}</td>
+    <td class="text-end">{{ t.total_allowances_amount|floatformat:2 }}</td>
+    <td class="text-end text-muted">{% if t.basic_salary %}{{ t.basic_salary|floatformat:2 }}{% else %}—{% endif %}</td>
+    <td class="text-end fw-medium">{{ t.total_package_amount|floatformat:2 }}</td>
     {% if can_edit %}<td class="text-end"><a href="{% url 'hr:payroll_template_edit' t.pk %}" class="btn btn-sm btn-outline-secondary">Edit</a>
     <a href="{% url 'hr:payroll_template_delete' t.pk %}" class="btn btn-sm btn-outline-danger">Deactivate</a></td>{% endif %}
 </tr>
-{% empty %}<tr><td colspan="5" class="text-muted text-center py-4">No templates yet.</td></tr>{% endfor %}
+{% empty %}<tr><td colspan="7" class="text-muted text-center py-4">No templates yet.</td></tr>{% endfor %}
 </tbody></table>
 </div></div>
 {% endblock %}

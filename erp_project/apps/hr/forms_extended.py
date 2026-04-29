@@ -66,7 +66,11 @@ class PayrollTemplateForm(forms.ModelForm):
         self.fields['basic_salary'] = forms.DecimalField(
             max_digits=12,
             decimal_places=2,
-            widget=forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01'}),
+            required=False,
+            widget=forms.NumberInput(
+                attrs={'class': 'form-control', 'step': '0.01', 'placeholder': 'Optional'}
+            ),
+            help_text='Optional. Totals below use allowances only; add basic here if you want it included in the package preview.',
         )
         if self.instance and self.instance.pk:
             self.fields['basic_salary'].initial = self.instance.basic_salary
@@ -78,7 +82,7 @@ class PayrollTemplateForm(forms.ModelForm):
     def clean_basic_salary(self):
         v = self.cleaned_data.get('basic_salary')
         if v is None:
-            return v
+            return Decimal('0.00')
         return v.quantize(Decimal('0.01'))
 
     def clean(self):

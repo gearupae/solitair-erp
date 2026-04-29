@@ -371,7 +371,13 @@ class PayrollTemplate(BaseModel):
         related_name='payroll_templates',
     )
     location = models.CharField(max_length=10, choices=LOCATION_CHOICES, default=LOCATION_BOTH)
-    basic_salary = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
+    basic_salary = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        blank=True,
+        help_text='Optional reference amount on the template; employee basic is used when generating payroll.',
+    )
     allowance_lines = models.JSONField(default=list, blank=True)
     is_active = models.BooleanField(default=True)
 
@@ -380,6 +386,17 @@ class PayrollTemplate(BaseModel):
 
     def __str__(self):
         return self.name
+
+    @property
+    def total_allowances_amount(self) -> Decimal:
+        from apps.hr.salary_payroll_utils import template_allowances_total
+
+        return template_allowances_total(self)
+
+    @property
+    def total_package_amount(self) -> Decimal:
+        b = self.basic_salary or Decimal('0')
+        return (b + self.total_allowances_amount).quantize(Decimal('0.01'))
 
 
 class PayrollDeductionLine(BaseModel):
