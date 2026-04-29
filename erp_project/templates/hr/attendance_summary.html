@@ -1,0 +1,17 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-header mb-4"><h4 class="mb-1 fw-bold">{{ title }}</h4><p class="text-muted mb-0">{{ month_label }}</p></div>
+<div class="card"><div class="card-body">
+{% if summary %}
+<table class="table table-borderless mb-0">
+    <tr><td class="text-muted">Present</td><td class="fw-bold">{{ summary.total_present }}</td></tr>
+    <tr><td class="text-muted">Absent</td><td>{{ summary.total_absent }}</td></tr>
+    <tr><td class="text-muted">Late</td><td>{{ summary.total_late }}</td></tr>
+    <tr><td class="text-muted">Half day</td><td>{{ summary.total_half_day }}</td></tr>
+</table>
+{% else %}
+<p class="text-muted mb-0">No summary for this month yet.</p>
+{% endif %}
+<a href="{% url 'hr:attendance_list' %}" class="btn btn-outline-secondary btn-sm mt-3">Back</a>
+</div></div>
+{% endblock %}

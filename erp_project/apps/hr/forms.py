@@ -1,9 +1,11 @@
 from django import forms
+from django.core.exceptions import ValidationError as CoreValidationError
 from django.db.models import Q, Sum, F, IntegerField
 from django.db import models
 from datetime import datetime, date
 from .models import Department, Designation, Employee, LeaveType, LeaveRequest, Payroll
-from apps.settings_app.models import Role
+from .models_extended import EmployeeBankDetail
+from apps.settings_app.models import Role, Company
 
 
 class MonthInput(forms.DateInput):
@@ -53,11 +55,40 @@ class DepartmentForm(forms.ModelForm):
 class EmployeeForm(forms.ModelForm):
     class Meta:
         model = Employee
-        fields = ['first_name', 'last_name', 'email', 'phone', 'gender', 'department', 'designation', 'date_of_birth', 'date_of_joining', 'probation_period_days', 'status', 'basic_salary', 'emirates_id', 'visa_number', 'visa_expiry']
+        fields = [
+            'employee_code',
+            'first_name',
+            'last_name',
+            'email',
+            'phone',
+            'gender',
+            'department',
+            'designation',
+            'company',
+            'location',
+            'date_of_birth',
+            'date_of_joining',
+            'probation_period_days',
+            'status',
+            'basic_salary',
+            'emirates_id',
+            'visa_number',
+            'visa_expiry',
+        ]
         widgets = {
-            'date_of_birth': forms.DateInput(attrs={'type': 'date'}),
-            'date_of_joining': forms.DateInput(attrs={'type': 'date'}),
-            'visa_expiry': forms.DateInput(attrs={'type': 'date'}),
+            # Match contracts/finance: explicit form-control + ISO format for HTML5 date inputs
+            'date_of_birth': forms.DateInput(
+                attrs={'type': 'date', 'class': 'form-control'},
+                format='%Y-%m-%d',
+            ),
+            'date_of_joining': forms.DateInput(
+                attrs={'type': 'date', 'class': 'form-control'},
+                format='%Y-%m-%d',
+            ),
+            'visa_expiry': forms.DateInput(
+                attrs={'type': 'date', 'class': 'form-control'},
+                format='%Y-%m-%d',
+            ),
         }
     
     def __init__(self, *args, **kwargs):
@@ -101,147 +132,353 @@ class EmployeeForm(forms.ModelForm):
         
         self.fields['designation'].queryset = designation_queryset.order_by('name')
         self.fields['designation'].empty_label = '-- Select Designation --'
-        
+
+        company_qs = Company.objects.filter(is_active=True)
+        if self.instance and self.instance.pk and self.instance.company_id:
+            company_qs = Company.objects.filter(
+                Q(is_active=True) | Q(pk=self.instance.company_id)
+            )
+        self.fields['company'].queryset = company_qs.order_by('name')
+        self.fields['company'].empty_label = '-- Select Company --'
+
+        self.fields['employee_code'].required = False
+        self.fields['employee_code'].widget.attrs.setdefault(
+            'placeholder', 'Leave blank to generate automatically'
+        )
+
         for name, field in self.fields.items():
-            if name in ['department', 'designation', 'status', 'gender']:
+            if name in ['department', 'designation', 'status', 'gender', 'company', 'location']:
                 field.widget.attrs['class'] = 'form-select'
+            elif name in ('date_of_birth', 'date_of_joining', 'visa_expiry'):
+                field.input_formats = ['%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y']
             else:
                 field.widget.attrs['class'] = 'form-control'
 
+    def clean_employee_code(self):
+        raw = (self.cleaned_data.get('employee_code') or '').strip()
+        if not raw:
+            if self.instance.pk:
+                return self.instance.employee_code
+            return ''
+        qs = Employee.objects.filter(employee_code__iexact=raw)
+        if self.instance.pk:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise ValidationError('This employee code is already in use.')
+        return raw
+
+    def clean_emirates_id(self):
+        value = (self.cleaned_data.get('emirates_id') or '').strip()
+        if not value:
+            return value
+        from apps.hr.models_extended import validate_emirates_id_format
+
+        validate_emirates_id_format(value)
+        return value
+
+
+class EmployeeBankDetailForm(forms.ModelForm):
+    """Optional bank details; persisted only when at least one field is filled."""
+
+    class Meta:
+        model = EmployeeBankDetail
+        fields = ['bank_name', 'account_number', 'iban', 'routing_bank_code']
+        labels = {
+            'bank_name': 'Bank name',
+            'account_number': 'Account number',
+            'iban': 'IBAN',
+            'routing_bank_code': 'Routing / agent ID',
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for _name, field in self.fields.items():
+            field.required = False
+            field.widget.attrs.setdefault('class', 'form-control')
+        self.fields['routing_bank_code'].help_text = EmployeeBankDetail._meta.get_field(
+            'routing_bank_code'
+        ).help_text
+
+    def save_for_employee(self, employee):
+        if not self.is_valid():
+            raise ValueError('save_for_employee requires a valid form')
+        cleaned = self.cleaned_data
+        has_any = any((cleaned.get(f) or '').strip() for f in self.Meta.fields)
+        existing = getattr(employee, 'bank_detail', None)
+        if not has_any:
+            if existing:
+                existing.delete()
+            return None
+        obj = super().save(commit=False)
+        obj.employee = employee
+        obj.save()
+        return obj
+
+
+class LeaveTypeForm(forms.ModelForm):
+    class Meta:
+        model = LeaveType
+        fields = [
+            'name',
+            'code',
+            'location',
+            'days_allowed',
+            'pay_type',
+            'gender_restricted',
+            'religion_restricted',
+            'requires_medical_certificate',
+            'probation_allowed',
+            'min_service_days',
+            'once_in_service',
+            'carry_forward_allowed',
+            'carry_forward_cap',
+            'is_probation_only',
+            'is_gender_specific',
+            'gender_required',
+            'is_paid',
+            'description',
+            'is_active',
+        ]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        select_fields = ('location', 'pay_type', 'gender_restricted', 'gender_required')
+        for name, field in self.fields.items():
+            if name in select_fields:
+                field.widget.attrs['class'] = 'form-select'
+            elif isinstance(field.widget, forms.CheckboxInput):
+                field.widget.attrs['class'] = 'form-check-input'
+            elif isinstance(field.widget, forms.Textarea):
+                field.widget.attrs.setdefault('class', 'form-control')
+                field.widget.attrs.setdefault('rows', 3)
+            else:
+                field.widget.attrs.setdefault('class', 'form-control')
+
+
 class LeaveRequestForm(forms.ModelForm):
+    overflow_action = forms.ChoiceField(
+        required=False,
+        choices=[
+            ('', ''),
+            ('reduce', 'Reduce my leave to fit my balance (adjust end date)'),
+            ('split', 'Split: paid balance days + remainder as Unpaid Leave'),
+        ],
+        widget=forms.HiddenInput(),
+    )
+
     class Meta:
         model = LeaveRequest
-        fields = ['employee', 'leave_type', 'start_date', 'end_date', 'reason']
+        fields = ['employee', 'leave_type', 'covering_employee', 'start_date', 'end_date', 'reason', 'medical_certificate']
         widgets = {
             'start_date': forms.DateInput(attrs={'type': 'date'}),
             'end_date': forms.DateInput(attrs={'type': 'date'}),
             'reason': forms.Textarea(attrs={'rows': 2}),
+            'medical_certificate': forms.ClearableFileInput(attrs={'class': 'form-control'}),
         }
-    
+        labels = {
+            'covering_employee': 'Reliever',
+            'medical_certificate': 'Attachment (e.g. medical certificate)',
+        }
+
     def __init__(self, *args, **kwargs):
         self.user = kwargs.pop('user', None)
         self.is_admin = kwargs.pop('is_admin', False)
         super().__init__(*args, **kwargs)
-        
-        # Get employee (either from instance or from user)
-        employee = None
-        if self.instance and self.instance.pk:
-            employee = self.instance.employee
-        elif self.user and not self.is_admin:
-            try:
-                employee = Employee.objects.get(user=self.user, is_active=True)
-            except Employee.DoesNotExist:
-                pass
-        
-        # Filter leave types based on employee status
-        leave_type_queryset = LeaveType.objects.filter(is_active=True)
-        
-        if employee:
-            # Filter by probation status
-            if employee.is_in_probation:
-                # Show only probation-specific leave types
-                leave_type_queryset = leave_type_queryset.filter(is_probation_only=True)
-            else:
-                # Hide probation-only leave types
-                leave_type_queryset = leave_type_queryset.exclude(is_probation_only=True)
-            
-            # Filter by gender for gender-specific leaves
-            if employee.gender:
-                # Show gender-specific leaves matching employee gender
-                gender_specific = leave_type_queryset.filter(
-                    Q(is_gender_specific=False) | Q(gender_required=employee.gender)
-                )
-                leave_type_queryset = gender_specific
-            else:
-                # If gender not set, exclude gender-specific leaves
-                leave_type_queryset = leave_type_queryset.exclude(is_gender_specific=True)
-        
-        self.fields['leave_type'].queryset = leave_type_queryset.order_by('name')
+
+        self.fields['leave_type'].queryset = LeaveType.objects.filter(is_active=True).order_by('name')
         self.fields['leave_type'].empty_label = '-- Select Leave Type --'
-        
-        # Filter employees to active only
+
         self.fields['employee'].queryset = Employee.objects.filter(is_active=True).order_by('first_name', 'last_name')
         self.fields['employee'].empty_label = '-- Select Employee --'
-        
-        # If user is not admin, auto-select their employee profile
+
+        self.fields['covering_employee'].queryset = Employee.objects.filter(is_active=True).order_by(
+            'first_name', 'last_name'
+        )
+        self.fields['covering_employee'].required = False
+        self.fields['covering_employee'].empty_label = '— Reliever (optional) —'
+        self.fields['covering_employee'].widget.attrs['class'] = 'form-select'
+
         if self.user and not self.is_admin:
             try:
                 employee = Employee.objects.get(user=self.user, is_active=True)
                 self.fields['employee'].initial = employee.pk
-                # Use hidden field for employee when auto-selected
                 self.fields['employee'].widget = forms.HiddenInput()
             except Employee.DoesNotExist:
                 pass
-        
+
         for name, field in self.fields.items():
-            if name in ['employee', 'leave_type']:
-                field.widget.attrs['class'] = 'form-select'
-            else:
+            if name in ['employee', 'leave_type', 'covering_employee']:
+                field.widget.attrs.setdefault('class', 'form-select')
+            elif name == 'medical_certificate':
+                field.widget.attrs.setdefault('class', 'form-control')
+            elif name != 'overflow_action':
                 field.widget.attrs['class'] = 'form-control'
-    
+
     def clean(self):
+        from apps.hr.leave_context_service import (
+            adjusted_end_date_if_reduce,
+            is_effectively_unpaid,
+            validate_leave_request_dates_and_balance,
+        )
+
         cleaned_data = super().clean()
         start_date = cleaned_data.get('start_date')
         end_date = cleaned_data.get('end_date')
         leave_type = cleaned_data.get('leave_type')
         employee = cleaned_data.get('employee')
-        
-        if start_date and end_date:
-            if end_date < start_date:
-                raise forms.ValidationError('End date must be after start date.')
-            
-            # Calculate leave days
-            leave_days = (end_date - start_date).days + 1
-            
-            # Validate against leave type limits
-            if leave_type and employee and leave_type.days_allowed > 0:
-                # Check if employee has already taken leave of this type
-                current_year_start = date(start_date.year, 1, 1)
-                current_year_end = date(start_date.year, 12, 31)
-                
-                # Calculate existing leave days
-                existing_leaves = LeaveRequest.objects.filter(
-                    employee=employee,
-                    leave_type=leave_type,
-                    status='approved',
-                    start_date__gte=current_year_start,
-                    start_date__lte=current_year_end
-                ).exclude(pk=self.instance.pk if self.instance.pk else None)
-                
-                existing_leave_days = sum(
-                    (leave.end_date - leave.start_date).days + 1 
-                    for leave in existing_leaves
-                )
-                
-                total_leave_days = existing_leave_days + leave_days
-                
-                if total_leave_days > leave_type.days_allowed:
-                    remaining_days = leave_type.days_allowed - existing_leave_days
-                    raise forms.ValidationError(
-                        f'Leave days exceed allowed limit. '
-                        f'Allowed: {leave_type.days_allowed} days per year. '
-                        f'Already taken: {existing_leave_days} days. '
-                        f'Remaining: {remaining_days} days.'
-                    )
-        
+
+        raw_overflow = (self.data.get('overflow_action') or '').strip().lower()
+        if raw_overflow in ('reduce', 'split'):
+            cleaned_data['overflow_action'] = raw_overflow
+        else:
+            cleaned_data['overflow_action'] = ''
+
+        if not (start_date and end_date and leave_type and employee):
+            return cleaned_data
+
+        overflow_action = cleaned_data.get('overflow_action') or ''
+        allow_past_start = bool(self.instance.pk)
+
+        eff_end = end_date
+        eff_overflow = overflow_action
+        if overflow_action == 'reduce' and not is_effectively_unpaid(leave_type):
+            eff_end = adjusted_end_date_if_reduce(employee, leave_type, start_date, end_date)
+            cleaned_data['end_date'] = eff_end
+            eff_overflow = ''
+
+        api_overflow = overflow_action if overflow_action == 'split' else ''
+
+        try:
+            validate_leave_request_dates_and_balance(
+                employee=employee,
+                leave_type=leave_type,
+                start_date=start_date,
+                end_date=cleaned_data['end_date'],
+                overflow_action=api_overflow,
+                exclude_leave_pk=self.instance.pk if self.instance.pk else None,
+                allow_past_start=allow_past_start,
+            )
+        except CoreValidationError as exc:
+            if getattr(exc, 'message_dict', None):
+                raise forms.ValidationError(exc.message_dict)
+            raise forms.ValidationError(list(exc.messages))
+
+        reliever = cleaned_data.get('covering_employee')
+        if employee and reliever and reliever.pk == employee.pk:
+            raise forms.ValidationError({'covering_employee': 'Reliever cannot be the same employee as the applicant.'})
+
         return cleaned_data
+
+
+class PublicLeaveApplicationForm(forms.Form):
+    employee_code = forms.CharField(max_length=80)
+    leave_type = forms.ModelChoiceField(queryset=LeaveType.objects.none())
+    start_date = forms.DateField(widget=forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}))
+    end_date = forms.DateField(widget=forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}))
+    reason = forms.CharField(required=False, widget=forms.Textarea(attrs={'rows': 2, 'class': 'form-control'}))
+    overflow_action = forms.ChoiceField(
+        required=False,
+        choices=[
+            ('', ''),
+            ('reduce', 'reduce'),
+            ('split', 'split'),
+        ],
+        widget=forms.HiddenInput(),
+    )
+    medical_certificate = forms.FileField(required=False, label='Attachment (e.g. medical certificate)')
+    reliever = forms.ModelChoiceField(
+        queryset=Employee.objects.none(),
+        required=False,
+        label='Reliever',
+        empty_label='— Reliever (optional) —',
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['employee_code'].widget.attrs.setdefault('class', 'form-control')
+        self.fields['medical_certificate'].widget.attrs.setdefault('class', 'form-control')
+        self.fields['leave_type'].empty_label = '— Select leave type —'
+        self.fields['leave_type'].queryset = LeaveType.objects.filter(is_active=True).order_by('name')
+        self.fields['leave_type'].widget.attrs.setdefault('class', 'form-select')
+        self.fields['reliever'].queryset = Employee.objects.filter(is_active=True).order_by('first_name', 'last_name')
+        self.fields['reliever'].widget.attrs.setdefault('class', 'form-select')
+
+    def clean(self):
+        from apps.hr.leave_context_service import (
+            adjusted_end_date_if_reduce,
+            is_effectively_unpaid,
+            validate_leave_request_dates_and_balance,
+        )
+
+        cleaned_data = super().clean()
+        code = (cleaned_data.get('employee_code') or '').strip()
+        emp = Employee.objects.filter(employee_code__iexact=code, is_active=True).first()
+        if not code:
+            raise forms.ValidationError({'employee_code': 'Employee code is required.'})
+        if not emp:
+            raise forms.ValidationError({'employee_code': 'Employee not found.'})
+
+        cleaned_data['employee'] = emp
+        reliever = cleaned_data.get('reliever')
+        if reliever and reliever.pk == emp.pk:
+            raise forms.ValidationError({'reliever': 'Reliever cannot be the same person as the applicant.'})
+
+        leave_type = cleaned_data.get('leave_type')
+        start_date = cleaned_data.get('start_date')
+        end_date = cleaned_data.get('end_date')
+
+        raw_overflow = (self.data.get('overflow_action') or '').strip().lower()
+        cleaned_data['overflow_action'] = raw_overflow if raw_overflow in ('reduce', 'split') else ''
+
+        if not (leave_type and start_date and end_date):
+            return cleaned_data
+
+        overflow_action = cleaned_data['overflow_action']
+        eff_end = end_date
+        if overflow_action == 'reduce' and not is_effectively_unpaid(leave_type):
+            eff_end = adjusted_end_date_if_reduce(emp, leave_type, start_date, end_date)
+            cleaned_data['end_date'] = eff_end
+
+        api_overflow = overflow_action if overflow_action == 'split' else ''
+
+        try:
+            validate_leave_request_dates_and_balance(
+                employee=emp,
+                leave_type=leave_type,
+                start_date=start_date,
+                end_date=cleaned_data['end_date'],
+                overflow_action=api_overflow,
+                exclude_leave_pk=None,
+                allow_past_start=False,
+            )
+        except CoreValidationError as exc:
+            if getattr(exc, 'message_dict', None):
+                raise forms.ValidationError(exc.message_dict)
+            raise forms.ValidationError(list(exc.messages))
+
+        return cleaned_data
+
 
 class PayrollForm(forms.ModelForm):
     class Meta:
         model = Payroll
-        fields = ['employee', 'month', 'basic_salary', 'allowances', 'deductions', 'status']
+        fields = ['employee', 'company', 'month', 'basic_salary', 'deductions', 'status']
         widgets = {
             'month': MonthInput(attrs={'type': 'month'}),
         }
-    
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # Filter to only show active employees
+        from apps.settings_app.models import Company
+
         self.fields['employee'].queryset = Employee.objects.filter(is_active=True).order_by('first_name', 'last_name')
         self.fields['employee'].empty_label = '-- Select Employee --'
-        
+        self.fields['company'].queryset = Company.objects.filter(is_active=True).order_by('name')
+        self.fields['company'].required = False
+        self.fields['company'].empty_label = '(From employee)'
+
         for name, field in self.fields.items():
-            if name in ['employee', 'status']:
+            if name in ['employee', 'status', 'company']:
                 field.widget.attrs['class'] = 'form-select'
             else:
                 field.widget.attrs['class'] = 'form-control'
@@ -278,17 +515,10 @@ class PayrollForm(forms.ModelForm):
     
     def clean(self):
         cleaned_data = super().clean()
-        # Auto-calculate net salary
-        basic_salary = cleaned_data.get('basic_salary') or 0
-        allowances = cleaned_data.get('allowances') or 0
-        deductions = cleaned_data.get('deductions') or 0
-        cleaned_data['net_salary'] = basic_salary + allowances - deductions
         return cleaned_data
-    
+
     def save(self, commit=True):
         instance = super().save(commit=False)
-        # Calculate net salary
-        instance.net_salary = instance.basic_salary + instance.allowances - instance.deductions
         if commit:
             instance.save()
         return instance

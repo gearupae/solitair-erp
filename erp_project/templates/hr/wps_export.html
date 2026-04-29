@@ -1,0 +1,61 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-header">
+    <nav aria-label="breadcrumb"><ol class="breadcrumb mb-2"><li class="breadcrumb-item"><a href="{% url 'hr:payroll_list' %}">Payroll</a></li><li class="breadcrumb-item active">WPS SIF</li></ol></nav>
+    <h4 class="mb-0 fw-bold">{{ title }}</h4>
+    <p class="text-muted small mb-0">UAE Central Bank WPS — paid payrolls only. Downloads are generated even when some employee or company bank fields are missing (complete data in HR before bank upload).</p>
+</div>
+
+<form method="get" class="card mb-4 border-0 shadow-sm">
+    <div class="card-body">
+        <div class="row g-3 align-items-end">
+            <div class="col-md-4">
+                <label class="form-label small">Company (UAE)</label>
+                <select name="company" class="form-select" required>
+                    <option value="">— Select —</option>
+                    {% for c in uae_companies %}<option value="{{ c.pk }}" {% if company and company.pk == c.pk %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small">Month</label>
+                <select name="month" class="form-select">
+                    {% for m in months %}<option value="{{ m }}" {% if m == month %}selected{% endif %}>{{ m|stringformat:"02d" }}</option>{% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small">Year</label>
+                <select name="year" class="form-select">
+                    {% for y in years %}<option value="{{ y }}" {% if y == year %}selected{% endif %}>{{ y }}</option>{% endfor %}
+                </select>
+            </div>
+            <div class="col-md-auto d-flex gap-2">
+                <button type="submit" class="btn btn-outline-primary"><i class="fas fa-search me-1"></i>Preview</button>
+                {% if company and payload %}
+                <a class="btn btn-primary" href="{% url 'hr:wps_export' %}?company={{ company.pk }}&month={{ month }}&year={{ year }}&download=1"><i class="fas fa-download me-1"></i>Download .SIF</a>
+                <a class="btn btn-success" href="{% url 'hr:wps_export' %}?company={{ company.pk }}&month={{ month }}&year={{ year }}&download=1&format=xlsx"><i class="fas fa-file-excel me-1"></i>Download Excel</a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</form>
+
+{% if company and payload %}
+<p class="small mb-2"><strong>{{ payload.employee_count }}</strong> employees · Total net: <strong>AED {{ payload.total_aed|floatformat:2 }}</strong> · Missing IBAN: <strong>{{ payload.missing_iban|length }}</strong></p>
+{% if payload.warnings %}
+<div class="alert alert-warning small">{% for w in payload.warnings %}<div>{{ w }}</div>{% endfor %}</div>
+{% endif %}
+<div class="table-responsive card border-0 shadow-sm">
+    <table class="table table-sm table-hover mb-0">
+        <thead class="table-light"><tr><th>Employee</th><th>IBAN</th><th>Working days</th><th class="text-end">Net (AED)</th><th>Status</th></tr></thead>
+        <tbody>
+            {% for row in payload.preview_rows %}
+            <tr><td>{{ row.employee }}</td><td class="font-monospace small">{{ row.iban }}</td><td>{{ row.working_days }}</td><td class="text-end">{{ row.net_aed|floatformat:2 }}</td><td>{{ row.status }}</td></tr>
+            {% empty %}<tr><td colspan="5" class="text-muted text-center py-4">No paid payroll rows.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% elif company and payload and payload.employee_count == 0 %}
+<div class="alert alert-info small">No paid payroll rows for {{ month|stringformat:"02d" }}/{{ year }}.</div>
+{% endif %}
+{% endblock %}

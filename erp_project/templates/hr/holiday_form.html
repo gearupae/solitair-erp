@@ -1,0 +1,22 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-header mb-4"><h4 class="mb-1 fw-bold">{{ title }}</h4></div>
+<div class="card"><div class="card-body">
+    <form method="post">{% csrf_token %}
+        {% for field in form %}
+        <div class="mb-3">
+            {% if field.name == 'is_recurring' %}
+            <div class="form-check">
+                {{ field }}
+                <label class="form-check-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+            </div>
+            {% else %}
+            {{ field.label_tag }} {{ field.errors }} {{ field }}
+            {% endif %}
+        </div>
+        {% endfor %}
+        <button type="submit" class="btn btn-primary">Save</button>
+        <a href="{% url 'hr:holiday_list' %}" class="btn btn-light">Cancel</a>
+    </form>
+</div></div>
+{% endblock %}

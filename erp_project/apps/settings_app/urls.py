@@ -21,6 +21,9 @@ urlpatterns = [
     
     # Company Settings
     path('company/', views.CompanySettingsView.as_view(), name='company'),
+    path('companies/', views.CompanyListView.as_view(), name='company_list'),
+    path('companies/create/', views.CompanyCreateView.as_view(), name='company_create'),
+    path('companies/<int:pk>/edit/', views.CompanyUpdateView.as_view(), name='company_edit'),
     
     # Audit Log
     path('audit-log/', views.AuditLogListView.as_view(), name='audit_log'),

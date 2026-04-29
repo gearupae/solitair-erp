@@ -1,74 +1,67 @@
 {% extends 'base.html' %}
 {% block content %}
-<div class="page-header d-flex justify-content-between align-items-center">
-    <div><h4 class="mb-1 fw-bold">{{ title }}</h4><p class="text-muted mb-0">Manage payroll records</p></div>
-    {% if can_create %}
-    <div>
-        <a href="{% url 'hr:payroll_create' %}" class="btn btn-primary">
-            <i class="fas fa-plus me-2"></i>Add Payroll
-        </a>
+<div class="page-header d-flex justify-content-between align-items-start flex-wrap gap-3">
+    <div class="flex-grow-1">
+        <h4 class="mb-1 fw-bold">{{ title }}</h4>
+        <p class="text-muted small mb-2">Manage payroll records</p>
+        <form method="get" class="d-flex flex-wrap align-items-center gap-2" id="payroll-company-filter">
+            <label class="text-muted small mb-0" for="payroll-filter-company">Company</label>
+            <select name="company" id="payroll-filter-company" class="form-select form-select-sm" style="max-width: 16rem;" onchange="this.form.submit()" aria-label="Filter by company">
+                <option value="">All companies</option>
+                {% for c in filter_companies %}<option value="{{ c.pk }}" {% if filter_company == c.pk|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
+            </select>
+            {% if filter_company %}<a href="{% url 'hr:payroll_list' %}" class="small text-decoration-none">Reset</a>{% endif %}
+        </form>
     </div>
-    {% endif %}
+    <div class="d-flex gap-2 flex-wrap">
+        {% if can_edit %}<a href="{% url 'hr:payroll_settings' %}" class="btn btn-outline-primary btn-sm">Settings</a>{% endif %}
+        <a href="{% url 'hr:payroll_template_list' %}" class="btn btn-outline-secondary btn-sm"><i class="fas fa-layer-group me-1"></i>Salary templates</a>
+        <a href="{% url 'hr:payroll_advance_list' %}" class="btn btn-outline-secondary btn-sm"><i class="fas fa-hand-holding-usd me-1"></i>Advances</a>
+        {% if can_create %}
+        <a href="{% url 'hr:payroll_create' %}" class="btn btn-primary btn-sm"><i class="fas fa-plus me-1"></i>Add</a>
+        {% endif %}
+    </div>
 </div>
 
-<!-- Summary Cards -->
-<div class="row g-3 mb-4">
+<!-- Summary -->
+<div class="row g-3 mb-3">
     <div class="col-md-4">
-        <div class="card">
-            <div class="card-body">
-                <div class="d-flex align-items-center">
-                    <div class="bg-primary bg-opacity-10 rounded p-3 me-3">
-                        <i class="fas fa-money-check text-primary"></i>
-                    </div>
-                    <div>
-                        <p class="text-muted mb-0 small">Total Payroll</p>
-                        <h5 class="mb-0 fw-bold">AED {{ total_payroll|floatformat:2 }}</h5>
-                    </div>
-                </div>
+        <div class="card border-0 shadow-sm">
+            <div class="card-body py-3">
+                <p class="text-muted mb-0 small">Total (filtered)</p>
+                <h5 class="mb-0 fw-bold">AED {{ total_payroll|floatformat:2 }}</h5>
             </div>
         </div>
     </div>
     <div class="col-md-4">
-        <div class="card">
-            <div class="card-body">
-                <div class="d-flex align-items-center">
-                    <div class="bg-success bg-opacity-10 rounded p-3 me-3">
-                        <i class="fas fa-check-circle text-success"></i>
-                    </div>
-                    <div>
-                        <p class="text-muted mb-0 small">Paid Records</p>
-                        <h5 class="mb-0 fw-bold">{{ paid_payrolls|default:0 }}</h5>
-                    </div>
-                </div>
+        <div class="card border-0 shadow-sm">
+            <div class="card-body py-3">
+                <p class="text-muted mb-0 small">Paid</p>
+                <h5 class="mb-0 fw-bold">{{ paid_payrolls|default:0 }}</h5>
             </div>
         </div>
     </div>
     <div class="col-md-4">
-        <div class="card">
-            <div class="card-body">
-                <div class="d-flex align-items-center">
-                    <div class="bg-info bg-opacity-10 rounded p-3 me-3">
-                        <i class="fas fa-file-invoice text-info"></i>
-                    </div>
-                    <div>
-                        <p class="text-muted mb-0 small">Processed Records</p>
-                        <h5 class="mb-0 fw-bold">{{ processed_payrolls|default:0 }}</h5>
-                    </div>
-                </div>
+        <div class="card border-0 shadow-sm">
+            <div class="card-body py-3">
+                <p class="text-muted mb-0 small">Processed</p>
+                <h5 class="mb-0 fw-bold">{{ processed_payrolls|default:0 }}</h5>
             </div>
         </div>
     </div>
 </div>
 
-<div class="card">
+<!-- Main table -->
+<div class="card border-0 shadow-sm mb-4">
     <div class="card-body p-0">
         <div class="table-responsive">
-            <table class="table table-hover mb-0">
-                <thead><tr><th>Employee</th><th>Month</th><th class="text-end">Basic</th><th class="text-end">Allowances</th><th class="text-end">Deductions</th><th class="text-end">Net Salary</th><th>Status</th><th class="text-center" width="120">Actions</th></tr></thead>
+            <table class="table table-hover mb-0 align-middle">
+                <thead class="table-light"><tr><th>Employee</th><th>Company</th><th>Month</th><th class="text-end">Basic</th><th class="text-end">Allowances</th><th class="text-end">Deductions</th><th class="text-end">Net</th><th>Status</th><th class="text-center" width="120">Actions</th></tr></thead>
                 <tbody>
                     {% for payroll in payrolls %}
                     <tr>
                         <td>{{ payroll.employee.full_name }}</td>
+                        <td>{{ payroll.company|default:payroll.employee.company|default:"—" }}</td>
                         <td>{{ payroll.month|date:"F Y" }}</td>
                         <td class="text-end">{{ payroll.basic_salary|floatformat:2 }}</td>
                         <td class="text-end">{{ payroll.allowances|floatformat:2 }}</td>
@@ -76,31 +69,204 @@
                         <td class="text-end fw-medium">{{ payroll.net_salary|floatformat:2 }}</td>
                         <td>{% if payroll.status == 'paid' %}<span class="badge badge-active">Paid</span>{% elif payroll.status == 'processed' %}<span class="badge" style="background:#dbeafe;color:#1e40af;">Processed</span>{% else %}<span class="badge bg-secondary">Draft</span>{% endif %}</td>
                         <td class="text-center">
-                            <a href="{% url 'hr:payroll_detail' payroll.pk %}" class="btn btn-action btn-outline-secondary" title="View">
-                                <i class="fas fa-eye"></i>
-                            </a>
+                            <a href="{% url 'hr:payroll_detail' payroll.pk %}" class="btn btn-action btn-outline-secondary" title="View"><i class="fas fa-eye"></i></a>
                             {% if payroll.status == 'draft' and can_edit %}
                             <form method="post" action="{% url 'hr:payroll_process' payroll.pk %}" class="d-inline">
                                 {% csrf_token %}
-                                <button type="submit" class="btn btn-action btn-outline-success" title="Process" onclick="return confirm('Process payroll and post to accounting?');">
-                                    <i class="fas fa-check"></i>
-                                </button>
+                                <button type="submit" class="btn btn-action btn-outline-success" title="Process" onclick="return confirm('Process payroll and post to accounting?');"><i class="fas fa-check"></i></button>
                             </form>
-                            <a href="{% url 'hr:payroll_edit' payroll.pk %}" class="btn btn-action btn-outline-primary" title="Edit">
-                                <i class="fas fa-edit"></i>
-                            </a>
+                            <a href="{% url 'hr:payroll_edit' payroll.pk %}" class="btn btn-action btn-outline-primary" title="Edit"><i class="fas fa-edit"></i></a>
                             {% elif payroll.status == 'processed' and can_edit %}
-                            <a href="{% url 'hr:payroll_pay' payroll.pk %}" class="btn btn-action btn-outline-success" title="Pay Salary">
-                                <i class="fas fa-money-bill-wave"></i>
-                            </a>
+                            <a href="{% url 'hr:payroll_pay' payroll.pk %}" class="btn btn-action btn-outline-success" title="Pay"><i class="fas fa-money-bill-wave"></i></a>
                             {% endif %}
                         </td>
                     </tr>
-                    {% empty %}<tr><td colspan="8" class="text-center py-5 text-muted"><i class="fas fa-money-check fa-3x mb-3 d-block"></i>No payroll records</td></tr>{% endfor %}
+                    {% empty %}<tr><td colspan="9" class="text-center py-5 text-muted"><i class="fas fa-money-check fa-2x mb-2 d-block opacity-50"></i>No payroll records</td></tr>{% endfor %}
                 </tbody>
             </table>
         </div>
     </div>
 </div>
-{% endblock %}
 
+{% if can_edit or has_uae_company or has_ksa_company %}
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white py-2 d-flex align-items-center justify-content-between flex-wrap gap-2 border-bottom">
+        <span class="small fw-semibold text-muted text-uppercase">Tools</span>
+        <span class="small text-muted">Bulk actions &amp; exports</span>
+    </div>
+    <div class="card-body py-3">
+        {% if can_edit %}
+        <div class="row g-3 mb-3">
+            <div class="col-12 col-lg-5">
+                <form method="post" action="{% url 'hr:payroll_bulk_process' %}" class="d-flex flex-wrap align-items-end gap-2">
+                    {% csrf_token %}
+                    <div>
+                        <label class="form-label small text-muted mb-0">Process drafts</label>
+                        <input type="month" name="month" class="form-control form-control-sm" required style="width: 11rem;" aria-label="Month"/>
+                    </div>
+                    <div>
+                        <label class="form-label small text-muted mb-0">Scope</label>
+                        <select name="company" class="form-select form-select-sm" style="min-width: 10rem;" aria-label="Company">
+                            <option value="">All</option>
+                            {% for c in filter_companies %}<option value="{{ c.pk }}">{{ c.name }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    <button type="submit" class="btn btn-sm btn-warning" onclick="return confirm('Process all draft payrolls for this month?');" title="Post to accounting">Run</button>
+                </form>
+            </div>
+            <div class="col-12 col-lg-7 d-flex align-items-end">
+                <button type="button" class="btn btn-sm btn-outline-success" data-bs-toggle="modal" data-bs-target="#genDraftModal"><i class="fas fa-file-alt me-1"></i>Generate drafts</button>
+            </div>
+        </div>
+
+        <div class="border-top pt-3">
+            <form method="post" action="{% url 'hr:payroll_bulk_pay' %}" class="row g-2 align-items-end">
+                {% csrf_token %}
+                <div class="col-12"><span class="small fw-semibold">Pay all processed</span> <span class="text-muted small">— mark salaries paid from bank (same as row action)</span></div>
+                <div class="col-6 col-sm-4 col-md-2">
+                    <label class="form-label small text-muted mb-0" for="bulk-pay-month">Month</label>
+                    <input type="month" name="month" id="bulk-pay-month" class="form-control form-control-sm" required/>
+                </div>
+                <div class="col-6 col-sm-4 col-md-2">
+                    <label class="form-label small text-muted mb-0" for="bulk-pay-company">Company</label>
+                    <select name="company" id="bulk-pay-company" class="form-select form-select-sm">
+                        <option value="">All</option>
+                        {% for c in filter_companies %}<option value="{{ c.pk }}" {% if filter_company == c.pk|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div class="col-12 col-sm-6 col-md-3">
+                    <label class="form-label small text-muted mb-0" for="bulk-pay-bank">Bank</label>
+                    <select name="bank_account" id="bulk-pay-bank" class="form-select form-select-sm" required>
+                        {% for b in payroll_bank_accounts %}<option value="{{ b.pk }}">{{ b.name }} — {{ b.bank_name }}</option>{% empty %}<option value="">— Add in Finance —</option>{% endfor %}
+                    </select>
+                </div>
+                <div class="col-6 col-sm-3 col-md-2">
+                    <label class="form-label small text-muted mb-0" for="bulk-pay-date">Paid on</label>
+                    <input type="date" name="payment_date" id="bulk-pay-date" class="form-control form-control-sm" value="{% now 'Y-m-d' %}"/>
+                </div>
+                <div class="col-6 col-sm-3 col-md-2">
+                    <label class="form-label small text-muted mb-0" for="bulk-pay-ref">Ref</label>
+                    <input type="text" name="reference" id="bulk-pay-ref" class="form-control form-control-sm" placeholder="Optional"/>
+                </div>
+                <div class="col-12 col-md-auto">
+                    <button type="submit" class="btn btn-success btn-sm" onclick="return confirm('Pay all processed payrolls for this month and scope?');">Pay</button>
+                </div>
+            </form>
+        </div>
+        {% endif %}
+
+        {% if has_uae_company %}
+        <div class="border-top pt-3 mt-3">
+            <div class="small fw-semibold mb-2">WPS SIF <span class="text-muted fw-normal">(UAE, paid runs)</span></div>
+            <form method="get" action="{% url 'hr:payroll_list' %}" class="row g-2 align-items-end flex-wrap">
+                <input type="hidden" name="wps_preview" value="1"/>
+                {% if filter_company %}<input type="hidden" name="company" value="{{ filter_company }}"/>{% endif %}
+                <div class="col-auto">
+                    <select name="wps_company" class="form-select form-select-sm" required style="min-width: 12rem;">{% for c in wps_export_companies %}<option value="{{ c.pk }}">{{ c.name }}</option>{% endfor %}</select>
+                </div>
+                <div class="col-auto d-flex gap-1 align-items-center">
+                    <select name="wps_month" class="form-select form-select-sm" style="width: 4.5rem;">{% for m in export_months %}<option value="{{ m }}" {% if m == wps_export_preview_month %}selected{% elif not wps_export_preview_month and m == default_export_month %}selected{% endif %}>{{ m|stringformat:"02d" }}</option>{% endfor %}</select>
+                    <select name="wps_year" class="form-select form-select-sm" style="width: 5rem;">{% for y in export_years %}<option value="{{ y }}" {% if y == wps_export_preview_year %}selected{% elif not wps_export_preview_year and y == default_export_year %}selected{% endif %}>{{ y }}</option>{% endfor %}</select>
+                </div>
+                <div class="col-auto d-flex gap-1">
+                    <button type="submit" class="btn btn-sm btn-outline-primary">Preview</button>
+                    <a href="{% url 'hr:wps_export' %}" class="btn btn-sm btn-link text-decoration-none px-1">Open</a>
+                </div>
+            </form>
+            {% if wps_export_preview %}
+            <p class="small mt-2 mb-1 text-muted">{{ wps_export_preview.employee_count }} rows · AED {{ wps_export_preview.total_aed|floatformat:2 }} · {{ wps_export_preview.missing_iban|length }} missing IBAN</p>
+            {% if wps_export_preview.warnings %}<div class="alert alert-warning py-2 small mb-2">{% for w in wps_export_preview.warnings %}<div>{{ w }}</div>{% endfor %}</div>{% endif %}
+            <div class="table-responsive rounded border" style="max-height: 14rem;">
+                <table class="table table-sm table-striped mb-0 small">
+                    <thead class="table-light sticky-top"><tr><th>Employee</th><th>IBAN</th><th>Days</th><th class="text-end">Net</th><th></th></tr></thead>
+                    <tbody>
+                        {% for row in wps_export_preview.preview_rows %}<tr><td>{{ row.employee }}</td><td class="font-monospace">{{ row.iban }}</td><td>{{ row.working_days }}</td><td class="text-end">{{ row.net_aed|floatformat:2 }}</td><td>{{ row.status }}</td></tr>{% empty %}<tr><td colspan="5" class="text-muted">No rows</td></tr>{% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="d-flex flex-wrap gap-2 mt-2">
+                <a class="btn btn-primary btn-sm" href="{% url 'hr:wps_export' %}?company={{ wps_export_preview_company.pk }}&month={{ wps_export_preview_month }}&year={{ wps_export_preview_year }}&download=1">Download .SIF</a>
+                <a class="btn btn-success btn-sm" href="{% url 'hr:wps_export' %}?company={{ wps_export_preview_company.pk }}&month={{ wps_export_preview_month }}&year={{ wps_export_preview_year }}&download=1&format=xlsx">Download Excel</a>
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        {% if has_ksa_company %}
+        <div class="border-top pt-3 mt-3">
+            <div class="small fw-semibold mb-2">GOSI report <span class="text-muted fw-normal">(KSA, Excel)</span></div>
+            <form method="get" action="{% url 'hr:payroll_list' %}" class="row g-2 align-items-end flex-wrap">
+                <input type="hidden" name="gosi_preview" value="1"/>
+                {% if filter_company %}<input type="hidden" name="company" value="{{ filter_company }}"/>{% endif %}
+                <div class="col-auto">
+                    <select name="gosi_company" class="form-select form-select-sm" required style="min-width: 12rem;">{% for c in gosi_export_companies %}<option value="{{ c.pk }}">{{ c.name }}</option>{% endfor %}</select>
+                </div>
+                <div class="col-auto d-flex gap-1 align-items-center">
+                    <select name="gosi_month" class="form-select form-select-sm" style="width: 4.5rem;">{% for m in export_months %}<option value="{{ m }}" {% if m == gosi_export_preview_month %}selected{% elif not gosi_export_preview_month and m == default_export_month %}selected{% endif %}>{{ m|stringformat:"02d" }}</option>{% endfor %}</select>
+                    <select name="gosi_year" class="form-select form-select-sm" style="width: 5rem;">{% for y in export_years %}<option value="{{ y }}" {% if y == gosi_export_preview_year %}selected{% elif not gosi_export_preview_year and y == default_export_year %}selected{% endif %}>{{ y }}</option>{% endfor %}</select>
+                </div>
+                <div class="col-auto d-flex gap-1">
+                    <button type="submit" class="btn btn-sm btn-outline-success">Preview</button>
+                    <a href="{% url 'hr:gosi_export' %}" class="btn btn-sm btn-link text-decoration-none px-1">Open</a>
+                </div>
+            </form>
+            {% if gosi_export_preview %}
+            {% if gosi_export_preview.employee_count == 0 %}
+            <div class="alert alert-warning py-2 small mt-2 mb-0">
+                No processed/paid KSA payroll with GOSI applicable for this month/company. Check employee <strong>location = KSA</strong>, payroll <strong>Processed/Paid</strong>, and KSA compliance.
+            </div>
+            {% else %}
+            <p class="small mt-2 mb-1 text-muted">
+                Found <strong>{{ gosi_export_preview.employee_count }}</strong> on report
+                ({{ gosi_export_preview.payrolls_scanned }} payroll row(s) scanned{% if gosi_export_preview.excluded_not_applicable %}, {{ gosi_export_preview.excluded_not_applicable }} excluded{% endif %}) ·
+                Saudi <strong>{{ gosi_export_preview.total_saudi }}</strong> · Non-Saudi <strong>{{ gosi_export_preview.total_non_saudi }}</strong> ·
+                Liability <strong>SAR {{ gosi_export_preview.grand_total|floatformat:2 }}</strong>
+            </p>
+            {% if gosi_export_preview.warnings %}<div class="alert alert-warning py-2 small mb-2">{% for w in gosi_export_preview.warnings %}<div>{{ w }}</div>{% endfor %}</div>{% endif %}
+            <a class="btn btn-success btn-sm" href="{% url 'hr:gosi_export' %}?company={{ gosi_export_preview_company.pk }}&month={{ gosi_export_preview_month }}&year={{ gosi_export_preview_year }}&download=1"><i class="fas fa-file-excel me-1"></i>Download Excel</a>
+            {% endif %}
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+{% if can_edit %}
+<div class="modal fade" id="genDraftModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" action="{% url 'hr:payroll_generate_drafts' %}">
+                {% csrf_token %}
+                <div class="modal-header"><h5 class="modal-title">Generate draft payrolls</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Month</label>
+                        <input type="month" name="month" class="form-control" required/>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Company (optional)</label>
+                        <select name="company" class="form-select">
+                            <option value="">All</option>
+                            {% for c in filter_companies %}<option value="{{ c.pk }}">{{ c.name }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-0">
+                        <label class="form-label">Employee location (optional)</label>
+                        <select name="location" class="form-select">
+                            <option value="">Any</option>
+                            <option value="UAE">UAE</option>
+                            <option value="KSA">KSA</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Generate</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

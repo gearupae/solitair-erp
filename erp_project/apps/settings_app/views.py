@@ -10,10 +10,19 @@ from django.views.generic import ListView, CreateView, UpdateView, View, Templat
 from django.urls import reverse_lazy
 from django.http import JsonResponse
 from .models import (
-    Role, Permission, RolePermission, UserRole, UserProfile, CompanySettings, AuditLog, ModulePermission,
-    ApprovalConfiguration, ApprovalConfigurationLevel
+    Role,
+    Permission,
+    RolePermission,
+    UserRole,
+    UserProfile,
+    CompanySettings,
+    AuditLog,
+    ModulePermission,
+    ApprovalConfiguration,
+    ApprovalConfigurationLevel,
+    Company,
 )
-from .forms import UserForm, RoleForm, CompanySettingsForm
+from .forms import UserForm, RoleForm, CompanySettingsForm, CompanyForm
 from apps.core.mixins import PermissionRequiredMixin
 
 
@@ -231,6 +240,58 @@ class CompanySettingsView(PermissionRequiredMixin, UpdateView):
     
     def form_valid(self, form):
         messages.success(self.request, 'Company settings updated successfully.')
+        return super().form_valid(form)
+
+
+class CompanyListView(PermissionRequiredMixin, ListView):
+    model = Company
+    template_name = 'settings/company_list.html'
+    context_object_name = 'companies'
+    module_name = 'settings'
+    permission_type = 'view'
+
+    def get_queryset(self):
+        return Company.objects.all().order_by('name')
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx['title'] = 'Companies'
+        return ctx
+
+
+class CompanyCreateView(PermissionRequiredMixin, CreateView):
+    model = Company
+    form_class = CompanyForm
+    template_name = 'settings/company_form.html'
+    success_url = reverse_lazy('settings:company_list')
+    module_name = 'settings'
+    permission_type = 'create'
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx['title'] = 'Add Company'
+        return ctx
+
+    def form_valid(self, form):
+        messages.success(self.request, 'Company created.')
+        return super().form_valid(form)
+
+
+class CompanyUpdateView(PermissionRequiredMixin, UpdateView):
+    model = Company
+    form_class = CompanyForm
+    template_name = 'settings/company_form.html'
+    success_url = reverse_lazy('settings:company_list')
+    module_name = 'settings'
+    permission_type = 'edit'
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx['title'] = f'Edit Company: {self.object.name}'
+        return ctx
+
+    def form_valid(self, form):
+        messages.success(self.request, 'Company updated.')
         return super().form_valid(form)
 
 

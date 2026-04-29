@@ -1,0 +1,69 @@
+{% extends 'base.html' %}
+{% load humanize %}
+{% block content %}
+<div class="page-header">
+    <nav aria-label="breadcrumb"><ol class="breadcrumb mb-2"><li class="breadcrumb-item"><a href="{% url 'hr:payroll_list' %}">Payroll</a></li><li class="breadcrumb-item active">GOSI</li></ol></nav>
+    <h4 class="mb-0 fw-bold">{{ title }}</h4>
+    <p class="text-muted small mb-0">Processed or paid payrolls, employees with location <strong>KSA</strong> and GOSI applicable. Excel includes summary and totals.</p>
+</div>
+
+<form method="get" class="card mb-4 border-0 shadow-sm">
+    <div class="card-body">
+        <div class="row g-3 align-items-end">
+            <div class="col-md-4">
+                <label class="form-label small">Company (KSA)</label>
+                <select name="company" class="form-select" required>
+                    <option value="">— Select —</option>
+                    {% for c in ksa_companies %}<option value="{{ c.pk }}" {% if company and company.pk == c.pk %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small">Month</label>
+                <select name="month" class="form-select">
+                    {% for m in months %}<option value="{{ m }}" {% if m == month %}selected{% endif %}>{{ m|stringformat:"02d" }}</option>{% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small">Year</label>
+                <select name="year" class="form-select">
+                    {% for y in years %}<option value="{{ y }}" {% if y == year %}selected{% endif %}>{{ y }}</option>{% endfor %}
+                </select>
+            </div>
+            <div class="col-md-auto d-flex flex-wrap gap-2">
+                <button type="submit" class="btn btn-outline-success"><i class="fas fa-search me-1"></i>Preview</button>
+                {% if company and payload %}
+                <a class="btn btn-success" href="{% url 'hr:gosi_export' %}?company={{ company.pk }}&month={{ month }}&year={{ year }}&download=1"><i class="fas fa-file-excel me-1"></i>Download Excel</a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</form>
+
+{% if company and payload %}
+{% if payload.employee_count == 0 %}
+<div class="alert alert-warning">
+    <strong>No rows in this report.</strong>
+    No processed/paid KSA payroll matched for {{ month|stringformat:"02d" }}/{{ year }} and this company with
+    <strong>employee location = KSA</strong> and <strong>KSA compliance → GOSI applicable</strong> checked.
+    Ensure payroll status is <strong>Processed</strong> or <strong>Paid</strong>, employee location is KSA, and compliance is complete.
+</div>
+{% else %}
+<p class="small mb-1">
+    Found <strong>{{ payload.employee_count }}</strong> employee(s) on GOSI report
+    (scanned <strong>{{ payload.payrolls_scanned }}</strong> processed/paid KSA payroll row(s) for this company/month;
+    {% if payload.excluded_not_applicable %}<span class="text-muted">{{ payload.excluded_not_applicable }} excluded (GOSI not applicable / no compliance)</span>{% else %}none excluded.{% endif %})
+</p>
+<p class="small mb-2">
+    Saudi: <strong>{{ payload.total_saudi }}</strong> · Non-Saudi: <strong>{{ payload.total_non_saudi }}</strong> ·
+    Total GOSI liability: <strong>SAR {{ payload.grand_total|floatformat:2|intcomma }}</strong>
+</p>
+{% if payload.warnings %}
+<div class="alert alert-warning small mb-3">{% for w in payload.warnings %}<div>{{ w }}</div>{% endfor %}</div>
+{% endif %}
+<div class="d-flex gap-2 mb-3">
+    <a class="btn btn-success" href="{% url 'hr:gosi_export' %}?company={{ company.pk }}&month={{ month }}&year={{ year }}&download=1"><i class="fas fa-download me-1"></i>Download Excel (.xlsx)</a>
+    <span class="small text-muted align-self-center">Download also refreshes <code>GOSIRecord</code> in the database.</span>
+</div>
+{% endif %}
+{% endif %}
+{% endblock %}

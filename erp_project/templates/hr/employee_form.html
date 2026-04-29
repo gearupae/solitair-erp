@@ -1,10 +1,18 @@
 {% extends 'base.html' %}
+{% block extra_css %}
+<style>
+/* Native date inputs sometimes render shorter than text fields; match Bootstrap .form-control */
+#employee-form-root input[type="date"].form-control {
+    min-height: calc(1.5em + 0.75rem + 2px);
+}
+</style>
+{% endblock %}
 {% block content %}
 <div class="page-header">
     <nav aria-label="breadcrumb"><ol class="breadcrumb mb-2"><li class="breadcrumb-item"><a href="{% url 'hr:employee_list' %}">Employees</a></li><li class="breadcrumb-item active">{{ title }}</li></ol></nav>
     <h4 class="mb-0 fw-bold">{{ title }}</h4>
 </div>
-<form method="post">
+<form method="post" id="employee-form-root">
     {% csrf_token %}
     {% if form.errors %}
     <div class="alert alert-danger">
@@ -18,25 +26,54 @@
         </ul>
     </div>
     {% endif %}
+    {% if uae_form.errors %}
+    <div class="alert alert-warning"><strong>UAE compliance:</strong> please review highlighted fields.</div>
+    {% endif %}
+    {% if ksa_form.errors %}
+    <div class="alert alert-warning"><strong>KSA compliance:</strong> please review highlighted fields.</div>
+    {% endif %}
+    {% if bank_form.errors %}
+    <div class="alert alert-warning"><strong>Bank details:</strong> please review highlighted fields.</div>
+    {% endif %}
+
     <div class="card mb-4">
         <div class="card-header"><h6 class="mb-0 fw-semibold">Personal Information</h6></div>
         <div class="card-body">
             <div class="row g-3">
-                <div class="col-md-4"><label class="form-label">First Name <span class="text-danger">*</span></label>{{ form.first_name }}</div>
-                <div class="col-md-4"><label class="form-label">Last Name <span class="text-danger">*</span></label>{{ form.last_name }}</div>
-                <div class="col-md-4"><label class="form-label">Email <span class="text-danger">*</span></label>{{ form.email }}</div>
-                <div class="col-md-4"><label class="form-label">Phone</label>{{ form.phone }}</div>
-                <div class="col-md-4"><label class="form-label">Gender</label>{{ form.gender }}</div>
-                <div class="col-md-4"><label class="form-label">Date of Birth</label>{{ form.date_of_birth }}</div>
-                <div class="col-md-4"><label class="form-label">Status</label>{{ form.status }}</div>
+                <div class="col-md-3">
+                    <label class="form-label">Employee code</label>
+                    {{ form.employee_code }}
+                    {% if object %}
+                    <small class="text-muted d-block mt-1">You can change this code if needed.</small>
+                    {% else %}
+                    <small class="text-muted d-block mt-1">Leave blank to generate automatically when saving.</small>
+                    {% endif %}
+                    {% if form.employee_code.errors %}<div class="text-danger small mt-1">{{ form.employee_code.errors|join:", " }}</div>{% endif %}
+                </div>
+                <div class="col-md-3"><label class="form-label">First Name <span class="text-danger">*</span></label>{{ form.first_name }}</div>
+                <div class="col-md-3"><label class="form-label">Last Name <span class="text-danger">*</span></label>{{ form.last_name }}</div>
+                <div class="col-md-3"><label class="form-label">Email <span class="text-danger">*</span></label>{{ form.email }}</div>
+                <div class="col-md-3"><label class="form-label">Phone</label>{{ form.phone }}</div>
+                <div class="col-md-3"><label class="form-label">Gender</label>{{ form.gender }}</div>
+                <div class="col-md-3"><label class="form-label">Date of Birth</label>{{ form.date_of_birth }}</div>
+                <div class="col-md-3"><label class="form-label">Status</label>{{ form.status }}</div>
             </div>
         </div>
     </div>
+
     <div class="card mb-4">
         <div class="card-header"><h6 class="mb-0 fw-semibold">Employment Details</h6></div>
         <div class="card-body">
             <div class="row g-3">
-                <div class="col-md-4">
+                <div class="col-md-3">
+                    <label class="form-label">Company</label>{{ form.company }}
+                    {% if form.company.errors %}<div class="text-danger small">{{ form.company.errors|join:", " }}</div>{% endif %}
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Location</label>{{ form.location }}
+                    <small class="text-muted d-block mt-1">Controls which compliance section applies.</small>
+                </div>
+                <div class="col-md-3">
                     <label class="form-label">Department</label>
                     <select name="department" id="id_department" class="form-select">
                         <option value="">-- Select Department --</option>
@@ -45,15 +82,8 @@
                         {% endfor %}
                     </select>
                     {% if form.department.errors %}<div class="text-danger small mt-1">{{ form.department.errors|join:", " }}</div>{% endif %}
-                    {% if departments.count == 0 %}
-                    <div class="alert alert-warning mt-2">
-                        <small><i class="fas fa-exclamation-triangle me-1"></i>No departments available. <a href="{% url 'hr:department_list' %}">Create departments</a> first.</small>
-                    </div>
-                    {% else %}
-                    <small class="text-muted d-block mt-1"><i class="fas fa-info-circle me-1"></i>{{ departments.count }} department(s) available</small>
-                    {% endif %}
                 </div>
-                <div class="col-md-4">
+                <div class="col-md-3">
                     <label class="form-label">Designation</label>
                     <select name="designation" id="id_designation" class="form-select">
                         <option value="">-- Select Designation --</option>
@@ -62,30 +92,85 @@
                         {% endfor %}
                     </select>
                     {% if form.designation.errors %}<div class="text-danger small mt-1">{{ form.designation.errors|join:", " }}</div>{% endif %}
-                    {% if designations.count == 0 %}
-                    <div class="alert alert-warning mt-2">
-                        <small><i class="fas fa-exclamation-triangle me-1"></i>No designations available. Designations are synced from <a href="{% url 'settings:role_list' %}" target="_blank">Roles</a>. Please create roles first.</small>
-                    </div>
-                    {% else %}
-                    <small class="text-muted d-block mt-1"><i class="fas fa-info-circle me-1"></i>{{ designations.count }} designation(s) available (synced from <a href="{% url 'settings:role_list' %}" target="_blank">Roles</a>)</small>
-                    {% endif %}
                 </div>
-                <div class="col-md-4"><label class="form-label">Date of Joining</label>{{ form.date_of_joining }}</div>
-                <div class="col-md-4"><label class="form-label">Probation Period (Days)</label>{{ form.probation_period_days }}<small class="text-muted d-block mt-1">Default: 90 days (UAE standard)</small></div>
-                <div class="col-md-4"><label class="form-label">Basic Salary</label>{{ form.basic_salary }}</div>
+                <div class="col-md-3"><label class="form-label">Date of Joining</label>{{ form.date_of_joining }}</div>
+                <div class="col-md-3"><label class="form-label">Probation Period (Days)</label>{{ form.probation_period_days }}<small class="text-muted d-block mt-1">Default: 90 days</small></div>
+                <div class="col-md-3"><label class="form-label">Basic Salary</label>{{ form.basic_salary }}</div>
             </div>
         </div>
     </div>
+
     <div class="card mb-4">
-        <div class="card-header"><h6 class="mb-0 fw-semibold">UAE Documents</h6></div>
+        <div class="card-header"><h6 class="mb-0 fw-semibold">Bank account</h6></div>
+        <div class="card-body">
+            <p class="small text-muted mb-3">Optional. Used for salary payments and WPS export where applicable.</p>
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <label class="form-label" for="{{ bank_form.bank_name.id_for_label }}">{{ bank_form.bank_name.label }}</label>
+                    {{ bank_form.bank_name }}
+                    {% if bank_form.bank_name.errors %}<div class="text-danger small mt-1">{{ bank_form.bank_name.errors|join:", " }}</div>{% endif %}
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label" for="{{ bank_form.account_number.id_for_label }}">{{ bank_form.account_number.label }}</label>
+                    {{ bank_form.account_number }}
+                    {% if bank_form.account_number.errors %}<div class="text-danger small mt-1">{{ bank_form.account_number.errors|join:", " }}</div>{% endif %}
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label" for="{{ bank_form.iban.id_for_label }}">{{ bank_form.iban.label }}</label>
+                    {{ bank_form.iban }}
+                    {% if bank_form.iban.errors %}<div class="text-danger small mt-1">{{ bank_form.iban.errors|join:", " }}</div>{% endif %}
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label" for="{{ bank_form.routing_bank_code.id_for_label }}">{{ bank_form.routing_bank_code.label }}</label>
+                    {{ bank_form.routing_bank_code }}
+                    {% if bank_form.routing_bank_code.help_text %}<small class="text-muted d-block mt-1">{{ bank_form.routing_bank_code.help_text }}</small>{% endif %}
+                    {% if bank_form.routing_bank_code.errors %}<div class="text-danger small mt-1">{{ bank_form.routing_bank_code.errors|join:", " }}</div>{% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-4 border-primary border-opacity-25" id="hr-section-uae" style="display:none;">
+        <div class="card-header bg-primary bg-opacity-10"><h6 class="mb-0 fw-semibold">UAE — employee record &amp; documents</h6></div>
+        <div class="card-body">
+            <p class="small text-muted">Emirates ID and visa number/expiry are stored on the employee record (shown below). Additional UAE fields are stored on the compliance profile.</p>
+            <div class="row g-3 mb-4">
+                <div class="col-md-3"><label class="form-label">Emirates ID</label>{{ form.emirates_id }}</div>
+                <div class="col-md-3"><label class="form-label">Visa Number</label>{{ form.visa_number }}</div>
+                <div class="col-md-3"><label class="form-label">Visa Expiry</label>{{ form.visa_expiry }}</div>
+            </div>
+            <h6 class="text-muted small text-uppercase mb-3">UAE compliance profile</h6>
+            <div class="row g-3">
+                {% for field in uae_form %}
+                <div class="col-md-3">
+                    <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                    {{ field.errors }}
+                    {{ field }}
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-4 border-success border-opacity-25" id="hr-section-ksa" style="display:none;">
+        <div class="card-header bg-success bg-opacity-10"><h6 class="mb-0 fw-semibold">KSA compliance</h6></div>
         <div class="card-body">
             <div class="row g-3">
-                <div class="col-md-4"><label class="form-label">Emirates ID</label>{{ form.emirates_id }}</div>
-                <div class="col-md-4"><label class="form-label">Visa Number</label>{{ form.visa_number }}</div>
-                <div class="col-md-4"><label class="form-label">Visa Expiry</label>{{ form.visa_expiry }}</div>
+                {% for field in ksa_form %}
+                <div class="col-md-3">
+                    <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                    {{ field.errors }}
+                    {{ field }}
+                </div>
+                {% endfor %}
             </div>
+            <p class="small text-muted mb-0 mt-2">
+                <strong>GOSI on payroll:</strong> Saudi employees — 10% employee + 12% employer on basic salary when payroll is processed.
+                Non-Saudi — 0% employee + 2% employer (hazard). Requires <strong>GOSI applicable</strong> checked and nationality set.
+            </p>
         </div>
     </div>
+
     <button type="submit" class="btn btn-primary"><i class="fas fa-save me-2"></i>Save</button>
     <a href="{% url 'hr:employee_list' %}" class="btn btn-light">Cancel</a>
 </form>
@@ -93,29 +178,23 @@
 
 {% block extra_js %}
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    const deptSelect = document.getElementById('id_department');
-    const desgSelect = document.getElementById('id_designation');
-    
-    // Log available options for debugging
-    if (deptSelect) {
-        console.log('Department select found. Options:', deptSelect.options.length);
-        console.log('Department options:', Array.from(deptSelect.options).map(opt => ({value: opt.value, text: opt.text})));
+(function () {
+    function locValue() {
+        var el = document.getElementById('id_location');
+        return el ? el.value : 'other';
     }
-    
-    if (desgSelect) {
-        console.log('Designation select found. Options:', desgSelect.options.length);
-        console.log('Designation options:', Array.from(desgSelect.options).map(opt => ({value: opt.value, text: opt.text})));
+    function toggleHrSections() {
+        var v = locValue();
+        var uae = document.getElementById('hr-section-uae');
+        var ksa = document.getElementById('hr-section-ksa');
+        if (uae) uae.style.display = (v === 'uae') ? 'block' : 'none';
+        if (ksa) ksa.style.display = (v === 'ksa') ? 'block' : 'none';
     }
-    
-    // Ensure native selects are visible and functional
-    if (deptSelect) {
-        deptSelect.style.display = 'block';
-    }
-    if (desgSelect) {
-        desgSelect.style.display = 'block';
-    }
-});
+    document.addEventListener('DOMContentLoaded', function () {
+        var loc = document.getElementById('id_location');
+        toggleHrSections();
+        if (loc) loc.addEventListener('change', toggleHrSections);
+    });
+})();
 </script>
 {% endblock %}
-

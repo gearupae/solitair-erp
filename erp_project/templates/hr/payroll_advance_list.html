@@ -1,0 +1,93 @@
+{% extends 'base.html' %}
+{% load humanize %}
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+    <div>
+        <h4 class="mb-1 fw-bold">{{ title }}</h4>
+        <p class="text-muted mb-0">Salary advances and loans recovered via payroll</p>
+    </div>
+    {% if can_add %}
+    <a href="{% url 'hr:payroll_advance_create' %}" class="btn btn-primary"><i class="fas fa-plus me-1"></i>Record advance</a>
+    {% endif %}
+</div>
+
+<div class="card mb-3">
+    <div class="card-body py-3">
+        <form method="get" class="row g-2 align-items-end">
+            <div class="col-md-4">
+                <label class="form-label small mb-0">Employee</label>
+                <select name="employee" class="form-select form-select-sm">
+                    <option value="">All</option>
+                    {% for e in employees %}
+                    <option value="{{ e.pk }}" {% if filter_employee == e.pk|stringformat:"s" %}selected{% endif %}>{{ e.full_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small mb-0">Status</label>
+                <select name="status" class="form-select form-select-sm">
+                    <option value="">All</option>
+                    {% for val, label in status_choices %}
+                    <option value="{{ val }}" {% if filter_status == val %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small mb-0">Issued month</label>
+                <input type="month" name="issued_month" class="form-control form-control-sm" value="{{ filter_issued_month }}"/>
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-sm btn-outline-primary w-100">Filter</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card">
+    <div class="table-responsive">
+        <table class="table table-hover mb-0 align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th>Employee</th>
+                    <th>Type</th>
+                    <th class="text-end">Amount</th>
+                    <th class="text-end">Repaid</th>
+                    <th class="text-end">Remaining</th>
+                    <th>Status</th>
+                    <th>Issued</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for a in advances %}
+                <tr>
+                    <td><a href="{% url 'hr:employee_detail' a.employee_id %}">{{ a.employee.full_name }}</a></td>
+                    <td>{{ a.get_advance_type_display }}</td>
+                    <td class="text-end">AED {{ a.amount|floatformat:2|intcomma }}</td>
+                    <td class="text-end">AED {{ a.amount_repaid|floatformat:2|intcomma }}</td>
+                    <td class="text-end">AED {{ a.amount_remaining|floatformat:2|intcomma }}</td>
+                    <td><span class="badge bg-{% if a.status == 'active' %}warning text-dark{% elif a.status == 'fully_repaid' %}success{% else %}secondary{% endif %}">{{ a.get_status_display }}</span></td>
+                    <td>{{ a.date_issued|date:"d M Y" }}</td>
+                    <td><a href="{% url 'hr:payroll_advance_detail' a.pk %}" class="btn btn-sm btn-outline-secondary">View</a></td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="8" class="text-muted text-center py-4">No advances match your filters.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% if is_paginated %}
+<nav class="mt-3">
+    <ul class="pagination pagination-sm mb-0">
+        {% if page_obj.has_previous %}
+        <li class="page-item"><a class="page-link" href="?page={{ page_obj.previous_page_number }}&employee={{ filter_employee }}&status={{ filter_status }}&issued_month={{ filter_issued_month }}">Previous</a></li>
+        {% endif %}
+        <li class="page-item disabled"><span class="page-link">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span></li>
+        {% if page_obj.has_next %}
+        <li class="page-item"><a class="page-link" href="?page={{ page_obj.next_page_number }}&employee={{ filter_employee }}&status={{ filter_status }}&issued_month={{ filter_issued_month }}">Next</a></li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+{% endblock %}

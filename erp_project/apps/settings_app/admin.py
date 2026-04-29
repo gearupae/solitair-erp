@@ -1,8 +1,16 @@
 from django.contrib import admin
 from .models import (
-    Role, Permission, RolePermission, UserRole, 
-    UserProfile, CompanySettings, NumberSeries, AuditLog,
-    ApprovalWorkflow, ModulePermission
+    Role,
+    Permission,
+    RolePermission,
+    UserRole,
+    UserProfile,
+    CompanySettings,
+    Company,
+    NumberSeries,
+    AuditLog,
+    ApprovalWorkflow,
+    ModulePermission,
 )
 
 
@@ -42,6 +50,13 @@ class UserProfileAdmin(admin.ModelAdmin):
 @admin.register(CompanySettings)
 class CompanySettingsAdmin(admin.ModelAdmin):
     list_display = ['company_name', 'email', 'phone', 'currency']
+
+
+@admin.register(Company)
+class CompanyAdmin(admin.ModelAdmin):
+    list_display = ['name', 'country', 'mol_number', 'trade_license_number', 'is_active']
+    list_filter = ['country', 'is_active']
+    search_fields = ['name', 'trade_license_number']
 
 
 @admin.register(NumberSeries)

@@ -1,0 +1,153 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-header mb-4">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb mb-2">
+            <li class="breadcrumb-item"><a href="{% url 'hr:leave_type_list' %}">Leave types</a></li>
+            <li class="breadcrumb-item active" aria-current="page">{{ title }}</li>
+        </ol>
+    </nav>
+    <h4 class="mb-0 fw-bold">{{ title }}</h4>
+</div>
+
+<form method="post" novalidate>
+    {% csrf_token %}
+    {% if form.errors %}
+    <div class="alert alert-danger">
+        <strong>Please correct the following:</strong>
+        <ul class="mb-0 mt-2">
+            {% for field in form %}
+                {% for error in field.errors %}
+                <li><strong>{{ field.label }}:</strong> {{ error }}</li>
+                {% endfor %}
+            {% endfor %}
+            {% for error in form.non_field_errors %}
+                <li>{{ error }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    <div class="card mb-4">
+        <div class="card-header"><h6 class="mb-0 fw-semibold">Basic information</h6></div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label" for="{{ form.name.id_for_label }}">{{ form.name.label }}{% if form.name.field.required %} <span class="text-danger">*</span>{% endif %}</label>
+                    {{ form.name }}
+                    {% if form.name.help_text %}<div class="form-text">{{ form.name.help_text }}</div>{% endif %}
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="{{ form.code.id_for_label }}">{{ form.code.label }}</label>
+                    {{ form.code }}
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="{{ form.location.id_for_label }}">{{ form.location.label }}</label>
+                    {{ form.location }}
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="{{ form.days_allowed.id_for_label }}">{{ form.days_allowed.label }}</label>
+                    {{ form.days_allowed }}
+                    {% if form.days_allowed.help_text %}<div class="form-text">{{ form.days_allowed.help_text }}</div>{% endif %}
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="{{ form.pay_type.id_for_label }}">{{ form.pay_type.label }}</label>
+                    {{ form.pay_type }}
+                </div>
+                <div class="col-12">
+                    <label class="form-label" for="{{ form.description.id_for_label }}">{{ form.description.label }}</label>
+                    {{ form.description }}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header"><h6 class="mb-0 fw-semibold">Eligibility &amp; restrictions</h6></div>
+        <div class="card-body">
+            <div class="row g-3 align-items-start">
+                <div class="col-md-4">
+                    <label class="form-label" for="{{ form.gender_restricted.id_for_label }}">{{ form.gender_restricted.label }}</label>
+                    {{ form.gender_restricted }}
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="{{ form.gender_required.id_for_label }}">{{ form.gender_required.label }}</label>
+                    {{ form.gender_required }}
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="{{ form.min_service_days.id_for_label }}">{{ form.min_service_days.label }}</label>
+                    {{ form.min_service_days }}
+                    {% if form.min_service_days.help_text %}<div class="form-text">{{ form.min_service_days.help_text }}</div>{% endif %}
+                </div>
+                <div class="col-md-6 col-lg-4">
+                    <div class="form-check pt-2">
+                        {{ form.is_gender_specific }}
+                        <label class="form-check-label" for="{{ form.is_gender_specific.id_for_label }}">{{ form.is_gender_specific.label }}</label>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header"><h6 class="mb-0 fw-semibold">Leave rules</h6></div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-6 col-lg-4">
+                    <div class="form-check">
+                        {{ form.religion_restricted }}
+                        <label class="form-check-label" for="{{ form.religion_restricted.id_for_label }}">{{ form.religion_restricted.label }}</label>
+                    </div>
+                </div>
+                <div class="col-md-6 col-lg-4">
+                    <div class="form-check">
+                        {{ form.requires_medical_certificate }}
+                        <label class="form-check-label" for="{{ form.requires_medical_certificate.id_for_label }}">{{ form.requires_medical_certificate.label }}</label>
+                    </div>
+                </div>
+                <div class="col-md-6 col-lg-4">
+                    <div class="form-check">
+                        {{ form.probation_allowed }}
+                        <label class="form-check-label" for="{{ form.probation_allowed.id_for_label }}">{{ form.probation_allowed.label }}</label>
+                    </div>
+                </div>
+                <div class="col-md-6 col-lg-4">
+                    <div class="form-check">
+                        {{ form.once_in_service }}
+                        <label class="form-check-label" for="{{ form.once_in_service.id_for_label }}">{{ form.once_in_service.label }}</label>
+                    </div>
+                </div>
+                <div class="col-md-6 col-lg-4">
+                    <div class="form-check">
+                        {{ form.carry_forward_allowed }}
+                        <label class="form-check-label" for="{{ form.carry_forward_allowed.id_for_label }}">{{ form.carry_forward_allowed.label }}</label>
+                    </div>
+                </div>
+                <div class="col-md-6 col-lg-4">
+                    <div class="form-check">
+                        {{ form.is_probation_only }}
+                        <label class="form-check-label" for="{{ form.is_probation_only.id_for_label }}">{{ form.is_probation_only.label }}</label>
+                    </div>
+                </div>
+                <div class="col-md-6 col-lg-4">
+                    <div class="form-check">
+                        {{ form.is_paid }}
+                        <label class="form-check-label" for="{{ form.is_paid.id_for_label }}">{{ form.is_paid.label }}</label>
+                    </div>
+                </div>
+                <div class="col-md-6 col-lg-4">
+                    <div class="form-check">
+                        {{ form.is_active }}
+                        <label class="form-check-label" for="{{ form.is_active.id_for_label }}">{{ form.is_active.label }}</label>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="d-flex flex-wrap gap-2">
+        <button type="submit" class="btn btn-primary">Save</button>
+        <a href="{% url 'hr:leave_type_list' %}" class="btn btn-light">Cancel</a>
+    </div>
+</form>
+{% endblock %}

@@ -1,0 +1,334 @@
+{% extends 'base.html' %}
+{% load humanize %}
+{% block content %}
+{% url 'hr:dashboard' as hr_dash %}
+<div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+    <div>
+        <h4 class="mb-1 fw-bold">{{ title }}</h4>
+        <p class="text-muted mb-0">HR overview</p>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
+        <a href="{% url 'hr:public_leave_apply' %}" class="btn btn-outline-primary btn-sm" target="_blank" rel="noopener"><i class="fas fa-external-link-alt me-1"></i>Apply for Leave (public)</a>
+        <a href="{% url 'hr:employee_list' %}" class="btn btn-outline-secondary btn-sm"><i class="fas fa-id-card me-1"></i>Employees</a>
+        <a href="{% url 'hr:attendance_list' %}" class="btn btn-outline-secondary btn-sm"><i class="fas fa-clock me-1"></i>Attendance</a>
+        <a href="{% url 'hr:payroll_list' %}" class="btn btn-outline-secondary btn-sm"><i class="fas fa-money-check-alt me-1"></i>Payroll</a>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="bg-primary bg-opacity-10 rounded p-3 me-3">
+                        <i class="fas fa-users text-primary"></i>
+                    </div>
+                    <div>
+                        <p class="text-muted mb-0 small">Employees</p>
+                        <h5 class="mb-0 fw-bold">{{ total_employees }}</h5>
+                        <p class="text-muted mb-0 small">Active {{ active_status }} · Other {{ inactive_status }}</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex align-items-start mb-2">
+                    <div class="bg-success bg-opacity-10 rounded p-3 me-3">
+                        <i class="fas fa-money-check-alt text-success"></i>
+                    </div>
+                    <div class="small flex-grow-1">
+                        <p class="text-muted mb-1 fw-semibold">Payroll this month</p>
+                        <p class="mb-1">Draft {{ payroll_draft }} · Proc. {{ payroll_processed }} · Paid {{ payroll_paid }}</p>
+                        <p class="mb-2 fw-semibold">{{ payroll_total_net|floatformat:2|intcomma }} net paid (all)</p>
+                        {% if payroll_by_company %}
+                        <div class="border rounded px-2 py-1 bg-light mb-2">
+                            <div class="text-muted text-uppercase" style="font-size:0.65rem;">By company</div>
+                            {% for row in payroll_by_company %}
+                            <div class="d-flex justify-content-between gap-2 mt-1">
+                                <span class="text-truncate" title="{{ row.company.name }}">{{ row.company.name }}</span>
+                                <span class="text-nowrap">{{ row.draft }}/{{ row.processed }}/{{ row.paid }}</span>
+                            </div>
+                            <div class="small text-muted">{{ row.currency }} {{ row.total_net|floatformat:2|intcomma }} paid</div>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                        <p class="mb-1 text-warning small"><i class="fas fa-envelope me-1"></i>Pending payslip emails: <strong>{{ pending_payslip_emails }}</strong></p>
+                        <p class="mb-1 small">GOSI (KSA month): EE {{ gosi_month_employee|floatformat:2|intcomma }} · ER {{ gosi_month_employer|floatformat:2|intcomma }}</p>
+                        <p class="mb-0 small">WPS UAE net {{ wps_month_net_uae|floatformat:2|intcomma }} · pending {{ wps_pending_uae }} · submitted {{ wps_submitted_uae }}</p>
+                        <p class="mb-0 small mt-2 pt-2 border-top">
+                            <i class="fas fa-hand-holding-usd me-1 text-warning"></i>
+                            <strong>Advances:</strong> {{ advance_active_employees }} employee{{ advance_active_employees|pluralize }} with active balance ·
+                            <strong>{{ advance_outstanding_total|floatformat:2|intcomma }} AED</strong> outstanding
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex align-items-start">
+                    <div class="bg-info bg-opacity-10 rounded p-3 me-3">
+                        <i class="fas fa-user-clock text-info"></i>
+                    </div>
+                    <div class="small flex-grow-1">
+                        <p class="text-muted mb-1 fw-semibold">Attendance today</p>
+                        <p class="mb-1">Present <strong>{{ att_snap.present }}</strong> · Absent <strong>{{ att_snap.absent }}</strong> · Late <strong>{{ att_snap.late }}</strong> · Not marked <strong>{{ att_snap.not_marked }}</strong></p>
+                        {% if att_snap.late_employees %}
+                        <p class="mb-1 text-warning">Late: {% for x in att_snap.late_employees %}{{ x.name }} ({{ x.late_minutes }} min){% if not forloop.last %}, {% endif %}{% endfor %}</p>
+                        {% endif %}
+                        {% if att_snap.unmarked_employees %}
+                        <ul class="mb-1 ps-3">
+                            {% for u in att_snap.unmarked_employees|slice:":5" %}
+                            <li><a href="{% url 'hr:attendance_mark' %}?employee={{ u.id }}&date={% now 'Y-m-d' %}">Mark</a> — {{ u.name }}</li>
+                            {% endfor %}
+                        </ul>
+                        {% endif %}
+                        <p class="text-muted mb-0">This month: absent rate {{ att_absent_rate_pct }}% · overtime {{ att_ot_company_month|floatformat:1 }} hrs</p>
+                        <p class="text-muted mb-0 small mt-1">WPS pending: {{ wps_pending }} · KSA GOSI MTD: {{ gosi_month_total|floatformat:2|intcomma }}</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-lg-12">
+        <div class="card h-100">
+            <div class="card-header py-3 fw-semibold">Headcount by department</div>
+            <div class="card-body">
+                <table class="table table-sm mb-0">
+                    {% for d in dept_headcount %}
+                    <tr><td>{{ d.name }}</td><td class="text-end">{{ d.c }}</td></tr>
+                    {% empty %}<tr><td colspan="2" class="text-muted">No departments.</td></tr>{% endfor %}
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-4">
+    <div class="card-header py-3 fw-semibold d-flex justify-content-between align-items-center">
+        <span>Pending leave</span>
+        <a href="{% url 'hr:leave_list' %}" class="small">Open leave</a>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead><tr><th>Employee</th><th>Type</th><th>Dates</th><th></th></tr></thead>
+                <tbody>
+                    {% for lv in pending_leave %}
+                    <tr>
+                        <td>{{ lv.employee.full_name }}</td>
+                        <td>{{ lv.leave_type }}</td>
+                        <td>{{ lv.start_date }} → {{ lv.end_date }}</td>
+                        <td class="text-end">
+                            <form method="post" action="{% url 'hr:leave_approve' lv.pk %}" class="d-inline">{% csrf_token %}<button class="btn btn-sm btn-success" type="submit">Approve</button></form>
+                            <form method="post" action="{% url 'hr:leave_reject' lv.pk %}" class="d-inline ms-1">{% csrf_token %}<input type="hidden" name="rejection_reason" value=""/> <button class="btn btn-sm btn-outline-danger" type="submit">Reject</button></form>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="4" class="text-muted px-3 py-2">No pending requests.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-4">
+    <div class="card-header py-3 fw-semibold d-flex justify-content-between align-items-center">
+        <span><i class="fas fa-briefcase me-2 text-primary"></i>Leave overview</span>
+        <span class="small text-muted">{{ leave_dashboard_pending_count }} awaiting approval</span>
+    </div>
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-md-6">
+                <h6 class="small text-muted text-uppercase">On leave today</h6>
+                {% if employees_on_leave_today %}
+                <ul class="list-unstyled mb-0 small">
+                    {% for lr in employees_on_leave_today %}
+                    <li>{{ lr.employee.full_name }} — {{ lr.leave_type.name }}</li>
+                    {% endfor %}
+                </ul>
+                {% else %}<p class="text-muted small mb-0">None.</p>{% endif %}
+            </div>
+            <div class="col-md-6">
+                <h6 class="small text-muted text-uppercase">Approved leave starting this week</h6>
+                {% if leave_upcoming_week %}
+                <ul class="list-unstyled mb-0 small">
+                    {% for lr in leave_upcoming_week %}
+                    <li>{{ lr.start_date }} · {{ lr.employee.full_name }} — {{ lr.leave_type.name }}</li>
+                    {% endfor %}
+                </ul>
+                {% else %}<p class="text-muted small mb-0">None scheduled.</p>{% endif %}
+            </div>
+            <div class="col-12">
+                <h6 class="small text-muted text-uppercase">Low annual leave balance (&lt; 5 days)</h6>
+                {% if leave_low_balance_alerts %}
+                <ul class="list-unstyled mb-0 small">
+                    {% for lb in leave_low_balance_alerts %}
+                    <li>{{ lb.employee.full_name }} — {{ lb.leave_type.name }}: {{ lb.remaining_days }} remaining</li>
+                    {% endfor %}
+                </ul>
+                {% else %}<p class="text-muted small mb-0">No alerts.</p>{% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if expiry_has_issues %}
+<div class="card mb-4">
+    <div class="card-header py-3 fw-semibold">
+        <i class="fas fa-file-alt me-2 text-warning"></i>Document Expiry Alerts
+    </div>
+    <div class="card-body border-bottom">
+        <div class="row g-3 mb-0">
+            <div class="col-6 col-lg-3">
+                <div class="small text-muted mb-1">Expired</div>
+                <div><span class="badge bg-danger rounded-pill">{{ expiry_summary.expired }}</span> <span class="small text-muted">documents</span></div>
+            </div>
+            <div class="col-6 col-lg-3">
+                <div class="small text-muted mb-1">Critical (&le;7 days)</div>
+                <div><span class="badge bg-danger rounded-pill">{{ expiry_summary.critical }}</span> <span class="small text-muted">documents</span></div>
+            </div>
+            <div class="col-6 col-lg-3">
+                <div class="small text-muted mb-1">Expiring soon</div>
+                <div><span class="badge bg-warning text-dark rounded-pill">{{ expiry_summary.expiring_soon }}</span> <span class="small text-muted">documents</span></div>
+            </div>
+            <div class="col-6 col-lg-3">
+                <div class="small text-muted mb-1">Employees affected</div>
+                <div class="fw-semibold">{{ expiry_summary.employees_affected }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="card-body py-3 bg-light bg-opacity-50">
+        <form method="get" action="{{ hr_dash }}" class="row g-3 align-items-end">
+            <input type="hidden" name="tab" value="{{ expiry_tab }}"/>
+            <div class="col-lg-3 col-md-6">
+                <label class="form-label small text-muted mb-1" for="expiry-filter-location">Location</label>
+                <select name="location" id="expiry-filter-location" class="form-select">
+                    <option value="" {% if not filter_location %}selected{% endif %}>All</option>
+                    <option value="uae" {% if filter_location == 'uae' %}selected{% endif %}>UAE</option>
+                    <option value="ksa" {% if filter_location == 'ksa' %}selected{% endif %}>KSA</option>
+                </select>
+            </div>
+            <div class="col-lg-3 col-md-6">
+                <label class="form-label small text-muted mb-1" for="expiry-filter-company">Company</label>
+                <select name="company" id="expiry-filter-company" class="form-select">
+                    <option value="">All</option>
+                    {% for c in expiry_companies %}
+                    <option value="{{ c.pk }}" {% if filter_company == c.pk|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-lg-3 col-md-6">
+                <label class="form-label small text-muted mb-1" for="expiry-filter-dept">Department</label>
+                <select name="department" id="expiry-filter-dept" class="form-select">
+                    <option value="">All</option>
+                    {% for d in expiry_departments %}
+                    <option value="{{ d.pk }}" {% if filter_department == d.pk|stringformat:"s" %}selected{% endif %}>{{ d.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-lg-3 col-md-12 d-flex gap-2 flex-wrap align-items-end">
+                <button type="submit" class="btn btn-primary"><i class="fas fa-filter me-1"></i>Apply</button>
+                <a href="{{ hr_dash }}" class="btn btn-outline-secondary">Clear</a>
+            </div>
+        </form>
+    </div>
+    <div class="border-top px-3 pt-3">
+        <ul class="nav nav-tabs flex-nowrap overflow-auto mb-0">
+            <li class="nav-item">
+                <a class="nav-link {% if expiry_tab == 'all' or not expiry_tab %}active{% endif %}"
+                   href="{{ hr_dash }}?tab=all{% if filter_company %}&company={{ filter_company }}{% endif %}{% if filter_department %}&department={{ filter_department }}{% endif %}{% if filter_location %}&location={{ filter_location }}{% endif %}">All</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if expiry_tab == 'expired' %}active{% endif %}"
+                   href="{{ hr_dash }}?tab=expired{% if filter_company %}&company={{ filter_company }}{% endif %}{% if filter_department %}&department={{ filter_department }}{% endif %}{% if filter_location %}&location={{ filter_location }}{% endif %}">Expired</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if expiry_tab == 'critical' %}active{% endif %}"
+                   href="{{ hr_dash }}?tab=critical{% if filter_company %}&company={{ filter_company }}{% endif %}{% if filter_department %}&department={{ filter_department }}{% endif %}{% if filter_location %}&location={{ filter_location }}{% endif %}">Critical (&le;7 days)</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if expiry_tab == 'expiring_soon' %}active{% endif %}"
+                   href="{{ hr_dash }}?tab=expiring_soon{% if filter_company %}&company={{ filter_company }}{% endif %}{% if filter_department %}&department={{ filter_department }}{% endif %}{% if filter_location %}&location={{ filter_location }}{% endif %}">Expiring soon</a>
+            </li>
+        </ul>
+    </div>
+    <div class="card-body p-0">
+        {% if expiry_rows %}
+        <div class="table-responsive">
+            <table class="table table-hover table-sm align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Employee</th>
+                        <th>Company</th>
+                        <th>Location</th>
+                        <th>Document</th>
+                        <th>Expiry date</th>
+                        <th>Days remaining</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in expiry_rows %}
+                    <tr>
+                        <td><a href="{% url 'hr:employee_detail' r.employee_id %}">{{ r.employee_name }}</a></td>
+                        <td>{{ r.company_name }}</td>
+                        <td>
+                            {% if r.location == 'uae' %}
+                            <span class="badge bg-primary">UAE</span>
+                            {% elif r.location == 'ksa' %}
+                            <span class="badge bg-secondary">KSA</span>
+                            {% else %}
+                            <span class="badge bg-light text-dark">{{ r.location|upper }}</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ r.document_type }}</td>
+                        <td>{{ r.expiry_date|date:"Y-m-d" }}</td>
+                        <td>
+                            {% if r.status == 'expired' %}
+                            <span class="fw-semibold" style="color:#842029;">{{ r.days_label }}</span>
+                            {% elif r.status == 'red' %}
+                            <span class="text-danger fw-medium">{{ r.days_label }}</span>
+                            {% elif r.status == 'amber' %}
+                            <span class="text-warning fw-medium">{{ r.days_label }}</span>
+                            {% else %}
+                            <span class="text-success">{{ r.days_label }}</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if r.status == 'expired' %}
+                            <span class="badge bg-danger">EXPIRED</span>
+                            {% elif r.status == 'red' %}
+                            <span class="badge bg-danger">RED</span>
+                            {% elif r.status == 'amber' %}
+                            <span class="badge bg-warning text-dark">AMBER</span>
+                            {% else %}
+                            <span class="badge bg-success">GREEN</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="card-body"><p class="text-muted mb-0">No rows match this tab with the current filters.</p></div>
+        {% endif %}
+    </div>
+</div>
+{% else %}
+<div class="alert alert-success border-0 mb-0 d-flex align-items-center gap-2" role="alert">
+    <span class="fs-5">✅</span>
+    <span>All employee documents are up to date.</span>
+</div>
+{% endif %}
+{% endblock %}

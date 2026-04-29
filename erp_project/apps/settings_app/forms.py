@@ -4,7 +4,7 @@ Settings app forms.
 from django import forms
 from django.contrib.auth.models import User
 from django.contrib.auth.forms import UserCreationForm
-from .models import Role, CompanySettings
+from .models import Role, CompanySettings, Company
 
 
 class UserForm(UserCreationForm):
@@ -128,6 +128,37 @@ class RoleForm(forms.ModelForm):
             if field_name in ['is_system_role', 'is_active']:
                 field.widget.attrs['class'] = 'form-check-input'
             else:
+                field.widget.attrs['class'] = 'form-control'
+
+
+class CompanyForm(forms.ModelForm):
+    """Legal entity / employing company (HR)."""
+
+    class Meta:
+        model = Company
+        fields = [
+            'name',
+            'trade_license_number',
+            'country',
+            'mol_number',
+            'bank_iban',
+            'bank_routing_code',
+            'address',
+            'logo',
+            'is_active',
+        ]
+        widgets = {'address': forms.Textarea(attrs={'rows': 3, 'class': 'form-control'})}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for name, field in self.fields.items():
+            if name in ('country',):
+                field.widget.attrs['class'] = 'form-select'
+            elif name == 'is_active':
+                field.widget.attrs['class'] = 'form-check-input'
+            elif name == 'logo':
+                field.widget.attrs['class'] = 'form-control'
+            elif name != 'address':
                 field.widget.attrs['class'] = 'form-control'
 
 

@@ -1,0 +1,16 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-header mb-4"><h4 class="mb-1 fw-bold">{{ title }}</h4></div>
+<div class="card"><div class="card-body">
+{% if summary %}
+<table class="table table-borderless mb-0">
+    <tr><td>Present</td><td class="fw-bold">{{ summary.total_present }}</td></tr>
+    <tr><td>Absent</td><td>{{ summary.total_absent }}</td></tr>
+    <tr><td>Late</td><td>{{ summary.total_late }}</td></tr>
+    <tr><td>Half day</td><td>{{ summary.total_half_day }}</td></tr>
+</table>
+{% else %}
+<p class="text-muted mb-0">No summary for this month.</p>
+{% endif %}
+</div></div>
+{% endblock %}

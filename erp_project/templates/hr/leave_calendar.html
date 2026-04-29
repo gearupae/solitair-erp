@@ -1,0 +1,30 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+    <h4 class="fw-bold mb-0">Leave calendar</h4>
+    <form method="get" class="row g-2 align-items-end">
+        <div class="col-auto"><label class="form-label small mb-0 text-muted">Year</label><input type="number" name="year" class="form-control form-control-sm" value="{{ year }}"/></div>
+        <div class="col-auto"><label class="form-label small mb-0 text-muted">Month</label><input type="number" name="month" min="1" max="12" class="form-control form-control-sm" value="{{ month }}"/></div>
+        <div class="col-auto"><label class="form-label small mb-0 text-muted">Dept</label>
+            <select name="department" class="form-select form-select-sm"><option value="">All</option>{% for d in filter_departments %}<option value="{{ d.pk }}" {% if filter_department == d.pk|stringformat:"s" %}selected{% endif %}>{{ d.name }}</option>{% endfor %}</select></div>
+        <div class="col-auto"><button type="submit" class="btn btn-primary btn-sm">Apply</button></div>
+    </form>
+</div>
+<p class="small text-muted mb-3">Approved leave only. Fri/Sat weekend shading matches UAE standard.</p>
+<div class="table-responsive">
+<table class="table table-bordered table-sm text-center">
+{% for week in calendar_weeks %}
+<tr>{% for day in week %}<td class="{% if day == 0 %}bg-light{% endif %}">
+{% if day %}<div class="fw-semibold">{{ day }}</div>{% endif %}
+{% for lr in approved_leaves %}
+{% if lr.start_date.year == year and lr.start_date.month == month %}
+{% if day >= lr.start_date.day and day <= lr.end_date.day %}
+<div class="badge bg-info text-dark small my-1">{{ lr.employee.full_name|truncatechars:12 }} · {{ lr.leave_type.name|truncatechars:10 }}</div>
+{% endif %}
+{% endif %}
+{% endfor %}
+</td>{% endfor %}</tr>
+{% endfor %}
+</table>
+</div>
+{% endblock %}

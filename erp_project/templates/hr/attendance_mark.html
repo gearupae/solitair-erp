@@ -1,0 +1,74 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-header mb-3">
+    <h4 class="mb-1 fw-bold">{{ title }}</h4>
+    <p class="text-muted mb-0">Record attendance for one employee and day</p>
+</div>
+
+{% if snapshot %}
+<div class="alert alert-light border mb-3 py-2">
+    <strong>Today:</strong>
+    Present {{ snapshot.present }} · Absent {{ snapshot.absent }} · Late {{ snapshot.late }} · Not marked {{ snapshot.not_marked }}
+</div>
+{% endif %}
+
+{% if can_mark_all %}
+<form method="post" action="{% url 'hr:attendance_mark_all_present' %}" class="d-inline mb-3 me-2"
+      onsubmit="return confirm('Mark all active employees present for today (working days only)?');">
+    {% csrf_token %}
+    <button type="submit" class="btn btn-outline-success btn-sm"><i class="fas fa-users me-1"></i>Mark all present</button>
+</form>
+{% endif %}
+
+<div class="card mb-3">
+    <div class="card-body">
+        <div id="att-mini-summary" class="small text-muted mb-3 d-none"></div>
+        <form method="post" id="attendance-mark-form">{% csrf_token %}
+            <div class="row g-3">
+                {% for field in form %}
+                <div class="col-md-6">{{ field.label_tag }} {{ field.errors }} {{ field }}</div>
+                {% endfor %}
+            </div>
+            <button type="submit" class="btn btn-primary mt-3">Save</button>
+            <a href="{% url 'hr:attendance_list' %}" class="btn btn-light mt-3">Cancel</a>
+        </form>
+    </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+(function () {
+  var emp = document.getElementById('id_employee');
+  var dt = document.getElementById('id_date');
+  var box = document.getElementById('att-mini-summary');
+  function fetchCtx() {
+    if (!emp || !dt || !emp.value || !dt.value) { box.classList.add('d-none'); return; }
+    var url = '{% url "hr:attendance_record_lookup" %}?employee_id=' + encodeURIComponent(emp.value) + '&date=' + encodeURIComponent(dt.value);
+    fetch(url, { credentials: 'same-origin', headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (!data.ok) return;
+        if (data.month) {
+          box.classList.remove('d-none');
+          box.innerHTML = '<strong>This month:</strong> Present ' + data.month.present + ' · Absent ' + data.month.absent + ' · Late ' + data.month.late + ' · Hours ' + data.month.hours;
+        }
+        if (data.record) {
+          var cin = document.getElementById('id_check_in');
+          var cout = document.getElementById('id_check_out');
+          var st = document.getElementById('id_status');
+          var notes = document.getElementById('id_notes');
+          var src = document.getElementById('id_source');
+          if (cin && data.record.check_in) cin.value = data.record.check_in.slice(0, 5);
+          if (cout && data.record.check_out) cout.value = data.record.check_out.slice(0, 5);
+          if (st) st.value = data.record.status;
+          if (notes) notes.value = data.record.notes || '';
+          if (src) src.value = data.record.source || 'manual';
+        }
+      }).catch(function () {});
+  }
+  if (emp) emp.addEventListener('change', fetchCtx);
+  if (dt) dt.addEventListener('change', fetchCtx);
+  document.addEventListener('DOMContentLoaded', fetchCtx);
+})();
+</script>
+{% endblock %}

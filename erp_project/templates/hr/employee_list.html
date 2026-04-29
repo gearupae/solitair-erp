@@ -57,8 +57,41 @@
 <div class="card mb-4">
     <div class="card-body py-3">
         <form method="get" class="row g-3 align-items-end">
-            <div class="col-md-6"><input type="text" name="search" class="form-control" placeholder="Search employees..." value="{{ request.GET.search }}"></div>
-            <div class="col-md-6"><button type="submit" class="btn btn-primary me-2"><i class="fas fa-search me-1"></i>Search</button><a href="{% url 'hr:employee_list' %}" class="btn btn-light">Clear</a></div>
+            <div class="col-lg-3 col-md-6">
+                <label class="form-label small text-muted mb-1">Search</label>
+                <input type="text" name="search" class="form-control" placeholder="Name or code..." value="{{ request.GET.search|default:'' }}">
+            </div>
+            <div class="col-lg-2 col-md-6">
+                <label class="form-label small text-muted mb-1">Location</label>
+                <select name="location" class="form-select">
+                    <option value="" {% if not filter_location %}selected{% endif %}>All</option>
+                    <option value="uae" {% if filter_location == 'uae' %}selected{% endif %}>UAE</option>
+                    <option value="ksa" {% if filter_location == 'ksa' %}selected{% endif %}>KSA</option>
+                    <option value="other" {% if filter_location == 'other' %}selected{% endif %}>Other</option>
+                </select>
+            </div>
+            <div class="col-lg-2 col-md-6">
+                <label class="form-label small text-muted mb-1">Company</label>
+                <select name="company" class="form-select">
+                    <option value="">All</option>
+                    {% for c in filter_companies %}
+                    <option value="{{ c.pk }}" {% if filter_company == c.pk|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-lg-2 col-md-6">
+                <label class="form-label small text-muted mb-1">Department</label>
+                <select name="department" class="form-select">
+                    <option value="">All</option>
+                    {% for d in filter_departments %}
+                    <option value="{{ d.pk }}" {% if filter_department == d.pk|stringformat:"s" %}selected{% endif %}>{{ d.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-lg-3 col-md-12 d-flex gap-2 flex-wrap align-items-end">
+                <button type="submit" class="btn btn-primary"><i class="fas fa-filter me-1"></i>Apply</button>
+                <a href="{% url 'hr:employee_list' %}" class="btn btn-outline-secondary">Clear</a>
+            </div>
         </form>
     </div>
 </div>
@@ -67,13 +100,15 @@
     <div class="card-body p-0">
         <div class="table-responsive">
             <table class="table table-hover mb-0">
-                <thead><tr><th>Code</th><th>Name</th><th>Email</th><th>Department</th><th>Designation</th><th>Status</th><th class="text-center" width="100">Actions</th></tr></thead>
+                <thead><tr><th>Code</th><th>Name</th><th>Email</th><th>Company</th><th>Location</th><th>Department</th><th>Designation</th><th>Status</th><th class="text-center" width="100">Actions</th></tr></thead>
                 <tbody>
                     {% for emp in employees %}
                     <tr>
                         <td><a href="{% url 'hr:employee_detail' emp.pk %}" class="fw-medium text-decoration-none">{{ emp.employee_code }}</a></td>
                         <td>{{ emp.full_name }}</td>
                         <td>{{ emp.email }}</td>
+                        <td>{{ emp.company.name|default:"-" }}</td>
+                        <td>{{ emp.get_location_display }}</td>
                         <td>{{ emp.department.name|default:"-" }}</td>
                         <td>{{ emp.designation.name|default:"-" }}</td>
                         <td>{% if emp.status == 'active' %}<span class="badge badge-active">Active</span>{% else %}<span class="badge badge-inactive">{{ emp.get_status_display }}</span>{% endif %}</td>
@@ -82,7 +117,7 @@
                             {% if can_edit %}<a href="{% url 'hr:employee_edit' emp.pk %}" class="btn btn-action btn-outline-primary"><i class="fas fa-edit"></i></a>{% endif %}
                         </td>
                     </tr>
-                    {% empty %}<tr><td colspan="7" class="text-center py-5 text-muted"><i class="fas fa-users fa-3x mb-3 d-block"></i>No employees found</td></tr>{% endfor %}
+                    {% empty %}<tr><td colspan="9" class="text-center py-5 text-muted"><i class="fas fa-users fa-3x mb-3 d-block"></i>No employees found</td></tr>{% endfor %}
                 </tbody>
             </table>
         </div>

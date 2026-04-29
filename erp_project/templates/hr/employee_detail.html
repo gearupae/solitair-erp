@@ -4,7 +4,7 @@
     <nav aria-label="breadcrumb"><ol class="breadcrumb mb-2"><li class="breadcrumb-item"><a href="{% url 'hr:employee_list' %}">Employees</a></li><li class="breadcrumb-item active">{{ employee.employee_code }}</li></ol></nav>
     <div class="d-flex justify-content-between align-items-center">
         <div><h4 class="mb-1 fw-bold">{{ employee.full_name }}</h4><span class="text-muted">{{ employee.employee_code }}</span></div>
-        <a href="{% url 'hr:employee_edit' employee.pk %}" class="btn btn-primary"><i class="fas fa-edit me-2"></i>Edit</a>
+        {% if can_edit %}<a href="{% url 'hr:employee_edit' employee.pk %}" class="btn btn-primary"><i class="fas fa-edit me-2"></i>Edit employee</a>{% endif %}
     </div>
 </div>
 
@@ -17,12 +17,123 @@
                     <div class="col-md-4"><h6 class="text-muted mb-2">Email</h6><p class="mb-0">{{ employee.email }}</p></div>
                     <div class="col-md-4"><h6 class="text-muted mb-2">Phone</h6><p class="mb-0">{{ employee.phone|default:"-" }}</p></div>
                     <div class="col-md-4"><h6 class="text-muted mb-2">Date of Birth</h6><p class="mb-0">{{ employee.date_of_birth|date:"d/m/Y"|default:"-" }}</p></div>
+                    <div class="col-md-4"><h6 class="text-muted mb-2">Company</h6><p class="mb-0">{{ employee.company.name|default:"-" }}</p></div>
+                    <div class="col-md-4"><h6 class="text-muted mb-2">Location</h6><p class="mb-0">{{ employee.get_location_display }}</p></div>
                     <div class="col-md-4"><h6 class="text-muted mb-2">Department</h6><p class="mb-0">{{ employee.department.name|default:"-" }}</p></div>
                     <div class="col-md-4"><h6 class="text-muted mb-2">Designation</h6><p class="mb-0">{{ employee.designation.name|default:"-" }}</p></div>
                     <div class="col-md-4"><h6 class="text-muted mb-2">Joining Date</h6><p class="mb-0">{{ employee.date_of_joining|date:"d/m/Y"|default:"-" }}</p></div>
                 </div>
             </div>
         </div>
+
+        {% if employee.bank_detail %}
+        <div class="card mb-4">
+            <div class="card-header"><h6 class="mb-0 fw-semibold">Bank account</h6></div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-3"><small class="text-muted d-block">Bank name</small><span class="fw-medium">{{ employee.bank_detail.bank_name|default:"-" }}</span></div>
+                    <div class="col-md-3"><small class="text-muted d-block">Account number</small><span class="fw-medium">{{ employee.bank_detail.account_number|default:"-" }}</span></div>
+                    <div class="col-md-3"><small class="text-muted d-block">IBAN</small><span class="fw-medium">{{ employee.bank_detail.iban|default:"-" }}</span></div>
+                    <div class="col-md-3"><small class="text-muted d-block">Routing / agent ID</small><span class="fw-medium">{{ employee.bank_detail.routing_bank_code|default:"-" }}</span></div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if employee.location == 'uae' %}
+        <div class="card mb-4" id="uae-compliance">
+            <div class="card-header"><h6 class="mb-0 fw-semibold">UAE compliance</h6></div>
+            <div class="card-body">
+                <div class="row g-3 mb-3">
+                    <div class="col-md-4"><small class="text-muted d-block">Emirates ID</small><span class="fw-medium">{{ employee.emirates_id|default:"-" }}</span></div>
+                    <div class="col-md-4"><small class="text-muted d-block">Emirates ID expiry</small>
+                        {% if uae_compliance.emirates_id_expiry %}<span class="fw-medium">{{ uae_compliance.emirates_id_expiry|date:"d/m/Y" }}</span>
+                        {% else %}<span class="text-muted">-</span>{% endif %}
+                        {% if uae_compliance.emirates_id_expiry %}<span class="badge ms-1 {% if uae_compliance.emirates_id_expiry_status == 'red' %}bg-danger{% elif uae_compliance.emirates_id_expiry_status == 'amber' %}bg-warning text-dark{% elif uae_compliance.emirates_id_expiry_status == 'green' %}bg-success{% else %}bg-secondary{% endif %}">{{ uae_compliance.emirates_id_expiry_status }}</span>{% endif %}
+                    </div>
+                    <div class="col-md-4"><small class="text-muted d-block">Visa type</small><span class="fw-medium">{{ uae_compliance.get_visa_type_display|default:"-" }}</span></div>
+                    <div class="col-md-4"><small class="text-muted d-block">Visa number</small><span class="fw-medium">{{ employee.visa_number|default:"-" }}</span></div>
+                    <div class="col-md-4"><small class="text-muted d-block">Visa expiry</small>
+                        {% if employee.visa_expiry %}<span class="fw-medium">{{ employee.visa_expiry|date:"d/m/Y" }}</span>{% else %}<span class="text-muted">-</span>{% endif %}
+                        {% if employee.visa_expiry %}<span class="badge ms-1 {% if uae_compliance.visa_expiry_status == 'red' %}bg-danger{% elif uae_compliance.visa_expiry_status == 'amber' %}bg-warning text-dark{% elif uae_compliance.visa_expiry_status == 'green' %}bg-success{% else %}bg-secondary{% endif %}">{{ uae_compliance.visa_expiry_status }}</span>{% endif %}
+                    </div>
+                    <div class="col-md-4"><small class="text-muted d-block">UID</small><span class="fw-medium">{{ uae_compliance.unified_number|default:"-" }}</span></div>
+                    <div class="col-md-4"><small class="text-muted d-block">WPS bank IBAN</small><span class="fw-medium font-monospace small">{{ uae_compliance.bank_iban|default:"-" }}</span></div>
+                    <div class="col-md-4"><small class="text-muted d-block">WPS bank routing</small><span class="fw-medium">{{ uae_compliance.bank_routing_code|default:"-" }}</span></div>
+                </div>
+                <hr/>
+                <div class="row g-3">
+                    <div class="col-md-6"><small class="text-muted d-block">Passport</small>{{ uae_compliance.passport_number|default:"-" }} · {{ uae_compliance.passport_expiry|date:"d/m/Y"|default:"-" }}
+                        {% if uae_compliance.passport_expiry %}<span class="badge ms-1 {% if uae_compliance.passport_expiry_status == 'red' %}bg-danger{% elif uae_compliance.passport_expiry_status == 'amber' %}bg-warning text-dark{% elif uae_compliance.passport_expiry_status == 'green' %}bg-success{% else %}bg-secondary{% endif %}">{{ uae_compliance.passport_expiry_status }}</span>{% endif %}
+                    </div>
+                    <div class="col-md-6"><small class="text-muted d-block">Labour card</small>{{ uae_compliance.labour_card_number|default:"-" }} · {{ uae_compliance.labour_card_expiry|date:"d/m/Y"|default:"-" }}
+                        {% if uae_compliance.labour_card_expiry %}<span class="badge ms-1 {% if uae_compliance.labour_card_expiry_status == 'red' %}bg-danger{% elif uae_compliance.labour_card_expiry_status == 'amber' %}bg-warning text-dark{% elif uae_compliance.labour_card_expiry_status == 'green' %}bg-success{% else %}bg-secondary{% endif %}">{{ uae_compliance.labour_card_expiry_status }}</span>{% endif %}
+                    </div>
+                    <div class="col-md-6"><small class="text-muted d-block">Medical insurance</small>{{ uae_compliance.medical_insurance_provider|default:"-" }} — {{ uae_compliance.medical_insurance_policy_number|default:"-" }}
+                        <br/>Expires {{ uae_compliance.medical_insurance_expiry|date:"d/m/Y"|default:"-" }}
+                        {% if uae_compliance.medical_insurance_expiry %}<span class="badge ms-1 {% if uae_compliance.medical_insurance_expiry_status == 'red' %}bg-danger{% elif uae_compliance.medical_insurance_expiry_status == 'amber' %}bg-warning text-dark{% elif uae_compliance.medical_insurance_expiry_status == 'green' %}bg-success{% else %}bg-secondary{% endif %}">{{ uae_compliance.medical_insurance_expiry_status }}</span>{% endif %}
+                    </div>
+                    <div class="col-md-6"><small class="text-muted d-block">ILOE / Gratuity flags</small>
+                        ILOE: {% if uae_compliance.iloe_applicable %}Yes{% else %}No{% endif %} · Gratuity provision calc: {% if uae_compliance.gratuity_applicable %}Yes{% else %}No{% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if employee.location == 'ksa' %}
+        <div class="card mb-4" id="ksa-compliance">
+            <div class="card-header"><h6 class="mb-0 fw-semibold">KSA compliance</h6></div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-6"><small class="text-muted d-block">Iqama</small>{{ ksa_compliance.iqama_number|default:"-" }} · {{ ksa_compliance.iqama_expiry|date:"d/m/Y"|default:"-" }}
+                        {% if ksa_compliance.iqama_expiry %}<span class="badge ms-1 {% if ksa_compliance.iqama_expiry_status == 'red' %}bg-danger{% elif ksa_compliance.iqama_expiry_status == 'amber' %}bg-warning text-dark{% elif ksa_compliance.iqama_expiry_status == 'green' %}bg-success{% else %}bg-secondary{% endif %}">{{ ksa_compliance.iqama_expiry_status }}</span>{% endif %}
+                        <div class="small text-muted mt-1">Profession on Iqama: {{ ksa_compliance.iqama_profession|default:"-" }}</div>
+                    </div>
+                    <div class="col-md-6"><small class="text-muted d-block">Work permit</small>{{ ksa_compliance.work_permit_number|default:"-" }} · {{ ksa_compliance.work_permit_expiry|date:"d/m/Y"|default:"-" }}
+                        {% if ksa_compliance.work_permit_expiry %}<span class="badge ms-1 {% if ksa_compliance.work_permit_expiry_status == 'red' %}bg-danger{% elif ksa_compliance.work_permit_expiry_status == 'amber' %}bg-warning text-dark{% elif ksa_compliance.work_permit_expiry_status == 'green' %}bg-success{% else %}bg-secondary{% endif %}">{{ ksa_compliance.work_permit_expiry_status }}</span>{% endif %}
+                        {% if ksa_compliance.work_permit_classification %}<div class="small">{{ ksa_compliance.get_work_permit_classification_display }}</div>{% endif %}
+                    </div>
+                    <div class="col-md-6"><small class="text-muted d-block">Passport</small>{{ ksa_compliance.passport_number|default:"-" }} · {{ ksa_compliance.passport_expiry|date:"d/m/Y"|default:"-" }}
+                        {% if ksa_compliance.passport_expiry %}<span class="badge ms-1 {% if ksa_compliance.passport_expiry_status == 'red' %}bg-danger{% elif ksa_compliance.passport_expiry_status == 'amber' %}bg-warning text-dark{% elif ksa_compliance.passport_expiry_status == 'green' %}bg-success{% else %}bg-secondary{% endif %}">{{ ksa_compliance.passport_expiry_status }}</span>{% endif %}
+                    </div>
+                    <div class="col-md-6"><small class="text-muted d-block">Medical insurance</small>{{ ksa_compliance.medical_insurance_provider|default:"-" }}
+                        <br/>Expires {{ ksa_compliance.medical_insurance_expiry|date:"d/m/Y"|default:"-" }}
+                        {% if ksa_compliance.medical_insurance_expiry %}<span class="badge ms-1 {% if ksa_compliance.medical_insurance_expiry_status == 'red' %}bg-danger{% elif ksa_compliance.medical_insurance_expiry_status == 'amber' %}bg-warning text-dark{% elif ksa_compliance.medical_insurance_expiry_status == 'green' %}bg-success{% else %}bg-secondary{% endif %}">{{ ksa_compliance.medical_insurance_expiry_status }}</span>{% endif %}
+                    </div>
+                    <div class="col-md-6"><small class="text-muted d-block">Muqeem / Absher</small>{{ ksa_compliance.muqeem_number|default:"-" }} / {{ ksa_compliance.absher_id|default:"-" }}</div>
+                    <div class="col-md-6"><small class="text-muted d-block">Nationality / GOSI</small>{{ ksa_compliance.get_nationality_display }} · {{ ksa_compliance.gosi_number|default:"-" }} · GOSI payroll: {% if ksa_compliance.gosi_applicable %}Yes{% else %}No{% endif %}</div>
+                    <div class="col-md-6"><small class="text-muted d-block">Nitaqat</small>{{ ksa_compliance.get_nitaqat_category_display|default:"-" }}</div>
+                    <div class="col-md-6"><small class="text-muted d-block">QIWA / Mudad</small>QIWA registered: {% if ksa_compliance.qiwa_contract_registered %}Yes{% else %}No{% endif %} · Mudad WPS: {% if ksa_compliance.mudad_wps_enrolled %}Yes{% else %}No{% endif %}</div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="card mb-4">
+            <div class="card-header"><h6 class="mb-0 fw-semibold">Leave balances ({% now "Y" %})</h6></div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm mb-0">
+                        <thead><tr><th>Leave type</th><th class="text-end">Entitled</th><th class="text-end">Used</th><th class="text-end">Pending</th><th class="text-end">Remaining</th></tr></thead>
+                        <tbody>
+                            {% for lb in leave_balances %}
+                            <tr>
+                                <td>{{ lb.leave_type.name }}</td>
+                                <td class="text-end">{{ lb.entitled_days }}</td>
+                                <td class="text-end">{{ lb.used_days }}</td>
+                                <td class="text-end">{{ lb.pending_days }}</td>
+                                <td class="text-end fw-semibold">{{ lb.remaining_days }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="5" class="text-muted px-3 py-2">No balance rows for this year yet. Run <code>generate_leave_balances</code> after seeding leave types.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
         <div class="card">
             <div class="card-header"><h6 class="mb-0 fw-semibold">Recent Leave Requests</h6></div>
             <div class="card-body p-0">
@@ -58,19 +169,6 @@
                 <h4 class="fw-bold mb-0">AED {{ employee.basic_salary|floatformat:2 }}</h4>
             </div>
         </div>
-        <div class="card">
-            <div class="card-body">
-                <h6 class="text-muted mb-3">UAE Documents</h6>
-                <div class="mb-2"><small class="text-muted">Emirates ID</small><p class="mb-0">{{ employee.emirates_id|default:"-" }}</p></div>
-                <div class="mb-2"><small class="text-muted">Visa Number</small><p class="mb-0">{{ employee.visa_number|default:"-" }}</p></div>
-                <div><small class="text-muted">Visa Expiry</small><p class="mb-0 {% if employee.visa_expiry %}{% now "Y-m-d" as today %}{% if employee.visa_expiry|date:"Y-m-d" < today %}text-danger{% endif %}{% endif %}">{{ employee.visa_expiry|date:"d/m/Y"|default:"-" }}</p></div>
-            </div>
-        </div>
     </div>
 </div>
 {% endblock %}
-
-
-
-
-

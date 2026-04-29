@@ -7,10 +7,15 @@
         <h4 class="mb-1 fw-bold">{{ title }}</h4>
         <p class="text-muted mb-0">{{ payroll.month|date:"F Y" }}</p>
     </div>
-    <div class="d-flex gap-2">
+    <div class="d-flex gap-2 flex-wrap">
         <a href="{% url 'hr:payroll_list' %}" class="btn btn-outline-secondary">
             <i class="fas fa-arrow-left me-1"></i>Back to List
         </a>
+        {% if can_payslip_pdf %}
+        <a href="{% url 'hr:payroll_payslip_pdf' payroll.pk %}" class="btn btn-outline-dark">
+            <i class="fas fa-file-pdf me-1"></i>Download payslip (PDF)
+        </a>
+        {% endif %}
         {% if payroll.status == 'draft' and can_edit %}
         <a href="{% url 'hr:payroll_edit' payroll.pk %}" class="btn btn-outline-primary">
             <i class="fas fa-edit me-1"></i>Edit
@@ -40,6 +45,13 @@
     {% endif %}
 </div>
 
+{% if payroll.status == 'draft' and attendance_not_finalized_warning %}
+<div class="alert alert-warning mb-4">
+    <strong>⚠️ Attendance not finalized</strong> for {{ payroll.month|date:"F Y" }}. Absence / late / overtime deductions from attendance may not be applied until the monthly summary is finalized.
+    <a href="{% url 'hr:attendance_summary_month' %}?year={{ payroll.month.year }}&month={{ payroll.month.month }}" class="alert-link">Open monthly summary</a>
+</div>
+{% endif %}
+
 <div class="row">
     <!-- Employee & Salary Details -->
     <div class="col-md-6 mb-4">
@@ -58,8 +70,8 @@
                         </td>
                     </tr>
                     <tr>
-                        <td class="text-muted">Employee ID</td>
-                        <td>{{ payroll.employee.employee_id }}</td>
+                        <td class="text-muted">Employee code</td>
+                        <td>{{ payroll.employee.employee_code }}</td>
                     </tr>
                     <tr>
                         <td class="text-muted">Department</td>
@@ -90,8 +102,17 @@
                         <td class="text-muted">Basic Salary</td>
                         <td class="text-end">AED {{ payroll.basic_salary|floatformat:2|intcomma }}</td>
                     </tr>
+                    {% if allowance_lines %}
+                    <tr><td colspan="2" class="pt-2 pb-0 small text-muted">Allowances (itemized)</td></tr>
+                    {% for line in allowance_lines %}
+                    <tr class="small">
+                        <td class="text-muted ps-3">{{ line.description }} <span class="badge bg-light text-dark">{{ line.code }}</span></td>
+                        <td class="text-end text-success">+ AED {{ line.amount|floatformat:2|intcomma }}</td>
+                    </tr>
+                    {% endfor %}
+                    {% endif %}
                     <tr>
-                        <td class="text-muted">Allowances</td>
+                        <td class="text-muted">Total allowances</td>
                         <td class="text-end text-success">+ AED {{ payroll.allowances|floatformat:2|intcomma }}</td>
                     </tr>
                     <tr class="border-top">
@@ -99,9 +120,47 @@
                         <td class="text-end fw-medium">AED {{ payroll.basic_salary|add:payroll.allowances|floatformat:2|intcomma }}</td>
                     </tr>
                     <tr>
-                        <td class="text-muted">Deductions</td>
+                        <td class="text-muted">Deductions (total)</td>
                         <td class="text-end text-danger">- AED {{ payroll.deductions|floatformat:2|intcomma }}</td>
                     </tr>
+                    {% if deduction_lines %}
+                    <tr><td colspan="2" class="pt-2 pb-0 small text-muted">Itemized deductions</td></tr>
+                    {% for line in deduction_lines %}
+                    <tr class="small">
+                        <td class="text-muted ps-3">{{ line.label }}</td>
+                        <td class="text-end text-danger">- AED {{ line.amount|floatformat:2|intcomma }}</td>
+                    </tr>
+                    {% endfor %}
+                    {% endif %}
+                    {% if employer_contributions %}
+                    <tr><td colspan="2" class="pt-2 pb-0 small text-muted">Employer contributions (informational)</td></tr>
+                    {% for er in employer_contributions %}
+                    <tr class="small">
+                        <td class="text-muted ps-3">{{ er.label }}</td>
+                        <td class="text-end">AED {{ er.amount|floatformat:2|intcomma }}</td>
+                    </tr>
+                    {% endfor %}
+                    {% endif %}
+                    {% if attendance_summary %}
+                    <tr><td colspan="2" class="pt-2 pb-0 small text-muted">Attendance (same month){% if attendance_finalized %} <span class="badge bg-success">Finalized</span>{% else %} <span class="badge bg-secondary">Not finalized</span>{% endif %}</td></tr>
+                    <tr class="small">
+                        <td class="text-muted ps-3">Present / Absent / Late</td>
+                        <td class="text-end">{{ attendance_summary.total_present }} / {{ attendance_summary.total_absent }} / {{ attendance_summary.total_late }}</td>
+                    </tr>
+                    <tr class="small">
+                        <td class="text-muted ps-3">Overtime hrs (month)</td>
+                        <td class="text-end">{{ attendance_summary.total_overtime_hours|floatformat:2 }}</td>
+                    </tr>
+                    {% if attendance_deductions_approx_aed %}
+                    <tr class="small">
+                        <td class="text-muted ps-3">Approx. attendance deductions (absent + late)</td>
+                        <td class="text-end text-danger">AED {{ attendance_deductions_approx_aed|floatformat:2 }}</td>
+                    </tr>
+                    {% endif %}
+                    {% endif %}
+                    {% if gratuity_snapshot %}
+                    <tr class="small"><td class="text-muted">Gratuity provision (info)</td><td class="text-end">AED {{ gratuity_snapshot.provision_amount|floatformat:2|intcomma }}</td></tr>
+                    {% endif %}
                     <tr class="border-top table-success">
                         <td class="fw-bold fs-5">Net Salary</td>
                         <td class="text-end fw-bold fs-5">AED {{ payroll.net_salary|floatformat:2|intcomma }}</td>
@@ -111,6 +170,45 @@
         </div>
     </div>
 </div>
+
+{% if employee_active_advances %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card border-warning">
+            <div class="card-header bg-warning bg-opacity-25 fw-semibold">
+                <i class="fas fa-hand-holding-usd me-2"></i>Active advances (this employee)
+            </div>
+            <div class="table-responsive">
+                <table class="table table-sm mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Type</th>
+                            <th class="text-end">Total</th>
+                            <th class="text-end">Repaid</th>
+                            <th class="text-end">Remaining</th>
+                            <th class="text-end">Monthly deduction</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for adv in employee_active_advances %}
+                        <tr>
+                            <td>{{ adv.get_advance_type_display }}</td>
+                            <td class="text-end">AED {{ adv.amount|floatformat:2|intcomma }}</td>
+                            <td class="text-end">AED {{ adv.amount_repaid|floatformat:2|intcomma }}</td>
+                            <td class="text-end fw-medium">AED {{ adv.amount_remaining|floatformat:2|intcomma }}</td>
+                            <td class="text-end">AED {{ adv.monthly_deduction|floatformat:2|intcomma }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="card-footer small text-muted">
+                Deductions are applied when payroll is processed (draft → processed). <a href="{% url 'hr:payroll_advance_list' %}?employee={{ payroll.employee_id }}">View all advances</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
 
 <!-- Accounting & Payment Details -->
 <div class="row">

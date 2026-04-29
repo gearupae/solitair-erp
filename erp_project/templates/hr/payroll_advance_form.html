@@ -1,0 +1,69 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-header mb-4">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb mb-2">
+            <li class="breadcrumb-item"><a href="{% url 'hr:payroll_advance_list' %}">Advances</a></li>
+            <li class="breadcrumb-item active">{{ title }}</li>
+        </ol>
+    </nav>
+    <h4 class="mb-0 fw-bold">{{ title }}</h4>
+</div>
+
+<div class="card"><div class="card-body">
+<form method="post">{% csrf_token %}
+    <div class="row g-3 mb-1">
+        <div class="col-md-4">
+            <label class="form-label" for="{{ form.employee.id_for_label }}">{{ form.employee.label }}</label>
+            {{ form.employee.errors }}
+            {{ form.employee }}
+        </div>
+        <div class="col-md-4">
+            <label class="form-label" for="{{ form.advance_type.id_for_label }}">{{ form.advance_type.label }}</label>
+            {{ form.advance_type.errors }}
+            {{ form.advance_type }}
+        </div>
+        <div class="col-md-4">
+            <label class="form-label" for="{{ form.amount.id_for_label }}">{{ form.amount.label }}</label>
+            {{ form.amount.errors }}
+            {{ form.amount }}
+        </div>
+    </div>
+    <div class="row g-3 mb-1">
+        <div class="col-md-4">
+            <label class="form-label" for="{{ form.date_issued.id_for_label }}">{{ form.date_issued.label }}</label>
+            {{ form.date_issued.errors }}
+            {{ form.date_issued }}
+        </div>
+        <div class="col-md-4">
+            <label class="form-label" for="{{ form.repayment_months.id_for_label }}">{{ form.repayment_months.label }}</label>
+            {{ form.repayment_months.errors }}
+            {{ form.repayment_months }}
+            <div class="form-text">Monthly deduction = amount ÷ months (on payroll processing).</div>
+        </div>
+        <div class="col-md-4">
+            <label class="form-label" for="{{ form.approved_by.id_for_label }}">{{ form.approved_by.label }}</label>
+            {{ form.approved_by.errors }}
+            {{ form.approved_by }}
+        </div>
+    </div>
+    <div class="row g-3 mb-3">
+        <div class="col-12">
+            <label class="form-label" for="{{ form.reason.id_for_label }}">{{ form.reason.label }}</label>
+            {{ form.reason.errors }}
+            {{ form.reason }}
+        </div>
+        <div class="col-12">
+            <label class="form-label" for="{{ form.notes.id_for_label }}">{{ form.notes.label }}</label>
+            {{ form.notes.errors }}
+            {{ form.notes }}
+        </div>
+    </div>
+    {% if form.non_field_errors %}
+    <div class="alert alert-danger">{{ form.non_field_errors }}</div>
+    {% endif %}
+    <button type="submit" class="btn btn-primary">Save</button>
+    <a href="{% url 'hr:payroll_advance_list' %}" class="btn btn-light">Cancel</a>
+</form>
+</div></div>
+{% endblock %}

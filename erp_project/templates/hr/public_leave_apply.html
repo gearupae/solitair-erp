@@ -1,0 +1,92 @@
+{% extends 'hr/base_public.html' %}
+{% load static %}
+{% block title %}Apply for leave{% endblock %}
+{% block heading %}Apply for leave{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div id="leave-app-root"
+             data-context-url="{% url 'hr:employee_leave_context' %}"
+             data-is-admin="false"></div>
+        <div class="card shadow-sm border-0">
+            <div class="card-body p-4">
+                <p class="text-muted small mb-4">Enter your employee code and leave details. HR will be notified for approval.</p>
+                <form method="post" enctype="multipart/form-data" id="public-leave-form">
+                    {% csrf_token %}
+                    {% if form.non_field_errors %}
+                    <div class="alert alert-danger">{{ form.non_field_errors }}</div>
+                    {% endif %}
+                    <div class="position-relative mb-2">
+                        <div id="leave-context-spinner" class="d-none position-absolute top-0 end-0 p-2">
+                            <span class="spinner-border spinner-border-sm text-primary" role="status"></span>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="{{ form.employee_code.id_for_label }}">Employee code</label>
+                        {{ form.employee_code }}
+                        {% if form.employee_code.errors %}<div class="text-danger small mt-1">{{ form.employee_code.errors|join:", " }}</div>{% endif %}
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold" for="{{ form.leave_type.id_for_label }}">Leave type</label>
+                        {{ form.leave_type }}
+                        {% if form.leave_type.errors %}<div class="text-danger small mt-1">{{ form.leave_type.errors|join:", " }}</div>{% endif %}
+                        <div id="leave-balance-display" class="mt-2 small text-muted"></div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold" for="{{ form.reliever.id_for_label }}">{{ form.reliever.label }} <span class="text-muted fw-normal small">(optional)</span></label>
+                        {{ form.reliever }}
+                        {% if form.reliever.errors %}<div class="text-danger small mt-1">{{ form.reliever.errors|join:", " }}</div>{% endif %}
+                        <div class="form-text">Employee who will cover your duties while you are away.</div>
+                    </div>
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label" for="{{ form.start_date.id_for_label }}">Start date</label>
+                            {{ form.start_date }}
+                            {% if form.start_date.errors %}<div class="text-danger small mt-1">{{ form.start_date.errors|join:", " }}</div>{% endif %}
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label" for="{{ form.end_date.id_for_label }}">End date</label>
+                            {{ form.end_date }}
+                            {% if form.end_date.errors %}<div class="text-danger small mt-1">{{ form.end_date.errors|join:", " }}</div>{% endif %}
+                        </div>
+                    </div>
+                    <div id="leave-overlap-alert" class="alert alert-danger d-none small"></div>
+                    <div id="leave-overflow-options" class="d-none"></div>
+                    <div id="leave-exhausted-banner" class="d-none"></div>
+                    <div class="mb-3">
+                        <label class="form-label" for="{{ form.reason.id_for_label }}">Reason <span class="text-muted">(optional)</span></label>
+                        {{ form.reason }}
+                    </div>
+                    <div class="mb-4">
+                        <label class="form-label fw-semibold" for="{{ form.medical_certificate.id_for_label }}">{{ form.medical_certificate.label }}</label>
+                        {{ form.medical_certificate }}
+                        {% if form.medical_certificate.errors %}<div class="text-danger small mt-1">{{ form.medical_certificate.errors|join:", " }}</div>{% endif %}
+                        <div class="form-text">Upload if required for this leave type (PDF or image).</div>
+                    </div>
+                    {{ form.overflow_action }}
+                    <div class="mb-3">
+                        <h6 class="text-muted small">Duration</h6>
+                        <p class="mb-0 fw-bold"><span id="leave-working-days">—</span> <span class="text-muted small fw-normal">(working days, Fri–Sat excluded)</span></p>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">Submit request</button>
+                </form>
+            </div>
+        </div>
+        <p class="text-center small text-muted mt-3 mb-0">Having trouble? Contact HR.</p>
+    </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script src="{% static 'js/hr_leave_application.js' %}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  var root = document.getElementById('leave-app-root');
+  window.initHrLeaveApplication({
+    rootEl: root,
+    contextUrl: root ? root.dataset.contextUrl : '',
+    isPublic: true,
+    isAdmin: false,
+  });
+});
+</script>
+{% endblock %}

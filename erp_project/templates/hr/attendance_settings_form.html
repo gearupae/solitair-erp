@@ -1,0 +1,30 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-header mb-4">
+    <h4 class="mb-1 fw-bold">{{ title }}</h4>
+    <p class="text-muted mb-0">Shift rules, late/overtime thresholds, and payroll denominators</p>
+</div>
+<div class="card">
+    <div class="card-body">
+        <form method="post">{% csrf_token %}
+            <div class="row g-3">
+                {% for field in form %}
+                <div class="col-md-6">
+                    {% if field.name == 'auto_mark_absent' %}
+                    <div class="form-check mt-4">
+                        {{ field }}
+                        <label class="form-check-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                    </div>
+                    {{ field.errors }}
+                    {% else %}
+                    {{ field.label_tag }} {{ field.errors }} {{ field }}
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+            <button class="btn btn-primary mt-3" type="submit">Save</button>
+            <a href="{% url 'hr:dashboard' %}" class="btn btn-light mt-3">Cancel</a>
+        </form>
+    </div>
+</div>
+{% endblock %}

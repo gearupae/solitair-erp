@@ -1,0 +1,21 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-header mb-4"><h4 class="fw-bold mb-0">Leave pending — HR approval</h4><p class="text-muted mb-0">Final approval queue</p></div>
+<div class="card"><div class="card-body p-0"><div class="table-responsive">
+<table class="table table-hover mb-0">
+<thead><tr><th>Employee</th><th>Type</th><th>Dates</th><th>Ref</th><th></th></tr></thead>
+<tbody>
+{% for lv in leave_requests %}
+<tr>
+<td>{{ lv.employee.full_name }}</td>
+<td>{{ lv.leave_type.name }}</td>
+<td>{{ lv.start_date }} → {{ lv.end_date }}</td>
+<td>{{ lv.reference_number|default:lv.pk }}</td>
+<td class="text-end">
+<form method="post" action="{% url 'hr:leave_approve' lv.pk %}" class="d-inline">{% csrf_token %}<button class="btn btn-sm btn-success" type="submit">Approve</button></form>
+<form method="post" action="{% url 'hr:leave_reject' lv.pk %}" class="d-inline ms-1">{% csrf_token %}<input type="hidden" name="rejection_reason" value="Rejected by HR"/> <button class="btn btn-sm btn-outline-danger" type="submit">Reject</button></form>
+</td>
+</tr>
+{% empty %}<tr><td colspan="5" class="text-muted px-3 py-4 text-center">No requests awaiting HR.</td></tr>{% endfor %}
+</tbody></table></div></div></div>
+{% endblock %}

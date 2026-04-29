@@ -1,0 +1,16 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-header mb-4"><h4 class="mb-1 fw-bold">{{ title }}</h4></div>
+<div class="card"><div class="card-body">
+<table class="table table-borderless mb-0">
+    <tr><td class="text-muted">Visa expiry</td><td>{{ employee.visa_expiry|default:"-" }}</td></tr>
+    {% if uc %}
+    <tr><td class="text-muted">Passport expiry</td><td>{{ uc.passport_expiry|default:"-" }}</td></tr>
+    <tr><td class="text-muted">Insurance expiry</td><td>{{ uc.medical_insurance_expiry|default:"-" }}</td></tr>
+    {% endif %}
+    {% if kc %}
+    <tr><td class="text-muted">Iqama expiry</td><td>{{ kc.iqama_expiry|default:"-" }}</td></tr>
+    {% endif %}
+</table>
+</div></div>
+{% endblock %}

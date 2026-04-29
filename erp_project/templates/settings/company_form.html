@@ -1,0 +1,32 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-header">
+    <nav aria-label="breadcrumb"><ol class="breadcrumb mb-2"><li class="breadcrumb-item"><a href="{% url 'settings:company_list' %}">Companies</a></li><li class="breadcrumb-item active">{{ title }}</li></ol></nav>
+    <h4 class="mb-0 fw-bold">{{ title }}</h4>
+</div>
+
+<form method="post" enctype="multipart/form-data" class="card border-0 shadow-sm">
+    {% csrf_token %}
+    <div class="card-body">
+        {% if form.non_field_errors %}
+        <div class="alert alert-danger">{{ form.non_field_errors }}</div>
+        {% endif %}
+        <div class="row g-3">
+            <div class="col-md-6"><label class="form-label">Name</label>{{ form.name }}{{ form.name.errors }}</div>
+            <div class="col-md-6"><label class="form-label">Trade license number</label>{{ form.trade_license_number }}</div>
+            <div class="col-md-4"><label class="form-label">Country</label>{{ form.country }}</div>
+            <div class="col-12"><hr class="my-2"><h6 class="small text-muted text-uppercase mb-3">UAE WPS (employer bank)</h6></div>
+            <div class="col-md-4"><label class="form-label">MOL employer number</label>{{ form.mol_number }}<small class="text-muted d-block">For WPS SIF summary row</small></div>
+            <div class="col-md-4"><label class="form-label">Company bank IBAN</label>{{ form.bank_iban }}</div>
+            <div class="col-md-4"><label class="form-label">Company bank routing code</label>{{ form.bank_routing_code }}</div>
+            <div class="col-md-4"><label class="form-label">Logo</label>{{ form.logo }}</div>
+            <div class="col-md-4 d-flex align-items-end"><div class="form-check">{{ form.is_active }} <label class="form-check-label ms-1" for="{{ form.is_active.id_for_label }}">Active</label></div></div>
+            <div class="col-12"><label class="form-label">Address</label>{{ form.address }}</div>
+        </div>
+    </div>
+    <div class="card-footer bg-transparent border-0">
+        <button type="submit" class="btn btn-primary">Save</button>
+        <a href="{% url 'settings:company_list' %}" class="btn btn-light">Cancel</a>
+    </div>
+</form>
+{% endblock %}

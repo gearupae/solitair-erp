@@ -1,0 +1,168 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-header mb-4"><h4 class="mb-1 fw-bold">{{ title }}</h4></div>
+<div class="card"><div class="card-body">
+<form method="post" id="templateForm" novalidate>{% csrf_token %}
+    {% for field in form %}
+    {% if field.name != 'allowance_lines' %}
+    <div class="mb-3">{{ field.label_tag }} {{ field.errors }} {% if field.name == 'is_active' %}<div class="form-check">{{ field }}<label class="form-check-label" for="{{ field.id_for_label }}">{{ field.label }}</label></div>{% else %}{{ field }}{% endif %}</div>
+    {% endif %}
+    {% endfor %}
+
+    <h6 class="small text-muted text-uppercase mb-2">Allowance lines</h6>
+    <div class="table-responsive">
+        <table class="table table-sm align-middle" id="allowance-lines-table">
+            <thead>
+                <tr>
+                    <th>Type</th>
+                    <th>Description</th>
+                    <th class="text-end" style="width:10rem">Amount (AED)</th>
+                    <th style="width:3rem"></th>
+                </tr>
+            </thead>
+            <tbody id="allowance-lines-tbody">
+            </tbody>
+        </table>
+    </div>
+    <button type="button" class="btn btn-sm btn-outline-secondary mb-3" id="add-allowance-row"><i class="fas fa-plus me-1"></i>Add allowance</button>
+
+    {{ form.allowance_lines }}
+
+    <div class="border rounded p-3 bg-light mb-3">
+        <div class="d-flex justify-content-between"><span>Basic salary</span><strong>AED <span id="tplBasicDisplay">0.00</span></strong></div>
+        <div class="d-flex justify-content-between"><span>Total allowances</span><strong>AED <span id="tplAllowTotal">0.00</span></strong></div>
+        <hr class="my-2"/>
+        <div class="d-flex justify-content-between fs-6"><span class="fw-semibold">Total package</span><strong>AED <span id="tplPkgTotal">0.00</span></strong></div>
+    </div>
+
+    <button type="submit" class="btn btn-primary">Save</button>
+    <a href="{% url 'hr:payroll_template_list' %}" class="btn btn-light">Cancel</a>
+</form>
+</div></div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function(){
+    const defaults = {{ tpl_allowance_defaults_json|safe }};
+    const choices = {{ template_allowance_choices_json|safe }};
+    const basicEl = document.getElementById('id_basic_salary');
+    const tbody = document.getElementById('allowance-lines-tbody');
+    const hiddenJson = document.getElementById('allowance-lines-json');
+    const formEl = document.getElementById('templateForm');
+
+    function parseMoney(el){ return parseFloat((el && el.value) || '0') || 0; }
+
+    function typeSelectHtml(selectedCode){
+        var opts = choices.map(function(pair){
+            var code = pair[0], label = pair[1];
+            var sel = (code === selectedCode) ? ' selected' : '';
+            return '<option value="'+code+'"'+sel+'>'+label+'</option>';
+        }).join('');
+        return '<select class="form-select form-select-sm allowance-code">'+opts+'</select>';
+    }
+
+    function fillDescFromRow(row){
+        var sel = row.querySelector('.allowance-code');
+        var inp = row.querySelector('.allowance-desc');
+        if(!sel || !inp) return;
+        var c = sel.value;
+        if(defaults[c] && (!inp.value || inp.dataset.fromType === '1')) {
+            inp.value = defaults[c];
+            inp.dataset.fromType = '1';
+        }
+    }
+
+    function sumAllow(){
+        var t = 0;
+        tbody.querySelectorAll('.allowance-amount').forEach(function(inp){
+            var v = parseFloat((inp.value || '0').replace(',','')) || 0;
+            t += v;
+        });
+        return t;
+    }
+
+    function recalc(){
+        var basic = basicEl ? parseMoney(basicEl) : 0;
+        var allow = sumAllow();
+        document.getElementById('tplBasicDisplay').textContent = basic.toFixed(2);
+        document.getElementById('tplAllowTotal').textContent = allow.toFixed(2);
+        document.getElementById('tplPkgTotal').textContent = (basic + allow).toFixed(2);
+    }
+
+    function bindRow(tr){
+        tr.querySelector('.allowance-code').addEventListener('change', function(){
+            tr.querySelector('.allowance-desc').dataset.fromType = '1';
+            fillDescFromRow(tr);
+        });
+        tr.querySelector('.allowance-desc').addEventListener('input', function(){ this.dataset.fromType = ''; });
+        tr.querySelector('.allowance-amount').addEventListener('input', recalc);
+        tr.querySelector('.allowance-remove').addEventListener('click', function(){
+            if(tbody.querySelectorAll('.allowance-row').length <= 1){ recalc(); return; }
+            tr.remove();
+            recalc();
+        });
+    }
+
+    function escAttr(s){
+        return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+    }
+
+    function addRow(data){
+        data = data || {};
+        var code = data.code || 'HOUSING';
+        var desc = data.description != null ? data.description : '';
+        var amt = data.amount != null ? String(data.amount) : '';
+        var tr = document.createElement('tr');
+        tr.className = 'allowance-row';
+        tr.innerHTML =
+            '<td>'+typeSelectHtml(code)+'</td>'+
+            '<td><input type="text" class="form-control form-control-sm allowance-desc" value="'+escAttr(desc)+'" placeholder="Description"/></td>'+
+            '<td><input type="number" step="0.01" class="form-control form-control-sm text-end allowance-amount" value="'+(function(){ var x=parseFloat(String(amt).replace(",","")); return (!isNaN(x)&&x!==0)?x:""; })()+'"/></td>'+
+            '<td><button type="button" class="btn btn-sm btn-outline-danger allowance-remove" title="Remove">&times;</button></td>';
+        tbody.appendChild(tr);
+        bindRow(tr);
+        fillDescFromRow(tr);
+        recalc();
+    }
+
+    function loadFromHidden(){
+        tbody.innerHTML = '';
+        var lines = [];
+        try {
+            lines = JSON.parse(hiddenJson.value || '[]');
+        } catch(e) { lines = []; }
+        if(!Array.isArray(lines) || !lines.length){
+            addRow({});
+            return;
+        }
+        lines.forEach(function(line){ addRow(line); });
+    }
+
+    function serializeToHidden(){
+        var lines = [];
+        tbody.querySelectorAll('.allowance-row').forEach(function(row){
+            var code = (row.querySelector('.allowance-code').value || '').trim();
+            var desc = (row.querySelector('.allowance-desc').value || '').trim();
+            var raw = (row.querySelector('.allowance-amount').value || '').replace(',','').trim();
+            var n = parseFloat(raw);
+            if(code && !isNaN(n) && n > 0){
+                lines.push({
+                    code: code,
+                    description: desc,
+                    amount: (Math.round(n * 100) / 100).toFixed(2)
+                });
+            }
+        });
+        hiddenJson.value = JSON.stringify(lines);
+    }
+
+    document.getElementById('add-allowance-row').addEventListener('click', function(){ addRow({}); });
+    if(basicEl) basicEl.addEventListener('input', recalc);
+    formEl.addEventListener('submit', function(){ serializeToHidden(); });
+
+    loadFromHidden();
+    recalc();
+})();
+</script>
+{% endblock %}

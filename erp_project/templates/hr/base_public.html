@@ -1,0 +1,30 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>{% block title %}Leave{% endblock %} | {{ company_name|default:"ERP" }}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet"/>
+</head>
+<body class="bg-light">
+<div class="container py-4 py-md-5">
+    <div class="text-center mb-4">
+        {% if company_logo_url %}
+        <img src="{{ company_logo_url }}" alt="" class="img-fluid mb-3" style="max-height:56px;"/>
+        {% else %}
+        <img src="{% static 'img/logo.png' %}" alt="" class="img-fluid mb-3" style="max-height:56px;"/>
+        {% endif %}
+        <h1 class="h4 fw-bold text-dark mb-0">{% block heading %}Employee self-service{% endblock %}</h1>
+    </div>
+    {% if messages %}
+        {% for message in messages %}
+        <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">{{ message }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>
+        {% endfor %}
+    {% endif %}
+    {% block content %}{% endblock %}
+</div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+{% block extra_js %}{% endblock %}
+</body>
+</html>

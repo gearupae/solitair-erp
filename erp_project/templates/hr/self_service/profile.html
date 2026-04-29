@@ -1,0 +1,13 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-header mb-4"><h4 class="mb-1 fw-bold">{{ title }}</h4></div>
+<div class="card"><div class="card-body">
+<table class="table table-borderless mb-0">
+    <tr><td class="text-muted">Code</td><td>{{ employee.employee_code }}</td></tr>
+    <tr><td class="text-muted">Email</td><td>{{ employee.email }}</td></tr>
+    <tr><td class="text-muted">Department</td><td>{{ employee.department|default:"-" }}</td></tr>
+    <tr><td class="text-muted">Designation</td><td>{{ employee.designation|default:"-" }}</td></tr>
+    <tr><td class="text-muted">Entity</td><td>{{ profile.get_employment_entity_display }}</td></tr>
+</table>
+</div></div>
+{% endblock %}

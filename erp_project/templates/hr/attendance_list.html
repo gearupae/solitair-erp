@@ -1,0 +1,72 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <div><h4 class="mb-1 fw-bold">{{ title }}</h4><p class="text-muted mb-0">Daily attendance records</p></div>
+    {% if can_create %}
+    <div class="d-flex gap-2">
+        <a href="{% url 'hr:attendance_mark' %}" class="btn btn-primary"><i class="fas fa-plus me-2"></i>Mark attendance</a>
+        <a href="{% url 'hr:attendance_summary_month' %}" class="btn btn-outline-secondary">Monthly summary</a>
+        <a href="{% url 'hr:holiday_list' %}" class="btn btn-outline-secondary">Holidays</a>
+        <a href="{% url 'hr:attendance_settings' %}" class="btn btn-outline-secondary">Settings</a>
+    </div>
+    {% endif %}
+</div>
+
+<div class="card mb-4">
+    <div class="card-body py-3">
+        <form method="get" class="row g-3 align-items-end">
+            <div class="col-md-auto"><label class="form-label small mb-0">Employee</label><select name="employee" class="form-select form-select-sm"><option value="">All</option>{% for e in employees %}<option value="{{ e.pk }}" {% if request.GET.employee == e.pk|stringformat:"s" %}selected{% endif %}>{{ e.employee_code }} — {{ e.full_name }}</option>{% endfor %}</select></div>
+            <div class="col-md-auto"><label class="form-label small mb-0">Department</label><select name="department" class="form-select form-select-sm"><option value="">All</option>{% for d in departments %}<option value="{{ d.pk }}" {% if request.GET.department == d.pk|stringformat:"s" %}selected{% endif %}>{{ d.name }}</option>{% endfor %}</select></div>
+            <div class="col-md-auto"><label class="form-label small mb-0">Company</label><select name="company" class="form-select form-select-sm"><option value="">All</option>{% for c in companies %}<option value="{{ c.pk }}" {% if request.GET.company == c.pk|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select></div>
+            <div class="col-md-auto"><label class="form-label small mb-0">From</label><input type="date" class="form-control form-control-sm" name="date_from" value="{{ request.GET.date_from }}"/></div>
+            <div class="col-md-auto"><label class="form-label small mb-0">To</label><input type="date" class="form-control form-control-sm" name="date_to" value="{{ request.GET.date_to }}"/></div>
+            <div class="col-md-auto"><button class="btn btn-primary btn-sm" type="submit"><i class="fas fa-search me-1"></i>Filter</button></div>
+            <div class="col-md-auto"><a class="btn btn-outline-secondary btn-sm" href="?{{ export_querystring }}">Export CSV</a></div>
+        </form>
+    </div>
+</div>
+
+{% if can_create %}
+<div class="card mb-4">
+    <div class="card-body">
+        <h6 class="fw-semibold mb-2">Bulk CSV import</h6>
+        <p class="small text-muted mb-3">Columns: <code>employee_code</code>, <code>date</code> (YYYY-MM-DD), <code>check_in</code>, <code>check_out</code>. Weekends and holidays are skipped.</p>
+        <a href="{% url 'hr:attendance_import' %}" class="btn btn-outline-primary btn-sm">Open import wizard</a>
+    </div>
+</div>
+{% endif %}
+
+<div class="card">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead><tr><th>Date</th><th>Employee</th><th>Status</th><th>In</th><th>Out</th><th>WH</th><th>Late</th><th>OT</th><th>Source</th><th></th></tr></thead>
+                <tbody>
+                    {% for r in records %}
+                    <tr>
+                        <td>{{ r.date }}</td>
+                        <td>{{ r.employee.employee_code }}</td>
+                        <td>
+                            {% if r.status == 'present' %}<span class="badge bg-success">{{ r.get_status_display }}</span>
+                            {% elif r.status == 'absent' %}<span class="badge bg-danger">{{ r.get_status_display }}</span>
+                            {% elif r.status == 'late' %}<span class="badge bg-warning text-dark">{{ r.get_status_display }}</span>
+                            {% elif r.status == 'half_day' %}<span class="badge bg-primary">{{ r.get_status_display }}</span>
+                            {% elif r.status == 'holiday' %}<span class="badge bg-dark" style="background:#6f42c1!important">{{ r.get_status_display }}</span>
+                            {% elif r.status == 'weekend' %}<span class="badge bg-secondary">{{ r.get_status_display }}</span>
+                            {% else %}<span class="badge bg-light text-dark">{{ r.get_status_display }}</span>{% endif %}
+                        </td>
+                        <td>{{ r.check_in|default:"-" }}</td>
+                        <td>{{ r.check_out|default:"-" }}</td>
+                        <td>{{ r.working_hours|default:"-" }}</td>
+                        <td>{{ r.late_minutes }}</td>
+                        <td>{{ r.overtime_hours }}</td>
+                        <td>{% if r.source == 'manual' %}<span class="badge bg-secondary">manual</span>{% elif r.source == 'import' %}<span class="badge bg-info text-dark">import</span>{% else %}<span class="badge bg-success">biometric</span>{% endif %}</td>
+                        <td>{% if can_create %}<a class="small" href="{% url 'hr:attendance_mark' %}?record={{ r.pk }}">Edit</a>{% endif %}</td>
+                    </tr>
+                    {% empty %}<tr><td colspan="10" class="text-center py-5 text-muted"><i class="fas fa-clock fa-3x mb-3 d-block"></i>No records</td></tr>{% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

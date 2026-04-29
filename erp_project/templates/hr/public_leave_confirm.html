@@ -1,0 +1,27 @@
+{% extends 'hr/base_public.html' %}
+{% block title %}Submitted{% endblock %}
+{% block heading %}Request submitted{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-7">
+        <div class="card shadow-sm border-0">
+            <div class="card-body p-4 text-center">
+                <p class="mb-3 text-success fs-1 lh-1 mb-2">✓</p>
+                <p class="lead mb-3">Your request has been submitted.</p>
+                {% if refs %}
+                <p class="mb-2">Reference{% if refs|length > 1 %} numbers{% endif %}:</p>
+                <ul class="list-unstyled mb-0">
+                    {% for r in refs %}
+                    <li class="fw-bold fs-5">{{ r }}</li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <p class="text-muted mb-0">Thank you.</p>
+                {% endif %}
+                <p class="small text-muted mt-4 mb-0">HR will contact you for approval.</p>
+                <a href="{% url 'hr:public_leave_apply' %}" class="btn btn-outline-primary mt-4">Submit another request</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

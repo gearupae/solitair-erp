@@ -10,7 +10,7 @@
     <h4 class="mb-0 fw-bold">{{ title }}</h4>
 </div>
 
-<form method="post">
+<form method="post" id="payrollForm">
     {% csrf_token %}
     {% if form.errors %}
     <div class="alert alert-danger">
@@ -24,74 +24,117 @@
         </ul>
     </div>
     {% endif %}
-    
+
     <div class="card mb-4">
-        <div class="card-header"><h6 class="mb-0 fw-semibold">Payroll Details</h6></div>
+        <div class="card-header"><h6 class="mb-0 fw-semibold">Payroll details</h6></div>
         <div class="card-body">
             <div class="row g-3">
                 <div class="col-md-6">
-                    <label for="{{ form.employee.id_for_label }}" class="form-label">Employee <span class="text-danger">*</span></label>
+                    <label class="form-label">Employee <span class="text-danger">*</span></label>
                     {{ form.employee }}
                     {% if form.employee.errors %}<div class="text-danger small mt-1">{{ form.employee.errors|join:", " }}</div>{% endif %}
                 </div>
                 <div class="col-md-6">
-                    <label for="{{ form.month.id_for_label }}" class="form-label">Month <span class="text-danger">*</span></label>
+                    <label class="form-label">Company</label>
+                    {{ form.company }}
+                    <div class="form-text small">Defaults from employee when left blank.</div>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Month <span class="text-danger">*</span></label>
                     {{ form.month }}
-                    {% if form.month.errors %}<div class="text-danger small mt-1">{{ form.month.errors|join:", " }}</div>{% endif %}
                 </div>
                 <div class="col-md-6">
-                    <label for="{{ form.status.id_for_label }}" class="form-label">Status</label>
+                    <label class="form-label">Status</label>
                     {{ form.status }}
-                    {% if form.status.errors %}<div class="text-danger small mt-1">{{ form.status.errors|join:", " }}</div>{% endif %}
                 </div>
             </div>
         </div>
     </div>
-    
+
     <div class="card mb-4">
-        <div class="card-header"><h6 class="mb-0 fw-semibold">Salary Breakdown</h6></div>
+        <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <h6 class="mb-0 fw-semibold">Salary &amp; allowances</h6>
+            <div class="d-flex gap-2 align-items-center">
+                <select id="templatePick" class="form-select form-select-sm" style="width:auto;min-width:14rem;">
+                    <option value="">Load template…</option>
+                    {% for t in payroll_templates %}
+                    <option value="{{ t.pk }}">{{ t.name }}</option>
+                    {% endfor %}
+                </select>
+                <button type="button" class="btn btn-sm btn-outline-primary" id="btnLoadTemplate">Apply</button>
+            </div>
+        </div>
         <div class="card-body">
-            <div class="row g-3">
+            <div class="row g-3 mb-3">
                 <div class="col-md-4">
-                    <label for="{{ form.basic_salary.id_for_label }}" class="form-label">Basic Salary <span class="text-danger">*</span></label>
-                    <div class="input-group">
-                        <span class="input-group-text">AED</span>
-                        {{ form.basic_salary }}
-                    </div>
-                    {% if form.basic_salary.errors %}<div class="text-danger small mt-1">{{ form.basic_salary.errors|join:", " }}</div>{% endif %}
+                    <label class="form-label">Basic salary <span class="text-danger">*</span></label>
+                    <div class="input-group"><span class="input-group-text">AED</span>{{ form.basic_salary }}</div>
                 </div>
                 <div class="col-md-4">
-                    <label for="{{ form.allowances.id_for_label }}" class="form-label">Allowances</label>
-                    <div class="input-group">
-                        <span class="input-group-text">AED</span>
-                        {{ form.allowances }}
-                    </div>
-                    {% if form.allowances.errors %}<div class="text-danger small mt-1">{{ form.allowances.errors|join:", " }}</div>{% endif %}
+                    <label class="form-label">Manual / misc deductions (draft)</label>
+                    <div class="input-group"><span class="input-group-text">AED</span>{{ form.deductions }}</div>
                 </div>
-                <div class="col-md-4">
-                    <label for="{{ form.deductions.id_for_label }}" class="form-label">Deductions</label>
-                    <div class="input-group">
-                        <span class="input-group-text">AED</span>
-                        {{ form.deductions }}
-                    </div>
-                    {% if form.deductions.errors %}<div class="text-danger small mt-1">{{ form.deductions.errors|join:", " }}</div>{% endif %}
-                </div>
+            </div>
+
+            <h6 class="small text-muted text-uppercase mb-2">Allowance lines</h6>
+            <div class="table-responsive">
+                <table class="table table-sm align-middle" id="allowanceTable">
+                    <thead><tr><th>Type</th><th>Description</th><th class="text-end" style="width:10rem">Amount</th><th></th></tr></thead>
+                    <tbody id="allowanceBody">
+                        {% for row in allowance_rows %}
+                        <tr class="allow-row">
+                            <td>
+                                <select name="allowance_code[]" class="form-select form-select-sm">
+                                    {% for code, label in standard_allowance_choices %}
+                                    <option value="{{ code }}" {% if row.code == code %}selected{% endif %}>{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                            </td>
+                            <td><input type="text" name="allowance_description[]" class="form-control form-control-sm" value="{{ row.description }}" placeholder="Optional"/></td>
+                            <td><input type="number" step="0.01" name="allowance_amount[]" class="form-control form-control-sm text-end allowance-amt" value="{{ row.amount }}"/></td>
+                            <td><button type="button" class="btn btn-sm btn-outline-danger btn-remove-row">&times;</button></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="btnAddAllowance"><i class="fas fa-plus me-1"></i>Add row</button>
+            <p class="mt-3 mb-0"><strong>Total allowances:</strong> <span id="totalAllow">AED 0.00</span></p>
+        </div>
+    </div>
+
+    <div class="card mb-4" id="deductionPreviewCard">
+        <div class="card-header"><h6 class="mb-0 fw-semibold">Expected deductions this payroll <span class="badge bg-secondary">preview</span></h6></div>
+        <div class="card-body">
+            <p class="text-muted small mb-2">Select employee and month to load estimates. Amounts follow the same rules as processing (attendance must be finalized for absence / late / unpaid leave).</p>
+            <div id="deductionPreviewEmpty" class="text-muted small">Choose employee and payroll month to see the breakdown.</div>
+            <div id="deductionPreviewBody" class="d-none">
+                <table class="table table-sm mb-2">
+                    <tbody>
+                        <tr><td>Absent deduction</td><td class="text-end" id="pvAbsent">—</td></tr>
+                        <tr><td>Late deduction</td><td class="text-end" id="pvLate">—</td></tr>
+                        <tr><td>Unpaid leave</td><td class="text-end" id="pvUnpaid">—</td></tr>
+                        <tr><td>ILOE (UAE)</td><td class="text-end" id="pvIloe">—</td></tr>
+                        <tr><td>GOSI employee (KSA)</td><td class="text-end" id="pvGosi">—</td></tr>
+                        <tr><td>Advance repayment</td><td class="text-end" id="pvAdvance">—</td></tr>
+                        <tr><td>Manual deduction</td><td class="text-end" id="pvManual">—</td></tr>
+                        <tr class="table-light fw-semibold"><td>Total estimated deductions</td><td class="text-end" id="pvTotal">—</td></tr>
+                        <tr class="table-success"><td>Estimated net salary</td><td class="text-end" id="pvNet">—</td></tr>
+                    </tbody>
+                </table>
+                <p class="small mb-0 text-muted" id="pvAttNote"></p>
             </div>
         </div>
     </div>
-    
+
     <div class="card mb-4">
         <div class="card-body">
-            <div class="row">
-                <div class="col-md-6">
-                    <h6 class="text-muted mb-2">Net Salary</h6>
-                    <h4 class="mb-0 fw-bold" id="netSalary">AED 0.00</h4>
-                    <small class="text-muted">Calculated automatically: Basic + Allowances - Deductions</small>
-                </div>
-            </div>
+            <h6 class="text-muted mb-2">Net salary (preview)</h6>
+            <h4 class="mb-0 fw-bold" id="netSalary">AED 0.00</h4>
+            <small class="text-muted">Basic + Total allowances − Deductions</small>
         </div>
     </div>
-    
+
     <button type="submit" class="btn btn-primary"><i class="fas fa-save me-2"></i>Save</button>
     <a href="{% url 'hr:payroll_list' %}" class="btn btn-light">Cancel</a>
 </form>
@@ -99,31 +142,145 @@
 
 {% block extra_js %}
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    const basicSalary = document.getElementById('id_basic_salary');
-    const allowances = document.getElementById('id_allowances');
+(function(){
+    const empCompany = {{ employee_company_json|safe }};
+    const basicEl = document.getElementById('id_basic_salary');
     const deductions = document.getElementById('id_deductions');
-    const netSalary = document.getElementById('netSalary');
-    
-    function calculateNetSalary() {
-        const basic = parseFloat(basicSalary.value) || 0;
-        const allow = parseFloat(allowances.value) || 0;
-        const deduct = parseFloat(deductions.value) || 0;
-        const net = basic + allow - deduct;
-        netSalary.textContent = 'AED ' + net.toFixed(2);
+    const empSel = document.getElementById('id_employee');
+    const coSel = document.getElementById('id_company');
+    const monthEl = document.getElementById('id_month');
+    var tplUrlPattern = "{% url 'hr:payroll_template_json' pk=0 %}";
+    var previewUrl = "{% url 'hr:payroll_deduction_preview' %}";
+    var previewTimer = null;
+
+    function parseMoney(el){ return parseFloat((el && el.value) || '0') || 0; }
+    function sumAllowances(){
+        var t = 0;
+        document.querySelectorAll('.allowance-amt').forEach(function(inp){ t += parseFloat(inp.value)||0; });
+        return t;
     }
-    
-    if (basicSalary) basicSalary.addEventListener('input', calculateNetSalary);
-    if (allowances) allowances.addEventListener('input', calculateNetSalary);
-    if (deductions) deductions.addEventListener('input', calculateNetSalary);
-    
-    // Calculate on page load
-    calculateNetSalary();
-});
+    function recalc(){
+        var basic = parseMoney(basicEl);
+        var allow = sumAllowances();
+        var ded = parseMoney(deductions);
+        document.getElementById('totalAllow').textContent = 'AED ' + allow.toFixed(2);
+        document.getElementById('netSalary').textContent = 'AED ' + (basic + allow - ded).toFixed(2);
+    }
+
+    function addRow(){
+        var tbody = document.getElementById('allowanceBody');
+        var proto = tbody.querySelector('.allow-row');
+        if(!proto) return;
+        var tr = proto.cloneNode(true);
+        tr.querySelectorAll('input').forEach(function(inp){ inp.value = ''; });
+        var sel = tr.querySelector('select');
+        if(sel) sel.selectedIndex = 0;
+        tbody.appendChild(tr);
+        tr.querySelector('.allowance-amt').addEventListener('input', recalc);
+        tr.querySelector('.btn-remove-row').addEventListener('click', function(){ tr.remove(); recalc(); });
+    }
+
+    document.getElementById('btnAddAllowance').addEventListener('click', addRow);
+    document.getElementById('allowanceBody').addEventListener('click', function(e){
+        if(e.target.classList.contains('btn-remove-row')){ e.target.closest('tr').remove(); recalc(); }
+    });
+    document.getElementById('allowanceBody').addEventListener('input', function(e){
+        if(e.target.classList.contains('allowance-amt')) recalc();
+    });
+    if(basicEl) basicEl.addEventListener('input', recalc);
+    if(deductions) deductions.addEventListener('input', recalc);
+
+    if(empSel && coSel){
+        empSel.addEventListener('change', function(){
+            var cid = empCompany[String(this.value)];
+            if(cid){ coSel.value = cid; }
+        });
+    }
+
+    document.getElementById('btnLoadTemplate').addEventListener('click', function(){
+        var pk = document.getElementById('templatePick').value;
+        if(!pk) return;
+        fetch(tplUrlPattern.replace(/\/template\/\d+\//, '/template/' + pk + '/')).then(function(r){ return r.json(); }).then(function(data){
+            if(data.basic_salary && basicEl) basicEl.value = data.basic_salary;
+            var tbody = document.getElementById('allowanceBody');
+            tbody.innerHTML = '';
+            var lines = data.allowance_lines || [];
+            if(!lines.length){ addRow(); recalc(); return; }
+            lines.forEach(function(row){
+                addRow();
+                var last = tbody.lastElementChild;
+                var sel = last.querySelector('select');
+                if(sel){ sel.value = row.code || 'OTHER'; }
+                last.querySelector('input[name="allowance_description[]"]').value = row.description || '';
+                last.querySelector('.allowance-amt').value = row.amount || '';
+            });
+            recalc();
+        });
+    });
+
+    document.querySelectorAll('.allowance-amt').forEach(function(el){ el.addEventListener('input', recalc); });
+    document.querySelectorAll('.btn-remove-row').forEach(function(btn){
+        btn.addEventListener('click', function(){ btn.closest('tr').remove(); recalc(); });
+    });
+    recalc();
+
+    function moneyTxt(id, v){
+        var el = document.getElementById(id);
+        if(el) el.textContent = 'AED ' + (parseFloat(v)||0).toFixed(2);
+    }
+
+    function loadDeductionPreview(){
+        if(!empSel || !monthEl || !empSel.value || !monthEl.value){
+            document.getElementById('deductionPreviewEmpty').classList.remove('d-none');
+            document.getElementById('deductionPreviewBody').classList.add('d-none');
+            return;
+        }
+        var params = new URLSearchParams({
+            employee: empSel.value,
+            month: monthEl.value,
+            basic: parseMoney(basicEl),
+            allowances: sumAllowances(),
+            manual: parseMoney(deductions)
+        });
+        fetch(previewUrl + '?' + params.toString(), {headers:{'X-Requested-With':'XMLHttpRequest'}})
+            .then(function(r){ return r.json(); })
+            .then(function(data){
+                if(data.error){ return; }
+                document.getElementById('deductionPreviewEmpty').classList.add('d-none');
+                document.getElementById('deductionPreviewBody').classList.remove('d-none');
+                moneyTxt('pvAbsent', data.absent);
+                moneyTxt('pvLate', data.late);
+                moneyTxt('pvUnpaid', data.unpaid_leave);
+                moneyTxt('pvIloe', data.iloe);
+                moneyTxt('pvGosi', data.gosi_employee);
+                moneyTxt('pvAdvance', data.advance);
+                moneyTxt('pvManual', data.manual);
+                moneyTxt('pvTotal', data.total);
+                moneyTxt('pvNet', data.estimated_net);
+                var note = document.getElementById('pvAttNote');
+                if(note){
+                    note.textContent = data.attendance_finalized
+                        ? 'Attendance summary for this month is finalized; absent / late / unpaid leave figures are included.'
+                        : 'Attendance summary not finalized for this month — absent, late, and unpaid leave deductions show as AED 0.00 until finalized.';
+                }
+            })
+            .catch(function(){});
+    }
+
+    function schedulePreview(){
+        if(previewTimer) clearTimeout(previewTimer);
+        previewTimer = setTimeout(loadDeductionPreview, 250);
+    }
+
+    if(empSel) empSel.addEventListener('change', schedulePreview);
+    if(monthEl) monthEl.addEventListener('change', schedulePreview);
+    if(basicEl) basicEl.addEventListener('input', schedulePreview);
+    if(deductions) deductions.addEventListener('input', schedulePreview);
+    document.getElementById('allowanceBody').addEventListener('input', function(e){
+        if(e.target.classList.contains('allowance-amt')) schedulePreview();
+    });
+    document.getElementById('btnAddAllowance').addEventListener('click', function(){ setTimeout(schedulePreview, 50); });
+    schedulePreview();
+})();
 </script>
 {% endblock %}
-
-
-
-
-

@@ -1,0 +1,11 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-header mb-4"><h4 class="mb-1 fw-bold">Remove holiday</h4></div>
+<div class="card"><div class="card-body">
+    <p>Remove <strong>{{ object.name }}</strong> on {{ object.date }}?</p>
+    <form method="post">{% csrf_token %}
+        <button type="submit" class="btn btn-danger">Remove</button>
+        <a href="{% url 'hr:holiday_list' %}" class="btn btn-light">Cancel</a>
+    </form>
+</div></div>
+{% endblock %}

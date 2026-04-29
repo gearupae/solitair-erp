@@ -5,7 +5,8 @@ class HrConfig(AppConfig):
     name = 'apps.hr'
     verbose_name = 'Human Resources'
 
-
+    def ready(self):
+        import apps.hr.signals  # noqa: F401
 
 
 

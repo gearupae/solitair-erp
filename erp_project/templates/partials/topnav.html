@@ -13,6 +13,15 @@
     .navbar .navbar-nav {
         gap: 0;
     }
+    /* Leave section: indented items under header */
+    .navbar .dropdown-menu-dark .dropdown-item.ps-4 {
+        padding-left: 1.5rem !important;
+        font-size: 0.95rem;
+    }
+    .navbar .dropdown-menu-dark .dropdown-item.active {
+        background-color: rgba(255, 255, 255, 0.15);
+        color: #fff;
+    }
 </style>
 <nav class="navbar navbar-expand-lg navbar-dark bg-dark sticky-top">
     <div class="container-fluid px-2">
@@ -402,7 +411,13 @@
                     <a class="nav-link dropdown-toggle {% if '/hr/' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
                         <i class="fas fa-user-friends me-1"></i>HR
                     </a>
-                    <ul class="dropdown-menu dropdown-menu-dark">
+                    <ul class="dropdown-menu dropdown-menu-dark" data-bs-auto-close="outside">
+                        <li>
+                            <a class="dropdown-item" href="{% url 'hr:dashboard' %}">
+                                <i class="fas fa-chart-line me-2"></i>Dashboard
+                            </a>
+                        </li>
+                        <li><hr class="dropdown-divider"></li>
                         <li>
                             <a class="dropdown-item" href="{% url 'hr:employee_list' %}">
                                 <i class="fas fa-id-card me-2"></i>Employees
@@ -413,14 +428,58 @@
                                 <i class="fas fa-sitemap me-2"></i>Departments
                             </a>
                         </li>
-                        <li>
-                            <a class="dropdown-item" href="{% url 'hr:leave_list' %}">
-                                <i class="fas fa-plane-departure me-2"></i>Leave
-                            </a>
+                        <li><hr class="dropdown-divider"></li>
+                        <li class="px-0 pb-1">
+                            <button type="button" class="dropdown-item d-flex justify-content-between align-items-center w-100 text-start py-2 rounded border-0 bg-transparent" style="color: rgba(255,255,255,0.9);" data-bs-toggle="collapse" data-bs-target="#navbarHrLeaveSubmenu" aria-expanded="false" aria-controls="navbarHrLeaveSubmenu" onclick="event.stopPropagation();">
+                                <span><i class="fas fa-plane-departure me-2"></i>Leave</span>
+                                <i class="fas fa-chevron-down small opacity-75"></i>
+                            </button>
+                            <div class="collapse" id="navbarHrLeaveSubmenu">
+                                <a class="dropdown-item ps-4 py-2 {% if '/hr/leave/types' not in request.path and '/hr/leave/calendar' not in request.path and '/hr/leave/pending' not in request.path and '/hr/leave/apply' not in request.path and '/hr/leave' in request.path %}active{% endif %}" href="{% url 'hr:leave_list' %}">
+                                    <i class="fas fa-inbox me-2"></i>Leave requests
+                                </a>
+                                <a class="dropdown-item ps-4 py-2 {% if '/hr/leave/types' in request.path %}active{% endif %}" href="{% url 'hr:leave_type_list' %}">
+                                    <i class="fas fa-list me-2"></i>Leave types
+                                </a>
+                                <a class="dropdown-item ps-4 py-2 {% if '/hr/leave/calendar' in request.path %}active{% endif %}" href="{% url 'hr:leave_calendar' %}">
+                                    <i class="fas fa-calendar-alt me-2"></i>Leave calendar
+                                </a>
+                                <a class="dropdown-item ps-4 py-2 {% if '/hr/leave/pending' in request.path %}active{% endif %}" href="{% url 'hr:leave_pending_hr' %}">
+                                    <i class="fas fa-hourglass-half me-2"></i>Pending (HR)
+                                </a>
+                                <a class="dropdown-item ps-4 py-2" href="{% url 'hr:public_leave_apply' %}" target="_blank" rel="noopener">
+                                    <i class="fas fa-external-link-alt me-2"></i>Public apply link
+                                </a>
+                            </div>
+                        </li>
+                        <li class="px-0 pb-1">
+                            <button type="button" class="dropdown-item d-flex justify-content-between align-items-center w-100 text-start py-2 rounded border-0 bg-transparent" style="color: rgba(255,255,255,0.9);" data-bs-toggle="collapse" data-bs-target="#navbarHrAttendanceSubmenu" aria-expanded="false" aria-controls="navbarHrAttendanceSubmenu" onclick="event.stopPropagation();">
+                                <span><i class="fas fa-clock me-2"></i>Attendance</span>
+                                <i class="fas fa-chevron-down small opacity-75"></i>
+                            </button>
+                            <div class="collapse" id="navbarHrAttendanceSubmenu">
+                                <a class="dropdown-item ps-4 py-2 {% if '/hr/attendance/' in request.path and '/hr/attendance/records/' not in request.path and '/hr/attendance/mark/' not in request.path and '/hr/attendance/summary/' not in request.path and '/hr/attendance/settings/' not in request.path and '/hr/attendance/holidays/' not in request.path and '/hr/attendance/import/' not in request.path %}active{% endif %}" href="{% url 'hr:attendance_list' %}">
+                                    <i class="fas fa-list me-2"></i>Records
+                                </a>
+                                <a class="dropdown-item ps-4 py-2 {% if '/hr/attendance/settings/' in request.path %}active{% endif %}" href="{% url 'hr:attendance_settings' %}">
+                                    <i class="fas fa-sliders-h me-2"></i>Attendance settings
+                                </a>
+                                <a class="dropdown-item ps-4 py-2 {% if '/hr/attendance/holidays/' in request.path %}active{% endif %}" href="{% url 'hr:holiday_list' %}">
+                                    <i class="fas fa-umbrella-beach me-2"></i>Holidays
+                                </a>
+                                <a class="dropdown-item ps-4 py-2 {% if '/hr/attendance/import/' in request.path %}active{% endif %}" href="{% url 'hr:attendance_import' %}">
+                                    <i class="fas fa-file-import me-2"></i>Import CSV
+                                </a>
+                            </div>
                         </li>
                         <li>
                             <a class="dropdown-item" href="{% url 'hr:payroll_list' %}">
                                 <i class="fas fa-money-check-alt me-2"></i>Payroll
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'hr:compliance_dashboard' %}">
+                                <i class="fas fa-clipboard-check me-2"></i>Compliance
                             </a>
                         </li>
                     </ul>
@@ -483,6 +542,11 @@
                         <li>
                             <a class="dropdown-item" href="{% url 'settings:company' %}">
                                 <i class="fas fa-building me-2"></i>Company
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'settings:company_list' %}">
+                                <i class="fas fa-city me-2"></i>Companies
                             </a>
                         </li>
                         <li><hr class="dropdown-divider"></li>
@@ -559,8 +623,8 @@
                         </li>
                         <li><hr class="dropdown-divider"></li>
                         <li>
-                            <a class="dropdown-item" href="#">
-                                <i class="fas fa-user me-2"></i>Profile
+                            <a class="dropdown-item" href="{% url 'hr:self_service_profile' %}">
+                                <i class="fas fa-id-badge me-2"></i>My HR portal
                             </a>
                         </li>
                         <li><hr class="dropdown-divider"></li>

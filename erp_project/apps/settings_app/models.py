@@ -157,6 +157,43 @@ class UserProfile(BaseModel):
         return f"{self.user.username}'s Profile"
 
 
+class Company(BaseModel):
+    """
+    Legal entity / employing company (employees reference this; distinct from singleton Company Settings).
+    """
+
+    COUNTRY_CHOICES = [
+        ('uae', 'UAE'),
+        ('ksa', 'KSA'),
+        ('other', 'Other'),
+    ]
+
+    name = models.CharField(max_length=200)
+    trade_license_number = models.CharField(max_length=120, blank=True)
+    country = models.CharField(max_length=10, choices=COUNTRY_CHOICES, default='uae')
+    mol_number = models.CharField(
+        max_length=20,
+        blank=True,
+        verbose_name='MOL number',
+        help_text='UAE Ministry of Labour employer registration (WPS SCR).',
+    )
+    bank_iban = models.CharField(max_length=34, blank=True, help_text='Company bank IBAN (WPS SCR).')
+    bank_routing_code = models.CharField(
+        max_length=20,
+        blank=True,
+        help_text='Company bank routing / agent ID (WPS SCR).',
+    )
+    address = models.TextField(blank=True)
+    logo = models.ImageField(upload_to='company_entities/', blank=True, null=True)
+
+    class Meta:
+        ordering = ['name']
+        verbose_name_plural = 'Companies'
+
+    def __str__(self):
+        return self.name
+
+
 class CompanySettings(models.Model):
     """
     Company-wide settings and information.

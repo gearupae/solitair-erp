@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load static %}
 {% block content %}
 <div class="page-header">
     <nav aria-label="breadcrumb">
@@ -10,21 +11,23 @@
     <h4 class="mb-0 fw-bold">{{ title }}</h4>
 </div>
 
-<form method="post">
+<div id="leave-app-root"
+     data-context-url="{% url 'hr:employee_leave_context' %}"
+     data-is-admin="{{ is_admin|yesno:'true,false' }}"></div>
+
+<form method="post" enctype="multipart/form-data" id="hr-leave-request-form">
     {% csrf_token %}
-    {% if form.errors %}
-    <div class="alert alert-danger">
-        <strong>Please correct the following errors:</strong>
-        <ul class="mb-0">
-            {% for field, errors in form.errors.items %}
-                {% for error in errors %}
-                <li><strong>{{ field|title }}:</strong> {{ error }}</li>
-                {% endfor %}
-            {% endfor %}
-        </ul>
-    </div>
+    {% if form.non_field_errors %}
+    <div class="alert alert-danger">{{ form.non_field_errors }}</div>
     {% endif %}
-    
+
+    <div class="position-relative">
+        <div id="leave-context-spinner" class="d-none position-absolute top-0 end-0 p-2">
+            <span class="spinner-border spinner-border-sm text-primary" role="status"></span>
+            <span class="visually-hidden">Loading…</span>
+        </div>
+    </div>
+
     <div class="card mb-4">
         <div class="card-header"><h6 class="mb-0 fw-semibold">Leave Information</h6></div>
         <div class="card-body">
@@ -43,10 +46,16 @@
                 </div>
                 {% endif %}
                 <div class="col-md-6">
-                    <label for="{{ form.leave_type.id_for_label }}" class="form-label">Leave Type <span class="text-danger">*</span></label>
+                    <label for="{{ form.leave_type.id_for_label }}" class="form-label">Leave type <span class="text-danger">*</span></label>
                     {{ form.leave_type }}
                     {% if form.leave_type.errors %}<div class="text-danger small mt-1">{{ form.leave_type.errors|join:", " }}</div>{% endif %}
-                    <div id="leaveTypeInfo" class="mt-2"></div>
+                    <div id="leave-balance-display" class="mt-2 small text-muted"></div>
+                </div>
+                <div class="col-md-6">
+                    <label for="{{ form.covering_employee.id_for_label }}" class="form-label">{{ form.covering_employee.label }} <span class="text-muted fw-normal small">(optional)</span></label>
+                    {{ form.covering_employee }}
+                    {% if form.covering_employee.errors %}<div class="text-danger small mt-1">{{ form.covering_employee.errors|join:", " }}</div>{% endif %}
+                    <div class="form-text">Employee covering duties during leave.</div>
                 </div>
                 <div class="col-md-6">
                     <label for="{{ form.start_date.id_for_label }}" class="form-label">Start Date <span class="text-danger">*</span></label>
@@ -63,80 +72,52 @@
                     {{ form.reason }}
                     {% if form.reason.errors %}<div class="text-danger small mt-1">{{ form.reason.errors|join:", " }}</div>{% endif %}
                 </div>
+                <div class="col-md-12">
+                    <label for="{{ form.medical_certificate.id_for_label }}" class="form-label">{{ form.medical_certificate.label }}</label>
+                    {{ form.medical_certificate }}
+                    {% if form.medical_certificate.errors %}<div class="text-danger small mt-1">{{ form.medical_certificate.errors|join:", " }}</div>{% endif %}
+                    {% if object.medical_certificate %}
+                    <div class="form-text mt-1">Current file: <a href="{% url 'hr:leave_attachment' object.pk %}" target="_blank" rel="noopener">View / download</a></div>
+                    {% endif %}
+                    <div class="form-text">Optional attachment (e.g. medical certificate).</div>
+                </div>
+                {{ form.overflow_action }}
             </div>
+            <div id="leave-overlap-alert" class="alert alert-danger mt-3 d-none small mb-0"></div>
+            <div id="leave-overflow-options" class="mt-3 d-none"></div>
+            <div id="leave-exhausted-banner" class="mt-3 d-none"></div>
         </div>
     </div>
-    
+
     <div class="card mb-4">
         <div class="card-body">
             <div class="row">
-                <div class="col-md-6">
-                    <h6 class="text-muted mb-2">Leave Duration</h6>
-                    <h4 class="mb-0 fw-bold" id="leaveDays">0 days</h4>
-                    <small class="text-muted">Calculated automatically</small>
+                <div class="col-md-8">
+                    <h6 class="text-muted mb-2">Duration (UAE / KSA — excludes Fri &amp; Sat)</h6>
+                    <p class="mb-0 fs-5 fw-bold"><span id="leave-working-days">—</span></p>
+                    <small class="text-muted">Working days only</small>
                 </div>
             </div>
         </div>
     </div>
-    
+
     <button type="submit" class="btn btn-primary"><i class="fas fa-save me-2"></i>Submit</button>
     <a href="{% url 'hr:leave_list' %}" class="btn btn-light">Cancel</a>
 </form>
 {% endblock %}
 
 {% block extra_js %}
+<script src="{% static 'js/hr_leave_application.js' %}"></script>
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    const startDate = document.getElementById('id_start_date');
-    const endDate = document.getElementById('id_end_date');
-    const leaveDays = document.getElementById('leaveDays');
-    const leaveType = document.getElementById('id_leave_type');
-    const leaveTypeInfo = document.getElementById('leaveTypeInfo');
-    
-    function calculateDays() {
-        if (startDate.value && endDate.value) {
-            const start = new Date(startDate.value);
-            const end = new Date(endDate.value);
-            if (end >= start) {
-                const diffTime = Math.abs(end - start);
-                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-                leaveDays.textContent = diffDays + ' day' + (diffDays !== 1 ? 's' : '');
-            } else {
-                leaveDays.textContent = 'Invalid dates';
-            }
-        } else {
-            leaveDays.textContent = '0 days';
-        }
-    }
-    
-    function updateLeaveTypeInfo() {
-        if (leaveType && leaveTypeInfo) {
-            const selectedOption = leaveType.options[leaveType.selectedIndex];
-            if (selectedOption && selectedOption.value) {
-                const leaveTypeText = selectedOption.text;
-                let infoHtml = '';
-                if (leaveTypeText.toLowerCase().includes('sick')) {
-                    infoHtml = '<div class="alert alert-info py-2 mb-0"><small><i class="fas fa-info-circle me-1"></i><strong>Medical Certificate Required</strong></small></div>';
-                } else if (leaveTypeText.toLowerCase().includes('maternity')) {
-                    infoHtml = '<div class="alert alert-info py-2 mb-0"><small><i class="fas fa-info-circle me-1"></i><strong>60 days (45 full pay, 15 half pay) - Medical Certificate Required</strong></small></div>';
-                } else if (leaveTypeText.toLowerCase().includes('probation')) {
-                    infoHtml = '<div class="alert alert-warning py-2 mb-0"><small><i class="fas fa-exclamation-triangle me-1"></i><strong>Unpaid leave - Medical Certificate Required</strong></small></div>';
-                }
-                leaveTypeInfo.innerHTML = infoHtml;
-            } else {
-                leaveTypeInfo.innerHTML = '';
-            }
-        }
-    }
-    
-    if (startDate) startDate.addEventListener('change', calculateDays);
-    if (endDate) endDate.addEventListener('change', calculateDays);
-    if (leaveType) leaveType.addEventListener('change', updateLeaveTypeInfo);
-    
-    // Calculate on page load if dates are already set
-    calculateDays();
-    updateLeaveTypeInfo();
+document.addEventListener('DOMContentLoaded', function () {
+  var root = document.getElementById('leave-app-root');
+  var isAdmin = root && root.dataset.isAdmin === 'true';
+  window.initHrLeaveApplication({
+    rootEl: root,
+    contextUrl: root ? root.dataset.contextUrl : '',
+    isPublic: false,
+    isAdmin: isAdmin,
+  });
 });
 </script>
 {% endblock %}
-
