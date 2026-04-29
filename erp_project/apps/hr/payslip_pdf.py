@@ -1,4 +1,4 @@
-"""ReportLab payslip PDF generation."""
+"""ReportLab payslip PDF — aligned to page width, compact; optional page 2 for extras (max 2 pages)."""
 from __future__ import annotations
 
 import re
@@ -7,12 +7,35 @@ from io import BytesIO
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.units import cm
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.units import mm
+from reportlab.platypus import (
+    Image,
+    KeepTogether,
+    PageBreak,
+    Paragraph,
+    SimpleDocTemplate,
+    Spacer,
+    Table,
+    TableStyle,
+)
 
 from apps.hr.payroll_allowances import effective_payroll_company
 from apps.settings_app.models import CompanySettings
+
+_PRIMARY = colors.HexColor('#0f2744')
+_ACCENT = colors.HexColor('#1d6a8a')
+_MUTED = colors.HexColor('#64748b')
+_BG_BAND = colors.HexColor('#e8eef4')
+_BG_ROW = colors.HexColor('#f6f8fb')
+_BORDER = colors.HexColor('#cbd5e1')
+_NET_FILL = colors.HexColor('#ecfdf5')
+_NET_BORDER = colors.HexColor('#059669')
+_WHITE = colors.white
+
+# Margins — slightly tighter vertical to help stay within 2 pages
+_M_L = _M_R = 16 * mm
+_M_T = _M_B = 14 * mm
 
 
 def payslip_number(payroll) -> str:
@@ -20,127 +43,370 @@ def payslip_number(payroll) -> str:
     return f'PS-{payroll.month:%Y-%m}-{raw}'
 
 
+def _content_width() -> float:
+    return A4[0] - _M_L - _M_R
+
+
+_styles: dict = {}
+
+
+def _init_styles():
+    global _styles
+    if _styles:
+        return
+    base = getSampleStyleSheet()
+    _styles['cell'] = ParagraphStyle(
+        name='PSCell',
+        parent=base['Normal'],
+        fontSize=8,
+        leading=10,
+        textColor=_PRIMARY,
+        wordWrap='CJK',
+    )
+    _styles['cell_r'] = ParagraphStyle(
+        name='PSCellR',
+        parent=base['Normal'],
+        fontSize=8,
+        leading=10,
+        alignment=2,
+        textColor=_PRIMARY,
+        wordWrap='CJK',
+    )
+    _styles['cell_b'] = ParagraphStyle(
+        name='PSCellB',
+        parent=base['Normal'],
+        fontSize=8,
+        leading=10,
+        textColor=_PRIMARY,
+        fontName='Helvetica-Bold',
+    )
+    _styles['section'] = ParagraphStyle(
+        name='PSSection',
+        parent=base['Normal'],
+        fontSize=9,
+        spaceBefore=5,
+        spaceAfter=3,
+        leading=11,
+        textColor=_PRIMARY,
+        fontName='Helvetica-Bold',
+    )
+    _styles['section_p2'] = ParagraphStyle(
+        name='PSSectionP2',
+        parent=base['Normal'],
+        fontSize=8,
+        spaceBefore=4,
+        spaceAfter=2,
+        leading=10,
+        textColor=_PRIMARY,
+        fontName='Helvetica-Bold',
+    )
+    _styles['cell_p2'] = ParagraphStyle(
+        name='PSCellP2',
+        parent=base['Normal'],
+        fontSize=7,
+        leading=9,
+        textColor=_PRIMARY,
+        wordWrap='CJK',
+    )
+    _styles['cell_r_p2'] = ParagraphStyle(
+        name='PSCellRP2',
+        parent=base['Normal'],
+        fontSize=7,
+        leading=9,
+        alignment=2,
+        textColor=_PRIMARY,
+        wordWrap='CJK',
+    )
+    _styles['cell_b_p2'] = ParagraphStyle(
+        name='PSCellBP2',
+        parent=base['Normal'],
+        fontSize=7,
+        leading=9,
+        textColor=_PRIMARY,
+        fontName='Helvetica-Bold',
+    )
+    _styles['footer'] = ParagraphStyle(
+        name='PSFooter',
+        parent=base['Italic'],
+        fontSize=7,
+        textColor=_MUTED,
+        alignment=1,
+        spaceBefore=8,
+        leading=9,
+    )
+    _styles['hdr_white'] = ParagraphStyle(
+        name='PSHdrW',
+        parent=base['Normal'],
+        fontSize=8,
+        leading=10,
+        textColor=_WHITE,
+    )
+    _styles['hdr_white_r'] = ParagraphStyle(
+        name='PSHdrWR',
+        parent=base['Normal'],
+        fontSize=8,
+        leading=10,
+        textColor=_WHITE,
+        alignment=2,
+    )
+
+
+def _money_table(
+    rows: list,
+    col_widths: list[float],
+    header: tuple[str, str] | None = None,
+    *,
+    compact: bool = False,
+) -> Table:
+    cb = _styles['cell_b_p2'] if compact else _styles['cell_b']
+    cl = _styles['cell_p2'] if compact else _styles['cell']
+    cr = _styles['cell_r_p2'] if compact else _styles['cell_r']
+    data = []
+    if header:
+        data.append(
+            [
+                Paragraph(f'<b>{header[0]}</b>', cb),
+                Paragraph(f'<b>{header[1]}</b>', cr),
+            ]
+        )
+    for label, value in rows:
+        data.append([Paragraph(str(label), cl), Paragraph(str(value), cr)])
+    repeat_rows = 1 if header else 0
+    t = Table(data, colWidths=col_widths, hAlign='LEFT', repeatRows=repeat_rows)
+    nrows = len(data)
+    style_cmds = [
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 8),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+        ('TOPPADDING', (0, 0), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+    ]
+    if nrows > 1:
+        style_cmds.append(('LINEBELOW', (0, 0), (-1, nrows - 2), 0.25, _BORDER))
+    if header:
+        style_cmds.extend(
+            [
+                ('BACKGROUND', (0, 0), (-1, 0), _BG_BAND),
+                ('LINEBELOW', (0, 0), (-1, 0), 1, _ACCENT),
+            ]
+        )
+    else:
+        style_cmds.append(('BACKGROUND', (0, 0), (-1, -1), _WHITE))
+
+    if data:
+        last_i = nrows - 1
+        lbl = rows[-1][0] if rows else ''
+        if isinstance(lbl, str) and any(x in lbl.lower() for x in ('gross', 'total', 'net')):
+            style_cmds.extend(
+                [
+                    ('LINEABOVE', (0, last_i), (-1, last_i), 1, _PRIMARY),
+                    ('TOPPADDING', (0, last_i), (-1, last_i), 6),
+                ]
+            )
+    t.setStyle(TableStyle(style_cmds))
+    return t
+
+
+def _section_heading(text: str) -> Paragraph:
+    return Paragraph(f'<b>{text}</b>', _styles['section'])
+
+
+def _section_heading_p2(text: str) -> Paragraph:
+    return Paragraph(f'<b>{text}</b>', _styles['section_p2'])
+
+
 def build_payslip_pdf(payroll) -> bytes:
+    _init_styles()
+    cw = _content_width()
     company = CompanySettings.get_settings()
     emp = payroll.employee
     ent = effective_payroll_company(payroll)
     buf = BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4, rightMargin=2 * cm, leftMargin=2 * cm, topMargin=2 * cm, bottomMargin=2 * cm)
+    doc = SimpleDocTemplate(
+        buf,
+        pagesize=A4,
+        leftMargin=_M_L,
+        rightMargin=_M_R,
+        topMargin=_M_T,
+        bottomMargin=_M_B,
+    )
     styles = getSampleStyleSheet()
-    title = ParagraphStyle(name='Title', parent=styles['Heading2'], fontSize=14, spaceAfter=6)
     body = styles['Normal']
 
     story = []
-
-    display_name = ent.name if ent else (company.company_name if company else '')
+    display_name = ent.name if ent else (company.company_name if company else 'Company')
     logo_src = None
     if ent and ent.logo:
         logo_src = ent.logo
     elif company and company.logo:
         logo_src = company.logo
 
-    logo_cell = ''
+    logo_block = Spacer(1, 1)
     if logo_src:
         path = logo_src.path if hasattr(logo_src, 'path') else ''
         if path:
             try:
-                from reportlab.platypus import Image
-
-                logo_cell = Image(path, width=3 * cm, height=1.2 * cm)
+                logo_block = Image(path, width=28 * mm, height=12 * mm)
             except Exception:
-                logo_cell = Paragraph(display_name or '', body)
+                logo_block = Paragraph(f'<b>{display_name}</b>', _styles['hdr_white'])
 
-    addr_parts = [display_name]
+    addr_bits = []
+    if ent and ent.address:
+        addr_bits.append(ent.address.replace('\n', '<br/>'))
+    elif company and company.address and not ent:
+        addr_bits.append(company.address.replace('\n', '<br/>'))
     if company:
-        if company.address and not ent:
-            addr_parts.append(company.address.replace('\n', '<br/>'))
-        elif ent and ent.address:
-            addr_parts.append(ent.address.replace('\n', '<br/>'))
         if company.phone:
-            addr_parts.append(f'Tel: {company.phone}')
+            addr_bits.append(f'Tel: {company.phone}')
         if company.email:
-            addr_parts.append(company.email)
+            addr_bits.append(company.email)
 
-    right_txt = '<br/>'.join([p for p in addr_parts if p])
-    hdr_data = [[logo_cell, Paragraph(right_txt, body)]]
-    hdr = Table(hdr_data, colWidths=[4 * cm, 12 * cm])
-    hdr.setStyle(TableStyle([('VALIGN', (0, 0), (-1, -1), 'TOP'), ('ALIGN', (1, 0), (1, 0), 'RIGHT')]))
-    story.append(hdr)
-    story.append(Spacer(1, 12))
+    period_str = payroll.month.strftime('%B %Y')
+    ps_id = payslip_number(payroll)
 
-    story.append(Paragraph(f'<b>Payslip</b> — {payslip_number(payroll)}', title))
+    w_logo = 34 * mm
+    w_mid = cw - w_logo - 52 * mm
+    w_right = 52 * mm
+
+    right_hdr = Paragraph(
+        f'<font size="14"><b>PAYSLIP</b></font><br/>'
+        f'<font size="7" color="#cbd5e1">Reference</font><br/>'
+        f'<font size="9"><b>{ps_id}</b></font><br/>'
+        f'<font size="7" color="#cbd5e1">Pay period</font><br/>'
+        f'<font size="9"><b>{period_str}</b></font>',
+        _styles['hdr_white_r'],
+    )
+
+    logo_wrap = Table([[logo_block]], colWidths=[w_logo - 16 * mm])
+    logo_wrap.setStyle(
+        TableStyle(
+            [
+                ('BACKGROUND', (0, 0), (-1, -1), _WHITE),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('LEFTPADDING', (0, 0), (-1, -1), 6),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+                ('TOPPADDING', (0, 0), (-1, -1), 6),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ]
+        )
+    )
+
+    left_hdr = Paragraph(
+        f'<font size="11"><b>{display_name}</b></font><br/>'
+        f'<font size="7" color="#cbd5e1">{" · ".join(addr_bits) if addr_bits else ""}</font>',
+        _styles['hdr_white'],
+    )
+
+    header_main = Table([[logo_wrap, left_hdr, right_hdr]], colWidths=[w_logo, w_mid, w_right], hAlign='LEFT')
+    header_main.setStyle(
+        TableStyle(
+            [
+                ('BACKGROUND', (0, 0), (-1, -1), _PRIMARY),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('LEFTPADDING', (0, 0), (-1, -1), 10),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 10),
+                ('TOPPADDING', (0, 0), (-1, -1), 10),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
+                ('LINEAFTER', (0, 0), (0, 0), 0.25, colors.HexColor('#334155')),
+            ]
+        )
+    )
+    story.append(header_main)
+    story.append(Spacer(1, 8))
 
     profile = getattr(emp, 'hr_profile', None)
     nat = profile.nationality_display if profile else ''
-
     loc_display = emp.get_location_display() if hasattr(emp, 'get_location_display') else (emp.location or '-').upper()
 
     emp_rows = [
-        ['Employee', emp.full_name],
-        ['Code', emp.employee_code],
-        ['Company (entity)', ent.name if ent else '-'],
-        ['Location', loc_display],
-        ['Department', str(emp.department) if emp.department else '-'],
-        ['Designation', str(emp.designation) if emp.designation else '-'],
-        ['Date of joining', emp.date_of_joining.strftime('%d/%m/%Y') if emp.date_of_joining else '-'],
-        ['Nationality', nat or '-'],
+        ('Employee', emp.full_name),
+        ('Code', emp.employee_code),
+        ('Company', ent.name if ent else '-'),
+        ('Location', loc_display),
+        ('Department', str(emp.department) if emp.department else '-'),
+        ('Designation', str(emp.designation) if emp.designation else '-'),
+        ('Date of joining', emp.date_of_joining.strftime('%d/%m/%Y') if emp.date_of_joining else '-'),
+        ('Nationality', nat or '-'),
     ]
-    t1 = Table(emp_rows, colWidths=[4 * cm, 12 * cm])
-    t1.setStyle(TableStyle([('FONTSIZE', (0, 0), (-1, -1), 9), ('GRID', (0, 0), (-1, -1), 0.25, colors.grey)]))
-    story.append(t1)
-    story.append(Spacer(1, 10))
+    story.append(_section_heading('Employee details'))
+    w_lbl = cw * 0.19
+    w_val = cw * 0.31
+    er_grid = []
+    for i in range(0, len(emp_rows), 2):
+        r = emp_rows[i]
+        row_cells = [
+            Paragraph(f'<b>{r[0]}</b>', _styles['cell_b']),
+            Paragraph(str(r[1]), _styles['cell']),
+        ]
+        if i + 1 < len(emp_rows):
+            r2 = emp_rows[i + 1]
+            row_cells.extend([Paragraph(f'<b>{r2[0]}</b>', _styles['cell_b']), Paragraph(str(r2[1]), _styles['cell'])])
+        else:
+            row_cells.extend([Paragraph('', _styles['cell']), Paragraph('', _styles['cell'])])
+        er_grid.append(row_cells)
+    t_emp = Table(er_grid, colWidths=[w_lbl, w_val, w_lbl, w_val], hAlign='LEFT')
+    t_emp.setStyle(
+        TableStyle(
+            [
+                ('BACKGROUND', (0, 0), (-1, -1), _BG_ROW),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('LEFTPADDING', (0, 0), (-1, -1), 8),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+                ('TOPPADDING', (0, 0), (-1, -1), 4),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+                ('LINEBELOW', (0, 0), (-1, -2), 0.25, _BORDER),
+                ('LINEABOVE', (0, 0), (-1, 0), 0.5, _ACCENT),
+                ('LINEBELOW', (0, -1), (-1, -1), 0.25, _BORDER),
+            ]
+        )
+    )
+    story.append(t_emp)
+    story.append(Spacer(1, 6))
 
     from apps.hr.models_extended import AttendanceSummary
     from datetime import date
 
     month_first = date(payroll.month.year, payroll.month.month, 1)
     summ = AttendanceSummary.objects.filter(employee=emp, month=month_first).first()
-    if summ:
-        story.append(Paragraph('<b>Attendance breakdown</b>', title))
-        from calendar import monthrange
-
-        cal_days = monthrange(payroll.month.year, payroll.month.month)[1]
-        wd = summ.total_working_days if getattr(summ, 'total_working_days', None) else '-'
-        att_rows = [
-            ['Working days (calendar)', str(cal_days)],
-            ['Working days (recorded)', str(wd)],
-            ['Present', str(summ.total_present)],
-            ['Absent', str(summ.total_absent)],
-            ['Late', str(summ.total_late)],
-            ['Half day', str(summ.total_half_day)],
-            ['Overtime hours', str(summ.total_overtime_hours)],
-        ]
-        t_att = Table(att_rows, colWidths=[6 * cm, 4 * cm])
-        t_att.setStyle(TableStyle([('FONTSIZE', (0, 0), (-1, -1), 9), ('GRID', (0, 0), (-1, -1), 0.25, colors.grey)]))
-        story.append(t_att)
-        story.append(Spacer(1, 10))
 
     currency = 'SAR' if (emp.location or '').lower() == 'ksa' else 'AED'
 
-    story.append(Paragraph('<b>Earnings</b>', title))
-    earn_rows = [['Basic salary', f'{currency} {payroll.basic_salary:.2f}']]
+    earn_data = [('Basic salary', f'{currency} {payroll.basic_salary:,.2f}')]
     for ln in payroll.allowance_lines.all().order_by('pk'):
-        earn_rows.append([ln.description or ln.code, f'{currency} {ln.amount:.2f}'])
+        earn_data.append((ln.description or ln.code, f'{currency} {ln.amount:,.2f}'))
     gross = payroll.basic_salary + payroll.allowances
-    earn_rows.append(['Gross', f'{currency} {gross:.2f}'])
-    te = Table(earn_rows, colWidths=[8 * cm, 8 * cm])
-    te.setStyle(TableStyle([('FONTSIZE', (0, 0), (-1, -1), 9), ('GRID', (0, 0), (-1, -1), 0.25, colors.grey)]))
-    story.append(te)
-    story.append(Spacer(1, 10))
-
-    story.append(Paragraph('<b>Deductions breakdown</b>', title))
-    lines = list(payroll.deduction_lines.all())
-    ded_rows = [[ln.label, f'{currency} {ln.amount:.2f}'] for ln in lines]
-    if not ded_rows:
-        ded_rows = [['—', f'{currency} 0.00']]
-    total_ded = payroll.deductions
-    ded_rows.append(['Total deductions', f'{currency} {total_ded:.2f}'])
-    td = Table(ded_rows, colWidths=[8 * cm, 8 * cm])
-    td.setStyle(TableStyle([('FONTSIZE', (0, 0), (-1, -1), 9), ('GRID', (0, 0), (-1, -1), 0.25, colors.grey)]))
-    story.append(td)
-    story.append(Spacer(1, 10))
+    earn_data.append(('Gross', f'{currency} {gross:,.2f}'))
 
     from apps.hr.models_extended import EmployeeAdvance, GratuityRecord, PayrollDeductionLine
+
+    lines = list(payroll.deduction_lines.all())
+    ded_rows = [(ln.label, f'{currency} {ln.amount:,.2f}') for ln in lines]
+    if not ded_rows:
+        ded_rows = [('—', f'{currency} 0.00')]
+    total_ded = payroll.deductions
+    ded_rows.append(('Total deductions', f'{currency} {total_ded:,.2f}'))
+
+    gap = 3 * mm
+    w_col = (cw - gap) / 2
+    w_desc = w_col * 0.58
+    w_amt = w_col - w_desc
+
+    story.append(_section_heading('Earnings and deductions'))
+    earn_tbl = _money_table(earn_data, [w_desc, w_amt], ('Description', 'Amount'))
+    ded_tbl = _money_table(ded_rows, [w_desc, w_amt], ('Description', 'Amount'))
+    split = Table([[earn_tbl, '', ded_tbl]], colWidths=[w_col, gap, w_col], hAlign='LEFT')
+    split.setStyle(
+        TableStyle(
+            [
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('LEFTPADDING', (0, 0), (-1, -1), 0),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+            ]
+        )
+    )
+    story.append(split)
 
     adv_lines = [ln for ln in lines if ln.code == PayrollDeductionLine.CODE_ADVANCE_REPAYMENT]
     if adv_lines:
@@ -159,61 +425,107 @@ def build_payslip_pdf(payroll) -> bytes:
             adv_obj = EmployeeAdvance.objects.filter(pk=pk).first()
             if adv_obj:
                 rem_sum += adv_obj.amount_remaining
+        story.append(Spacer(1, 4))
         story.append(
             Paragraph(
-                f'<b>Advance repayment:</b> {currency} {adv_total:.2f} (Remaining: {currency} {rem_sum:.2f})',
-                body,
+                f'<b>Advance repayment:</b> {currency} {adv_total:,.2f} &nbsp;·&nbsp; '
+                f'<b>Remaining:</b> {currency} {rem_sum:,.2f}',
+                _styles['cell'],
             )
         )
-        story.append(Spacer(1, 10))
 
     loc = (emp.location or 'uae').lower()
 
+    net_para = Paragraph(
+        f'<font color="#065f46" size="12"><b>Net salary</b></font><br/>'
+        f'<font color="#047857" size="16"><b>{currency} {payroll.net_salary:,.2f}</b></font>',
+        ParagraphStyle(name='NetBox', parent=body, alignment=1, leading=18),
+    )
+    net_box = Table([[net_para]], colWidths=[cw], hAlign='LEFT')
+    net_box.setStyle(
+        TableStyle(
+            [
+                ('BACKGROUND', (0, 0), (-1, -1), _NET_FILL),
+                ('BOX', (0, 0), (-1, -1), 1.2, _NET_BORDER),
+                ('TOPPADDING', (0, 0), (-1, -1), 10),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
+            ]
+        )
+    )
+
+    page1_tail = KeepTogether([Spacer(1, 8), net_box])
+    story.append(page1_tail)
+
+    supplementary = []
+    if summ:
+        from calendar import monthrange
+
+        cal_days = monthrange(payroll.month.year, payroll.month.month)[1]
+        wd = summ.total_working_days if getattr(summ, 'total_working_days', None) else '-'
+        att_rows = [
+            ('Working days (calendar)', str(cal_days)),
+            ('Working days (recorded)', str(wd)),
+            ('Present', str(summ.total_present)),
+            ('Absent', str(summ.total_absent)),
+            ('Late', str(summ.total_late)),
+            ('Half day', str(summ.total_half_day)),
+            ('Overtime hours', str(summ.total_overtime_hours)),
+        ]
+        supplementary.append(_section_heading_p2('Attendance'))
+        supplementary.append(
+            _money_table(att_rows, [cw * 0.62, cw * 0.38], ('Metric', 'Value'), compact=True)
+        )
+        supplementary.append(Spacer(1, 2))
+
     if loc == 'uae':
-        story.append(Paragraph('<b>UAE</b>', title))
+        extras = []
         iloe_ln = next((x for x in lines if x.code == PayrollDeductionLine.CODE_ILOE), None)
         if iloe_ln:
-            story.append(Paragraph(f'ILOE Deduction: {currency} {iloe_ln.amount:.2f}', body))
+            extras.append(f'ILOE: {currency} {iloe_ln.amount:,.2f}')
         grat = GratuityRecord.objects.filter(payroll=payroll).first()
         if grat:
-            story.append(
-                Paragraph(f'Gratuity provision (informational): {currency} {grat.provision_amount:.2f}', body)
-            )
+            extras.append(f'Gratuity (info): {currency} {grat.provision_amount:,.2f}')
         wps = getattr(payroll, 'wps_record', None)
         if wps:
             st = wps.get_status_display() if hasattr(wps, 'get_status_display') else wps.status
-            story.append(Paragraph(f'WPS Status: {st}', body))
-        story.append(Spacer(1, 8))
+            extras.append(f'WPS: {st}')
+        if extras:
+            supplementary.append(_section_heading_p2('UAE — compliance'))
+            supplementary.append(Paragraph(' · '.join(extras), _styles['cell_p2']))
+            supplementary.append(Spacer(1, 2))
 
     if loc == 'ksa':
-        story.append(Paragraph('<b>KSA</b>', title))
+        extras = []
         gosi_emp = next((x for x in lines if x.code == PayrollDeductionLine.CODE_GOSI_EMPLOYEE), None)
         if gosi_emp:
-            story.append(Paragraph(f'GOSI employee contribution: {currency} {gosi_emp.amount:.2f}', body))
-        erc = list(payroll.employer_contributions.all())
-        er_tot = sum((r.amount for r in erc), Decimal('0'))
+            extras.append(f'GOSI employee: {currency} {gosi_emp.amount:,.2f}')
+        erc_ksa = list(payroll.employer_contributions.all())
+        er_tot = sum((r.amount for r in erc_ksa), Decimal('0'))
         if er_tot > 0:
-            story.append(Paragraph(f'GOSI employer contribution (informational): {currency} {er_tot:.2f}', body))
-        story.append(Spacer(1, 8))
+            extras.append(f'GOSI employer (info): {currency} {er_tot:,.2f}')
+        if extras:
+            supplementary.append(_section_heading_p2('KSA — compliance'))
+            supplementary.append(Paragraph(' · '.join(extras), _styles['cell_p2']))
+            supplementary.append(Spacer(1, 2))
 
     erc = list(payroll.employer_contributions.all())
     if erc and loc != 'ksa':
-        story.append(Paragraph('<b>Employer contributions (informational)</b>', title))
-        er_rows = [[r.label, f'{currency} {r.amount:.2f}'] for r in erc]
-        ter = Table(er_rows, colWidths=[8 * cm, 8 * cm])
-        ter.setStyle(TableStyle([('FONTSIZE', (0, 0), (-1, -1), 9), ('GRID', (0, 0), (-1, -1), 0.25, colors.grey)]))
-        story.append(ter)
-        story.append(Spacer(1, 10))
+        supplementary.append(_section_heading_p2('Employer contributions (informational)'))
+        er_rows = [(r.label, f'{currency} {r.amount:,.2f}') for r in erc]
+        supplementary.append(
+            _money_table(er_rows, [cw * 0.58, cw * 0.42], ('Description', 'Amount'), compact=True)
+        )
+        supplementary.append(Spacer(1, 2))
 
     grat = GratuityRecord.objects.filter(payroll=payroll).first()
     if grat and loc != 'uae':
-        story.append(
+        supplementary.append(
             Paragraph(
-                f'<b>Gratuity provision (informational):</b> {currency} {grat.provision_amount:.2f}',
-                body,
+                f'<b>Gratuity (informational):</b> {currency} {grat.provision_amount:,.2f}',
+                _styles['cell_p2'],
             )
         )
-        story.append(Spacer(1, 8))
+        supplementary.append(Spacer(1, 2))
 
     from apps.hr.models import LeaveBalance
 
@@ -223,24 +535,32 @@ def build_payslip_pdf(payroll) -> bytes:
         .filter(leave_type__code__in=('UAE_ANNUAL', 'KSA_ANNUAL'))
     )
     if lbs.exists():
-        story.append(Paragraph('<b>Leave balance (informational)</b>', title))
-        parts = []
-        for lb in lbs:
-            parts.append(f'{lb.leave_type.name}: {lb.remaining_days} days remaining')
-        story.append(Paragraph(' · '.join(parts), body))
-        story.append(Spacer(1, 10))
+        supplementary.append(_section_heading_p2('Leave balance (informational)'))
+        parts = [f'{lb.leave_type.name}: <b>{lb.remaining_days}</b> d' for lb in lbs]
+        supplementary.append(Paragraph(' · '.join(parts), _styles['cell_p2']))
 
-    net_style = ParagraphStyle(name='NetBig', parent=body, fontSize=14, textColor=colors.HexColor('#0d6efd'), leading=18)
-    story.append(Paragraph(f'<b>Net salary: {currency} {payroll.net_salary:.2f}</b>', net_style))
-    story.append(Spacer(1, 16))
+    if supplementary:
+        story.append(PageBreak())
+        story.extend(supplementary)
+
+    story.append(Spacer(1, 6))
     story.append(
         Paragraph(
-            '<i>This is a system-generated payslip. Confidential.</i>',
-            styles['Italic'],
+            '<i>Generated electronically — valid without signature. Confidential. Contact HR for payroll queries.</i>',
+            _styles['footer'],
         )
     )
 
-    doc.build(story)
+    def _on_page_end(canv, doc_):
+        canv.saveState()
+        canv.setFont('Helvetica', 7)
+        canv.setFillColor(_MUTED)
+        pn = canv.getPageNumber()
+        canv.drawRightString(A4[0] - _M_R, 10 * mm, f'Page {pn}')
+        canv.restoreState()
+
+    doc.build(story, onFirstPage=_on_page_end, onLaterPages=_on_page_end)
+
     pdf = buf.getvalue()
     buf.close()
     return pdf
