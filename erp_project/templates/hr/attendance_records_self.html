@@ -71,6 +71,7 @@
                         <th class="text-end">Working hrs</th>
                         <th class="text-end">Late (min)</th>
                         <th class="text-end">OT hrs</th>
+                        <th>OT type</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -83,9 +84,10 @@
                         <td class="text-end">{% if r.working_hours is not None %}{{ r.working_hours }}{% else %}—{% endif %}</td>
                         <td class="text-end">{{ r.late_minutes }}</td>
                         <td class="text-end">{{ r.overtime_hours }}</td>
+                        <td class="small text-muted">{{ r.get_overtime_type_display }}</td>
                     </tr>
                     {% empty %}
-                    <tr><td colspan="7" class="text-muted text-center py-4">No rows for this period.</td></tr>
+                    <tr><td colspan="8" class="text-muted text-center py-4">No rows for this period.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>

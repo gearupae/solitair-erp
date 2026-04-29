@@ -58,9 +58,11 @@
           var st = document.getElementById('id_status');
           var notes = document.getElementById('id_notes');
           var src = document.getElementById('id_source');
+          var ott = document.getElementById('id_overtime_type');
           if (cin && data.record.check_in) cin.value = data.record.check_in.slice(0, 5);
           if (cout && data.record.check_out) cout.value = data.record.check_out.slice(0, 5);
           if (st) st.value = data.record.status;
+          if (ott && data.record.overtime_type) ott.value = data.record.overtime_type;
           if (notes) notes.value = data.record.notes || '';
           if (src) src.value = data.record.source || 'manual';
         }

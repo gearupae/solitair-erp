@@ -24,12 +24,21 @@ from apps.hr.payroll_allowances import normalize_template_allowance_lines_json
 class PayrollSettingsForm(forms.ModelForm):
     class Meta:
         model = PayrollSettings
-        fields = ['late_deduction_amount', 'working_days_in_month', 'overtime_rate_multiplier', 'hr_notification_email']
+        fields = [
+            'late_deduction_amount',
+            'working_days_in_month',
+            'overtime_rate_multiplier',
+            'hr_notification_email',
+            'iloe_deduct_via_payroll',
+        ]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         for name, field in self.fields.items():
-            field.widget.attrs['class'] = 'form-control'
+            if name == 'iloe_deduct_via_payroll':
+                field.widget.attrs['class'] = 'form-check-input'
+            else:
+                field.widget.attrs['class'] = 'form-control'
 
 
 class PayrollTemplateForm(forms.ModelForm):
@@ -139,6 +148,9 @@ class AttendanceSettingsForm(forms.ModelForm):
             'half_day_hours',
             'overtime_threshold_hours',
             'late_deduction_amount',
+            'overtime_rate_normal',
+            'overtime_rate_night',
+            'overtime_rate_holiday',
             'overtime_rate_multiplier',
             'auto_mark_absent',
             'working_days_in_month',
@@ -178,7 +190,7 @@ class HolidayForm(forms.ModelForm):
 class AttendanceMarkForm(forms.ModelForm):
     class Meta:
         model = AttendanceRecord
-        fields = ['employee', 'date', 'check_in', 'check_out', 'status', 'notes', 'source']
+        fields = ['employee', 'date', 'check_in', 'check_out', 'status', 'overtime_type', 'notes', 'source']
         widgets = {
             'date': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
             'check_in': forms.TimeInput(attrs={'type': 'time', 'class': 'form-control'}),
@@ -191,7 +203,10 @@ class AttendanceMarkForm(forms.ModelForm):
         self.fields['employee'].queryset = Employee.objects.filter(is_active=True).order_by('first_name', 'last_name')
         for name, field in self.fields.items():
             if name not in self.Meta.widgets:
-                field.widget.attrs.setdefault('class', 'form-select' if name in ('employee', 'status', 'source') else 'form-control')
+                field.widget.attrs.setdefault(
+                    'class',
+                    'form-select' if name in ('employee', 'status', 'source', 'overtime_type') else 'form-control',
+                )
 
 
 class UAEComplianceForm(forms.ModelForm):

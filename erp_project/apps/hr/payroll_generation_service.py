@@ -8,6 +8,7 @@ from django.db.models import Q, Sum
 
 from apps.hr.models import Employee, Payroll
 from apps.hr.models_extended import PayrollAllowanceLine, PayrollTemplate
+from apps.hr.salary_payroll_utils import compute_gross_salary_structural
 from apps.settings_app.models import Company
 
 
@@ -19,13 +20,13 @@ def generate_draft_payrolls_for_month(
     location: str | None = None,
 ) -> tuple[int, str]:
     """
-    Create draft Payroll rows (skip existing employee+month). Copies allowance lines from
-    last payroll for employee, else applies matching PayrollTemplate, else basic only.
+    Create draft Payroll rows (skip existing employee+month). Uses employee salary template
+    when set; else copies allowance lines from last payroll; else picks a matching PayrollTemplate.
     Returns (created_count, descriptive_suffix_for_logging).
     """
     mf = date(year, month, 1)
 
-    emps = Employee.objects.filter(is_active=True, status='active').select_related('company')
+    emps = Employee.objects.filter(is_active=True, status='active').select_related('company', 'salary_template')
     if company_id:
         emps = emps.filter(company_id=company_id)
     if location and location.upper() in ('UAE', 'KSA'):
@@ -51,59 +52,87 @@ def generate_draft_payrolls_for_month(
         if not pay.company_id and emp.company_id:
             Payroll.objects.filter(pk=pay.pk).update(company_id=emp.company_id)
 
-        last = (
-            Payroll.objects.filter(employee=emp)
-            .exclude(month=mf)
-            .order_by('-month')
-            .prefetch_related('allowance_lines')
-            .first()
-        )
+        bs = emp.basic_salary or Decimal('0')
+        Payroll.objects.filter(pk=pay.pk).update(basic_salary=bs)
 
-        if last and last.allowance_lines.exclude(source=PayrollAllowanceLine.SOURCE_ATTENDANCE).exists():
-            for ln in last.allowance_lines.exclude(source=PayrollAllowanceLine.SOURCE_ATTENDANCE):
+        if getattr(emp, 'salary_template_id', None):
+            tmpl = emp.salary_template
+            for row in tmpl.allowance_lines or []:
+                if not isinstance(row, dict):
+                    continue
+                code = (row.get('code') or 'OTHER')[:40]
+                desc = (row.get('description') or '')[:200]
+                try:
+                    amt = Decimal(str(row.get('amount') or '0')).quantize(Decimal('0.01'))
+                except Exception:
+                    amt = Decimal('0')
+                if amt <= 0:
+                    continue
                 PayrollAllowanceLine.objects.create(
                     payroll=pay,
-                    code=ln.code,
-                    description=ln.description,
-                    amount=ln.amount,
-                    is_taxable=ln.is_taxable,
+                    code=code,
+                    description=desc or code,
+                    amount=amt,
+                    is_taxable=False,
                     source=PayrollAllowanceLine.SOURCE_AUTO,
                 )
-            bs = last.basic_salary or emp.basic_salary or Decimal('0')
-            Payroll.objects.filter(pk=pay.pk).update(basic_salary=bs)
         else:
-            tmpl = _pick_template(emp)
-            if tmpl:
-                bs = tmpl.basic_salary or emp.basic_salary or Decimal('0')
-                Payroll.objects.filter(pk=pay.pk).update(basic_salary=bs)
-                for row in tmpl.allowance_lines or []:
-                    if not isinstance(row, dict):
-                        continue
-                    code = (row.get('code') or 'OTHER')[:40]
-                    desc = (row.get('description') or '')[:200]
-                    try:
-                        amt = Decimal(str(row.get('amount') or '0')).quantize(Decimal('0.01'))
-                    except Exception:
-                        amt = Decimal('0')
-                    if amt <= 0:
-                        continue
+            last = (
+                Payroll.objects.filter(employee=emp)
+                .exclude(month=mf)
+                .order_by('-month')
+                .prefetch_related('allowance_lines')
+                .first()
+            )
+
+            if last and last.allowance_lines.exclude(source=PayrollAllowanceLine.SOURCE_ATTENDANCE).exists():
+                for ln in last.allowance_lines.exclude(source=PayrollAllowanceLine.SOURCE_ATTENDANCE):
                     PayrollAllowanceLine.objects.create(
                         payroll=pay,
-                        code=code,
-                        description=desc or code,
-                        amount=amt,
-                        is_taxable=False,
+                        code=ln.code,
+                        description=ln.description,
+                        amount=ln.amount,
+                        is_taxable=ln.is_taxable,
                         source=PayrollAllowanceLine.SOURCE_AUTO,
                     )
+                bs_last = last.basic_salary or emp.basic_salary or Decimal('0')
+                Payroll.objects.filter(pk=pay.pk).update(basic_salary=bs_last)
+            else:
+                tmpl = _pick_template(emp)
+                if tmpl:
+                    for row in tmpl.allowance_lines or []:
+                        if not isinstance(row, dict):
+                            continue
+                        code = (row.get('code') or 'OTHER')[:40]
+                        desc = (row.get('description') or '')[:200]
+                        try:
+                            amt = Decimal(str(row.get('amount') or '0')).quantize(Decimal('0.01'))
+                        except Exception:
+                            amt = Decimal('0')
+                        if amt <= 0:
+                            continue
+                        PayrollAllowanceLine.objects.create(
+                            payroll=pay,
+                            code=code,
+                            description=desc or code,
+                            amount=amt,
+                            is_taxable=False,
+                            source=PayrollAllowanceLine.SOURCE_AUTO,
+                        )
+                    bs_t = tmpl.basic_salary or emp.basic_salary or Decimal('0')
+                    if bs_t and bs_t != bs:
+                        Payroll.objects.filter(pk=pay.pk).update(basic_salary=bs_t)
 
+        pay.refresh_from_db()
+        gross = compute_gross_salary_structural(pay)
         total_allow = (
             PayrollAllowanceLine.objects.filter(payroll=pay).aggregate(s=Sum('amount'))['s'] or Decimal('0')
         ).quantize(Decimal('0.01'))
-        pay.refresh_from_db()
         ded = pay.deductions or Decimal('0')
         net = (pay.basic_salary or Decimal('0')) + total_allow - ded
         Payroll.objects.filter(pk=pay.pk).update(
             allowances=total_allow,
+            gross_salary=gross,
             net_salary=net.quantize(Decimal('0.01')),
         )
         created += 1

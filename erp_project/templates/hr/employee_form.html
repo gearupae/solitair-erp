@@ -95,7 +95,30 @@
                 </div>
                 <div class="col-md-3"><label class="form-label">Date of Joining</label>{{ form.date_of_joining }}</div>
                 <div class="col-md-3"><label class="form-label">Probation Period (Days)</label>{{ form.probation_period_days }}<small class="text-muted d-block mt-1">Default: 90 days</small></div>
-                <div class="col-md-3"><label class="form-label">Basic Salary</label>{{ form.basic_salary }}</div>
+                <div class="col-md-3">
+                    <label class="form-label">Basic Salary <span class="text-danger">*</span></label>
+                    {{ form.basic_salary }}
+                    {% if form.basic_salary.errors %}<div class="text-danger small mt-1">{{ form.basic_salary.errors|join:", " }}</div>{% endif %}
+                </div>
+                <div class="col-md-5">
+                    <label class="form-label" for="{{ form.salary_template.id_for_label }}">Salary Template</label>
+                    {{ form.salary_template }}
+                    {% if form.salary_template.errors %}<div class="text-danger small mt-1">{{ form.salary_template.errors|join:", " }}</div>{% endif %}
+                    <small class="text-muted d-block mt-1">Optional. Allowances will be pulled from selected template.</small>
+                </div>
+            </div>
+            <div class="row g-3 mt-1">
+                <div class="col-12 col-lg-8 d-none" id="salary-template-breakdown-wrap">
+                    <div class="card bg-light border-0">
+                        <div class="card-body py-3">
+                            <h6 class="small text-muted text-uppercase mb-2">Template allowances (read-only)</h6>
+                            <div id="salary-template-breakdown" class="small"></div>
+                            <hr class="my-2"/>
+                            <div class="d-flex justify-content-between small"><span>Total Allowances</span><strong id="tpl-total-allow">AED 0.00</strong></div>
+                            <div class="d-flex justify-content-between fw-semibold"><span>Total Package</span><strong id="tpl-total-pkg">AED 0.00</strong></div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -190,10 +213,74 @@
         if (uae) uae.style.display = (v === 'uae') ? 'block' : 'none';
         if (ksa) ksa.style.display = (v === 'ksa') ? 'block' : 'none';
     }
+
+    var tplUrlPattern = "{% url 'hr:payroll_template_json' pk=987654321 %}";
+
+    function parseBasic() {
+        var el = document.getElementById('id_basic_salary');
+        if (!el || !el.value) return 0;
+        var n = parseFloat(String(el.value).replace(/,/g, ''));
+        return isNaN(n) ? 0 : n;
+    }
+
+    function fmtAed(n) {
+        return 'AED ' + (Math.round(n * 100) / 100).toFixed(2);
+    }
+
+    function renderTemplateBreakdown(data) {
+        var wrap = document.getElementById('salary-template-breakdown-wrap');
+        var box = document.getElementById('salary-template-breakdown');
+        var tAllow = document.getElementById('tpl-total-allow');
+        var tPkg = document.getElementById('tpl-total-pkg');
+        if (!wrap || !box) return;
+        var lines = data && data.allowance_lines ? data.allowance_lines : [];
+        var allowSum = 0;
+        var rows = lines.map(function (row) {
+            var amt = parseFloat(row.amount) || 0;
+            allowSum += amt;
+            var title = row.description || row.code || 'Allowance';
+            return '<div class="d-flex justify-content-between py-1 border-bottom border-light"><span>' + title + '</span><span>' + fmtAed(amt) + '</span></div>';
+        }).join('');
+        box.innerHTML = rows || '<p class="text-muted mb-0">No allowance lines on this template.</p>';
+        if (tAllow) tAllow.textContent = fmtAed(allowSum);
+        var basic = parseBasic();
+        if (tPkg) tPkg.textContent = fmtAed(basic + allowSum);
+        wrap.classList.remove('d-none');
+    }
+
+    function hideBreakdown() {
+        var wrap = document.getElementById('salary-template-breakdown-wrap');
+        if (wrap) wrap.classList.add('d-none');
+    }
+
+    function loadTemplate(pk) {
+        if (!pk) {
+            hideBreakdown();
+            return;
+        }
+        var url = tplUrlPattern.replace('987654321', String(pk));
+        fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+            .then(function (r) { return r.json(); })
+            .then(function (data) { renderTemplateBreakdown(data); })
+            .catch(function () { hideBreakdown(); });
+    }
+
     document.addEventListener('DOMContentLoaded', function () {
         var loc = document.getElementById('id_location');
         toggleHrSections();
         if (loc) loc.addEventListener('change', toggleHrSections);
+
+        var tplSel = document.getElementById('id_salary_template');
+        var basicEl = document.getElementById('id_basic_salary');
+        if (tplSel) {
+            tplSel.addEventListener('change', function () { loadTemplate(this.value); });
+            if (tplSel.value) loadTemplate(tplSel.value);
+        }
+        if (basicEl) {
+            basicEl.addEventListener('input', function () {
+                if (tplSel && tplSel.value) loadTemplate(tplSel.value);
+            });
+        }
     });
 })();
 </script>

@@ -775,22 +775,57 @@ class PayrollDetailView(PermissionRequiredMixin, DetailView):
             summ is None or not summ.is_finalized
         )
 
+        from apps.hr.leave_payroll_deductions import (
+            paid_full_leave_working_days_in_month,
+            unpaid_leave_working_days_in_month_strict,
+        )
+        from apps.hr.payroll_processing import get_payroll_settings
+        from apps.hr.salary_payroll_utils import (
+            structural_allowances_total,
+            total_salary_for_daily_rate,
+            working_days_divisor_from_settings,
+        )
+        from apps.hr.models_extended import PayrollDeductionLine
+
+        emp = self.object.employee
+        ps = get_payroll_settings()
+        wd_div = working_days_divisor_from_settings(ps)
+        struct_allow = structural_allowances_total(self.object)
+        gross_struct = self.object.gross_salary or (self.object.basic_salary + struct_allow)
+        daily_rate = (gross_struct / Decimal(wd_div)).quantize(Decimal('0.01')) if wd_div else Decimal('0')
+
+        context['salary_template_name'] = emp.salary_template.name if getattr(emp, 'salary_template_id', None) else None
+        context['structural_allowances_total'] = struct_allow
+        context['gross_salary_structural'] = gross_struct
+        context['payroll_working_days_divisor'] = wd_div
+        context['daily_rate_for_leave'] = daily_rate
+        context['paid_leave_days_month'] = paid_full_leave_working_days_in_month(emp, mf)
+        context['unpaid_leave_days_month'] = unpaid_leave_working_days_in_month_strict(emp, mf)
+        context['absent_days_month'] = int(summ.total_absent or 0) if summ else 0
+
+        dlines = list(self.object.deduction_lines.all())
+
+        def _ded_by_code(*codes):
+            cset = {c.lower() for c in codes}
+            return sum(
+                (ln.amount for ln in dlines if (ln.code or '').lower() in cset),
+                Decimal('0'),
+            )
+
+        context['unpaid_leave_deducted_aed'] = _ded_by_code(PayrollDeductionLine.CODE_UNPAID_LEAVE)
+        context['absent_deducted_aed'] = _ded_by_code(PayrollDeductionLine.CODE_ABSENT)
+        context['deduction_lines'] = dlines
+
         att_amt = Decimal('0')
         if summ and summ.is_finalized:
-            from apps.hr.attendance_utils import working_days_in_calendar_month
             from apps.hr.models_extended import AttendanceSettings
 
             att_set = AttendanceSettings.objects.get_or_create(pk=1)[0]
-            wd = max(
-                working_days_in_calendar_month(self.object.month.year, self.object.month.month),
-                int(att_set.working_days_in_month),
-                1,
-            )
-            per_day = (self.object.basic_salary / Decimal(wd)).quantize(Decimal('0.01'))
-            att_amt += (per_day * (summ.absent_deduction_days or Decimal('0'))).quantize(Decimal('0.01'))
+            pkg = total_salary_for_daily_rate(self.object)
+            per_day = (pkg / Decimal(wd_div)).quantize(Decimal('0.01')) if wd_div else Decimal('0')
+            att_amt += (per_day * Decimal(int(summ.total_absent or 0))).quantize(Decimal('0.01'))
             att_amt += (att_set.late_deduction_amount * Decimal(summ.total_late)).quantize(Decimal('0.01'))
         context['attendance_deductions_approx_aed'] = att_amt
-        context['deduction_lines'] = list(self.object.deduction_lines.all())
         context['allowance_lines'] = list(self.object.allowance_lines.all().order_by('pk'))
         context['employer_contributions'] = list(self.object.employer_contributions.all())
         context['gratuity_snapshot'] = GratuityRecord.objects.filter(payroll=self.object).first()
@@ -836,7 +871,11 @@ class PayrollCreateView(CreatePermissionMixin, CreateView):
         return context
     
     def form_valid(self, form):
-        from apps.hr.payroll_allowances import replace_allowance_lines_from_post, total_allowances_amount
+        from apps.hr.payroll_allowances import replace_allowance_lines_from_post
+        from apps.hr.salary_payroll_utils import (
+            ensure_payroll_allowances_from_employee_template,
+            refresh_payroll_gross_and_allowances,
+        )
 
         payroll = form.save(commit=False)
         payroll.status = payroll.status or 'draft'
@@ -844,12 +883,14 @@ class PayrollCreateView(CreatePermissionMixin, CreateView):
             ecid = Employee.objects.filter(pk=payroll.employee_id).values_list('company_id', flat=True).first()
             if ecid:
                 payroll.company_id = ecid
+        emp = Employee.objects.filter(pk=payroll.employee_id).first()
+        if emp and (payroll.basic_salary is None or payroll.basic_salary == Decimal('0')):
+            payroll.basic_salary = emp.basic_salary or Decimal('0')
         payroll.save()
         replace_allowance_lines_from_post(payroll, self.request.POST)
-        payroll.allowances = total_allowances_amount(payroll)
-        ded = payroll.deductions or Decimal('0')
-        payroll.net_salary = (payroll.basic_salary or Decimal('0')) + payroll.allowances - ded
-        payroll.save(update_fields=['allowances', 'net_salary', 'company'])
+        if emp:
+            ensure_payroll_allowances_from_employee_template(payroll, emp)
+        refresh_payroll_gross_and_allowances(payroll)
         messages.success(self.request, f'Payroll for {payroll.employee.full_name} created successfully.')
         return redirect(self.success_url)
 
@@ -876,7 +917,11 @@ class PayrollUpdateView(UpdatePermissionMixin, UpdateView):
         return context
     
     def form_valid(self, form):
-        from apps.hr.payroll_allowances import replace_allowance_lines_from_post, total_allowances_amount
+        from apps.hr.payroll_allowances import replace_allowance_lines_from_post
+        from apps.hr.salary_payroll_utils import (
+            ensure_payroll_allowances_from_employee_template,
+            refresh_payroll_gross_and_allowances,
+        )
 
         payroll = form.save(commit=False)
         if payroll.employee_id and not payroll.company_id:
@@ -885,10 +930,10 @@ class PayrollUpdateView(UpdatePermissionMixin, UpdateView):
                 payroll.company_id = ecid
         payroll.save()
         replace_allowance_lines_from_post(payroll, self.request.POST)
-        payroll.allowances = total_allowances_amount(payroll)
-        ded = payroll.deductions or Decimal('0')
-        payroll.net_salary = (payroll.basic_salary or Decimal('0')) + payroll.allowances - ded
-        payroll.save(update_fields=['allowances', 'net_salary', 'company'])
+        emp = Employee.objects.filter(pk=payroll.employee_id).first()
+        if emp:
+            ensure_payroll_allowances_from_employee_template(payroll, emp)
+        refresh_payroll_gross_and_allowances(payroll)
         messages.success(self.request, f'Payroll for {payroll.employee.full_name} updated successfully.')
         return redirect(self.success_url)
 

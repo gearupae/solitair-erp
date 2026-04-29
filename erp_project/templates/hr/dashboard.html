@@ -16,97 +16,228 @@
 </div>
 
 <div class="row g-3 mb-4">
-    <div class="col-md-4">
-        <div class="card">
-            <div class="card-body">
-                <div class="d-flex align-items-center">
-                    <div class="bg-primary bg-opacity-10 rounded p-3 me-3">
-                        <i class="fas fa-users text-primary"></i>
+    <div class="col-lg-4 d-flex">
+        <div class="card border-0 shadow-sm h-100 w-100 d-flex flex-column overflow-hidden rounded-3">
+            <div class="flex-shrink-0 px-3 pt-3 pb-3" style="background: linear-gradient(145deg, rgba(13, 110, 253, 0.11) 0%, rgba(13, 110, 253, 0.03) 55%, #fff 100%);">
+                <div class="d-flex align-items-stretch gap-3">
+                    <div class="rounded-3 bg-white d-flex align-items-center justify-content-center px-3 py-3 flex-shrink-0 shadow-sm border border-primary border-opacity-25">
+                        <i class="fas fa-users fa-lg text-primary"></i>
                     </div>
-                    <div>
-                        <p class="text-muted mb-0 small">Employees</p>
-                        <h5 class="mb-0 fw-bold">{{ total_employees }}</h5>
-                        <p class="text-muted mb-0 small">Active {{ active_status }} · Other {{ inactive_status }}</p>
+                    <div class="min-w-0 flex-grow-1 d-flex flex-column justify-content-center">
+                        <span class="text-primary small fw-bold mb-1 text-uppercase" style="letter-spacing: .1em; font-size: 0.68rem;">Workforce</span>
+                        <div class="d-flex align-items-baseline gap-2 flex-wrap lh-1">
+                            <span class="fw-bold text-dark" style="font-size: 1.85rem; font-variant-numeric: tabular-nums;">{{ total_employees }}</span>
+                            <span class="text-muted small">employees</span>
+                        </div>
+                        <div class="d-flex flex-wrap gap-2 mt-2">
+                            <span class="badge rounded-pill bg-success-subtle text-success-emphasis border border-success border-opacity-25 fw-semibold px-2 py-1">{{ active_status }} active</span>
+                            <span class="badge rounded-pill bg-body-secondary bg-opacity-25 text-secondary-emphasis border border-secondary border-opacity-25 fw-medium px-2 py-1">{{ inactive_status }} other</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="flex-shrink-0 px-3 pb-3 pt-1">
+                <div class="d-flex align-items-center gap-2 mb-2 pt-1 border-top border-primary border-opacity-10">
+                    <span class="rounded-2 bg-primary bg-opacity-10 d-inline-flex align-items-center justify-content-center" style="width: 1.75rem; height: 1.75rem;">
+                        <i class="fas fa-sitemap text-primary" style="font-size: 0.75rem;"></i>
+                    </span>
+                    <div class="min-w-0">
+                        <span class="d-block text-uppercase fw-bold text-body-secondary" style="letter-spacing: .08em; font-size: 0.65rem;">Headcount by department</span>
+                        <span class="d-block text-muted" style="font-size: 0.7rem;">Active employees per department</span>
+                    </div>
+                </div>
+                <div class="rounded-3 border shadow-sm overflow-hidden bg-white">
+                    <div class="overflow-auto" style="max-height: 12rem;">
+                        <table class="table table-sm table-borderless mb-0 align-middle w-100" style="table-layout: fixed;">
+                            <thead class="sticky-top" style="z-index: 1;">
+                                <tr class="border-bottom bg-light">
+                                    <th class="ps-3 py-2 fw-semibold text-secondary text-uppercase border-0" style="font-size: 0.65rem; letter-spacing: .06em;">Department</th>
+                                    <th class="pe-3 py-2 text-end fw-semibold text-secondary text-uppercase border-0" style="width: 3.5rem; font-size: 0.65rem; letter-spacing: .06em;">HC</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for d in dept_headcount %}
+                                <tr class="border-bottom border-light {% if not forloop.counter0|divisibleby:2 %}table-light{% endif %}">
+                                    <td class="ps-3 py-2 small text-truncate fw-medium text-body" title="{{ d.name }}">{{ d.name }}</td>
+                                    <td class="pe-3 py-2 text-end">
+                                        <span class="d-inline-block rounded-2 px-2 py-0 small fw-bold text-primary bg-primary bg-opacity-10" style="font-variant-numeric: tabular-nums; min-width: 1.6rem;">{{ d.c }}</span>
+                                    </td>
+                                </tr>
+                                {% empty %}
+                                <tr>
+                                    <td colspan="2" class="text-center text-muted py-4 small">
+                                        <i class="fas fa-folder-open d-block mb-2 opacity-50"></i>
+                                        No departments yet.
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>
         </div>
     </div>
-    <div class="col-md-4">
-        <div class="card">
-            <div class="card-body">
-                <div class="d-flex align-items-start mb-2">
-                    <div class="bg-success bg-opacity-10 rounded p-3 me-3">
+    <div class="col-lg-4">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div class="d-flex align-items-center gap-2">
+                    <div class="rounded-3 bg-success bg-opacity-10 p-2">
                         <i class="fas fa-money-check-alt text-success"></i>
                     </div>
-                    <div class="small flex-grow-1">
-                        <p class="text-muted mb-1 fw-semibold">Payroll this month</p>
-                        <p class="mb-1">Draft {{ payroll_draft }} · Proc. {{ payroll_processed }} · Paid {{ payroll_paid }}</p>
-                        <p class="mb-2 fw-semibold">{{ payroll_total_net|floatformat:2|intcomma }} net paid (all)</p>
-                        {% if payroll_by_company %}
-                        <div class="border rounded px-2 py-1 bg-light mb-2">
-                            <div class="text-muted text-uppercase" style="font-size:0.65rem;">By company</div>
-                            {% for row in payroll_by_company %}
-                            <div class="d-flex justify-content-between gap-2 mt-1">
-                                <span class="text-truncate" title="{{ row.company.name }}">{{ row.company.name }}</span>
-                                <span class="text-nowrap">{{ row.draft }}/{{ row.processed }}/{{ row.paid }}</span>
-                            </div>
-                            <div class="small text-muted">{{ row.currency }} {{ row.total_net|floatformat:2|intcomma }} paid</div>
-                            {% endfor %}
-                        </div>
-                        {% endif %}
-                        <p class="mb-1 text-warning small"><i class="fas fa-envelope me-1"></i>Pending payslip emails: <strong>{{ pending_payslip_emails }}</strong></p>
-                        <p class="mb-1 small">GOSI (KSA month): EE {{ gosi_month_employee|floatformat:2|intcomma }} · ER {{ gosi_month_employer|floatformat:2|intcomma }}</p>
-                        <p class="mb-0 small">WPS UAE net {{ wps_month_net_uae|floatformat:2|intcomma }} · pending {{ wps_pending_uae }} · submitted {{ wps_submitted_uae }}</p>
-                        <p class="mb-0 small mt-2 pt-2 border-top">
-                            <i class="fas fa-hand-holding-usd me-1 text-warning"></i>
-                            <strong>Advances:</strong> {{ advance_active_employees }} employee{{ advance_active_employees|pluralize }} with active balance ·
-                            <strong>{{ advance_outstanding_total|floatformat:2|intcomma }} AED</strong> outstanding
-                        </p>
+                    <div>
+                        <p class="text-muted text-uppercase small fw-semibold mb-0" style="letter-spacing: .04em;">Payroll · this month</p>
+                        <p class="mb-0 fw-bold">{% now "F Y" %}</p>
                     </div>
                 </div>
+                <a href="{% url 'hr:payroll_list' %}" class="btn btn-sm btn-outline-success">Payroll</a>
+            </div>
+            <div class="card-body pt-3">
+                <div class="row g-2 mb-3">
+                    <div class="col-4">
+                        <div class="rounded-3 border bg-light h-100 p-2 text-center">
+                            <div class="text-muted small">Draft</div>
+                            <div class="fs-5 fw-bold text-secondary">{{ payroll_draft }}</div>
+                        </div>
+                    </div>
+                    <div class="col-4">
+                        <div class="rounded-3 border bg-light h-100 p-2 text-center">
+                            <div class="text-muted small">Processed</div>
+                            <div class="fs-5 fw-bold text-primary">{{ payroll_processed }}</div>
+                        </div>
+                    </div>
+                    <div class="col-4">
+                        <div class="rounded-3 border bg-light h-100 p-2 text-center">
+                            <div class="text-muted small">Paid</div>
+                            <div class="fs-5 fw-bold text-success">{{ payroll_paid }}</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="rounded-3 bg-success bg-opacity-10 border border-success border-opacity-25 px-3 py-2 mb-3">
+                    <div class="small text-muted text-uppercase fw-semibold mb-0">Total net paid (all entities)</div>
+                    <div class="fs-4 fw-bold text-success">{{ payroll_total_net|floatformat:2|intcomma }}</div>
+                </div>
+                {% if payroll_by_company %}
+                <div class="mb-3">
+                    <div class="small text-muted text-uppercase fw-semibold mb-2">By company</div>
+                    <div class="table-responsive mb-0">
+                        <table class="table table-sm table-borderless align-middle mb-0 small">
+                            <thead>
+                                <tr class="text-muted border-bottom">
+                                    <th class="ps-0 fw-normal">Entity</th>
+                                    <th class="text-center fw-normal text-nowrap">D / P / Paid</th>
+                                    <th class="pe-0 text-end fw-normal">Net paid</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in payroll_by_company %}
+                                <tr>
+                                    <td class="ps-0 text-truncate" style="max-width: 7rem;" title="{{ row.company.name }}">{{ row.company.name }}</td>
+                                    <td class="text-center text-nowrap"><span class="badge bg-secondary bg-opacity-10 text-dark fw-normal">{{ row.draft }}</span> <span class="text-muted">/</span> <span class="badge bg-primary bg-opacity-10 text-primary fw-normal">{{ row.processed }}</span> <span class="text-muted">/</span> <span class="badge bg-success bg-opacity-10 text-success fw-normal">{{ row.paid }}</span></td>
+                                    <td class="pe-0 text-end fw-medium">{% if row.currency %}<span class="text-muted me-1">{{ row.currency }}</span>{% endif %}{{ row.total_net|floatformat:2|intcomma }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                {% endif %}
+                <div class="d-flex flex-wrap gap-2 mb-2">
+                    {% if pending_payslip_emails %}
+                    <span class="badge rounded-pill text-bg-warning text-dark"><i class="fas fa-envelope me-1"></i>{{ pending_payslip_emails }} payslip email{{ pending_payslip_emails|pluralize }} pending</span>
+                    {% else %}
+                    <span class="badge rounded-pill text-bg-light text-muted border"><i class="fas fa-envelope me-1"></i>Payslip emails up to date</span>
+                    {% endif %}
+                </div>
+                <dl class="row small mb-0 gx-2 gy-1 border-top pt-2 mt-2">
+                    <dt class="col-5 text-muted fw-normal mb-0">GOSI (KSA)</dt>
+                    <dd class="col-7 mb-0 text-end">EE {{ gosi_month_employee|floatformat:2|intcomma }} · ER {{ gosi_month_employer|floatformat:2|intcomma }}</dd>
+                    <dt class="col-5 text-muted fw-normal mb-0">WPS UAE</dt>
+                    <dd class="col-7 mb-0 text-end">Net {{ wps_month_net_uae|floatformat:2|intcomma }} · <span class="text-nowrap">pend. {{ wps_pending_uae }}</span> · <span class="text-nowrap">subm. {{ wps_submitted_uae }}</span></dd>
+                    <dt class="col-5 text-muted fw-normal mb-0">Advances</dt>
+                    <dd class="col-7 mb-0 text-end">{{ advance_active_employees }} emp. · {{ advance_outstanding_total|floatformat:2|intcomma }} outst.</dd>
+                </dl>
             </div>
         </div>
     </div>
-    <div class="col-md-4">
-        <div class="card">
-            <div class="card-body">
-                <div class="d-flex align-items-start">
-                    <div class="bg-info bg-opacity-10 rounded p-3 me-3">
+    <div class="col-lg-4">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div class="d-flex align-items-center gap-2">
+                    <div class="rounded-3 bg-info bg-opacity-10 p-2">
                         <i class="fas fa-user-clock text-info"></i>
                     </div>
-                    <div class="small flex-grow-1">
-                        <p class="text-muted mb-1 fw-semibold">Attendance today</p>
-                        <p class="mb-1">Present <strong>{{ att_snap.present }}</strong> · Absent <strong>{{ att_snap.absent }}</strong> · Late <strong>{{ att_snap.late }}</strong> · Not marked <strong>{{ att_snap.not_marked }}</strong></p>
-                        {% if att_snap.late_employees %}
-                        <p class="mb-1 text-warning">Late: {% for x in att_snap.late_employees %}{{ x.name }} ({{ x.late_minutes }} min){% if not forloop.last %}, {% endif %}{% endfor %}</p>
-                        {% endif %}
-                        {% if att_snap.unmarked_employees %}
-                        <ul class="mb-1 ps-3">
-                            {% for u in att_snap.unmarked_employees|slice:":5" %}
-                            <li><a href="{% url 'hr:attendance_mark' %}?employee={{ u.id }}&date={% now 'Y-m-d' %}">Mark</a> — {{ u.name }}</li>
-                            {% endfor %}
-                        </ul>
-                        {% endif %}
-                        <p class="text-muted mb-0">This month: absent rate {{ att_absent_rate_pct }}% · overtime {{ att_ot_company_month|floatformat:1 }} hrs</p>
-                        <p class="text-muted mb-0 small mt-1">WPS pending: {{ wps_pending }} · KSA GOSI MTD: {{ gosi_month_total|floatformat:2|intcomma }}</p>
+                    <div>
+                        <p class="text-muted text-uppercase small fw-semibold mb-0" style="letter-spacing: .04em;">Attendance · today</p>
+                        <p class="mb-0 fw-bold">{% now "l, j F Y" %}</p>
                     </div>
                 </div>
+                <a href="{% url 'hr:attendance_mark' %}" class="btn btn-sm btn-outline-info">Mark</a>
             </div>
-        </div>
-    </div>
-</div>
-
-<div class="row g-3 mb-4">
-    <div class="col-lg-12">
-        <div class="card h-100">
-            <div class="card-header py-3 fw-semibold">Headcount by department</div>
-            <div class="card-body">
-                <table class="table table-sm mb-0">
-                    {% for d in dept_headcount %}
-                    <tr><td>{{ d.name }}</td><td class="text-end">{{ d.c }}</td></tr>
-                    {% empty %}<tr><td colspan="2" class="text-muted">No departments.</td></tr>{% endfor %}
-                </table>
+            <div class="card-body pt-3">
+                <div class="row g-2 mb-3">
+                    <div class="col-6">
+                        <div class="rounded-3 border border-success border-opacity-50 bg-success bg-opacity-10 p-2 text-center h-100">
+                            <div class="small text-muted">Present</div>
+                            <div class="fs-3 fw-bold text-success lh-sm">{{ att_snap.present }}</div>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="rounded-3 border border-danger border-opacity-50 bg-danger bg-opacity-10 p-2 text-center h-100">
+                            <div class="small text-muted">Absent</div>
+                            <div class="fs-3 fw-bold text-danger lh-sm">{{ att_snap.absent }}</div>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="rounded-3 border border-warning border-opacity-50 bg-warning bg-opacity-10 p-2 text-center h-100">
+                            <div class="small text-muted">Late</div>
+                            <div class="fs-3 fw-bold text-warning text-dark lh-sm">{{ att_snap.late }}</div>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="rounded-3 border border-secondary border-opacity-50 bg-secondary bg-opacity-10 p-2 text-center h-100">
+                            <div class="small text-muted">Not marked</div>
+                            <div class="fs-3 fw-bold text-secondary lh-sm">{{ att_snap.not_marked }}</div>
+                        </div>
+                    </div>
+                </div>
+                {% if att_snap.late_employees %}
+                <div class="alert alert-warning py-2 px-3 small mb-2 mb-md-3">
+                    <div class="fw-semibold mb-1"><i class="fas fa-clock me-1"></i>Late arrivals</div>
+                    <ul class="mb-0 ps-3">
+                        {% for x in att_snap.late_employees %}
+                        <li>{{ x.name }} <span class="text-muted">({{ x.late_minutes }} min)</span></li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% endif %}
+                {% if att_snap.unmarked_employees %}
+                <div class="mb-3">
+                    <div class="small text-muted text-uppercase fw-semibold mb-2">Needs marking</div>
+                    <ul class="list-group list-group-flush border rounded-3 small">
+                        {% for u in att_snap.unmarked_employees|slice:":6" %}
+                        <li class="list-group-item d-flex justify-content-between align-items-center py-2 px-3">
+                            <span class="text-truncate me-2">{{ u.name }}</span>
+                            <a class="btn btn-sm btn-outline-primary flex-shrink-0" href="{% url 'hr:attendance_mark' %}?employee={{ u.id }}&date={% now 'Y-m-d' %}">Mark</a>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% endif %}
+                <div class="rounded-3 bg-light px-3 py-2 small">
+                    <div class="d-flex justify-content-between flex-wrap gap-2">
+                        <span class="text-muted">Month absent rate</span>
+                        <span class="fw-semibold">{{ att_absent_rate_pct }}%</span>
+                    </div>
+                    <div class="d-flex justify-content-between flex-wrap gap-2 mt-1">
+                        <span class="text-muted">Overtime (month)</span>
+                        <span class="fw-semibold">{{ att_ot_company_month|floatformat:1 }} hrs</span>
+                    </div>
+                    <div class="d-flex justify-content-between flex-wrap gap-2 mt-1 pt-1 border-top border-secondary border-opacity-25">
+                        <span class="text-muted">WPS pending · GOSI MTD</span>
+                        <span class="text-end"><span class="fw-semibold">{{ wps_pending }}</span> · <span class="fw-semibold">{{ gosi_month_total|floatformat:2|intcomma }}</span></span>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

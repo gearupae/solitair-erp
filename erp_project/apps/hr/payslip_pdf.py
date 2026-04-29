@@ -21,6 +21,7 @@ from reportlab.platypus import (
 )
 
 from apps.hr.payroll_allowances import effective_payroll_company
+from apps.hr.payroll_processing import compute_iloe_deduction, get_payroll_settings
 from apps.settings_app.models import CompanySettings
 
 _PRIMARY = colors.HexColor('#0f2744')
@@ -373,40 +374,50 @@ def build_payslip_pdf(payroll) -> bytes:
 
     currency = 'SAR' if (emp.location or '').lower() == 'ksa' else 'AED'
 
-    earn_data = [('Basic salary', f'{currency} {payroll.basic_salary:,.2f}')]
-    for ln in payroll.allowance_lines.all().order_by('pk'):
-        earn_data.append((ln.description or ln.code, f'{currency} {ln.amount:,.2f}'))
-    gross = payroll.basic_salary + payroll.allowances
-    earn_data.append(('Gross', f'{currency} {gross:,.2f}'))
-
-    from apps.hr.models_extended import EmployeeAdvance, GratuityRecord, PayrollDeductionLine
+    from apps.hr.models_extended import (
+        EmployeeAdvance,
+        GratuityRecord,
+        PayrollAllowanceLine,
+        PayrollDeductionLine,
+        UAECompliance,
+    )
+    from apps.hr.salary_payroll_utils import structural_allowances_total, working_days_divisor_from_settings
 
     lines = list(payroll.deduction_lines.all())
-    ded_rows = [(ln.label, f'{currency} {ln.amount:,.2f}') for ln in lines]
+
+    w_desc = cw * 0.62
+    w_amt = cw - w_desc
+
+    story.append(_section_heading('Earnings'))
+    earn_data = [('Basic Salary', f'{currency} {payroll.basic_salary:,.2f}')]
+    for ln in payroll.allowance_lines.all().order_by('pk'):
+        title = ln.description or ln.code
+        if ln.code == PayrollAllowanceLine.CODE_OVERTIME:
+            title = title or 'Overtime'
+        earn_data.append((title, f'{currency} {ln.amount:,.2f}'))
+    gross_full = payroll.basic_salary + payroll.allowances
+    earn_data.append(('<b>Gross Salary</b>', f'<b>{currency} {gross_full:,.2f}</b>'))
+    earn_tbl = _money_table(earn_data, [w_desc, w_amt], ('Description', 'Amount'))
+    story.append(earn_tbl)
+    story.append(Spacer(1, 5))
+
+    story.append(_section_heading('Deductions'))
+
+    def _deduction_row_pdf(ln):
+        code_u = (ln.code or '').upper()
+        if code_u == 'ILOE':
+            _, cat = compute_iloe_deduction(payroll.basic_salary)
+            lbl = f'ILOE Insurance (Cat {cat})'
+            return (lbl, f'- {currency} {ln.amount:,.2f}')
+        return (ln.label, f'- {currency} {ln.amount:,.2f}')
+
+    ded_rows = [_deduction_row_pdf(ln) for ln in lines]
     if not ded_rows:
         ded_rows = [('—', f'{currency} 0.00')]
     total_ded = payroll.deductions
-    ded_rows.append(('Total deductions', f'{currency} {total_ded:,.2f}'))
-
-    gap = 3 * mm
-    w_col = (cw - gap) / 2
-    w_desc = w_col * 0.58
-    w_amt = w_col - w_desc
-
-    story.append(_section_heading('Earnings and deductions'))
-    earn_tbl = _money_table(earn_data, [w_desc, w_amt], ('Description', 'Amount'))
+    ded_rows.append(('<b>Total Deductions</b>', f'<b>{currency} {total_ded:,.2f}</b>'))
     ded_tbl = _money_table(ded_rows, [w_desc, w_amt], ('Description', 'Amount'))
-    split = Table([[earn_tbl, '', ded_tbl]], colWidths=[w_col, gap, w_col], hAlign='LEFT')
-    split.setStyle(
-        TableStyle(
-            [
-                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-                ('LEFTPADDING', (0, 0), (-1, -1), 0),
-                ('RIGHTPADDING', (0, 0), (-1, -1), 0),
-            ]
-        )
-    )
-    story.append(split)
+    story.append(ded_tbl)
 
     adv_lines = [ln for ln in lines if ln.code == PayrollDeductionLine.CODE_ADVANCE_REPAYMENT]
     if adv_lines:
@@ -437,7 +448,7 @@ def build_payslip_pdf(payroll) -> bytes:
     loc = (emp.location or 'uae').lower()
 
     net_para = Paragraph(
-        f'<font color="#065f46" size="12"><b>Net salary</b></font><br/>'
+        f'<font color="#065f46" size="12"><b>NET SALARY</b></font><br/>'
         f'<font color="#047857" size="16"><b>{currency} {payroll.net_salary:,.2f}</b></font>',
         ParagraphStyle(name='NetBox', parent=body, alignment=1, leading=18),
     )
@@ -453,7 +464,19 @@ def build_payslip_pdf(payroll) -> bytes:
         )
     )
 
-    page1_tail = KeepTogether([Spacer(1, 8), net_box])
+    ps = get_payroll_settings()
+    wd_note = working_days_divisor_from_settings(ps)
+    struct_gross = payroll.gross_salary or (
+        (payroll.basic_salary or Decimal('0')) + structural_allowances_total(payroll)
+    )
+    daily_note = (struct_gross / Decimal(wd_note)).quantize(Decimal('0.01')) if wd_note else Decimal('0')
+    daily_note_para = Paragraph(
+        f'<font size="8" color="#64748b"><i>Daily rate used: {currency} {daily_note:,.2f}/day '
+        f'({currency} {struct_gross:,.2f} gross ÷ {wd_note} days).</i></font>',
+        ParagraphStyle(name='DailyNote', parent=body, alignment=1, leading=10),
+    )
+
+    page1_tail = KeepTogether([Spacer(1, 8), net_box, Spacer(1, 6), daily_note_para])
     story.append(page1_tail)
 
     supplementary = []
@@ -479,9 +502,15 @@ def build_payslip_pdf(payroll) -> bytes:
 
     if loc == 'uae':
         extras = []
-        iloe_ln = next((x for x in lines if x.code == PayrollDeductionLine.CODE_ILOE), None)
-        if iloe_ln:
-            extras.append(f'ILOE: {currency} {iloe_ln.amount:,.2f}')
+        ps_pdf = get_payroll_settings()
+        uc_sup = UAECompliance.objects.filter(employee=emp).first()
+        iloe_ln = next((x for x in lines if (x.code or '').upper() == 'ILOE'), None)
+        if not iloe_ln and (uc_sup is None or uc_sup.iloe_applicable) and not ps_pdf.iloe_deduct_via_payroll:
+            tot_iloe, cat_iloe = compute_iloe_deduction(payroll.basic_salary)
+            extras.append(
+                f'ILOE Insurance (Cat {cat_iloe}): {currency} {tot_iloe:,.2f} — reminder only (not deducted). '
+                f'Pay via iloe.ae; employer may deduct and remit separately if agreed.'
+            )
         grat = GratuityRecord.objects.filter(payroll=payroll).first()
         if grat:
             extras.append(f'Gratuity (info): {currency} {grat.provision_amount:,.2f}')

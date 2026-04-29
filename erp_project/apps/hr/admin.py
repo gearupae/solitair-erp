@@ -103,7 +103,7 @@ class PayrollAdmin(admin.ModelAdmin):
 
 @admin.register(PayrollSettings)
 class PayrollSettingsAdmin(admin.ModelAdmin):
-    list_display = ['pk', 'late_deduction_amount', 'working_days_in_month', 'hr_notification_email']
+    list_display = ['pk', 'late_deduction_amount', 'working_days_in_month', 'iloe_deduct_via_payroll', 'hr_notification_email']
 
 
 @admin.register(EmployeeHRProfile)
@@ -133,9 +133,10 @@ class AttendanceRecordAdmin(admin.ModelAdmin):
         'working_hours',
         'late_minutes',
         'overtime_hours',
+        'overtime_type',
         'source',
     ]
-    list_filter = ['status', 'source']
+    list_filter = ['status', 'source', 'overtime_type']
 
 
 @admin.register(AttendanceSummary)

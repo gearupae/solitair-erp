@@ -5,7 +5,18 @@
     <form method="post">{% csrf_token %}
         <div class="row g-3">
             {% for field in form %}
-            <div class="col-md-6">{{ field.label_tag }} {{ field.errors }} {{ field }}</div>
+            <div class="{% if field.name == 'iloe_deduct_via_payroll' %}col-12{% else %}col-md-6{% endif %}">
+                {% if field.name == 'iloe_deduct_via_payroll' %}
+                <div class="form-check mt-2">
+                    {{ field }}
+                    <label class="form-check-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                    {% if field.help_text %}<div class="form-text small text-muted">{{ field.help_text }}</div>{% endif %}
+                    {{ field.errors }}
+                </div>
+                {% else %}
+                {{ field.label_tag }} {{ field.errors }} {{ field }}
+                {% endif %}
+            </div>
             {% endfor %}
         </div>
         <button class="btn btn-primary mt-3" type="submit">Save</button>

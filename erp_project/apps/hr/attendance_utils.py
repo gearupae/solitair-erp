@@ -53,14 +53,27 @@ def apply_auto_calculations_to_record(record: AttendanceRecord) -> None:
         record.working_hours = None
         record.late_minutes = 0
         record.overtime_hours = Decimal('0.00')
+        record.overtime_type = 'normal'
         return
 
     hol = holiday_on_date_for_employee(d, emp)
     if hol:
         record.status = 'holiday'
-        record.working_hours = None
         record.late_minutes = 0
-        record.overtime_hours = Decimal('0.00')
+        if record.check_in and record.check_out:
+            dt_start = datetime.combine(d, record.check_in)
+            dt_end = datetime.combine(d, record.check_out)
+            if dt_end < dt_start:
+                dt_end += timedelta(days=1)
+            delta = dt_end - dt_start
+            hrs = Decimal(str(round(delta.total_seconds() / 3600.0, 2)))
+            record.working_hours = hrs
+            record.overtime_hours = hrs.quantize(Decimal('0.01'))
+            record.overtime_type = 'holiday'
+        else:
+            record.working_hours = None
+            record.overtime_hours = Decimal('0.00')
+            record.overtime_type = 'normal'
         if hol.name and 'Public Holiday' not in (record.notes or ''):
             prefix = 'Public Holiday: ' + hol.name
             if record.notes:
@@ -83,6 +96,15 @@ def apply_auto_calculations_to_record(record: AttendanceRecord) -> None:
     else:
         record.working_hours = None
         record.overtime_hours = Decimal('0.00')
+
+    if record.overtime_hours and record.overtime_hours > 0:
+        co = record.check_out
+        if co and (co >= time(22, 0) or co < time(4, 0)):
+            record.overtime_type = 'night'
+        else:
+            record.overtime_type = 'normal'
+    else:
+        record.overtime_type = 'normal'
 
     record.late_minutes = 0
     if status_lower not in ('absent', 'weekend', 'holiday') and record.check_in:

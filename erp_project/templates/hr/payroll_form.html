@@ -114,6 +114,8 @@
                         <tr><td>Absent deduction</td><td class="text-end" id="pvAbsent">—</td></tr>
                         <tr><td>Late deduction</td><td class="text-end" id="pvLate">—</td></tr>
                         <tr><td>Unpaid leave</td><td class="text-end" id="pvUnpaid">—</td></tr>
+                        <tr><td>Half pay leave</td><td class="text-end" id="pvHalfPay">—</td></tr>
+                        <tr><td>Sick leave (tiered)</td><td class="text-end" id="pvSickTiered">—</td></tr>
                         <tr><td>ILOE (UAE)</td><td class="text-end" id="pvIloe">—</td></tr>
                         <tr><td>GOSI employee (KSA)</td><td class="text-end" id="pvGosi">—</td></tr>
                         <tr><td>Advance repayment</td><td class="text-end" id="pvAdvance">—</td></tr>
@@ -251,6 +253,8 @@
                 moneyTxt('pvAbsent', data.absent);
                 moneyTxt('pvLate', data.late);
                 moneyTxt('pvUnpaid', data.unpaid_leave);
+                moneyTxt('pvHalfPay', data.half_pay_leave);
+                moneyTxt('pvSickTiered', data.sick_tiered);
                 moneyTxt('pvIloe', data.iloe);
                 moneyTxt('pvGosi', data.gosi_employee);
                 moneyTxt('pvAdvance', data.advance);
@@ -260,8 +264,8 @@
                 var note = document.getElementById('pvAttNote');
                 if(note){
                     note.textContent = data.attendance_finalized
-                        ? 'Attendance summary for this month is finalized; absent / late / unpaid leave figures are included.'
-                        : 'Attendance summary not finalized for this month — absent, late, and unpaid leave deductions show as AED 0.00 until finalized.';
+                        ? 'Attendance summary is finalized; absent and late are included. Unpaid, half-pay, and tiered sick amounts follow approved leave.'
+                        : 'Attendance not finalized — absent and late show as AED 0.00. Unpaid, half-pay, and tiered sick still follow approved leave.';
                 }
             })
             .catch(function(){});

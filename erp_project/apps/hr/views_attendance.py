@@ -95,7 +95,19 @@ class AttendanceRecordListView(PermissionRequiredMixin, ListView):
         resp['Content-Disposition'] = 'attachment; filename="attendance_export.csv"'
         w = csv.writer(resp)
         w.writerow(
-            ['date', 'employee_code', 'employee_name', 'status', 'check_in', 'check_out', 'working_hours', 'late_minutes', 'overtime_hours', 'source']
+            [
+                'date',
+                'employee_code',
+                'employee_name',
+                'status',
+                'check_in',
+                'check_out',
+                'working_hours',
+                'late_minutes',
+                'overtime_hours',
+                'overtime_type',
+                'source',
+            ]
         )
         for r in qs:
             w.writerow(
@@ -109,6 +121,7 @@ class AttendanceRecordListView(PermissionRequiredMixin, ListView):
                     r.working_hours if r.working_hours is not None else '',
                     r.late_minutes,
                     r.overtime_hours,
+                    r.get_overtime_type_display(),
                     r.get_source_display(),
                 ]
             )
@@ -267,6 +280,7 @@ def attendance_record_lookup(request):
             'check_in': rec.check_in.isoformat() if rec.check_in else '',
             'check_out': rec.check_out.isoformat() if rec.check_out else '',
             'status': rec.status,
+            'overtime_type': rec.overtime_type,
             'notes': rec.notes,
             'source': rec.source,
         }

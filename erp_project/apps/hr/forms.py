@@ -4,7 +4,8 @@ from django.db.models import Q, Sum, F, IntegerField
 from django.db import models
 from datetime import datetime, date
 from .models import Department, Designation, Employee, LeaveType, LeaveRequest, Payroll
-from .models_extended import EmployeeBankDetail
+from .models_extended import EmployeeBankDetail, PayrollTemplate
+from .salary_payroll_utils import template_allowances_total
 from apps.settings_app.models import Role, Company
 
 
@@ -71,6 +72,7 @@ class EmployeeForm(forms.ModelForm):
             'probation_period_days',
             'status',
             'basic_salary',
+            'salary_template',
             'emirates_id',
             'visa_number',
             'visa_expiry',
@@ -106,6 +108,20 @@ class EmployeeForm(forms.ModelForm):
         
         self.fields['department'].queryset = department_queryset.order_by('name')
         self.fields['department'].empty_label = '-- Select Department --'
+
+        self.fields['salary_template'].queryset = PayrollTemplate.objects.filter(is_active=True).order_by('name')
+        self.fields['salary_template'].required = False
+        self.fields['salary_template'].empty_label = '— None —'
+        self.fields['salary_template'].widget.attrs['class'] = 'form-select'
+        self.fields['salary_template'].help_text = (
+            'Optional. Allowances will be pulled from the selected template when generating payroll.'
+        )
+
+        def _tpl_label(obj):
+            tot = template_allowances_total(obj)
+            return f'{obj.name} (AED {tot:,.2f} allowances)'
+
+        self.fields['salary_template'].label_from_instance = _tpl_label
         
         # Sync Roles from settings_app to Designations
         # Fetch all active roles and create corresponding designations if they don't exist

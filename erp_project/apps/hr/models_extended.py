@@ -65,6 +65,13 @@ class PayrollSettings(BaseModel):
         blank=True,
         help_text='Daily/monthly HR alerts; falls back to company email if empty.',
     )
+    iloe_deduct_via_payroll = models.BooleanField(
+        default=True,
+        help_text=(
+            'If enabled, UAE ILOE (premium plus 5% VAT) is deducted from net salary. '
+            'If disabled, the payslip shows the amount as a reminder only; employees typically pay via iloe.ae.'
+        ),
+    )
 
     class Meta:
         verbose_name = 'Payroll settings'
@@ -85,7 +92,30 @@ class AttendanceSettings(BaseModel):
     half_day_hours = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal('4.50'))
     overtime_threshold_hours = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal('9.00'))
     late_deduction_amount = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
-    overtime_rate_multiplier = models.DecimalField(max_digits=8, decimal_places=2, default=Decimal('1.50'))
+    overtime_rate_multiplier = models.DecimalField(
+        max_digits=8,
+        decimal_places=2,
+        default=Decimal('1.50'),
+        help_text='Legacy single multiplier (non-UAE payroll path only).',
+    )
+    overtime_rate_normal = models.DecimalField(
+        max_digits=8,
+        decimal_places=2,
+        default=Decimal('1.25'),
+        help_text='Daytime OT multiplier (UAE payroll). Hourly rate = (basic × 12) / 365 / 8.',
+    )
+    overtime_rate_night = models.DecimalField(
+        max_digits=8,
+        decimal_places=2,
+        default=Decimal('1.50'),
+        help_text='Night OT multiplier (check-out 22:00–04:00, or set manually on the record).',
+    )
+    overtime_rate_holiday = models.DecimalField(
+        max_digits=8,
+        decimal_places=2,
+        default=Decimal('1.50'),
+        help_text='Worked time on a public holiday (all hours treated as OT with this multiplier).',
+    )
     auto_mark_absent = models.BooleanField(default=True)
     working_days_in_month = models.PositiveIntegerField(
         default=22,
@@ -125,6 +155,11 @@ class Holiday(BaseModel):
 
 
 class AttendanceRecord(BaseModel):
+    OVERTIME_TYPE_CHOICES = [
+        ('normal', 'Normal (daytime)'),
+        ('night', 'Night (22:00–04:00)'),
+        ('holiday', 'Public holiday'),
+    ]
     SOURCE_CHOICES = [
         ('manual', 'Manual'),
         ('import', 'Import'),
@@ -150,6 +185,12 @@ class AttendanceRecord(BaseModel):
     working_hours = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
     late_minutes = models.PositiveIntegerField(default=0)
     overtime_hours = models.DecimalField(max_digits=8, decimal_places=2, default=Decimal('0.00'))
+    overtime_type = models.CharField(
+        max_length=20,
+        choices=OVERTIME_TYPE_CHOICES,
+        default='normal',
+        help_text='Used for payroll OT rate (normal / night / holiday).',
+    )
 
     class Meta:
         ordering = ['-date', 'employee_id']
@@ -347,7 +388,9 @@ class PayrollDeductionLine(BaseModel):
     CODE_ABSENT = 'absent'
     CODE_LATE = 'late'
     CODE_UNPAID_LEAVE = 'unpaid_leave'
-    CODE_ILOE = 'iloe'
+    CODE_HALF_PAY_LEAVE = 'HALF_PAY_LEAVE'
+    CODE_SICK_TIERED = 'SICK_HALF_PAY'
+    CODE_ILOE = 'ILOE'
     CODE_GOSI_EMPLOYEE = 'gosi_employee'
     CODE_OTHER = 'other'
     CODE_MANUAL = 'manual_misc'

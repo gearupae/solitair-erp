@@ -52,6 +52,35 @@
 </div>
 {% endif %}
 
+<div class="row mb-4">
+    <div class="col-md-6 mb-3">
+        <div class="card h-100">
+            <div class="card-header"><h6 class="mb-0 fw-semibold">Salary structure</h6></div>
+            <div class="card-body small">
+                <table class="table table-sm table-borderless mb-0">
+                    <tr><td class="text-muted">Template</td><td class="text-end">{% if salary_template_name %}{{ salary_template_name }}{% else %}<span class="text-muted">None</span>{% endif %}</td></tr>
+                    <tr><td class="text-muted">Basic</td><td class="text-end">AED {{ payroll.basic_salary|floatformat:2|intcomma }}</td></tr>
+                    <tr><td class="text-muted">Allowances (structural)</td><td class="text-end">AED {{ structural_allowances_total|floatformat:2|intcomma }}</td></tr>
+                    <tr class="fw-semibold"><td>Gross</td><td class="text-end">AED {{ gross_salary_structural|floatformat:2|intcomma }}</td></tr>
+                    <tr><td class="text-muted">Daily rate</td><td class="text-end">AED {{ daily_rate_for_leave|floatformat:2|intcomma }} <span class="text-muted">(÷ {{ payroll_working_days_divisor }} days)</span></td></tr>
+                </table>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6 mb-3">
+        <div class="card h-100">
+            <div class="card-header"><h6 class="mb-0 fw-semibold">Leave &amp; absence this month</h6></div>
+            <div class="card-body small">
+                <table class="table table-sm table-borderless mb-0">
+                    <tr><td class="text-muted">Paid leave days</td><td class="text-end">{{ paid_leave_days_month }} <span class="text-muted">(no deduction)</span></td></tr>
+                    <tr><td class="text-muted">Unpaid leave days</td><td class="text-end">{{ unpaid_leave_days_month }}{% if unpaid_leave_deducted_aed %} <span class="text-danger">(AED {{ unpaid_leave_deducted_aed|floatformat:2|intcomma }} deducted)</span>{% endif %}</td></tr>
+                    <tr><td class="text-muted">Absent days</td><td class="text-end">{{ absent_days_month }}{% if absent_deducted_aed %} <span class="text-danger">(AED {{ absent_deducted_aed|floatformat:2|intcomma }} deducted)</span>{% endif %}</td></tr>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="row">
     <!-- Employee & Salary Details -->
     <div class="col-md-6 mb-4">

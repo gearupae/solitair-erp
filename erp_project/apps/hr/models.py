@@ -47,6 +47,14 @@ class Employee(BaseModel):
     probation_period_days = models.PositiveIntegerField(default=90)  # UAE default is 90 days
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active')
     basic_salary = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    salary_template = models.ForeignKey(
+        'PayrollTemplate',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='employees',
+        help_text='Optional salary package; allowances can be pulled into payroll from this template.',
+    )
 
     company = models.ForeignKey(
         'settings_app.Company',
@@ -260,6 +268,12 @@ class Payroll(BaseModel):
         decimal_places=2,
         default=Decimal('0.00'),
         help_text='Total allowances (sum of allowance lines; kept for net salary / journals).',
+    )
+    gross_salary = models.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        help_text='Basic plus structural allowances (excludes variable overtime); used for leave/daily rate.',
     )
     deductions = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     net_salary = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))

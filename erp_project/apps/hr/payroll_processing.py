@@ -1,6 +1,6 @@
 """
-Payroll computations: attendance deductions, UAE ILOE, KSA GOSI, gratuity (provision).
-Updates Payroll.deductions / net_salary from PayrollDeductionLine rows (does not alter Payroll schema).
+Payroll computations: attendance deductions, leave deductions, UAE ILOE, KSA GOSI, gratuity (provision).
+Updates Payroll allowances, deductions, gross_salary, and net_salary from computed lines.
 """
 from __future__ import annotations
 
@@ -14,10 +14,17 @@ from dateutil.relativedelta import relativedelta
 from django.db import transaction
 from django.db.models import Sum
 
-from apps.hr.attendance_utils import working_days_in_calendar_month
-from apps.hr.leave_context_service import is_effectively_unpaid
-from apps.hr.leave_utils import count_uae_working_days
-from apps.hr.models import LeaveRequest, Payroll
+from apps.hr.leave_payroll_deductions import (
+    half_pay_leave_deduction,
+    tiered_sick_leave_deduction,
+    unpaid_leave_working_days_in_month_strict,
+)
+from apps.hr.salary_payroll_utils import (
+    structural_allowances_total,
+    total_salary_for_daily_rate,
+    working_days_divisor_from_settings,
+)
+from apps.hr.models import Payroll
 from apps.hr.models_extended import (
     AdvanceRepayment,
     AttendanceSettings,
@@ -35,6 +42,26 @@ from apps.hr.models_extended import (
 )
 
 logger = logging.getLogger(__name__)
+
+ILOE_BASIC_THRESHOLD = Decimal('16000')
+
+
+def compute_iloe_deduction(basic: Decimal) -> tuple[Decimal, str]:
+    """
+    UAE ILOE employee charge: fixed premium + 5% VAT (not % of basic).
+    Category A: basic <= 16,000 → AED 5 + VAT = 5.25
+    Category B: basic > 16,000 → AED 10 + VAT = 10.50
+    """
+    basic = (basic or Decimal('0')).quantize(Decimal('0.01'))
+    if basic <= ILOE_BASIC_THRESHOLD:
+        premium = Decimal('5.00')
+        cat = 'A'
+    else:
+        premium = Decimal('10.00')
+        cat = 'B'
+    vat = (premium * Decimal('0.05')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    total = (premium + vat).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    return total, cat
 
 
 def get_payroll_settings() -> PayrollSettings:
@@ -54,25 +81,6 @@ def _years_of_service(join: date | None, as_of: date) -> Decimal:
     delta = relativedelta(as_of, join)
     years = delta.years + delta.months / Decimal('12') + delta.days / Decimal('365.25')
     return Decimal(str(round(float(years), 4)))
-
-
-def unpaid_leave_working_days_in_month(employee, month_first: date) -> Decimal:
-    _, last = monthrange(month_first.year, month_first.month)
-    month_end = date(month_first.year, month_first.month, last)
-    total = Decimal('0')
-    for lr in LeaveRequest.objects.filter(
-        employee=employee,
-        status='approved',
-        is_active=True,
-        start_date__lte=month_end,
-        end_date__gte=month_first,
-    ).select_related('leave_type'):
-        if not is_effectively_unpaid(lr.leave_type):
-            continue
-        overlap_start = max(lr.start_date, month_first)
-        overlap_end = min(lr.end_date, month_end)
-        total += count_uae_working_days(overlap_start, overlap_end)
-    return total.quantize(Decimal('0.01'))
 
 
 def calculate_gratuity_uae(basic_monthly: Decimal, years_of_service: Decimal) -> Decimal:
@@ -124,22 +132,21 @@ def apply_payroll_computations(payroll: Payroll) -> None:
     summary = AttendanceSummary.objects.filter(employee=emp, month=month_start).first()
     att_set = AttendanceSettings.objects.get_or_create(pk=1)[0]
 
-    wd_cal = working_days_in_calendar_month(payroll.month.year, payroll.month.month)
-    wd = max(wd_cal, int(att_set.working_days_in_month), int(settings.working_days_in_month), 1)
+    wd = working_days_divisor_from_settings(settings)
     basic = payroll.basic_salary
+    total_pkg = total_salary_for_daily_rate(payroll)
+    per_day = (total_pkg / Decimal(wd)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
     finalized = bool(summary and summary.is_finalized)
 
-    per_day = (basic / Decimal(wd)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-
     if finalized:
-        absent_units = summary.absent_deduction_days if summary else Decimal('0')
-        absent_amt = (per_day * absent_units).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-        if absent_units > 0:
+        absent_days = int(summary.total_absent or 0)
+        absent_amt = (per_day * Decimal(absent_days)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        if absent_days > 0:
             PayrollDeductionLine.objects.create(
                 payroll=payroll,
                 code=PayrollDeductionLine.CODE_ABSENT,
-                label=f'Absent ({absent_units} days)',
+                label=f'Absent Deduction ({absent_days} days @ AED {per_day}/day)',
                 amount=absent_amt,
             )
 
@@ -153,43 +160,79 @@ def apply_payroll_computations(payroll: Payroll) -> None:
                 amount=late_amt,
             )
 
-        wh_day = att_set.working_hours_per_day or Decimal('9')
-        hourly_equiv = (per_day / wh_day).quantize(Decimal('0.0001'), rounding=ROUND_HALF_UP)
-        ot_hours = summary.total_overtime_hours if summary else Decimal('0')
-        ot_amt = (
-            (ot_hours or Decimal('0')) * hourly_equiv * (att_set.overtime_rate_multiplier or Decimal('1'))
-        ).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-        if ot_amt > 0:
-            PayrollAllowanceLine.objects.create(
-                payroll=payroll,
-                code=PayrollAllowanceLine.CODE_OVERTIME,
-                description='Overtime (attendance)',
-                amount=ot_amt,
-                is_taxable=False,
-                source=PayrollAllowanceLine.SOURCE_ATTENDANCE,
-            )
+        if entity == 'uae':
+            from apps.hr.overtime_payroll import compute_uae_overtime_allowance_for_month
 
-        ul_days = unpaid_leave_working_days_in_month(emp, month_start)
-        unpaid_amt = (per_day * ul_days).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-        if ul_days > 0:
-            PayrollDeductionLine.objects.create(
-                payroll=payroll,
-                code=PayrollDeductionLine.CODE_UNPAID_LEAVE,
-                label=f'Unpaid leave ({ul_days} wd)',
-                amount=unpaid_amt,
+            ot_amt, ot_desc, _ot_h = compute_uae_overtime_allowance_for_month(
+                employee=emp,
+                month_first=month_start,
+                basic_salary=basic,
+                att_set=att_set,
             )
+            if ot_amt > 0 and ot_desc:
+                PayrollAllowanceLine.objects.create(
+                    payroll=payroll,
+                    code=PayrollAllowanceLine.CODE_OVERTIME,
+                    description=ot_desc,
+                    amount=ot_amt,
+                    is_taxable=False,
+                    source=PayrollAllowanceLine.SOURCE_ATTENDANCE,
+                )
+        else:
+            wh_day = att_set.working_hours_per_day or Decimal('9')
+            hourly_equiv = (per_day / wh_day).quantize(Decimal('0.0001'), rounding=ROUND_HALF_UP)
+            ot_hours = summary.total_overtime_hours if summary else Decimal('0')
+            ot_amt = (
+                (ot_hours or Decimal('0')) * hourly_equiv * (att_set.overtime_rate_multiplier or Decimal('1'))
+            ).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+            if ot_amt > 0:
+                PayrollAllowanceLine.objects.create(
+                    payroll=payroll,
+                    code=PayrollAllowanceLine.CODE_OVERTIME,
+                    description='Overtime (attendance)',
+                    amount=ot_amt,
+                    is_taxable=False,
+                    source=PayrollAllowanceLine.SOURCE_ATTENDANCE,
+                )
     else:
-        absent_units = Decimal('0')
         late_count = 0
 
-    if entity == 'uae' and (uc is None or uc.iloe_applicable):
-        iloe_amt = (basic * Decimal('0.0075')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-        if iloe_amt > 0:
+    ul_days = unpaid_leave_working_days_in_month_strict(emp, month_start)
+    unpaid_amt = (per_day * ul_days).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    if ul_days > 0:
+        PayrollDeductionLine.objects.create(
+            payroll=payroll,
+            code=PayrollDeductionLine.CODE_UNPAID_LEAVE,
+            label=f'Unpaid Leave ({ul_days} days @ AED {per_day}/day)',
+            amount=unpaid_amt,
+        )
+
+    half_amt, half_wd = half_pay_leave_deduction(emp, month_start, per_day)
+    if half_amt > 0:
+        PayrollDeductionLine.objects.create(
+            payroll=payroll,
+            code=PayrollDeductionLine.CODE_HALF_PAY_LEAVE,
+            label=f'Half pay leave ({half_wd} days @ 50% of AED {per_day}/day)',
+            amount=half_amt,
+        )
+
+    tier_amt, tier_days = tiered_sick_leave_deduction(emp, month_start, per_day)
+    if tier_amt > 0:
+        PayrollDeductionLine.objects.create(
+            payroll=payroll,
+            code=PayrollDeductionLine.CODE_SICK_TIERED,
+            label=f'Sick Leave Half Pay Deduction ({tier_days} days)',
+            amount=tier_amt,
+        )
+
+    if entity == 'uae' and (uc is None or uc.iloe_applicable) and settings.iloe_deduct_via_payroll:
+        iloe_total, iloe_cat = compute_iloe_deduction(basic)
+        if iloe_total > 0:
             PayrollDeductionLine.objects.create(
                 payroll=payroll,
                 code=PayrollDeductionLine.CODE_ILOE,
-                label='ILOE (0.75% of basic)',
-                amount=iloe_amt,
+                label=f'ILOE Insurance (Cat {iloe_cat})',
+                amount=iloe_total,
             )
 
     loc_norm = (getattr(emp, 'location', None) or '').strip().lower()
@@ -287,9 +330,10 @@ def apply_payroll_computations(payroll: Payroll) -> None:
         PayrollAllowanceLine.objects.filter(payroll=payroll).aggregate(t=Sum('amount'))['t'] or Decimal('0')
     ).quantize(Decimal('0.01'))
     payroll.allowances = total_allow
+    payroll.gross_salary = (basic + structural_allowances_total(payroll)).quantize(Decimal('0.01'))
 
     payroll.deductions = total_d
-    payroll.save(update_fields=['allowances', 'deductions'])
+    payroll.save(update_fields=['allowances', 'deductions', 'gross_salary'])
     payroll.calculate_net()
 
     as_of_day = monthrange(payroll.month.year, payroll.month.month)[1]
@@ -362,6 +406,8 @@ def estimate_payroll_deductions_preview(
             'absent': Decimal('0'),
             'late': Decimal('0'),
             'unpaid_leave': Decimal('0'),
+            'half_pay_leave': Decimal('0'),
+            'sick_tiered': Decimal('0'),
             'iloe': Decimal('0'),
             'gosi_employee': Decimal('0'),
             'advance': Decimal('0'),
@@ -381,34 +427,38 @@ def estimate_payroll_deductions_preview(
     summary = AttendanceSummary.objects.filter(employee=emp, month=month_start).first()
     att_set = AttendanceSettings.objects.get_or_create(pk=1)[0]
 
-    wd_cal = working_days_in_calendar_month(month_first.year, month_first.month)
-    wd = max(wd_cal, int(att_set.working_days_in_month), int(settings.working_days_in_month), 1)
-    basic = basic_salary
+    wd = working_days_divisor_from_settings(settings)
+    total_pkg = (basic_salary + allowances_total).quantize(Decimal('0.01'))
     finalized = bool(summary and summary.is_finalized)
-    per_day = (basic / Decimal(wd)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    per_day = (total_pkg / Decimal(wd)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
     absent_amt = Decimal('0')
     late_amt = Decimal('0')
     unpaid_amt = Decimal('0')
+    half_amt = Decimal('0')
+    tier_amt = Decimal('0')
     if finalized:
-        absent_units = summary.absent_deduction_days if summary else Decimal('0')
-        absent_amt = (per_day * absent_units).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        absent_days = int(summary.total_absent or 0)
+        absent_amt = (per_day * Decimal(absent_days)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
         late_count = summary.total_late if summary else 0
         late_amt = (att_set.late_deduction_amount * Decimal(late_count)).quantize(
             Decimal('0.01'), rounding=ROUND_HALF_UP
         )
-        ul_days = unpaid_leave_working_days_in_month(emp, month_start)
-        unpaid_amt = (per_day * ul_days).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    ul_days = unpaid_leave_working_days_in_month_strict(emp, month_start)
+    unpaid_amt = (per_day * ul_days).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    half_amt, _ = half_pay_leave_deduction(emp, month_start, per_day)
+    tier_amt, _ = tiered_sick_leave_deduction(emp, month_start, per_day)
 
     iloe_amt = Decimal('0')
-    if entity == 'uae' and (uc is None or uc.iloe_applicable):
-        iloe_amt = (basic * Decimal('0.0075')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    if entity == 'uae' and (uc is None or uc.iloe_applicable) and settings.iloe_deduct_via_payroll:
+        iloe_total, _ = compute_iloe_deduction(basic_salary)
+        iloe_amt = iloe_total
 
     gosi_amt = Decimal('0')
     loc_prev = (getattr(emp, 'location', None) or '').strip().lower()
     if loc_prev == 'ksa' and kc is not None and kc.gosi_applicable:
         emp_pct = Decimal('0.10') if kc.nationality == 'saudi' else Decimal('0')
-        gosi_amt = (basic * emp_pct).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        gosi_amt = (basic_salary * emp_pct).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
     advance_amt = Decimal('0')
     for adv in EmployeeAdvance.objects.filter(
@@ -424,7 +474,15 @@ def estimate_payroll_deductions_preview(
 
     manual = (manual_misc or Decimal('0')).quantize(Decimal('0.01'))
     total = (
-        absent_amt + late_amt + unpaid_amt + iloe_amt + gosi_amt + advance_amt + manual
+        absent_amt
+        + late_amt
+        + unpaid_amt
+        + half_amt
+        + tier_amt
+        + iloe_amt
+        + gosi_amt
+        + advance_amt
+        + manual
     ).quantize(Decimal('0.01'))
     est_net = (basic_salary + allowances_total - total).quantize(Decimal('0.01'))
 
@@ -432,6 +490,8 @@ def estimate_payroll_deductions_preview(
         'absent': absent_amt,
         'late': late_amt,
         'unpaid_leave': unpaid_amt,
+        'half_pay_leave': half_amt,
+        'sick_tiered': tier_amt,
         'iloe': iloe_amt,
         'gosi_employee': gosi_amt,
         'advance': advance_amt,

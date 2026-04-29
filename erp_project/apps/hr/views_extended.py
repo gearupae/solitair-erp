@@ -799,6 +799,8 @@ def payroll_deduction_preview(request):
             'absent': _s(prev['absent']),
             'late': _s(prev['late']),
             'unpaid_leave': _s(prev['unpaid_leave']),
+            'half_pay_leave': _s(prev.get('half_pay_leave', Decimal('0'))),
+            'sick_tiered': _s(prev.get('sick_tiered', Decimal('0'))),
             'iloe': _s(prev['iloe']),
             'gosi_employee': _s(prev['gosi_employee']),
             'advance': _s(prev['advance']),
