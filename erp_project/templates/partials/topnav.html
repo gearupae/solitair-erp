@@ -169,13 +169,14 @@
                 </li>
                 {% endif %}
                 
-                <!-- Fixed Assets -->
-                {% if is_superuser or 'assets' in user_permissions or 'finance' in user_permissions %}
+                <!-- Fixed Assets (+ Fleet) -->
+                {% if is_superuser or 'assets' in user_permissions or 'finance' in user_permissions or 'fleet' in user_permissions %}
                 <li class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle {% if 'assets' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
+                    <a class="nav-link dropdown-toggle {% if 'assets' in request.path or '/fleet/' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
                         <i class="fas fa-building me-1"></i>Assets
                     </a>
                     <ul class="dropdown-menu dropdown-menu-dark">
+                        {% if is_superuser or 'assets' in user_permissions or 'finance' in user_permissions %}
                         <li>
                             <a class="dropdown-item" href="{% url 'assets:asset_list' %}">
                                 <i class="fas fa-building me-2"></i>Fixed Assets
@@ -203,6 +204,17 @@
                                 <i class="fas fa-chart-line me-2"></i>Depreciation Report
                             </a>
                         </li>
+                        {% endif %}
+                        {% if is_superuser or 'fleet' in user_permissions %}
+                        {% if is_superuser or 'assets' in user_permissions or 'finance' in user_permissions %}
+                        <li><hr class="dropdown-divider"></li>
+                        {% endif %}
+                        <li>
+                            <a class="dropdown-item" href="{% url 'fleet:vehicle_list' %}">
+                                <i class="fas fa-truck me-2"></i>Fleet
+                            </a>
+                        </li>
+                        {% endif %}
                     </ul>
                 </li>
                 {% endif %}

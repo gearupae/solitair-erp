@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Project, Task, Timesheet
+from .models import Project, Task, Timesheet, ProjectGatepass
 
 @admin.register(Project)
 class ProjectAdmin(admin.ModelAdmin):
@@ -14,6 +14,15 @@ class TaskAdmin(admin.ModelAdmin):
     list_filter = ['status', 'priority', 'project']
     search_fields = ['name', 'project__project_code', 'project__name']
     raw_id_fields = ['project', 'assigned_to']
+
+@admin.register(ProjectGatepass)
+class ProjectGatepassAdmin(admin.ModelAdmin):
+    list_display = ['project', 'member', 'start_date', 'expiry_date', 'reference_number', 'is_active']
+    list_filter = ['is_active', 'expiry_date']
+    search_fields = ['project__project_code', 'project__name', 'member__username', 'reference_number']
+    raw_id_fields = ['project', 'member']
+    date_hierarchy = 'expiry_date'
+
 
 @admin.register(Timesheet)
 class TimesheetAdmin(admin.ModelAdmin):

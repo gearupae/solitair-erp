@@ -20,19 +20,129 @@
                     <div class="col-md-4"><h6 class="text-muted mb-2">Manager</h6><p class="mb-0">{% if project.manager %}{{ project.manager.get_full_name|default:project.manager.username }}{% else %}-{% endif %}</p></div>
                     <div class="col-md-4"><h6 class="text-muted mb-2">Budget</h6><p class="mb-0">AED {{ project.budget|floatformat:2 }}</p></div>
                     <div class="col-md-4"><h6 class="text-muted mb-2">Estimated cost</h6><p class="mb-0">AED {{ project.estimated_cost|floatformat:2 }}</p></div>
-                    <div class="col-md-4"><h6 class="text-muted mb-2">Members</h6>
-                        <ul class="list-unstyled mb-0 small">
-                            {% for u in project.members.all %}
-                            <li>{{ u.get_full_name|default:u.username }}</li>
-                            {% empty %}
-                            <li class="text-muted mb-0">—</li>
-                            {% endfor %}
-                        </ul>
-                    </div>
+                    <div class="col-md-4"><h6 class="text-muted mb-2">Team</h6><p class="mb-0">{{ project.members.count }} member{% if project.members.count != 1 %}s{% endif %} (see table below)</p></div>
                     <div class="col-md-4"><h6 class="text-muted mb-2">Start Date</h6><p class="mb-0">{{ project.start_date|date:"d/m/Y"|default:"-" }}</p></div>
                     <div class="col-md-4"><h6 class="text-muted mb-2">End Date</h6><p class="mb-0">{{ project.end_date|date:"d/m/Y"|default:"-" }}</p></div>
                 </div>
             </div>
+        </div>
+        
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <h6 class="mb-0 fw-semibold">Team members &amp; gate passes</h6>
+                <div class="d-flex flex-wrap gap-2 align-items-center">
+                    {% if can_edit and editing_gatepass_pk %}
+                    <a href="{% url 'projects:project_detail' project.pk %}" class="btn btn-sm btn-light"><i class="fas fa-times me-1"></i>Cancel edit</a>
+                    {% endif %}
+                    {% if can_create_projects %}
+                    <button class="btn btn-sm btn-primary" type="button" id="btnGatepassAdd" onclick="openGatepassCreateForm()"><i class="fas fa-plus me-1"></i>Add gate pass</button>
+                    {% endif %}
+                </div>
+            </div>
+            <div id="gatepassForm" class="inline-form-container m-3 border rounded p-3 bg-light bg-opacity-50" style="display:{% if gatepass_form.errors or editing_gatepass_pk or open_gatepass_create %}block{% else %}none{% endif %};">
+                <h6 class="small fw-semibold text-muted text-uppercase mb-3">{% if editing_gatepass_pk %}Edit gate pass{% else %}New gate pass{% endif %}</h6>
+                <form method="post">{% csrf_token %}
+                    <input type="hidden" name="action" value="save_gatepass" />
+                    {% if editing_gatepass_pk %}<input type="hidden" name="gatepass_id" value="{{ editing_gatepass_pk }}" />{% endif %}
+                    {% if gatepass_form.non_field_errors %}
+                    <div class="alert alert-danger">{{ gatepass_form.non_field_errors }}</div>
+                    {% endif %}
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label for="{{ gatepass_form.member.id_for_label }}" class="form-label">Team member <span class="text-danger">*</span></label>
+                            {{ gatepass_form.member }}
+                            {% if gatepass_form.member.errors %}<div class="text-danger small mt-1">{{ gatepass_form.member.errors|join:", " }}</div>{% endif %}
+                        </div>
+                        <div class="col-md-4">
+                            <label for="{{ gatepass_form.start_date.id_for_label }}" class="form-label">Start date <span class="text-danger">*</span></label>
+                            {{ gatepass_form.start_date }}
+                            {% if gatepass_form.start_date.errors %}<div class="text-danger small mt-1">{{ gatepass_form.start_date.errors|join:", " }}</div>{% endif %}
+                        </div>
+                        <div class="col-md-4">
+                            <label for="{{ gatepass_form.expiry_date.id_for_label }}" class="form-label">Expiry date <span class="text-danger">*</span></label>
+                            {{ gatepass_form.expiry_date }}
+                            {% if gatepass_form.expiry_date.errors %}<div class="text-danger small mt-1">{{ gatepass_form.expiry_date.errors|join:", " }}</div>{% endif %}
+                        </div>
+                        <div class="col-md-6">
+                            <label for="{{ gatepass_form.reference_number.id_for_label }}" class="form-label">Reference #</label>
+                            {{ gatepass_form.reference_number }}
+                        </div>
+                        <div class="col-md-12">
+                            <label for="{{ gatepass_form.notes.id_for_label }}" class="form-label">Notes</label>
+                            {{ gatepass_form.notes }}
+                        </div>
+                    </div>
+                    <div class="mt-3">
+                        <button type="submit" class="btn btn-primary btn-sm">{% if editing_gatepass_pk %}Save changes{% else %}Save gate pass{% endif %}</button>
+                        {% if editing_gatepass_pk %}
+                        <a href="{% url 'projects:project_detail' project.pk %}" class="btn btn-light btn-sm">Cancel</a>
+                        {% else %}
+                        <button type="button" class="btn btn-light btn-sm" onclick="cancelInlineForm('gatepassForm')">Cancel</button>
+                        {% endif %}
+                    </div>
+                </form>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table mb-0">
+                        <thead><tr><th>Member</th><th>Start</th><th>Expiry</th><th>Status</th><th>Reference</th>{% if can_edit %}<th></th>{% endif %}</tr></thead>
+                        <tbody>
+                            {% for row in member_gatepass_rows %}
+                            <tr>
+                                <td>{{ row.member.get_full_name|default:row.member.username }}</td>
+                                <td>{% if row.gatepass %}{{ row.gatepass.start_date|date:"d/m/Y" }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+                                <td>{% if row.gatepass %}{{ row.gatepass.expiry_date|date:"d/m/Y" }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+                                <td>
+                                    {% if row.gatepass %}
+                                        {% if row.gatepass.expiry_date < today %}<span class="badge bg-danger">Expired</span>
+                                        {% elif row.gatepass.start_date <= today and row.gatepass.expiry_date >= today %}
+                                            {% if row.gatepass.expiry_date <= gatepass_alert_horizon %}<span class="badge bg-warning text-dark">Active — expiring ≤10 days</span>{% else %}<span class="badge bg-success">Active</span>{% endif %}
+                                        {% elif row.gatepass.start_date > today %}<span class="badge bg-secondary">Not started</span>
+                                        {% else %}<span class="badge bg-secondary">—</span>{% endif %}
+                                    {% else %}<span class="badge bg-light text-muted border">No pass</span>{% endif %}
+                                </td>
+                                <td class="small">{% if row.gatepass %}{{ row.gatepass.reference_number|default:"—" }}{% else %}—{% endif %}</td>
+                                {% if can_edit %}<td class="text-end text-nowrap">
+                                    {% if row.gatepass %}
+                                    <a href="{% url 'projects:project_detail' project.pk %}?edit_gatepass={{ row.gatepass.pk }}" class="btn btn-action btn-outline-secondary btn-sm" title="Edit gate pass"><i class="fas fa-edit"></i></a>
+                                    {% else %}<span class="text-muted small">—</span>{% endif %}
+                                </td>{% endif %}
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="{% if can_edit %}6{% else %}5{% endif %}" class="text-center py-4 text-muted">No team members yet. Add members when editing the project.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            {% if project_gatepasses %}
+            <div class="card-footer bg-light small text-muted">
+                <div class="fw-semibold text-dark mb-2">All gate pass records</div>
+                <div class="table-responsive">
+                    <table class="table table-sm mb-0 align-middle">
+                        <thead><tr><th>Member</th><th>Start</th><th>Expiry</th><th>Ref.</th><th class="text-end"></th></tr></thead>
+                        <tbody>
+                            {% for gp in project_gatepasses %}
+                            <tr>
+                                <td>{{ gp.member.get_full_name|default:gp.member.username }}</td>
+                                <td>{{ gp.start_date|date:"d/m/Y" }}</td>
+                                <td>{{ gp.expiry_date|date:"d/m/Y" }}</td>
+                                <td>{{ gp.reference_number|default:"—" }}</td>
+                                <td class="text-end text-nowrap">
+                                    {% if can_edit %}
+                                    <a href="{% url 'projects:project_detail' project.pk %}?edit_gatepass={{ gp.pk }}" class="btn btn-action btn-outline-secondary btn-sm me-1" title="Edit"><i class="fas fa-edit"></i></a>
+                                    <form method="post" action="{% url 'projects:project_gatepass_delete' project.pk gp.pk %}" class="d-inline" onsubmit="return confirm('Remove this gate pass record?');">{% csrf_token %}
+                                        <button type="submit" class="btn btn-action btn-outline-danger btn-sm" title="Remove"><i class="fas fa-trash-alt"></i></button>
+                                    </form>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            {% endif %}
         </div>
         
         <div class="card">
@@ -40,11 +150,12 @@
                 <h6 class="mb-0 fw-semibold">Tasks</h6>
                 <div class="d-flex flex-wrap gap-2">
                     <a href="{% url 'projects:task_list' %}?project={{ project.pk }}" class="btn btn-sm btn-light"><i class="fas fa-list-check me-1"></i>All tasks (this project)</a>
-                    {% if can_edit %}<button class="btn btn-sm btn-primary" type="button" onclick="toggleInlineForm('taskForm')"><i class="fas fa-plus me-1"></i>Add Task</button>{% endif %}
+                    {% if can_create_projects %}<button class="btn btn-sm btn-primary" type="button" onclick="toggleInlineForm('taskForm')"><i class="fas fa-plus me-1"></i>Add Task</button>{% endif %}
                 </div>
             </div>
-            <div id="taskForm" class="inline-form-container m-3" style="display:none;">
+            <div id="taskForm" class="inline-form-container m-3" style="display:{% if task_form.errors %}block{% else %}none{% endif %};">
                 <form method="post">{% csrf_token %}
+                    <input type="hidden" name="action" value="add_task" />
                     {% if task_form.errors %}
                     <div class="alert alert-danger">
                         <strong>Please correct the following errors:</strong>
@@ -185,6 +296,14 @@ function cancelInlineForm(formId) {
             formElement.reset();
         }
     }
+}
+
+function openGatepassCreateForm() {
+    {% if editing_gatepass_pk %}
+    window.location.href = '{% url "projects:project_detail" project.pk %}?open_gatepass=1';
+    {% else %}
+    toggleInlineForm('gatepassForm');
+    {% endif %}
 }
 </script>
 {% endblock %}

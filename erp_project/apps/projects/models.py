@@ -180,6 +180,40 @@ class Task(BaseModel):
         return f"{self.project.project_code} - {self.name}"
 
 
+class ProjectGatepass(BaseModel):
+    """Site / client gate pass for a project team member, with expiry tracking."""
+
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='gatepasses')
+    member = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='project_gatepasses',
+    )
+    start_date = models.DateField()
+    expiry_date = models.DateField()
+    reference_number = models.CharField(max_length=100, blank=True)
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-expiry_date', '-created_at']
+        verbose_name = 'Project gate pass'
+        verbose_name_plural = 'Project gate passes'
+        indexes = [
+            models.Index(fields=['project', 'is_active', 'expiry_date']),
+        ]
+
+    def __str__(self):
+        return f'{self.project.project_code} — {self.member} (to {self.expiry_date})'
+
+    def clean(self):
+        super().clean()
+        if self.start_date and self.expiry_date and self.start_date > self.expiry_date:
+            raise ValidationError('Start date must be on or before expiry date.')
+        if self.project_id and self.member_id:
+            if not self.project.members.filter(pk=self.member_id).exists():
+                raise ValidationError({'member': 'Selected user must be a member of this project.'})
+
+
 class Timesheet(BaseModel):
     """Timesheet entry model."""
     task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name='timesheets')

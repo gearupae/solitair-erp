@@ -1,5 +1,6 @@
 from django import forms
-from .models import Project, Task, Timesheet, ProjectExpense
+from django.core.exceptions import ValidationError
+from .models import Project, Task, Timesheet, ProjectExpense, ProjectGatepass
 from apps.crm.models import Customer
 from apps.purchase.models import Vendor
 from apps.finance.models import Account
@@ -64,6 +65,44 @@ class TaskForm(forms.ModelForm):
                 field.widget.attrs['class'] = 'form-select'
             else:
                 field.widget.attrs['class'] = 'form-control'
+
+
+class ProjectGatepassForm(forms.ModelForm):
+    class Meta:
+        model = ProjectGatepass
+        fields = ['member', 'start_date', 'expiry_date', 'reference_number', 'notes']
+        widgets = {
+            'start_date': forms.DateInput(attrs={'type': 'date'}),
+            'expiry_date': forms.DateInput(attrs={'type': 'date'}),
+            'notes': forms.Textarea(attrs={'rows': 2}),
+        }
+
+    def __init__(self, *args, project=None, **kwargs):
+        self.project = project
+        super().__init__(*args, **kwargs)
+        if project is not None:
+            self.fields['member'].queryset = project.members.all().order_by(
+                'first_name', 'last_name', 'username'
+            )
+        self.fields['member'].label = 'Team member'
+        self.fields['expiry_date'].label = 'Expiry date'
+        for name, field in self.fields.items():
+            if name == 'member':
+                field.widget.attrs['class'] = 'form-select'
+            else:
+                field.widget.attrs.setdefault('class', 'form-control')
+
+    def clean(self):
+        cleaned = super().clean()
+        if self.project and cleaned.get('member'):
+            if not self.project.members.filter(pk=cleaned['member'].pk).exists():
+                raise ValidationError('Selected member must belong to this project.')
+        start = cleaned.get('start_date')
+        end = cleaned.get('expiry_date')
+        if start and end and start > end:
+            raise ValidationError('Start date must be on or before expiry date.')
+        return cleaned
+
 
 class TimesheetForm(forms.ModelForm):
     class Meta:

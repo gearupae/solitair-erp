@@ -1,0 +1,87 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <div><h4 class="mb-0 fw-bold">{{ title }}</h4></div>
+    <a href="{% url 'fleet:vehicle_list' %}" class="btn btn-outline-secondary"><i class="fas fa-arrow-left me-1"></i>Back</a>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-body">
+        <form method="post" novalidate>
+            {% csrf_token %}
+            <div class="row g-3 mb-4">
+                <div class="col-12">
+                    <h6 class="fw-semibold text-muted text-uppercase small border-bottom pb-2">Vehicle</h6>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="{{ form.plate_number.id_for_label }}">Plate / fleet ID</label>
+                    {{ form.plate_number }}
+                    {% if form.plate_number.errors %}<div class="text-danger small">{{ form.plate_number.errors|join:", " }}</div>{% endif %}
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="{{ form.make.id_for_label }}">Make <span class="text-danger">*</span></label>
+                    {{ form.make }}
+                    {% if form.make.errors %}<div class="text-danger small">{{ form.make.errors|join:", " }}</div>{% endif %}
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="{{ form.model.id_for_label }}">Model <span class="text-danger">*</span></label>
+                    {{ form.model }}
+                    {% if form.model.errors %}<div class="text-danger small">{{ form.model.errors|join:", " }}</div>{% endif %}
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label" for="{{ form.driver.id_for_label }}">Driver</label>
+                    {{ form.driver }}
+                    {% if form.driver.errors %}<div class="text-danger small">{{ form.driver.errors|join:", " }}</div>{% endif %}
+                </div>
+            </div>
+
+            <div class="row g-3 mb-4">
+                <div class="col-12">
+                    <h6 class="fw-semibold text-muted text-uppercase small border-bottom pb-2">Registration &amp; insurance</h6>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label" for="{{ form.mulkiya_expiry.id_for_label }}">Mulkiya expiry</label>
+                    {{ form.mulkiya_expiry }}
+                    {% if form.mulkiya_expiry.errors %}<div class="text-danger small">{{ form.mulkiya_expiry.errors|join:", " }}</div>{% endif %}
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label" for="{{ form.insurance_expiry.id_for_label }}">Insurance expiry</label>
+                    {{ form.insurance_expiry }}
+                    {% if form.insurance_expiry.errors %}<div class="text-danger small">{{ form.insurance_expiry.errors|join:", " }}</div>{% endif %}
+                </div>
+            </div>
+
+            <div class="mb-4">
+                <h6 class="fw-semibold text-muted text-uppercase small border-bottom pb-2 mb-3">Other documents</h6>
+                <p class="small text-muted">Add document name and expiry for each additional permit or certificate. Leave unused rows empty.</p>
+                {{ doc_formset.management_form }}
+                {% if doc_formset.non_form_errors %}
+                <div class="alert alert-danger">{{ doc_formset.non_form_errors }}</div>
+                {% endif %}
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle">
+                        <thead><tr><th>Document name</th><th>Expiry</th><th class="text-center">Remove</th></tr></thead>
+                        <tbody>
+                            {% for f in doc_formset %}
+                            <tr>
+                                <td>{{ f.id }}
+                                    {{ f.document_name }}
+                                    {% if f.document_name.errors %}<div class="text-danger small">{{ f.document_name.errors|join:", " }}</div>{% endif %}
+                                </td>
+                                <td>{{ f.expiry_date }}
+                                    {% if f.expiry_date.errors %}<div class="text-danger small">{{ f.expiry_date.errors|join:", " }}</div>{% endif %}
+                                </td>
+                                <td class="text-center">{% if f.DELETE %}{{ f.DELETE }}{% endif %}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
+            <button type="submit" class="btn btn-primary">Save</button>
+        </form>
+    </div>
+</div>
+{% endblock %}

@@ -46,6 +46,7 @@ class Command(BaseCommand):
             ('hr', 'HR'),
             ('documents', 'Documents'),
             ('contracts', 'Contracts'),
+            ('fleet', 'Fleet'),
             ('settings', 'Settings'),
         ]
         
@@ -100,7 +101,7 @@ class Command(BaseCommand):
                 'code': 'manager',
                 'description': 'Department level management access',
                 'is_system_role': False,
-                'permissions': ['crm', 'sales', 'purchase', 'inventory', 'projects']
+                'permissions': ['crm', 'sales', 'purchase', 'inventory', 'projects', 'fleet']
             },
             {
                 'name': 'Employee',

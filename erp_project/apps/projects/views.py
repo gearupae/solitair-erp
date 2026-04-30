@@ -7,10 +7,11 @@ from django.views.generic import ListView, CreateView, UpdateView, DetailView
 from django.urls import reverse, reverse_lazy
 from django.db.models import Q, Sum, Count
 from django.utils import timezone
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
-from .models import Project, Task, Timesheet, ProjectExpense
-from .forms import ProjectForm, TaskForm, TimesheetForm, ProjectExpenseForm
+from .models import Project, Task, Timesheet, ProjectExpense, ProjectGatepass
+from .forms import ProjectForm, TaskForm, TimesheetForm, ProjectExpenseForm, ProjectGatepassForm
+from .gatepass_alerts import pick_display_gatepass
 from apps.core.mixins import PermissionRequiredMixin, CreatePermissionMixin, UpdatePermissionMixin
 from apps.core.notification_utils import notify_if_new_assignee, notify_user
 from apps.core.utils import PermissionChecker
@@ -174,28 +175,124 @@ class ProjectDetailView(PermissionRequiredMixin, DetailView):
     permission_type = 'view'
 
     def get_queryset(self):
-        return Project.objects.select_related('customer', 'manager').prefetch_related('members')
-    
+        return Project.objects.select_related('customer', 'manager').prefetch_related('members', 'gatepasses')
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['title'] = f'Project: {self.object.name}'
         context['tasks'] = self.object.tasks.filter(is_active=True).select_related('assigned_to')
-        # Initialize form if not already in context (from POST with errors)
         if 'task_form' not in context:
             context['task_form'] = TaskForm()
-        context['can_edit'] = self.request.user.is_superuser or PermissionChecker.has_permission(self.request.user, 'projects', 'edit')
+
+        can_edit_gp = self.request.user.is_superuser or PermissionChecker.has_permission(
+            self.request.user, 'projects', 'edit'
+        )
+        if 'gatepass_form' in kwargs:
+            context['gatepass_form'] = kwargs['gatepass_form']
+            context['editing_gatepass_pk'] = kwargs.get('editing_gatepass_pk')
+        else:
+            edit_pk = self.request.GET.get('edit_gatepass')
+            gp_edit = None
+            if edit_pk and str(edit_pk).isdigit() and can_edit_gp:
+                gp_edit = ProjectGatepass.objects.filter(
+                    pk=int(edit_pk), project=self.object, is_active=True
+                ).first()
+            if gp_edit:
+                context['gatepass_form'] = ProjectGatepassForm(instance=gp_edit, project=self.object)
+                context['editing_gatepass_pk'] = gp_edit.pk
+            else:
+                context['gatepass_form'] = ProjectGatepassForm(project=self.object)
+                context['editing_gatepass_pk'] = None
+        context['open_gatepass_create'] = (
+            self.request.GET.get('open_gatepass') == '1' and context.get('editing_gatepass_pk') is None
+        )
+
+        members = list(
+            self.object.members.all().order_by('first_name', 'last_name', 'username')
+        )
+        all_gp = list(
+            self.object.gatepasses.filter(is_active=True)
+            .select_related('member')
+            .order_by('-expiry_date', '-created_at')
+        )
+        by_member = {}
+        for g in all_gp:
+            by_member.setdefault(g.member_id, []).append(g)
+        today = date.today()
+        context['member_gatepass_rows'] = [
+            {
+                'member': m,
+                'gatepass': pick_display_gatepass(by_member.get(m.pk, []), today),
+            }
+            for m in members
+        ]
+        context['project_gatepasses'] = all_gp
+        context['can_edit'] = self.request.user.is_superuser or PermissionChecker.has_permission(
+            self.request.user, 'projects', 'edit'
+        )
+        context['can_create_projects'] = self.request.user.is_superuser or PermissionChecker.has_permission(
+            self.request.user, 'projects', 'create'
+        )
         pe = self.object.project_expenses.filter(is_active=True).exclude(status='rejected')
         agg = pe.aggregate(s=Sum('total_amount'), c=Count('id'))
         context['recorded_expenses_total'] = agg['s'] if agg['s'] is not None else Decimal('0.00')
         context['has_recorded_expenses'] = (agg['c'] or 0) > 0
+        context['today'] = date.today()
+        context['gatepass_alert_horizon'] = date.today() + timedelta(days=10)
         return context
-    
+
     def post(self, request, *args, **kwargs):
         self.object = self.get_object()
+        action = request.POST.get('action', 'add_task')
+
+        if action == 'save_gatepass':
+            gatepass_id = request.POST.get('gatepass_id')
+            if gatepass_id:
+                if not (
+                    request.user.is_superuser
+                    or PermissionChecker.has_permission(request.user, 'projects', 'edit')
+                ):
+                    messages.error(request, 'Permission denied.')
+                    return redirect('projects:project_detail', pk=self.object.pk)
+                gp = get_object_or_404(
+                    ProjectGatepass,
+                    pk=gatepass_id,
+                    project=self.object,
+                    is_active=True,
+                )
+                form = ProjectGatepassForm(request.POST, instance=gp, project=self.object)
+            else:
+                if not (
+                    request.user.is_superuser
+                    or PermissionChecker.has_permission(request.user, 'projects', 'create')
+                ):
+                    messages.error(request, 'Permission denied.')
+                    return redirect('projects:project_detail', pk=self.object.pk)
+                form = ProjectGatepassForm(request.POST, project=self.object)
+            if form.is_valid():
+                obj = form.save(commit=False)
+                obj.project = self.object
+                obj.save()
+                who = obj.member.get_full_name() or obj.member.username
+                if gatepass_id:
+                    messages.success(request, f'Gate pass updated for {who}.')
+                else:
+                    messages.success(request, f'Gate pass added for {who}.')
+                return redirect('projects:project_detail', pk=self.object.pk)
+            messages.error(request, 'Please correct the gate pass errors below.')
+            edit_pk_val = None
+            if gatepass_id and str(gatepass_id).isdigit():
+                edit_pk_val = int(gatepass_id)
+            context = self.get_context_data(
+                gatepass_form=form,
+                editing_gatepass_pk=edit_pk_val,
+            )
+            return self.render_to_response(context)
+
         if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'projects', 'create')):
             messages.error(request, 'Permission denied.')
             return redirect('projects:project_detail', pk=self.object.pk)
-        
+
         form = TaskForm(request.POST)
         if form.is_valid():
             task = form.save(commit=False)
@@ -211,12 +308,10 @@ class ProjectDetailView(PermissionRequiredMixin, DetailView):
                 link,
             )
             return redirect('projects:project_detail', pk=self.object.pk)
-        else:
-            # Form has errors, re-render with errors
-            messages.error(request, 'Please correct the errors below.')
-            context = self.get_context_data()
-            context['task_form'] = form
-            return self.render_to_response(context)
+        messages.error(request, 'Please correct the errors below.')
+        context = self.get_context_data()
+        context['task_form'] = form
+        return self.render_to_response(context)
 
 
 class TimesheetListView(PermissionRequiredMixin, ListView):
@@ -485,6 +580,21 @@ def expense_reject(request, pk):
             link,
         )
     return redirect('projects:expense_detail', pk=pk)
+
+
+@login_required
+def project_gatepass_delete(request, project_pk, pk):
+    project = get_object_or_404(Project, pk=project_pk, is_active=True)
+    if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'projects', 'edit')):
+        messages.error(request, 'Permission denied.')
+        return redirect('projects:project_detail', pk=project_pk)
+    gp = get_object_or_404(ProjectGatepass, pk=pk, project=project, is_active=True)
+    if request.method != 'POST':
+        return HttpResponseNotAllowed(['POST'])
+    gp.is_active = False
+    gp.save()
+    messages.success(request, 'Gate pass removed.')
+    return redirect('projects:project_detail', pk=project_pk)
 
 
 @login_required

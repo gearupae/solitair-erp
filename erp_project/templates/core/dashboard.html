@@ -1,74 +1,105 @@
 {% extends 'base.html' %}
+{% load humanize %}
 
 {% block content %}
 <div class="row g-4 mb-4">
-    <!-- Stats Cards -->
-    <div class="col-12 col-sm-6 col-xl-3">
+    <div class="col-12 col-xl-6">
         <div class="card border-0 shadow-sm h-100">
             <div class="card-body">
-                <div class="d-flex align-items-center">
-                    <div class="flex-shrink-0">
-                        <div class="bg-primary bg-opacity-10 rounded-3 p-3">
-                            <i class="fas fa-users text-primary fs-4"></i>
+                <div class="d-flex align-items-start justify-content-between gap-2 mb-3">
+                    <div class="d-flex align-items-center">
+                        <div class="bg-primary bg-opacity-10 rounded-3 p-3 me-3">
+                            <i class="fas fa-project-diagram text-primary fs-4"></i>
+                        </div>
+                        <div>
+                            <p class="text-muted mb-1 small text-uppercase fw-semibold">Projects</p>
+                            <h3 class="mb-0 fw-bold">{{ project_total }}</h3>
+                            <p class="text-muted small mb-0">Total active projects</p>
                         </div>
                     </div>
-                    <div class="flex-grow-1 ms-3">
-                        <p class="text-muted mb-1 small">Total Customers</p>
-                        <h3 class="mb-0 fw-bold">{{ total_customers|default:0 }}</h3>
+                    <div class="text-end small">
+                        <div><span class="text-muted">Ongoing (in progress)</span> <span class="fw-semibold">{{ project_in_progress }}</span></div>
+                        <div><span class="text-muted">Open</span> <span class="fw-semibold">{{ project_open }}</span></div>
+                        <div><span class="text-muted">Completed</span> <span class="fw-semibold">{{ project_completed }}</span></div>
                     </div>
                 </div>
+                <h6 class="small text-muted text-uppercase mb-2">By status</h6>
+                <ul class="list-group list-group-flush rounded border">
+                    {% for row in project_status_breakdown %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center py-2 px-3">
+                        <span>{{ row.label }}</span>
+                        <span class="badge bg-light text-dark border">{{ row.count }}</span>
+                    </li>
+                    {% empty %}
+                    <li class="list-group-item text-muted small py-2">No project data</li>
+                    {% endfor %}
+                </ul>
             </div>
         </div>
     </div>
-    
-    <div class="col-12 col-sm-6 col-xl-3">
+
+    <div class="col-12 col-xl-6">
         <div class="card border-0 shadow-sm h-100">
             <div class="card-body">
-                <div class="d-flex align-items-center">
-                    <div class="flex-shrink-0">
-                        <div class="bg-success bg-opacity-10 rounded-3 p-3">
-                            <i class="fas fa-user-plus text-success fs-4"></i>
+                <div class="d-flex align-items-start justify-content-between gap-2 mb-3">
+                    <div class="d-flex align-items-center">
+                        <div class="bg-success bg-opacity-10 rounded-3 p-3 me-3">
+                            <i class="fas fa-user-friends text-success fs-4"></i>
+                        </div>
+                        <div>
+                            <p class="text-muted mb-1 small text-uppercase fw-semibold">Employees</p>
+                            <h3 class="mb-0 fw-bold">{{ employee_total }}</h3>
+                            <p class="text-muted small mb-0">Active employee records</p>
                         </div>
                     </div>
-                    <div class="flex-grow-1 ms-3">
-                        <p class="text-muted mb-1 small">Active Leads</p>
-                        <h3 class="mb-0 fw-bold">{{ total_leads|default:0 }}</h3>
-                    </div>
                 </div>
+                <h6 class="small text-muted text-uppercase mb-2">By status</h6>
+                <ul class="list-group list-group-flush rounded border">
+                    {% for row in employee_status_breakdown %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center py-2 px-3">
+                        <span>{{ row.label }}</span>
+                        <span class="badge bg-light text-dark border">{{ row.count }}</span>
+                    </li>
+                    {% empty %}
+                    <li class="list-group-item text-muted small py-2">No employee data</li>
+                    {% endfor %}
+                </ul>
             </div>
         </div>
     </div>
-    
+
     <div class="col-12 col-sm-6 col-xl-3">
         <div class="card border-0 shadow-sm h-100">
             <div class="card-body">
                 <div class="d-flex align-items-center">
                     <div class="flex-shrink-0">
                         <div class="bg-warning bg-opacity-10 rounded-3 p-3">
-                            <i class="fas fa-file-invoice text-warning fs-4"></i>
+                            <i class="fas fa-file-signature text-warning fs-4"></i>
                         </div>
                     </div>
                     <div class="flex-grow-1 ms-3">
-                        <p class="text-muted mb-1 small">Pending Estimates</p>
-                        <h3 class="mb-0 fw-bold">0</h3>
+                        <p class="text-muted mb-1 small">Estimates approved</p>
+                        <h3 class="mb-0 fw-bold">{{ estimates_approved }}</h3>
+                        <p class="text-muted small mb-0">All-time count</p>
                     </div>
                 </div>
             </div>
         </div>
     </div>
-    
+
     <div class="col-12 col-sm-6 col-xl-3">
         <div class="card border-0 shadow-sm h-100">
             <div class="card-body">
                 <div class="d-flex align-items-center">
                     <div class="flex-shrink-0">
                         <div class="bg-info bg-opacity-10 rounded-3 p-3">
-                            <i class="fas fa-coins text-info fs-4"></i>
+                            <i class="fas fa-file-invoice-dollar text-info fs-4"></i>
                         </div>
                     </div>
                     <div class="flex-grow-1 ms-3">
-                        <p class="text-muted mb-1 small">Revenue (This Month)</p>
-                        <h3 class="mb-0 fw-bold">AED 0</h3>
+                        <p class="text-muted mb-1 small">Invoiced ({{ dashboard_month_label }})</p>
+                        <h3 class="mb-0 fw-bold">AED {{ invoiced_month_total|floatformat:2|intcomma }}</h3>
+                        <p class="text-muted small mb-0">{{ invoiced_month_count }} invoice{% if invoiced_month_count != 1 %}s{% endif %} (excl. draft / cancelled)</p>
                     </div>
                 </div>
             </div>
@@ -76,75 +107,91 @@
     </div>
 </div>
 
-<div class="row g-4">
-    <!-- Quick Actions -->
-    <div class="col-12 col-lg-6">
+{% if gatepass_expiry_alerts or fleet_expiry_alerts %}
+<div class="row g-4 mb-4 mt-4 pt-1">
+    {% if gatepass_expiry_alerts %}
+    <div class="col-12">
         <div class="card border-0 shadow-sm">
-            <div class="card-header bg-transparent border-0 py-3">
+            <div class="card-header bg-transparent border-0 py-3 d-flex flex-wrap justify-content-between align-items-center gap-2">
                 <h5 class="mb-0 fw-semibold">
-                    <i class="fas fa-bolt text-warning me-2"></i>Quick Actions
+                    <i class="fas fa-id-card-alt text-warning me-2"></i>Gate pass expiry
                 </h5>
-            </div>
-            <div class="card-body">
-                <div class="row g-3">
-                    <div class="col-6">
-                        <a href="{% url 'crm:customer_list' %}" class="btn btn-outline-primary w-100 py-3">
-                            <i class="fas fa-user-plus d-block mb-2 fs-4"></i>
-                            Add Customer
-                        </a>
-                    </div>
-                    <div class="col-6">
-                        <a href="{% url 'sales:estimate_create' %}" class="btn btn-outline-success w-100 py-3">
-                            <i class="fas fa-file-invoice d-block mb-2 fs-4"></i>
-                            New Estimate
-                        </a>
-                    </div>
-                    <div class="col-6">
-                        <a href="#" class="btn btn-outline-info w-100 py-3">
-                            <i class="fas fa-shopping-cart d-block mb-2 fs-4"></i>
-                            Purchase Request
-                        </a>
-                    </div>
-                    <div class="col-6">
-                        <a href="#" class="btn btn-outline-warning w-100 py-3">
-                            <i class="fas fa-box d-block mb-2 fs-4"></i>
-                            Add Item
-                        </a>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-    
-    <!-- Recent Activity -->
-    <div class="col-12 col-lg-6">
-        <div class="card border-0 shadow-sm">
-            <div class="card-header bg-transparent border-0 py-3">
-                <h5 class="mb-0 fw-semibold">
-                    <i class="fas fa-clock text-info me-2"></i>Recent Activity
-                </h5>
+                <span class="small text-muted">{{ gatepass_expiry_alerts|length }} alert{% if gatepass_expiry_alerts|length != 1 %}s{% endif %}</span>
             </div>
             <div class="card-body p-0">
-                <ul class="list-group list-group-flush">
-                    <li class="list-group-item py-3">
-                        <div class="d-flex align-items-center">
-                            <div class="bg-primary rounded-circle p-2 me-3">
-                                <i class="fas fa-user text-white small"></i>
-                            </div>
-                            <div class="flex-grow-1">
-                                <p class="mb-0 fw-medium">Welcome to Gearup ERP!</p>
-                                <small class="text-muted">Get started by adding your first customer</small>
-                            </div>
-                        </div>
-                    </li>
-                </ul>
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0 align-middle">
+                        <thead><tr><th>Status</th><th>Project</th><th>Member</th><th>Start</th><th>Expiry</th><th></th></tr></thead>
+                        <tbody>
+                            {% for row in gatepass_expiry_alerts %}
+                            <tr>
+                                <td>
+                                    {% if row.severity == 'expired' %}<span class="badge bg-danger">Expired</span>
+                                    {% elif row.severity == 'due_today' %}<span class="badge bg-danger">Due today</span>
+                                    {% else %}<span class="badge bg-secondary">≤ 10 days</span>{% endif %}
+                                    <div class="small text-muted mt-1 mb-0">{{ row.label }}</div>
+                                </td>
+                                <td><a href="{% url 'projects:project_detail' row.project.pk %}" class="text-decoration-none">{{ row.project.project_code }}</a></td>
+                                <td>{{ row.member.get_full_name|default:row.member.username }}</td>
+                                <td class="text-nowrap">{{ row.start_date|date:"d/m/Y" }}</td>
+                                <td class="text-nowrap">{{ row.expiry_date|date:"d/m/Y" }}</td>
+                                <td class="text-end"><a class="btn btn-sm btn-light" href="{% url 'projects:project_detail' row.project.pk %}"><i class="fas fa-external-link-alt me-1"></i>Open</a></td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                <div class="px-3 py-3 border-top bg-light bg-opacity-50">
+                    <p class="small text-muted mb-0">Passes shown here are expired or expiring within 10 days.</p>
+                </div>
             </div>
         </div>
     </div>
+    {% endif %}
+    {% if fleet_expiry_alerts %}
+    <div class="col-12">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-transparent border-0 py-3 d-flex flex-wrap justify-content-between align-items-center gap-2">
+                <h5 class="mb-0 fw-semibold">
+                    <i class="fas fa-truck text-warning me-2"></i>Fleet document expiry
+                </h5>
+                <span class="small text-muted">{{ fleet_expiry_alerts|length }} alert{% if fleet_expiry_alerts|length != 1 %}s{% endif %}</span>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0 align-middle">
+                        <thead><tr><th>Status</th><th>Document</th><th>Vehicle</th><th>Expiry</th><th></th></tr></thead>
+                        <tbody>
+                            {% for row in fleet_expiry_alerts %}
+                            <tr>
+                                <td>
+                                    {% if row.severity == 'expired' %}<span class="badge bg-danger">Expired</span>
+                                    {% elif row.severity == 'due_today' %}<span class="badge bg-danger">Due today</span>
+                                    {% else %}<span class="badge bg-secondary">≤ 10 days</span>{% endif %}
+                                    <div class="small text-muted mt-1 mb-0">{{ row.label }}</div>
+                                </td>
+                                <td>{{ row.kind_label }}</td>
+                                <td>{{ row.vehicle_label }}</td>
+                                <td class="text-nowrap">{{ row.expiry_date|date:"d/m/Y" }}</td>
+                                <td class="text-end">
+                                    {% if fleet_can_edit %}
+                                    <a class="btn btn-sm btn-light" href="{% url 'fleet:vehicle_edit' row.vehicle.pk %}"><i class="fas fa-external-link-alt me-1"></i>Edit</a>
+                                    {% else %}
+                                    <a class="btn btn-sm btn-light" href="{% url 'fleet:vehicle_list' %}"><i class="fas fa-list me-1"></i>Fleet</a>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                <div class="px-3 py-3 border-top bg-light bg-opacity-50">
+                    <p class="small text-muted mb-0">Mulkiya, insurance, and other fleet documents that are expired or expiring within 10 days.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
 </div>
+{% endif %}
 {% endblock %}
-
-
-
-
-

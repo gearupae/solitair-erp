@@ -39,6 +39,7 @@ class Permission(models.Model):
         ('assets', 'Fixed Assets'),
         ('property', 'Property Management'),
         ('contracts', 'Contracts'),
+        ('fleet', 'Fleet'),
         ('settings', 'Settings'),
     ]
     
@@ -105,6 +106,7 @@ class ModulePermission(models.Model):
         ('property', 'Property Management'),
         ('service_request', 'Service Request'),
         ('contracts', 'Contracts'),
+        ('fleet', 'Fleet'),
         ('settings', 'Settings'),
     ]
     

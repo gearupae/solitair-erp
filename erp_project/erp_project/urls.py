@@ -31,6 +31,7 @@ urlpatterns = [
     path('hr/', include('apps.hr.urls')),
     path('documents/', include('apps.documents.urls')),
     path('service-request/', include('apps.service_request.urls')),
+    path('fleet/', include('apps.fleet.urls')),
 ]
 
 if settings.DEBUG:
