@@ -15,6 +15,7 @@ from django.db.models import Count, Q, Sum
 from django.http import FileResponse, Http404, HttpResponse, HttpResponseRedirect, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse, reverse_lazy
+from django.utils import timezone
 from django.views.generic import (
     CreateView,
     DeleteView,
@@ -108,9 +109,14 @@ class HRDashboardView(PermissionRequiredMixin, TemplateView):
             'employee', 'leave_type'
         )[:20]
 
-        today = date.today()
-        month_first = date(today.year, today.month, 1)
-        payrolls_month = Payroll.objects.filter(is_active=True, month=month_first)
+        # Use Django's active timezone (settings.TIME_ZONE) so payroll "this month"
+        # matches operators in Dubai and production servers running UTC.
+        today = timezone.localdate()
+        payrolls_month = Payroll.objects.filter(
+            is_active=True,
+            month__year=today.year,
+            month__month=today.month,
+        )
         ctx['payroll_draft'] = payrolls_month.filter(status='draft').count()
         ctx['payroll_processed'] = payrolls_month.filter(status='processed').count()
         ctx['payroll_paid'] = payrolls_month.filter(status='paid').count()
@@ -135,7 +141,8 @@ class HRDashboardView(PermissionRequiredMixin, TemplateView):
         ctx['payroll_by_company'] = payroll_by_company
 
         ctx['pending_payslip_emails'] = Payroll.objects.filter(
-            month=month_first,
+            month__year=today.year,
+            month__month=today.month,
             status='paid',
             payslip_email_sent=False,
             is_active=True,
