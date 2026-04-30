@@ -105,6 +105,44 @@
             </div>
         </div>
     </div>
+
+    <div class="col-12 col-sm-6 col-xl-3">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-shrink-0">
+                        <div class="bg-secondary bg-opacity-10 rounded-3 p-3">
+                            <i class="fas fa-file-contract text-secondary fs-4"></i>
+                        </div>
+                    </div>
+                    <div class="flex-grow-1 ms-3">
+                        <p class="text-muted mb-1 small">Active contracts</p>
+                        <h3 class="mb-0 fw-bold">{{ contracts_active }}</h3>
+                        <p class="text-muted small mb-0">Status active &amp; within term dates</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 col-sm-6 col-xl-3">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-shrink-0">
+                        <div class="bg-primary bg-opacity-10 rounded-3 p-3">
+                            <i class="fas fa-users text-primary fs-4"></i>
+                        </div>
+                    </div>
+                    <div class="flex-grow-1 ms-3">
+                        <p class="text-muted mb-1 small">Total customers</p>
+                        <h3 class="mb-0 fw-bold">{{ total_customers }}</h3>
+                        <p class="text-muted small mb-0">Active CRM records</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 
 {% if gatepass_expiry_alerts or fleet_expiry_alerts %}

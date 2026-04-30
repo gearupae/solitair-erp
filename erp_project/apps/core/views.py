@@ -101,6 +101,25 @@ def dashboard(request):
         context['invoiced_month_total'] = Decimal('0.00')
         context['invoiced_month_count'] = 0
 
+    try:
+        from apps.contracts.models import Contract
+
+        context['contracts_active'] = Contract.objects.filter(
+            is_active=True,
+            status='active',
+            start_date__lte=today,
+            end_date__gte=today,
+        ).count()
+    except Exception:
+        context['contracts_active'] = 0
+
+    try:
+        from apps.crm.models import Customer
+
+        context['total_customers'] = Customer.objects.filter(is_active=True).count()
+    except Exception:
+        context['total_customers'] = 0
+
     context['gatepass_expiry_alerts'] = get_gatepass_dashboard_alerts(request.user)
     context['fleet_expiry_alerts'] = get_fleet_dashboard_alerts(request.user)
     context['fleet_can_edit'] = request.user.is_superuser or PermissionChecker.has_permission(
