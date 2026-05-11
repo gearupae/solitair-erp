@@ -64,7 +64,22 @@ def customer_advance_tab(request, customer_pk):
             adv = form.save(commit=False)
             adv.customer = customer
             adv.save()
-            messages.success(request, f'Advance {adv.advance_number} created.')
+            # If user chose "Record & Post", immediately post to accounting
+            if request.POST.get('post_now') == '1':
+                try:
+                    adv.post_to_accounting(user=request.user)
+                    messages.success(
+                        request,
+                        f'Advance {adv.advance_number} recorded and posted to accounting.'
+                    )
+                except Exception as exc:
+                    messages.warning(
+                        request,
+                        f'Advance {adv.advance_number} saved as draft. '
+                        f'Post to accounting failed: {exc}'
+                    )
+            else:
+                messages.success(request, f'Advance {adv.advance_number} saved as draft.')
             return redirect('crm:customer_detail', pk=customer_pk)
         else:
             for field, errs in form.errors.items():

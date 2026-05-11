@@ -45,8 +45,11 @@
                 <label class="form-label">Reference / Note</label>
                 {{ form.reference }}
             </div>
-            <div class="col-12 d-flex gap-2">
-                <button type="submit" class="btn btn-primary">
+            <div class="col-12 d-flex gap-2 flex-wrap">
+                <button type="submit" name="post_now" value="1" class="btn btn-success">
+                    <i class="fas fa-check-double me-1"></i>Record &amp; Post
+                </button>
+                <button type="submit" class="btn btn-outline-primary">
                     <i class="fas fa-save me-1"></i>Save as Draft
                 </button>
                 <button type="button" class="btn btn-outline-secondary" onclick="cancelInlineForm('advanceForm')">
