@@ -12,7 +12,7 @@
 
 <!-- Create Advance Inline Form -->
 {% if can_create %}
-<div id="advanceForm" class="inline-form-container mb-4" style="display:none;">
+<div id="advanceForm" class="inline-form-container mb-4">
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h6 class="mb-0 fw-semibold"><i class="fas fa-plus-circle me-2"></i>Record New Advance</h6>
         <button type="button" class="btn-close" onclick="cancelInlineForm('advanceForm')"></button>
@@ -131,16 +131,6 @@
 {% endif %}
 
 <script>
-function toggleInlineForm(id) {
-    var el = document.getElementById(id);
-    if (!el) return;
-    el.style.display = (el.style.display === 'none' || el.style.display === '') ? 'block' : 'none';
-}
-function cancelInlineForm(id) {
-    var el = document.getElementById(id);
-    if (el) el.style.display = 'none';
-}
-
 document.addEventListener('DOMContentLoaded', function () {
     var amtInput = document.getElementById('id_ca_amount');
     var vatInput = document.getElementById('id_ca_vat_amount');
@@ -148,7 +138,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function calcVatTotal() {
         var amt = parseFloat(amtInput ? amtInput.value : 0) || 0;
-        var vat = parseFloat(vatInput ? vatInput.value : '') ;
+        var vat = parseFloat(vatInput ? vatInput.value : '');
         if (isNaN(vat)) {
             vat = parseFloat((amt * 0.05).toFixed(2));
             if (vatInput) vatInput.value = vat.toFixed(2);
