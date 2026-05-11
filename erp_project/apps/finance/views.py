@@ -15,6 +15,7 @@ from django.core.paginator import Paginator
 from django.http import JsonResponse, HttpResponse
 from datetime import date, timedelta, datetime
 from decimal import Decimal
+from collections import defaultdict
 
 User = get_user_model()
 
@@ -1055,6 +1056,73 @@ def trial_balance_with_movements(request):
     })
 
 
+def _pl_aggregate_direct_balances(account_ids, start_date, end_date, income_side):
+    """Per-account P&L activity for the period. income_side: True => credit−debit, False => debit−credit."""
+    if not account_ids:
+        return {}
+    rows = (
+        JournalEntryLine.objects.filter(
+            account_id__in=account_ids,
+            journal_entry__status='posted',
+            journal_entry__date__gte=start_date,
+            journal_entry__date__lte=end_date,
+        )
+        .values('account_id')
+        .annotate(total_debit=Sum('debit'), total_credit=Sum('credit'))
+    )
+    out = {}
+    for row in rows:
+        d = row['total_debit'] or Decimal('0.00')
+        c = row['total_credit'] or Decimal('0.00')
+        out[row['account_id']] = (c - d) if income_side else (d - c)
+    return out
+
+
+def _pl_hierarchical_rows(accounts_list, direct_map):
+    """
+    Parent rows show rollup (own + all descendants). Leaf rows show direct activity only.
+    Depth is 0 for roots. Visual indent uses depth in template.
+    """
+    by_id = {a.id: a for a in accounts_list}
+    children = defaultdict(list)
+    for a in accounts_list:
+        pid = a.parent_id
+        if pid and pid in by_id:
+            children[pid].append(a)
+
+    def subtree_total(aid):
+        total = direct_map.get(aid, Decimal('0.00'))
+        for ch in children.get(aid, []):
+            total += subtree_total(ch.id)
+        return total
+
+    roots = [a for a in accounts_list if a.parent_id is None or a.parent_id not in by_id]
+    roots.sort(key=lambda x: (x.code or '', x.id))
+
+    rows = []
+
+    def walk(acc, depth):
+        chs = sorted(children.get(acc.id, []), key=lambda x: (x.code or '', x.id))
+        if not chs:
+            dv = direct_map.get(acc.id, Decimal('0.00'))
+            if dv != 0:
+                rows.append(
+                    {'account': acc, 'amount': dv, 'depth': depth, 'is_rollup': False}
+                )
+            return
+        st = subtree_total(acc.id)
+        if st != 0:
+            rows.append(
+                {'account': acc, 'amount': st, 'depth': depth, 'is_rollup': True}
+            )
+        for ch in chs:
+            walk(ch, depth + 1)
+
+    for r in roots:
+        walk(r, 0)
+    return rows
+
+
 @login_required
 def profit_loss(request):
     """
@@ -1068,84 +1136,88 @@ def profit_loss(request):
     # Get date range
     end_date = request.GET.get('end_date', date.today().isoformat())
     start_date = request.GET.get('start_date', date(date.today().year, 1, 1).isoformat())
-    
-    # Income accounts - calculate balance from journal lines
-    income_accounts = Account.objects.filter(
-        is_active=True, 
-        account_type=AccountType.INCOME
-    ).order_by('code')
-    
-    income_data = []
-    total_income = Decimal('0.00')
-    for acc in income_accounts:
-        # Income accounts: Credits increase, Debits decrease (Credit - Debit = Balance)
-        lines = JournalEntryLine.objects.filter(
-            account=acc,
-            journal_entry__status='posted',
-            journal_entry__date__gte=start_date,
-            journal_entry__date__lte=end_date,
-        ).aggregate(
-            total_debit=Sum('debit'),
-            total_credit=Sum('credit')
-        )
-        debit = lines['total_debit'] or Decimal('0.00')
-        credit = lines['total_credit'] or Decimal('0.00')
-        balance = credit - debit  # Income is increased by credits
-        
-        if balance != 0:
-            income_data.append({'account': acc, 'amount': balance})
-            total_income += balance
-    
-    # Expense accounts - calculate balance from journal lines
-    expense_accounts = Account.objects.filter(
-        is_active=True, 
-        account_type=AccountType.EXPENSE
-    ).order_by('code')
-    
-    expense_data = []
-    total_expenses = Decimal('0.00')
-    for acc in expense_accounts:
-        # Expense accounts: Debits increase, Credits decrease (Debit - Credit = Balance)
-        lines = JournalEntryLine.objects.filter(
-            account=acc,
-            journal_entry__status='posted',
-            journal_entry__date__gte=start_date,
-            journal_entry__date__lte=end_date,
-        ).aggregate(
-            total_debit=Sum('debit'),
-            total_credit=Sum('credit')
-        )
-        debit = lines['total_debit'] or Decimal('0.00')
-        credit = lines['total_credit'] or Decimal('0.00')
-        balance = debit - credit  # Expense is increased by debits
-        
-        if balance != 0:
-            expense_data.append({'account': acc, 'amount': balance})
-            total_expenses += balance
-    
+
+    # Income — aggregate once, then hierarchical display (parent = rollup of self + descendants)
+    income_accounts = list(
+        Account.objects.filter(
+            is_active=True,
+            account_type=AccountType.INCOME,
+        ).select_related('parent').order_by('code')
+    )
+    income_direct = _pl_aggregate_direct_balances(
+        [a.id for a in income_accounts], start_date, end_date, income_side=True
+    )
+    total_income = sum((income_direct.get(a.id, Decimal('0.00')) for a in income_accounts), Decimal('0.00'))
+    income_data = _pl_hierarchical_rows(income_accounts, income_direct)
+
+    # Expense — same pattern
+    expense_accounts = list(
+        Account.objects.filter(
+            is_active=True,
+            account_type=AccountType.EXPENSE,
+        ).select_related('parent').order_by('code')
+    )
+    expense_direct = _pl_aggregate_direct_balances(
+        [a.id for a in expense_accounts], start_date, end_date, income_side=False
+    )
+    total_expenses = sum(
+        (expense_direct.get(a.id, Decimal('0.00')) for a in expense_accounts),
+        Decimal('0.00'),
+    )
+    expense_data = _pl_hierarchical_rows(expense_accounts, expense_direct)
+
     # Calculate profit
     net_profit_before_tax = total_income - total_expenses
-    
+
     # Corporate tax calculation (9% on profit > AED 375,000)
     tax_threshold = Decimal('375000.00')
     tax_rate = Decimal('0.09')
-    
+
     if net_profit_before_tax > tax_threshold:
         corporate_tax = (net_profit_before_tax - tax_threshold) * tax_rate
     else:
         corporate_tax = Decimal('0.00')
-    
+
     net_profit_after_tax = net_profit_before_tax - corporate_tax
-    
+
     # Excel Export
     export_format = request.GET.get('format', '')
     if export_format == 'excel':
         from .excel_exports import export_profit_loss
-        # Prepare data for export
-        revenue_export = [{'code': d['account'].code, 'name': d['account'].name, 'balance': d['amount']} for d in income_data]
-        expense_export = [{'code': d['account'].code, 'name': d['account'].name, 'balance': d['amount']} for d in expense_data]
-        return export_profit_loss(revenue_export, expense_export, start_date, end_date)
-    
+        from apps.settings_app.models import CompanySettings
+
+        cs = CompanySettings.get_settings()
+        company_name = getattr(cs, 'company_name', '') or ''
+        revenue_export = [
+            {
+                'code': d['account'].code,
+                'name': d['account'].name,
+                'balance': d['amount'],
+                'depth': d['depth'],
+                'is_rollup': d['is_rollup'],
+            }
+            for d in income_data
+        ]
+        expense_export = [
+            {
+                'code': d['account'].code,
+                'name': d['account'].name,
+                'balance': d['amount'],
+                'depth': d['depth'],
+                'is_rollup': d['is_rollup'],
+            }
+            for d in expense_data
+        ]
+        return export_profit_loss(
+            revenue_export,
+            expense_export,
+            start_date,
+            end_date,
+            company_name=company_name,
+            total_revenue=total_income,
+            total_expense_amount=total_expenses,
+        )
+
     return render(request, 'finance/profit_loss.html', {
         'title': 'Profit & Loss Statement',
         'income_data': income_data,

@@ -264,69 +264,102 @@ def export_trial_balance_with_movements(accounts, start_date, end_date, totals=N
 
 # ============ PROFIT & LOSS EXPORT ============
 
-def export_profit_loss(revenue_accounts, expense_accounts, start_date, end_date, company_name=''):
-    """Export Profit & Loss to Excel."""
+def export_profit_loss(
+    revenue_accounts,
+    expense_accounts,
+    start_date,
+    end_date,
+    company_name='',
+    total_revenue=None,
+    total_expense_amount=None,
+):
+    """Export Profit & Loss to Excel.
+    Rows may include depth/indent for COA hierarchy. Pass total_revenue / total_expense_amount
+    from journal-line sums to avoid double-counting roll-up rows.
+    """
     wb = Workbook()
     ws = wb.active
     ws.title = 'Profit & Loss'
-    
+
     # Title
     style_title_row(ws, 1, f'Profit & Loss Statement', 3)
     ws.cell(row=2, column=1, value=f'Period: {start_date} to {end_date}')
     if company_name:
         ws.cell(row=3, column=1, value=company_name)
-    
+
     row = 5
-    
+
     # Revenue Section
     ws.cell(row=row, column=1, value='REVENUE')
     ws.cell(row=row, column=1).font = Font(bold=True)
     row += 1
-    
-    total_revenue = Decimal('0.00')
+
     for acc in revenue_accounts:
+        depth = int(acc.get('depth', 0) or 0)
+        indent = '    ' * depth
         ws.cell(row=row, column=1, value=acc.get('code', ''))
-        ws.cell(row=row, column=2, value=acc.get('name', ''))
+        ws.cell(row=row, column=2, value=f'{indent}{acc.get("name", "")}')
         amount = acc.get('balance', acc.get('amount', Decimal('0.00')))
         ws.cell(row=row, column=3, value=format_currency(abs(amount) if amount else 0))
-        total_revenue += abs(amount) if amount else Decimal('0.00')
         row += 1
-    
+
+    tr = total_revenue
+    if tr is None:
+        tr = Decimal('0.00')
+        for acc in revenue_accounts:
+            if acc.get('is_rollup'):
+                continue
+            amount = acc.get('balance', acc.get('amount', Decimal('0.00')))
+            tr += abs(amount) if amount else Decimal('0.00')
+    else:
+        tr = total_revenue
+
     ws.cell(row=row, column=2, value='Total Revenue')
     ws.cell(row=row, column=2).font = Font(bold=True)
-    ws.cell(row=row, column=3, value=format_currency(total_revenue))
+    ws.cell(row=row, column=3, value=format_currency(tr))
     ws.cell(row=row, column=3).font = Font(bold=True)
     row += 2
-    
+
     # Expense Section
     ws.cell(row=row, column=1, value='EXPENSES')
     ws.cell(row=row, column=1).font = Font(bold=True)
     row += 1
-    
-    total_expenses = Decimal('0.00')
+
     for acc in expense_accounts:
+        depth = int(acc.get('depth', 0) or 0)
+        indent = '    ' * depth
         ws.cell(row=row, column=1, value=acc.get('code', ''))
-        ws.cell(row=row, column=2, value=acc.get('name', ''))
+        ws.cell(row=row, column=2, value=f'{indent}{acc.get("name", "")}')
         amount = acc.get('balance', acc.get('amount', Decimal('0.00')))
         ws.cell(row=row, column=3, value=format_currency(abs(amount) if amount else 0))
-        total_expenses += abs(amount) if amount else Decimal('0.00')
         row += 1
-    
+
+    te = total_expense_amount
+    if te is None:
+        te = Decimal('0.00')
+        for acc in expense_accounts:
+            if acc.get('is_rollup'):
+                continue
+            amount = acc.get('balance', acc.get('amount', Decimal('0.00')))
+            te += abs(amount) if amount else Decimal('0.00')
+    else:
+        te = total_expense_amount
+
     ws.cell(row=row, column=2, value='Total Expenses')
     ws.cell(row=row, column=2).font = Font(bold=True)
-    ws.cell(row=row, column=3, value=format_currency(total_expenses))
+    ws.cell(row=row, column=3, value=format_currency(te))
     ws.cell(row=row, column=3).font = Font(bold=True)
     row += 2
-    
+
     # Net Profit/Loss
-    net = total_revenue - total_expenses
+    net = tr - te
     ws.cell(row=row, column=2, value='NET PROFIT / (LOSS)')
     ws.cell(row=row, column=2).font = Font(bold=True, size=12)
     ws.cell(row=row, column=3, value=format_currency(net))
     ws.cell(row=row, column=3).font = Font(bold=True, size=12)
-    
+
     auto_width_columns(ws)
-    
+
     response = create_excel_response(f'profit_loss_{start_date}_to_{end_date}.xlsx')
     wb.save(response)
     return response

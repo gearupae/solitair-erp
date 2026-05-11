@@ -94,9 +94,11 @@
                         </thead>
                         <tbody>
                             {% for item in income_data %}
-                            <tr>
-                                <td>{{ item.account.code }} - {{ item.account.name }}</td>
-                                <td class="text-end">{{ item.amount|floatformat:2|intcomma }}</td>
+                            <tr class="{% if item.is_rollup %}table-light{% endif %}">
+                                <td style="padding-left: calc({{ item.depth }} * 1.25rem);">
+                                    {% if item.is_rollup %}<strong>{% endif %}{{ item.account.code }} — {{ item.account.name }}{% if item.is_rollup %}</strong>{% endif %}
+                                </td>
+                                <td class="text-end">{% if item.is_rollup %}<strong>{% endif %}{{ item.amount|floatformat:2|intcomma }}{% if item.is_rollup %}</strong>{% endif %}</td>
                             </tr>
                             {% empty %}
                             <tr><td colspan="2" class="text-center text-muted py-3">No income recorded</td></tr>
@@ -131,9 +133,11 @@
                         </thead>
                         <tbody>
                             {% for item in expense_data %}
-                            <tr>
-                                <td>{{ item.account.code }} - {{ item.account.name }}</td>
-                                <td class="text-end">{{ item.amount|floatformat:2|intcomma }}</td>
+                            <tr class="{% if item.is_rollup %}table-light{% endif %}">
+                                <td style="padding-left: calc({{ item.depth }} * 1.25rem);">
+                                    {% if item.is_rollup %}<strong>{% endif %}{{ item.account.code }} — {{ item.account.name }}{% if item.is_rollup %}</strong>{% endif %}
+                                </td>
+                                <td class="text-end">{% if item.is_rollup %}<strong>{% endif %}{{ item.amount|floatformat:2|intcomma }}{% if item.is_rollup %}</strong>{% endif %}</td>
                             </tr>
                             {% empty %}
                             <tr><td colspan="2" class="text-center text-muted py-3">No expenses recorded</td></tr>
