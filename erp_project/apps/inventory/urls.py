@@ -3,6 +3,7 @@ Inventory URL configuration.
 """
 from django.urls import path
 from . import views
+from . import aging_views
 
 app_name = 'inventory'
 
@@ -59,6 +60,11 @@ urlpatterns = [
     path('consumables/reports/inventory/export/pdf/', views.consumable_inventory_report_export_pdf, name='consumable_inventory_report_export_pdf'),
     path('consumables/reports/inventory/export/xlsx/', views.consumable_inventory_report_export_xlsx, name='consumable_inventory_report_export_xlsx'),
     path('storage-locations/create/', views.storage_location_create, name='storage_location_create'),
+
+    # Inventory Aging Report (new — standalone page, no changes to existing reports)
+    path('consumables/reports/inventory/aging/', aging_views.inventory_aging_report, name='inventory_aging_report'),
+    path('consumables/reports/inventory/aging/export/xlsx/', aging_views.inventory_aging_report_xlsx, name='inventory_aging_report_xlsx'),
+    path('consumables/reports/inventory/aging/export/pdf/', aging_views.inventory_aging_report_pdf, name='inventory_aging_report_pdf'),
 ]
 
 

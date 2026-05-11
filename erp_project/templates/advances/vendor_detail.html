@@ -1,0 +1,304 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block content %}
+<div class="page-header">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb mb-2">
+            <li class="breadcrumb-item"><a href="{% url 'purchase:vendor_list' %}">Vendors</a></li>
+            <li class="breadcrumb-item active">{{ vendor.vendor_number }}</li>
+        </ol>
+    </nav>
+    <div class="d-flex justify-content-between align-items-center">
+        <div>
+            <h4 class="mb-1 fw-bold">{{ vendor.name }}</h4>
+            <span class="text-muted">{{ vendor.vendor_number }}</span>
+        </div>
+        <div>
+            {% if can_edit %}
+            <a href="{% url 'purchase:vendor_edit' vendor.pk %}" class="btn btn-primary">
+                <i class="fas fa-edit me-2"></i>Edit
+            </a>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <!-- Main Info -->
+    <div class="col-lg-8">
+
+        <!-- Vendor Info Card -->
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-transparent py-3">
+                <h6 class="mb-0 fw-semibold">
+                    <i class="fas fa-industry me-2 text-primary"></i>Vendor Information
+                </h6>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label text-muted small">Vendor Name</label>
+                        <p class="fw-medium mb-0">{{ vendor.name }}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label text-muted small">Vendor Number</label>
+                        <p class="mb-0">{{ vendor.vendor_number }}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label text-muted small">Email</label>
+                        <p class="mb-0">
+                            {% if vendor.email %}
+                            <a href="mailto:{{ vendor.email }}" class="text-decoration-none">
+                                <i class="fas fa-envelope me-1"></i>{{ vendor.email }}
+                            </a>
+                            {% else %}<span class="text-muted">—</span>{% endif %}
+                        </p>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label text-muted small">Phone</label>
+                        <p class="mb-0">
+                            {% if vendor.phone %}
+                            <a href="tel:{{ vendor.phone }}" class="text-decoration-none">
+                                <i class="fas fa-phone me-1"></i>{{ vendor.phone }}
+                            </a>
+                            {% else %}<span class="text-muted">—</span>{% endif %}
+                        </p>
+                    </div>
+                    {% if vendor.trn %}
+                    <div class="col-md-6">
+                        <label class="form-label text-muted small">TRN (VAT)</label>
+                        <p class="fw-medium mb-0">{{ vendor.trn }}</p>
+                    </div>
+                    {% endif %}
+                    {% if vendor.address %}
+                    <div class="col-12">
+                        <label class="form-label text-muted small">Address</label>
+                        <p class="mb-0">{{ vendor.address|linebreaks }}</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Advances Section -->
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-transparent py-3 d-flex justify-content-between align-items-center">
+                <h6 class="mb-0 fw-semibold">
+                    <i class="fas fa-hand-holding-usd me-2 text-primary"></i>Vendor Advances
+                </h6>
+                {% if can_create %}
+                <button class="btn btn-sm btn-primary" onclick="toggleInlineForm('advanceForm')">
+                    <i class="fas fa-plus me-1"></i>Record Advance
+                </button>
+                {% endif %}
+            </div>
+            <div class="card-body">
+
+                <!-- Create Advance Inline Form -->
+                {% if can_create %}
+                <div id="advanceForm" class="inline-form-container mb-4" style="display:none;">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h6 class="mb-0 fw-semibold">Record New Advance</h6>
+                        <button type="button" class="btn-close" onclick="cancelInlineForm('advanceForm')"></button>
+                    </div>
+                    <form method="post" action="">
+                        {% csrf_token %}
+                        <div class="row g-3">
+                            <div class="col-md-3">
+                                <label class="form-label">Date <span class="text-danger">*</span></label>
+                                {{ form.date }}
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Bank Account <span class="text-danger">*</span></label>
+                                {{ form.bank_account }}
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Amount <span class="text-danger">*</span></label>
+                                {{ form.amount }}
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Reference / Note</label>
+                                {{ form.reference }}
+                            </div>
+                            <div class="col-12 d-flex gap-2">
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="fas fa-save me-1"></i>Save as Draft
+                                </button>
+                                <button type="button" class="btn btn-outline-secondary" onclick="cancelInlineForm('advanceForm')">
+                                    Cancel
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                {% endif %}
+
+                {% if advances %}
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Date</th>
+                                <th>Reference #</th>
+                                <th>Note</th>
+                                <th class="text-end">Amount</th>
+                                <th class="text-end">Balance</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for adv in advances %}
+                            <tr>
+                                <td>{{ adv.date|date:"d/m/Y" }}</td>
+                                <td>
+                                    <a href="{% url 'advances:vendor_advance_detail' adv.pk %}" class="text-decoration-none fw-medium">
+                                        {{ adv.advance_number }}
+                                    </a>
+                                </td>
+                                <td class="text-muted">{{ adv.reference|default:"—" }}</td>
+                                <td class="text-end">AED {{ adv.amount|floatformat:2|intcomma }}</td>
+                                <td class="text-end fw-semibold">AED {{ adv.balance|floatformat:2|intcomma }}</td>
+                                <td>
+                                    {% if adv.status == 'posted' %}
+                                        <span class="badge bg-success-subtle text-success">Posted</span>
+                                    {% else %}
+                                        <span class="badge bg-secondary-subtle text-secondary">Draft</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <a href="{% url 'advances:vendor_advance_detail' adv.pk %}" class="btn btn-sm btn-outline-primary">
+                                        <i class="fas fa-eye"></i>
+                                    </a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center py-3 text-muted">
+                    <i class="fas fa-hand-holding-usd fs-2 mb-2 d-block opacity-25"></i>
+                    <p class="mb-0">No advances recorded for this vendor.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Recent Purchase Orders -->
+        {% if recent_orders %}
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-transparent py-3">
+                <h6 class="mb-0 fw-semibold">
+                    <i class="fas fa-file-alt me-2 text-primary"></i>Recent Purchase Orders
+                </h6>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0 align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th class="ps-3">PO Number</th>
+                                <th>Date</th>
+                                <th class="text-end pe-3">Amount</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for po in recent_orders %}
+                            <tr>
+                                <td class="ps-3">
+                                    <a href="{% url 'purchase:po_detail' po.pk %}" class="text-decoration-none">{{ po.po_number }}</a>
+                                </td>
+                                <td>{{ po.order_date|date:"d/m/Y" }}</td>
+                                <td class="text-end pe-3">AED {{ po.total_amount|floatformat:2|intcomma }}</td>
+                                <td><span class="badge bg-secondary-subtle text-secondary">{{ po.get_status_display }}</span></td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Recent Bills -->
+        {% if recent_bills %}
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-transparent py-3">
+                <h6 class="mb-0 fw-semibold">
+                    <i class="fas fa-file-invoice-dollar me-2 text-primary"></i>Recent Bills
+                </h6>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0 align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th class="ps-3">Bill Number</th>
+                                <th>Date</th>
+                                <th class="text-end">Total</th>
+                                <th class="text-end pe-3">Balance Due</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for bill in recent_bills %}
+                            <tr>
+                                <td class="ps-3">
+                                    <a href="{% url 'purchase:bill_detail' bill.pk %}" class="text-decoration-none">{{ bill.bill_number }}</a>
+                                </td>
+                                <td>{{ bill.bill_date|date:"d/m/Y" }}</td>
+                                <td class="text-end">AED {{ bill.total_amount|floatformat:2|intcomma }}</td>
+                                <td class="text-end pe-3 fw-semibold">AED {{ bill.total_amount|add:"-1"|floatformat:2 }}</td>
+                                <td><span class="badge bg-secondary-subtle text-secondary">{{ bill.get_status_display }}</span></td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Sidebar -->
+    <div class="col-lg-4">
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-body">
+                <div class="d-flex justify-content-between mb-3">
+                    <span class="text-muted">Status</span>
+                    {% if vendor.status == 'active' %}
+                        <span class="badge badge-active">Active</span>
+                    {% else %}
+                        <span class="badge badge-inactive">Inactive</span>
+                    {% endif %}
+                </div>
+                <div class="d-flex justify-content-between">
+                    <span class="text-muted">Vendor #</span>
+                    <span class="fw-semibold">{{ vendor.vendor_number }}</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-transparent py-3">
+                <h6 class="mb-0 fw-semibold">
+                    <i class="fas fa-info-circle me-2 text-primary"></i>Audit
+                </h6>
+            </div>
+            <div class="card-body">
+                <div class="mb-2">
+                    <label class="form-label text-muted small">Created</label>
+                    <p class="mb-0">{{ vendor.created_at|date:"d/m/Y H:i" }}</p>
+                </div>
+                <div>
+                    <label class="form-label text-muted small">Updated</label>
+                    <p class="mb-0">{{ vendor.updated_at|date:"d/m/Y H:i" }}</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

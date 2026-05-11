@@ -162,6 +162,14 @@
                 </div>
             </div>
         </div>
+
+        <!-- Customer Advances Section -->
+        <div class="card border-0 shadow-sm mt-4">
+            <div class="card-body">
+                {% url 'advances:customer_advance_tab' customer.pk as advances_url %}
+                {% include 'advances/_customer_advance_tab.html' with customer=customer advances=customer_advances form=advance_form can_create=can_edit can_edit=can_edit %}
+            </div>
+        </div>
     </div>
     
     <!-- Sidebar -->

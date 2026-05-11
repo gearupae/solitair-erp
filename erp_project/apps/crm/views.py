@@ -188,6 +188,18 @@ class CustomerDetailView(PermissionRequiredMixin, DetailView):
         context['can_edit'] = self.request.user.is_superuser or PermissionChecker.has_permission(
             self.request.user, 'crm', 'edit'
         )
+        # Inject customer advances for the advances tab
+        try:
+            from apps.advances.models import CustomerAdvance
+            from apps.advances.forms import CustomerAdvanceForm
+            from datetime import date
+            context['customer_advances'] = CustomerAdvance.objects.filter(
+                customer=self.object, is_active=True
+            ).select_related('bank_account').order_by('-date')
+            context['advance_form'] = CustomerAdvanceForm(initial={'date': date.today()})
+        except Exception:
+            context['customer_advances'] = []
+            context['advance_form'] = None
         return context
 
 

@@ -1,0 +1,262 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block content %}
+<div class="page-header">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb mb-2">
+            <li class="breadcrumb-item"><a href="{% url 'crm:customer_list' %}">Customers</a></li>
+            <li class="breadcrumb-item">
+                <a href="{% url 'crm:customer_detail' advance.customer.pk %}">{{ advance.customer.name }}</a>
+            </li>
+            <li class="breadcrumb-item active">{{ advance.advance_number }}</li>
+        </ol>
+    </nav>
+    <div class="d-flex justify-content-between align-items-center">
+        <div>
+            <h4 class="mb-1 fw-bold">{{ advance.advance_number }}</h4>
+            <span class="text-muted">Customer Advance — {{ advance.customer.name }}</span>
+        </div>
+        <div class="d-flex gap-2">
+            {% if can_edit and advance.status == 'draft' %}
+            <form method="post" action="{% url 'advances:customer_advance_post' advance.pk %}"
+                  onsubmit="return confirm('Post this advance to accounting? This cannot be undone.');">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-success">
+                    <i class="fas fa-check-double me-2"></i>Post to Accounting
+                </button>
+            </form>
+            {% endif %}
+            <a href="{% url 'crm:customer_detail' advance.customer.pk %}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left me-1"></i>Back
+            </a>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <!-- Left: Advance Details + Applications -->
+    <div class="col-lg-8">
+
+        <!-- Advance Info -->
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-transparent py-3">
+                <h6 class="mb-0 fw-semibold">
+                    <i class="fas fa-file-invoice-dollar me-2 text-primary"></i>Advance Details
+                </h6>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label text-muted small">Reference #</label>
+                        <p class="fw-semibold mb-0">{{ advance.advance_number }}</p>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label text-muted small">Date</label>
+                        <p class="mb-0">{{ advance.date|date:"d/m/Y" }}</p>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label text-muted small">Customer</label>
+                        <p class="mb-0">
+                            <a href="{% url 'crm:customer_detail' advance.customer.pk %}" class="text-decoration-none">
+                                {{ advance.customer.name }}
+                            </a>
+                        </p>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label text-muted small">Bank Account</label>
+                        <p class="mb-0">{{ advance.bank_account.name }}</p>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label text-muted small">Reference / Note</label>
+                        <p class="mb-0">{{ advance.reference|default:"—" }}</p>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label text-muted small">Journal Entry</label>
+                        <p class="mb-0">
+                            {% if advance.journal_entry %}
+                            <a href="{% url 'finance:journal_detail' advance.journal_entry.pk %}" class="text-decoration-none">
+                                {{ advance.journal_entry.entry_number }}
+                            </a>
+                            {% else %}
+                            <span class="text-muted">—</span>
+                            {% endif %}
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Applications -->
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-transparent py-3 d-flex justify-content-between align-items-center">
+                <h6 class="mb-0 fw-semibold">
+                    <i class="fas fa-link me-2 text-primary"></i>Applied to Invoices
+                </h6>
+                {% if can_edit and advance.status == 'posted' and advance.balance > 0 %}
+                <button class="btn btn-sm btn-outline-primary" onclick="toggleInlineForm('applyForm')">
+                    <i class="fas fa-plus me-1"></i>Apply to Invoice
+                </button>
+                {% endif %}
+            </div>
+            <div class="card-body">
+
+                <!-- Apply Form -->
+                {% if can_edit and advance.status == 'posted' and advance.balance > 0 %}
+                <div id="applyForm" class="inline-form-container mb-4" style="display:none;">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h6 class="mb-0 fw-semibold">Apply Advance to Invoice</h6>
+                        <button type="button" class="btn-close" onclick="cancelInlineForm('applyForm')"></button>
+                    </div>
+                    <form method="post" action="{% url 'advances:customer_advance_apply' advance.pk %}">
+                        {% csrf_token %}
+                        <div class="row g-3">
+                            <div class="col-md-5">
+                                <label class="form-label">Invoice <span class="text-danger">*</span></label>
+                                {{ app_form.invoice }}
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Date <span class="text-danger">*</span></label>
+                                {{ app_form.date }}
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Amount to Apply <span class="text-danger">*</span></label>
+                                {{ app_form.amount_applied }}
+                                <div class="form-text text-muted">Max: AED {{ advance.balance|floatformat:2|intcomma }}</div>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">Notes</label>
+                                {{ app_form.notes }}
+                            </div>
+                            <div class="col-12 d-flex gap-2">
+                                <button type="submit" class="btn btn-primary"
+                                        onclick="return confirm('Apply this advance amount to the selected invoice?');">
+                                    <i class="fas fa-check me-1"></i>Apply
+                                </button>
+                                <button type="button" class="btn btn-outline-secondary" onclick="cancelInlineForm('applyForm')">
+                                    Cancel
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                {% endif %}
+
+                {% if applications %}
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Date</th>
+                                <th>Invoice</th>
+                                <th class="text-end">Applied</th>
+                                <th>Journal</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for app in applications %}
+                            <tr>
+                                <td>{{ app.date|date:"d/m/Y" }}</td>
+                                <td>
+                                    <a href="{% url 'sales:invoice_detail' app.invoice.pk %}" class="text-decoration-none">
+                                        {{ app.invoice.invoice_number }}
+                                    </a>
+                                </td>
+                                <td class="text-end fw-semibold">AED {{ app.amount_applied|floatformat:2|intcomma }}</td>
+                                <td>
+                                    {% if app.journal_entry %}
+                                    <a href="{% url 'finance:journal_detail' app.journal_entry.pk %}" class="text-decoration-none small">
+                                        {{ app.journal_entry.entry_number }}
+                                    </a>
+                                    {% else %}—{% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-muted mb-0">
+                    {% if advance.status == 'draft' %}
+                    Post this advance first to enable invoice application.
+                    {% else %}
+                    No applications yet. Use the "Apply to Invoice" button above.
+                    {% endif %}
+                </p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Right: Summary Card -->
+    <div class="col-lg-4">
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <span class="text-muted">Status</span>
+                    {% if advance.status == 'posted' %}
+                        <span class="badge bg-success-subtle text-success fs-6">
+                            <i class="fas fa-check-circle me-1"></i>Posted
+                        </span>
+                    {% else %}
+                        <span class="badge bg-secondary-subtle text-secondary fs-6">
+                            <i class="fas fa-clock me-1"></i>Draft
+                        </span>
+                    {% endif %}
+                </div>
+                <hr>
+                <div class="d-flex justify-content-between mb-2">
+                    <span class="text-muted">Amount (excl. VAT)</span>
+                    <strong>AED {{ advance.amount|floatformat:2|intcomma }}</strong>
+                </div>
+                <div class="d-flex justify-content-between mb-2">
+                    <span class="text-muted">VAT (5%)</span>
+                    <span>AED {{ advance.vat_amount|floatformat:2|intcomma }}</span>
+                </div>
+                <div class="d-flex justify-content-between mb-3">
+                    <span class="text-muted">Total Received</span>
+                    <strong>AED {{ advance.total_amount|floatformat:2|intcomma }}</strong>
+                </div>
+                <hr>
+                <div class="d-flex justify-content-between mb-2">
+                    <span class="text-muted">Applied to Invoices</span>
+                    <span class="text-danger">AED {{ advance.applied_amount|floatformat:2|intcomma }}</span>
+                </div>
+                <div class="d-flex justify-content-between">
+                    <span class="fw-semibold">Balance Available</span>
+                    <span class="fw-bold {% if advance.balance > 0 %}text-success{% else %}text-muted{% endif %}">
+                        AED {{ advance.balance|floatformat:2|intcomma }}
+                    </span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Journal Summary -->
+        {% if advance.journal_entry %}
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-transparent py-3">
+                <h6 class="mb-0 fw-semibold">
+                    <i class="fas fa-book me-2 text-primary"></i>Journal Entry
+                </h6>
+            </div>
+            <div class="card-body">
+                <div class="mb-2">
+                    <label class="form-label text-muted small">Entry Number</label>
+                    <p class="mb-0">
+                        <a href="{% url 'finance:journal_detail' advance.journal_entry.pk %}" class="text-decoration-none">
+                            {{ advance.journal_entry.entry_number }}
+                        </a>
+                    </p>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label text-muted small">Status</label>
+                    <p class="mb-0">
+                        <span class="badge bg-success-subtle text-success">{{ advance.journal_entry.get_status_display }}</span>
+                    </p>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

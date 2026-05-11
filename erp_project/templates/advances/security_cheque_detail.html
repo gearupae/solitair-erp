@@ -1,0 +1,301 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block content %}
+<div class="page-header">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb mb-2">
+            <li class="breadcrumb-item"><a href="{% url 'advances:security_cheque_list' %}">Security Cheques Outward</a></li>
+            <li class="breadcrumb-item active">{{ cheque.cheque_number }}</li>
+        </ol>
+    </nav>
+    <div class="d-flex justify-content-between align-items-center">
+        <div>
+            <h4 class="mb-1 fw-bold">{{ cheque.cheque_number }}</h4>
+            <span class="text-muted">{{ cheque.party_name }} · {{ cheque.bank_name }}</span>
+        </div>
+        <div class="d-flex gap-2">
+            {% if can_edit and cheque.status == 'issued' %}
+            <button class="btn btn-warning" data-bs-toggle="modal" data-bs-target="#encashModal">
+                <i class="fas fa-university me-2"></i>Mark Encashed
+            </button>
+            <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#returnModal">
+                <i class="fas fa-undo me-2"></i>Mark Returned
+            </button>
+            {% endif %}
+            <a href="{% url 'advances:security_cheque_list' %}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left me-1"></i>Back
+            </a>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <!-- Left: Details + Journal entries -->
+    <div class="col-lg-8">
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-transparent py-3">
+                <h6 class="mb-0 fw-semibold">
+                    <i class="fas fa-money-check me-2 text-primary"></i>Cheque Details
+                </h6>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label text-muted small">Party / Vendor</label>
+                        <p class="fw-semibold mb-0">{{ cheque.party_name }}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label text-muted small">Cheque Number</label>
+                        <p class="fw-semibold mb-0">{{ cheque.cheque_number }}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label text-muted small">Bank Name</label>
+                        <p class="mb-0">{{ cheque.bank_name }}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label text-muted small">Amount</label>
+                        <p class="fw-semibold mb-0">AED {{ cheque.amount|floatformat:2|intcomma }}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label text-muted small">Cheque Date</label>
+                        <p class="mb-0">{{ cheque.cheque_date|date:"d/m/Y" }}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label text-muted small">Issued Date</label>
+                        <p class="mb-0">{{ cheque.issued_date|date:"d/m/Y" }}</p>
+                    </div>
+                    {% if cheque.purpose %}
+                    <div class="col-12">
+                        <label class="form-label text-muted small">Purpose</label>
+                        <p class="mb-0">{{ cheque.purpose }}</p>
+                    </div>
+                    {% endif %}
+                    {% if cheque.notes %}
+                    <div class="col-12">
+                        <label class="form-label text-muted small">Notes</label>
+                        <p class="mb-0">{{ cheque.notes }}</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Accounting Trail -->
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-transparent py-3">
+                <h6 class="mb-0 fw-semibold">
+                    <i class="fas fa-book me-2 text-primary"></i>Accounting Trail
+                </h6>
+            </div>
+            <div class="card-body">
+                <div class="timeline">
+                    <!-- Issue -->
+                    <div class="d-flex mb-3">
+                        <div class="me-3">
+                            <div class="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center" style="width:32px;height:32px;font-size:0.8rem;">
+                                <i class="fas fa-paper-plane"></i>
+                            </div>
+                        </div>
+                        <div class="flex-grow-1">
+                            <p class="mb-1 fw-semibold">Cheque Issued — {{ cheque.issued_date|date:"d/m/Y" }}</p>
+                            <p class="text-muted small mb-0">
+                                Dr Vendor Security Deposit (1360) · Cr Security Cheques Payable (2360)
+                                · AED {{ cheque.amount|floatformat:2|intcomma }}
+                            </p>
+                            {% if cheque.issue_journal %}
+                            <a href="{% url 'finance:journal_detail' cheque.issue_journal.pk %}" class="small text-decoration-none">
+                                {{ cheque.issue_journal.entry_number }}
+                            </a>
+                            {% else %}
+                            <span class="text-muted small">Journal not found</span>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    {% if cheque.status == 'encashed' %}
+                    <div class="d-flex mb-3">
+                        <div class="me-3">
+                            <div class="bg-danger text-white rounded-circle d-flex align-items-center justify-content-center" style="width:32px;height:32px;font-size:0.8rem;">
+                                <i class="fas fa-university"></i>
+                            </div>
+                        </div>
+                        <div class="flex-grow-1">
+                            <p class="mb-1 fw-semibold">Encashed — {{ cheque.encash_date|date:"d/m/Y" }}</p>
+                            <p class="text-muted small mb-0">
+                                Dr Security Cheques Payable (2360) · Cr Bank · AED {{ cheque.amount|floatformat:2|intcomma }}
+                            </p>
+                            {% if cheque.encash_journal %}
+                            <a href="{% url 'finance:journal_detail' cheque.encash_journal.pk %}" class="small text-decoration-none">
+                                {{ cheque.encash_journal.entry_number }}
+                            </a>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    {% if cheque.status == 'returned' %}
+                    <div class="d-flex mb-3">
+                        <div class="me-3">
+                            <div class="bg-success text-white rounded-circle d-flex align-items-center justify-content-center" style="width:32px;height:32px;font-size:0.8rem;">
+                                <i class="fas fa-undo"></i>
+                            </div>
+                        </div>
+                        <div class="flex-grow-1">
+                            <p class="mb-1 fw-semibold">Returned — {{ cheque.return_date|date:"d/m/Y" }}</p>
+                            <p class="text-muted small mb-0">
+                                Dr Security Cheques Payable (2360) · Cr Vendor Security Deposit (1360)
+                                · AED {{ cheque.amount|floatformat:2|intcomma }}
+                            </p>
+                            {% if cheque.return_journal %}
+                            <a href="{% url 'finance:journal_detail' cheque.return_journal.pk %}" class="small text-decoration-none">
+                                {{ cheque.return_journal.entry_number }}
+                            </a>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right Sidebar -->
+    <div class="col-lg-4">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <span class="text-muted">Current Status</span>
+                    {% if cheque.status == 'issued' %}
+                        <span class="badge bg-warning-subtle text-warning fs-6">
+                            <i class="fas fa-clock me-1"></i>Issued
+                        </span>
+                    {% elif cheque.status == 'encashed' %}
+                        <span class="badge bg-danger-subtle text-danger fs-6">
+                            <i class="fas fa-university me-1"></i>Encashed
+                        </span>
+                    {% else %}
+                        <span class="badge bg-success-subtle text-success fs-6">
+                            <i class="fas fa-undo me-1"></i>Returned
+                        </span>
+                    {% endif %}
+                </div>
+                <hr>
+                <div class="d-flex justify-content-between mb-2">
+                    <span class="text-muted">Cheque Amount</span>
+                    <strong>AED {{ cheque.amount|floatformat:2|intcomma }}</strong>
+                </div>
+                <div class="d-flex justify-content-between mb-2">
+                    <span class="text-muted">Cheque Date</span>
+                    <span>{{ cheque.cheque_date|date:"d/m/Y" }}</span>
+                </div>
+                <div class="d-flex justify-content-between">
+                    <span class="text-muted">Issued On</span>
+                    <span>{{ cheque.issued_date|date:"d/m/Y" }}</span>
+                </div>
+                {% if cheque.status == 'issued' and can_edit %}
+                <hr>
+                <div class="d-grid gap-2">
+                    <button class="btn btn-warning" data-bs-toggle="modal" data-bs-target="#encashModal">
+                        <i class="fas fa-university me-1"></i>Mark as Encashed
+                    </button>
+                    <button class="btn btn-outline-success" data-bs-toggle="modal" data-bs-target="#returnModal">
+                        <i class="fas fa-undo me-1"></i>Mark as Returned
+                    </button>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Encash Modal -->
+{% if can_edit and cheque.status == 'issued' %}
+<div class="modal fade" id="encashModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-university me-2 text-warning"></i>Mark Cheque as Encashed
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="post" action="{% url 'advances:security_cheque_encash' cheque.pk %}">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <div class="alert alert-warning">
+                        <i class="fas fa-exclamation-triangle me-2"></i>
+                        This will post:<br>
+                        <strong>Dr Security Cheques Payable (2360) · Cr Bank → AED {{ cheque.amount|floatformat:2|intcomma }}</strong>
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-12">
+                            <label class="form-label">Encash Date <span class="text-danger">*</span></label>
+                            {{ encash_form.encash_date }}
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Bank Account (to credit) <span class="text-danger">*</span></label>
+                            {{ encash_form.bank_account }}
+                        </div>
+                        <div class="col-12">
+                            <div class="form-check">
+                                {{ encash_form.confirm }}
+                                <label class="form-check-label small" for="{{ encash_form.confirm.id_for_label }}">
+                                    {{ encash_form.confirm.label }}
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-warning">
+                        <i class="fas fa-university me-1"></i>Confirm Encashment
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Return Modal -->
+<div class="modal fade" id="returnModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-undo me-2 text-success"></i>Mark Cheque as Returned
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="post" action="{% url 'advances:security_cheque_return' cheque.pk %}">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <div class="alert alert-success">
+                        <i class="fas fa-info-circle me-2"></i>
+                        This will post:<br>
+                        <strong>Dr Security Cheques Payable (2360) · Cr Vendor Security Deposit (1360) → AED {{ cheque.amount|floatformat:2|intcomma }}</strong>
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-12">
+                            <label class="form-label">Return Date <span class="text-danger">*</span></label>
+                            {{ return_form.return_date }}
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Notes</label>
+                            {{ return_form.notes }}
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-success">
+                        <i class="fas fa-undo me-1"></i>Confirm Return
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

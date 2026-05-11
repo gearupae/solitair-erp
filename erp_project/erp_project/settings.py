@@ -63,6 +63,7 @@ INSTALLED_APPS = [
     'apps.property',
     'apps.contracts',
     'apps.fleet',
+    'apps.advances',
 ]
 
 MIDDLEWARE = [
@@ -194,5 +195,7 @@ NUMBER_SERIES = {
     'CONTRACT': {'prefix': 'CNT', 'padding': 4},
     'JOURNAL': {'prefix': 'DOC', 'padding': 4},
     'ITEM': {'prefix': 'ITEM', 'padding': 4},
+    'CUSTOMER_ADVANCE': {'prefix': 'CADV', 'padding': 4},
+    'VENDOR_ADVANCE': {'prefix': 'VADV', 'padding': 4},
 }
 

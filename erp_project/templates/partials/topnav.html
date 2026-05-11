@@ -165,6 +165,16 @@
                                 <i class="fas fa-chart-line me-2"></i>Consumables Dashboard
                             </a>
                         </li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'inventory:consumable_inventory_reports' %}">
+                                <i class="fas fa-file-alt me-2"></i>Inventory Reports
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'inventory:inventory_aging_report' %}">
+                                <i class="fas fa-hourglass-half me-2"></i>Inventory Aging Report
+                            </a>
+                        </li>
                     </ul>
                 </li>
                 {% endif %}
@@ -359,6 +369,13 @@
                         <li>
                             <a class="dropdown-item" href="{% url 'finance:period_list' %}">
                                 <i class="fas fa-lock me-2"></i>Period Locking
+                            </a>
+                        </li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'advances:security_cheque_list' %}">
+                                <i class="fas fa-money-check-alt me-2"></i>Security Cheques Outward
                             </a>
                         </li>
                         <li><hr class="dropdown-divider"></li>

@@ -142,8 +142,12 @@
                 <tbody>
                     {% for vendor in vendors %}
                     <tr>
-                        <td class="fw-medium">{{ vendor.vendor_number }}</td>
-                        <td>{{ vendor.name }}</td>
+                        <td class="fw-medium">
+                            <a href="{% url 'advances:vendor_detail' vendor.pk %}" class="text-decoration-none">{{ vendor.vendor_number }}</a>
+                        </td>
+                        <td>
+                            <a href="{% url 'advances:vendor_detail' vendor.pk %}" class="text-decoration-none fw-medium">{{ vendor.name }}</a>
+                        </td>
                         <td>{{ vendor.contact_person|default:"-" }}</td>
                         <td>{{ vendor.email|default:"-" }}</td>
                         <td>{{ vendor.phone|default:"-" }}</td>
@@ -155,6 +159,9 @@
                             {% endif %}
                         </td>
                         <td class="text-center">
+                            <a href="{% url 'advances:vendor_detail' vendor.pk %}" class="btn btn-action btn-outline-secondary" title="View">
+                                <i class="fas fa-eye"></i>
+                            </a>
                             {% if can_edit %}
                             <a href="{% url 'purchase:vendor_edit' vendor.pk %}" class="btn btn-action btn-outline-primary" title="Edit">
                                 <i class="fas fa-edit"></i>

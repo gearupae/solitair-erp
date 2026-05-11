@@ -1,0 +1,558 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block extra_css %}
+<style>
+/* ── Aging badge colours ────────────────────────────────────────────── */
+.bucket-success { background:#D1FAE5; color:#065F46; border:1px solid #A7F3D0; }
+.bucket-warning { background:#FEF3C7; color:#92400E; border:1px solid #FDE68A; }
+.bucket-orange  { background:#FFEDD5; color:#C2410C; border:1px solid #FED7AA; }
+.bucket-danger  { background:#FEE2E2; color:#B91C1C; border:1px solid #FECACA; }
+.bucket-dark    { background:#374151; color:#FFFFFF; border:1px solid #1F2937; }
+
+/* ── Table tweaks ───────────────────────────────────────────────────── */
+.aging-table th {
+    white-space: nowrap;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    background: #1F2937;
+    color: #fff;
+    border: none;
+    padding: 0.65rem 0.75rem;
+    cursor: pointer;
+    user-select: none;
+}
+.aging-table th .sort-icon { opacity: 0.5; font-size: 0.7rem; margin-left: 3px; }
+.aging-table th.active-sort .sort-icon { opacity: 1; }
+.aging-table td { vertical-align: middle; font-size: 0.875rem; padding: 0.55rem 0.75rem; }
+.aging-table tbody tr:hover { background: #F9FAFB; }
+.aging-table { border-collapse: separate; border-spacing: 0; }
+.aging-table thead th:first-child  { border-radius: 6px 0 0 0; }
+.aging-table thead th:last-child   { border-radius: 0 6px 0 0; }
+
+.bucket-badge {
+    display: inline-block;
+    padding: 0.2em 0.55em;
+    border-radius: 4px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+/* ── Slow moving / dead stock icons ────────────────────────────────── */
+.slow-moving-icon { color: #F59E0B; }
+.dead-stock-icon  { color: #DC2626; }
+
+/* ── Summary cards ──────────────────────────────────────────────────── */
+.summary-card { transition: transform .12s ease; }
+.summary-card:hover { transform: translateY(-2px); }
+
+/* ── Filter bar ─────────────────────────────────────────────────────── */
+.filter-bar .form-control,
+.filter-bar .form-select { min-height: 36px; font-size: 0.875rem; }
+
+/* ── IAS 2 flag row ─────────────────────────────────────────────────── */
+.ias2-flag { background: #FFF7ED !important; }
+
+/* ── Print / export styles ──────────────────────────────────────────── */
+@media print {
+    .no-print { display: none !important; }
+    .aging-table { font-size: 9pt; }
+    .bucket-badge { border: 1px solid #ccc; }
+    body { padding: 0; margin: 0; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+
+<!-- ================================================================== -->
+<!-- Page header                                                          -->
+<!-- ================================================================== -->
+<div class="d-flex flex-column flex-md-row align-items-start justify-content-between gap-3 mb-3 no-print">
+    <div>
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-1">
+                <li class="breadcrumb-item">
+                    <a href="{% url 'inventory:consumable_inventory_reports' %}">Inventory Reports</a>
+                </li>
+                <li class="breadcrumb-item active">Aging Report</li>
+            </ol>
+        </nav>
+        <h4 class="mb-0 fw-bold">Inventory Aging Report</h4>
+        <p class="text-muted mb-0 small mt-1">
+            As of:
+            <strong>{{ as_of_date|date:"d/m/Y" }}</strong>
+            &nbsp;·&nbsp; {{ total_rows }} item{{ total_rows|pluralize }} with stock
+            &nbsp;·&nbsp; IAS 2 compliant view — Dead Stock in red
+        </p>
+    </div>
+    <div class="d-flex gap-2 flex-shrink-0 no-print">
+        <!-- Export buttons — JS updates these URLs with current filters -->
+        <a href="{% url 'inventory:inventory_aging_report_xlsx' %}"
+           class="btn btn-sm btn-outline-success">
+            <i class="fas fa-file-excel me-1"></i>Excel
+        </a>
+        <a href="{% url 'inventory:inventory_aging_report_pdf' %}"
+           class="btn btn-sm btn-outline-danger" target="_blank">
+            <i class="fas fa-file-pdf me-1"></i>PDF
+        </a>
+        <button class="btn btn-sm btn-outline-secondary" onclick="window.print()">
+            <i class="fas fa-print me-1"></i>Print
+        </button>
+    </div>
+</div>
+
+<!-- ================================================================== -->
+<!-- Summary cards                                                        -->
+<!-- ================================================================== -->
+<div class="row g-3 mb-4 no-print">
+    <!-- Total Items -->
+    <div class="col-6 col-md-4 col-xl-2">
+        <div class="card border-0 shadow-sm summary-card h-100">
+            <div class="card-body py-3 px-3">
+                <div class="d-flex align-items-center gap-2 mb-1">
+                    <div class="bg-primary bg-opacity-10 rounded p-2">
+                        <i class="fas fa-boxes text-primary" style="font-size:1rem;"></i>
+                    </div>
+                    <span class="text-muted small">Total Items</span>
+                </div>
+                <h4 class="fw-bold mb-0">{{ summary.total_items }}</h4>
+            </div>
+        </div>
+    </div>
+
+    <!-- Total Value -->
+    <div class="col-6 col-md-4 col-xl-2">
+        <div class="card border-0 shadow-sm summary-card h-100">
+            <div class="card-body py-3 px-3">
+                <div class="d-flex align-items-center gap-2 mb-1">
+                    <div class="bg-success bg-opacity-10 rounded p-2">
+                        <i class="fas fa-dollar-sign text-success" style="font-size:1rem;"></i>
+                    </div>
+                    <span class="text-muted small">Stock Value</span>
+                </div>
+                <h5 class="fw-bold mb-0">AED {{ summary.total_value|floatformat:2|intcomma }}</h5>
+            </div>
+        </div>
+    </div>
+
+    <!-- Slow Moving -->
+    <div class="col-6 col-md-4 col-xl-2">
+        <div class="card border-0 shadow-sm summary-card h-100">
+            <div class="card-body py-3 px-3">
+                <div class="d-flex align-items-center gap-2 mb-1">
+                    <div class="bg-warning bg-opacity-10 rounded p-2">
+                        <i class="fas fa-hourglass-half text-warning" style="font-size:1rem;"></i>
+                    </div>
+                    <span class="text-muted small">Slow Moving</span>
+                </div>
+                <h4 class="fw-bold mb-0">{{ summary.slow_moving_count }}</h4>
+                <small class="text-muted">90+ days</small>
+            </div>
+        </div>
+    </div>
+
+    <!-- Dead Stock -->
+    <div class="col-6 col-md-4 col-xl-2">
+        <div class="card border-0 shadow-sm summary-card h-100">
+            <div class="card-body py-3 px-3">
+                <div class="d-flex align-items-center gap-2 mb-1">
+                    <div class="bg-danger bg-opacity-10 rounded p-2">
+                        <i class="fas fa-skull-crossbones text-danger" style="font-size:1rem;"></i>
+                    </div>
+                    <span class="text-muted small">Dead Stock</span>
+                </div>
+                <h4 class="fw-bold mb-0 text-danger">{{ summary.dead_stock_count }}</h4>
+                <small class="text-muted">180+ days</small>
+            </div>
+        </div>
+    </div>
+
+    <!-- % aged 90+ -->
+    <div class="col-6 col-md-4 col-xl-2">
+        <div class="card border-0 shadow-sm summary-card h-100">
+            <div class="card-body py-3 px-3">
+                <div class="d-flex align-items-center gap-2 mb-1">
+                    <div class="bg-danger bg-opacity-10 rounded p-2">
+                        <i class="fas fa-percent text-danger" style="font-size:1rem;"></i>
+                    </div>
+                    <span class="text-muted small">Value 90+ days</span>
+                </div>
+                <h4 class="fw-bold mb-0 {% if summary.pct_90_plus > 20 %}text-danger{% elif summary.pct_90_plus > 10 %}text-warning{% endif %}">
+                    {{ summary.pct_90_plus }}%
+                </h4>
+                <small class="text-muted">of total value</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bucket breakdown -->
+<div class="row g-2 mb-4 no-print">
+    {% for b in summary.buckets %}
+    <div class="col">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body py-2 px-3 text-center">
+                <span class="bucket-badge bucket-{{ b.color }} d-block mb-1" style="font-size:0.7rem;">
+                    {{ b.label }}
+                </span>
+                <div class="fw-bold fs-5">{{ b.count }}</div>
+                <div class="text-muted" style="font-size:0.72rem;">
+                    AED {{ b.value|floatformat:2|intcomma }}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- ================================================================== -->
+<!-- Filter bar                                                           -->
+<!-- ================================================================== -->
+<div class="card border-0 shadow-sm mb-3 no-print">
+    <div class="card-body py-3">
+        <form method="get" class="row g-2 align-items-end filter-bar" id="filterForm">
+            <!-- Search -->
+            <div class="col-12 col-md-3">
+                <label class="form-label small mb-1">Search</label>
+                <input type="text" name="q" class="form-control form-control-sm"
+                       placeholder="Item name or code…" value="{{ filter_search }}">
+            </div>
+            <!-- Category -->
+            <div class="col-6 col-md-2">
+                <label class="form-label small mb-1">Category</label>
+                <select name="category" class="form-select form-select-sm">
+                    <option value="">All Categories</option>
+                    {% for cat in categories %}
+                    <option value="{{ cat.pk }}" {% if filter_category == cat.pk %}selected{% endif %}>
+                        {{ cat.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <!-- Warehouse -->
+            <div class="col-6 col-md-2">
+                <label class="form-label small mb-1">Warehouse</label>
+                <select name="warehouse" class="form-select form-select-sm">
+                    <option value="">All Warehouses</option>
+                    {% for wh in warehouses %}
+                    <option value="{{ wh.pk }}" {% if filter_warehouse == wh.pk %}selected{% endif %}>
+                        {{ wh.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <!-- Aging Bucket -->
+            <div class="col-6 col-md-2">
+                <label class="form-label small mb-1">Aging Bucket</label>
+                <select name="bucket" class="form-select form-select-sm">
+                    <option value="">All Buckets</option>
+                    <option value="0-30"   {% if filter_bucket == '0-30'   %}selected{% endif %}>0–30 Days (Fresh)</option>
+                    <option value="31-60"  {% if filter_bucket == '31-60'  %}selected{% endif %}>31–60 Days (Monitor)</option>
+                    <option value="61-90"  {% if filter_bucket == '61-90'  %}selected{% endif %}>61–90 Days (Slow Moving)</option>
+                    <option value="91-180" {% if filter_bucket == '91-180' %}selected{% endif %}>91–180 Days (Critical)</option>
+                    <option value="180+"   {% if filter_bucket == '180+'   %}selected{% endif %}>180+ Days (Dead Stock)</option>
+                </select>
+            </div>
+            <!-- Date As Of -->
+            <div class="col-6 col-md-2">
+                <label class="form-label small mb-1">As of Date</label>
+                <input type="date" name="date_as_of" class="form-control form-control-sm"
+                       value="{{ filter_date_as_of }}">
+            </div>
+            <!-- Sort -->
+            <div class="col-6 col-md-2">
+                <label class="form-label small mb-1">Sort by</label>
+                <select name="sort" class="form-select form-select-sm">
+                    <option value="age_desc"   {% if filter_sort == 'age_desc'   %}selected{% endif %}>Age ↓ (oldest first)</option>
+                    <option value="age_asc"    {% if filter_sort == 'age_asc'    %}selected{% endif %}>Age ↑ (newest first)</option>
+                    <option value="name"       {% if filter_sort == 'name'       %}selected{% endif %}>Name A–Z</option>
+                    <option value="value_desc" {% if filter_sort == 'value_desc' %}selected{% endif %}>Value ↓</option>
+                    <option value="value_asc"  {% if filter_sort == 'value_asc'  %}selected{% endif %}>Value ↑</option>
+                    <option value="qty_desc"   {% if filter_sort == 'qty_desc'   %}selected{% endif %}>Qty ↓</option>
+                </select>
+            </div>
+            <!-- Slow Moving checkbox -->
+            <div class="col-6 col-md-2">
+                <div class="form-check mt-3">
+                    <input class="form-check-input" type="checkbox" name="slow_moving"
+                           value="1" id="slowCheck" {% if filter_slow_moving %}checked{% endif %}>
+                    <label class="form-check-label small" for="slowCheck">Slow Moving only</label>
+                </div>
+            </div>
+            <!-- Buttons -->
+            <div class="col-12 col-md-auto d-flex gap-2">
+                <button type="submit" class="btn btn-sm btn-primary">
+                    <i class="fas fa-filter me-1"></i>Apply
+                </button>
+                <a href="{% url 'inventory:inventory_aging_report' %}" class="btn btn-sm btn-outline-secondary">
+                    Clear
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ================================================================== -->
+<!-- IAS 2 notice (shows when dead stock exists)                          -->
+<!-- ================================================================== -->
+{% if summary.dead_stock_count > 0 %}
+<div class="alert alert-warning d-flex align-items-start gap-2 mb-3 no-print" role="alert">
+    <i class="fas fa-balance-scale mt-1 text-warning"></i>
+    <div>
+        <strong>IAS 2 — Net Realisable Value review required.</strong>
+        <span class="text-muted">
+            {{ summary.dead_stock_count }} item{{ summary.dead_stock_count|pluralize }} aged 180+ days.
+            Consider writing down to NRV if below cost. Dead stock items are highlighted below.
+        </span>
+    </div>
+</div>
+{% endif %}
+
+<!-- ================================================================== -->
+<!-- Report Table                                                         -->
+<!-- ================================================================== -->
+<div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+        {% if rows %}
+        <div class="table-responsive" style="overflow-x: auto;">
+            <table class="table aging-table mb-0">
+                <thead>
+                    <tr>
+                        <th data-sort="name" onclick="sortBy('name')" title="Sort by name">
+                            Item Code &amp; Name <i class="fas fa-sort sort-icon"></i>
+                        </th>
+                        <th>Category</th>
+                        <th>Warehouse</th>
+                        <th>UOM</th>
+                        <th class="text-end" data-sort="qty_desc" onclick="sortBy('qty_desc')" title="Sort by qty">
+                            Qty on Hand <i class="fas fa-sort sort-icon"></i>
+                        </th>
+                        <th class="text-end">Unit Cost (AED)</th>
+                        <th class="text-end" data-sort="value_desc" onclick="sortBy('value_desc')" title="Sort by value">
+                            Total Value (AED) <i class="fas fa-sort sort-icon"></i>
+                        </th>
+                        <th>Last Receipt</th>
+                        <th>Last Movement</th>
+                        <th class="text-center" data-sort="age_desc" onclick="sortBy('age_desc')" title="Sort by age">
+                            Age (Days) <i class="fas fa-sort sort-icon"></i>
+                        </th>
+                        <th>Aging Bucket</th>
+                        <th class="text-center">Flag</th>
+                        <th>GRN Ref</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in rows %}
+                    <tr {% if row.dead_stock %}class="ias2-flag"{% endif %}>
+                        <!-- Item Code + Name -->
+                        <td>
+                            <div class="fw-medium">{{ row.item_name }}</div>
+                            {% if row.item_code %}
+                            <div class="text-muted" style="font-size:0.75rem;">{{ row.item_code }}</div>
+                            {% endif %}
+                        </td>
+                        <!-- Category -->
+                        <td class="text-muted">{{ row.category }}</td>
+                        <!-- Warehouse -->
+                        <td class="text-muted">{{ row.warehouse }}</td>
+                        <!-- UOM -->
+                        <td>{{ row.unit }}</td>
+                        <!-- Qty -->
+                        <td class="text-end fw-medium">{{ row.qty_on_hand|floatformat:2|intcomma }}</td>
+                        <!-- Unit Cost -->
+                        <td class="text-end">{{ row.unit_cost|floatformat:2|intcomma }}</td>
+                        <!-- Total Value -->
+                        <td class="text-end fw-semibold">{{ row.total_value|floatformat:2|intcomma }}</td>
+                        <!-- Last Receipt -->
+                        <td>
+                            {% if row.last_receipt_date %}
+                                {{ row.last_receipt_date|date:"d/m/Y" }}
+                            {% else %}
+                                <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                        <!-- Last Movement -->
+                        <td>
+                            {% if row.last_movement_date %}
+                                {{ row.last_movement_date|date:"d/m/Y" }}
+                            {% else %}
+                                <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                        <!-- Age Days -->
+                        <td class="text-center fw-bold
+                            {% if row.age_days > 180 %}text-danger
+                            {% elif row.age_days > 90 %}text-warning
+                            {% endif %}">
+                            {{ row.age_days }}
+                        </td>
+                        <!-- Bucket badge -->
+                        <td>
+                            <span class="bucket-badge bucket-{{ row.bucket_color }}">
+                                {{ row.bucket_label }}
+                            </span>
+                        </td>
+                        <!-- Flag -->
+                        <td class="text-center">
+                            {% if row.dead_stock %}
+                                <i class="fas fa-skull-crossbones dead-stock-icon"
+                                   title="Dead Stock — IAS 2 NRV review required"></i>
+                            {% elif row.slow_moving %}
+                                <i class="fas fa-exclamation-triangle slow-moving-icon"
+                                   title="Slow Moving — 90+ days"></i>
+                            {% else %}
+                                <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                        <!-- GRN ref -->
+                        <td class="text-muted" style="font-size:0.8rem;">
+                            {{ row.grn_ref|default:"—" }}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot>
+                    <tr class="table-light fw-semibold">
+                        <td colspan="4">Page total ({{ rows|length }} of {{ total_rows }} items)</td>
+                        <td class="text-end">—</td>
+                        <td></td>
+                        <td class="text-end">
+                            AED
+                            {% with page_total=0 %}
+                            {{ summary.total_value|floatformat:2|intcomma }}
+                            {% endwith %}
+                        </td>
+                        <td colspan="6"></td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+
+        <!-- Pagination -->
+        {% if page_obj.has_other_pages %}
+        <div class="d-flex justify-content-between align-items-center px-3 py-2 border-top no-print">
+            <small class="text-muted">
+                Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
+                ({{ total_rows }} total)
+            </small>
+            <nav>
+                <ul class="pagination pagination-sm mb-0">
+                    {% if page_obj.has_previous %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ page_obj.previous_page_number }}&q={{ filter_search }}&category={{ filter_category|default:'' }}&warehouse={{ filter_warehouse|default:'' }}&bucket={{ filter_bucket }}&date_as_of={{ filter_date_as_of }}&sort={{ filter_sort }}&slow_moving={% if filter_slow_moving %}1{% endif %}">
+                            ‹ Prev
+                        </a>
+                    </li>
+                    {% endif %}
+
+                    {% for p in page_obj.paginator.page_range %}
+                        {% if p == page_obj.number %}
+                        <li class="page-item active"><span class="page-link">{{ p }}</span></li>
+                        {% elif p == 1 or p == page_obj.paginator.num_pages or p >= page_obj.number|add:"-2" and p <= page_obj.number|add:"2" %}
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ p }}&q={{ filter_search }}&category={{ filter_category|default:'' }}&warehouse={{ filter_warehouse|default:'' }}&bucket={{ filter_bucket }}&date_as_of={{ filter_date_as_of }}&sort={{ filter_sort }}&slow_moving={% if filter_slow_moving %}1{% endif %}">
+                                {{ p }}
+                            </a>
+                        </li>
+                        {% elif p == 2 or p == page_obj.paginator.num_pages|add:"-1" %}
+                        <li class="page-item disabled"><span class="page-link">…</span></li>
+                        {% endif %}
+                    {% endfor %}
+
+                    {% if page_obj.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ page_obj.next_page_number }}&q={{ filter_search }}&category={{ filter_category|default:'' }}&warehouse={{ filter_warehouse|default:'' }}&bucket={{ filter_bucket }}&date_as_of={{ filter_date_as_of }}&sort={{ filter_sort }}&slow_moving={% if filter_slow_moving %}1{% endif %}">
+                            Next ›
+                        </a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </nav>
+        </div>
+        {% endif %}
+
+        {% else %}
+        <!-- Empty state -->
+        <div class="text-center py-5 text-muted">
+            <i class="fas fa-boxes fs-1 mb-3 d-block opacity-25"></i>
+            <h6 class="mb-1">No items match the selected filters.</h6>
+            <p class="mb-0 small">
+                Try clearing the filters or changing the "As of" date.
+            </p>
+            <a href="{% url 'inventory:inventory_aging_report' %}" class="btn btn-sm btn-outline-primary mt-3 no-print">
+                Clear All Filters
+            </a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- ================================================================== -->
+<!-- Footnote / Legend                                                    -->
+<!-- ================================================================== -->
+<div class="mt-4 small text-muted no-print">
+    <div class="row g-2">
+        <div class="col-12 col-md-6">
+            <strong>Aging basis:</strong>
+            Age = Today − date of last GRN receipt (stock IN movement).
+            If no receipt exists, uses last movement date.
+            Date as of: <strong>{{ as_of_date|date:"d/m/Y" }}</strong>.
+        </div>
+        <div class="col-12 col-md-6">
+            <strong>IAS 2 note:</strong>
+            Dead Stock (180+ days) items are highlighted and flagged
+            <i class="fas fa-skull-crossbones text-danger"></i>.
+            Auditor should verify that carrying value does not exceed
+            net realisable value for these items.
+        </div>
+    </div>
+    <div class="mt-2">
+        <span class="bucket-badge bucket-success me-1">0–30 Fresh</span>
+        <span class="bucket-badge bucket-warning me-1">31–60 Monitor</span>
+        <span class="bucket-badge bucket-orange me-1">61–90 Slow Moving</span>
+        <span class="bucket-badge bucket-danger me-1">91–180 Critical</span>
+        <span class="bucket-badge bucket-dark me-1">180+ Dead Stock</span>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    /* Auto-submit filter form when select changes */
+    document.querySelectorAll('#filterForm select').forEach(function (el) {
+        el.addEventListener('change', function () {
+            document.getElementById('filterForm').submit();
+        });
+    });
+
+    /* Build correct export URLs preserving all current filters */
+    var xlsxBtn = document.querySelector('a[href*="aging_report_xlsx"]');
+    var pdfBtn  = document.querySelector('a[href*="aging_report_pdf"]');
+    var params  = new URLSearchParams(window.location.search);
+    params.delete('page');
+    var qs = params.toString();
+    if (xlsxBtn) xlsxBtn.href = xlsxBtn.href.split('?')[0] + (qs ? '?' + qs : '');
+    if (pdfBtn)  pdfBtn.href  = pdfBtn.href.split('?')[0]  + (qs ? '?' + qs : '');
+});
+
+/* Column sort — reloads page with updated sort param preserving all other filters */
+function sortBy(sortKey) {
+    var params = new URLSearchParams(window.location.search);
+    var current = params.get('sort') || 'age_desc';
+    /* Toggle asc/desc when clicking same column */
+    if (sortKey === 'value_desc' && current === 'value_desc') sortKey = 'value_asc';
+    else if (sortKey === 'value_asc' && current === 'value_asc') sortKey = 'value_desc';
+    else if (sortKey === 'qty_desc' && current === 'qty_desc') sortKey = 'qty_asc';
+    else if (sortKey === 'age_desc' && current === 'age_desc') sortKey = 'age_asc';
+    else if (sortKey === 'age_asc' && current === 'age_asc') sortKey = 'age_desc';
+    params.set('sort', sortKey);
+    params.delete('page');
+    window.location.search = params.toString();
+}
+</script>
+{% endblock %}

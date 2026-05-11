@@ -1,0 +1,178 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-center">
+    <div>
+        <h4 class="mb-1 fw-bold">Security Cheques Outward</h4>
+        <p class="text-muted mb-0">Security cheques issued to vendors and parties</p>
+    </div>
+    {% if can_create %}
+    <a href="{% url 'advances:security_cheque_create' %}" class="btn btn-primary">
+        <i class="fas fa-plus me-2"></i>New Security Cheque
+    </a>
+    {% endif %}
+</div>
+
+<!-- Summary Cards -->
+<div class="row g-3 mb-4">
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="bg-warning bg-opacity-10 rounded p-3 me-3">
+                        <i class="fas fa-money-check text-warning"></i>
+                    </div>
+                    <div>
+                        <p class="text-muted mb-0 small">Outstanding Issued</p>
+                        <h5 class="mb-0 fw-bold">{{ total_issued }}</h5>
+                        <small class="text-muted">AED {{ issued_amount|floatformat:2|intcomma }}</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="bg-danger bg-opacity-10 rounded p-3 me-3">
+                        <i class="fas fa-university text-danger"></i>
+                    </div>
+                    <div>
+                        <p class="text-muted mb-0 small">Encashed</p>
+                        <h5 class="mb-0 fw-bold">{{ total_encashed }}</h5>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="bg-success bg-opacity-10 rounded p-3 me-3">
+                        <i class="fas fa-undo text-success"></i>
+                    </div>
+                    <div>
+                        <p class="text-muted mb-0 small">Returned</p>
+                        <h5 class="mb-0 fw-bold">{{ total_returned }}</h5>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-body py-2">
+        <form method="get" class="row g-2 align-items-end">
+            <div class="col-md-4">
+                <input type="text" name="q" value="{{ q }}" class="form-control form-control-sm"
+                       placeholder="Search party name or cheque no.">
+            </div>
+            <div class="col-md-3">
+                <select name="status" class="form-select form-select-sm">
+                    <option value="">All Statuses</option>
+                    {% for val, label in status_choices %}
+                    <option value="{{ val }}" {% if selected_status == val %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-auto">
+                <button type="submit" class="btn btn-sm btn-outline-primary">Filter</button>
+                <a href="{% url 'advances:security_cheque_list' %}" class="btn btn-sm btn-outline-secondary ms-1">Clear</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Table -->
+<div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+        {% if cheques %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th class="ps-3">Party</th>
+                        <th>Cheque No.</th>
+                        <th>Bank</th>
+                        <th>Cheque Date</th>
+                        <th>Issued Date</th>
+                        <th class="text-end">Amount</th>
+                        <th>Status</th>
+                        <th class="pe-3">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for cheque in cheques %}
+                    <tr>
+                        <td class="ps-3 fw-medium">{{ cheque.party_name }}</td>
+                        <td>{{ cheque.cheque_number }}</td>
+                        <td class="text-muted">{{ cheque.bank_name }}</td>
+                        <td>{{ cheque.cheque_date|date:"d/m/Y" }}</td>
+                        <td>{{ cheque.issued_date|date:"d/m/Y" }}</td>
+                        <td class="text-end fw-semibold">AED {{ cheque.amount|floatformat:2|intcomma }}</td>
+                        <td>
+                            {% if cheque.status == 'issued' %}
+                                <span class="badge bg-warning-subtle text-warning">Issued</span>
+                            {% elif cheque.status == 'encashed' %}
+                                <span class="badge bg-danger-subtle text-danger">Encashed</span>
+                            {% else %}
+                                <span class="badge bg-success-subtle text-success">Returned</span>
+                            {% endif %}
+                        </td>
+                        <td class="pe-3">
+                            <a href="{% url 'advances:security_cheque_detail' cheque.pk %}" class="btn btn-sm btn-outline-primary">
+                                <i class="fas fa-eye"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Pagination -->
+        {% if is_paginated %}
+        <div class="d-flex justify-content-between align-items-center px-3 py-2 border-top">
+            <small class="text-muted">
+                Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
+                ({{ page_obj.paginator.count }} cheques)
+            </small>
+            <nav>
+                <ul class="pagination pagination-sm mb-0">
+                    {% if page_obj.has_previous %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ page_obj.previous_page_number }}&status={{ selected_status }}&q={{ q }}">‹</a>
+                    </li>
+                    {% endif %}
+                    <li class="page-item active">
+                        <span class="page-link">{{ page_obj.number }}</span>
+                    </li>
+                    {% if page_obj.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ page_obj.next_page_number }}&status={{ selected_status }}&q={{ q }}">›</a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </nav>
+        </div>
+        {% endif %}
+
+        {% else %}
+        <div class="text-center py-5 text-muted">
+            <i class="fas fa-money-check fs-1 mb-3 d-block opacity-25"></i>
+            <p class="mb-1">No security cheques found.</p>
+            {% if can_create %}
+            <a href="{% url 'advances:security_cheque_create' %}" class="btn btn-primary mt-2">
+                <i class="fas fa-plus me-1"></i>Record First Cheque
+            </a>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
