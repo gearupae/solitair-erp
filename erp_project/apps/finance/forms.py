@@ -15,8 +15,8 @@ from .models import (
 class AccountForm(forms.ModelForm):
     class Meta:
         model = Account
-        fields = ['code', 'name', 'account_type', 'account_category', 'parent', 'description', 
-                  'opening_balance', 'is_cash_account', 'overdraft_allowed', 'is_contra_account']
+        fields = ['code', 'name', 'account_type', 'account_category', 'parent', 'description',
+                  'is_cash_account', 'overdraft_allowed', 'is_contra_account']
         widgets = {
             'description': forms.Textarea(attrs={'rows': 2}),
         }
