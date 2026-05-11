@@ -128,6 +128,16 @@
 {% endif %}
 
 <script>
+function toggleInlineForm(id) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.style.display = (el.style.display === 'none' || el.style.display === '') ? 'block' : 'none';
+}
+function cancelInlineForm(id) {
+    var el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+}
+
 document.addEventListener('DOMContentLoaded', function () {
     var amtInput = document.getElementById('id_ca_amount');
     var vatInput = document.getElementById('id_ca_vat_amount');
