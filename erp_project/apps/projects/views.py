@@ -5,7 +5,9 @@ from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.views.generic import ListView, CreateView, UpdateView, DetailView
 from django.urls import reverse, reverse_lazy
-from django.db.models import Q, Sum, Count
+from django.db.models import Q, Sum, Count, Value
+from django.db.models.fields import DecimalField
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 from datetime import date, timedelta
 from decimal import Decimal
@@ -32,6 +34,18 @@ class ProjectListView(PermissionRequiredMixin, ListView):
         status = self.request.GET.get('status')
         if status:
             queryset = queryset.filter(status=status)
+        # Sum recorded project expenses (same rule as detail: active, not rejected)
+        queryset = queryset.annotate(
+            recorded_expenses_sum=Coalesce(
+                Sum(
+                    'project_expenses__total_amount',
+                    filter=Q(project_expenses__is_active=True)
+                    & ~Q(project_expenses__status='rejected'),
+                ),
+                Value(Decimal('0.00')),
+                output_field=DecimalField(max_digits=18, decimal_places=2),
+            )
+        )
         return queryset
     
     def get_context_data(self, **kwargs):
@@ -235,7 +249,9 @@ class ProjectDetailView(PermissionRequiredMixin, DetailView):
         )
         pe = self.object.project_expenses.filter(is_active=True).exclude(status='rejected')
         agg = pe.aggregate(s=Sum('total_amount'), c=Count('id'))
-        context['recorded_expenses_total'] = agg['s'] if agg['s'] is not None else Decimal('0.00')
+        recorded = agg['s'] if agg['s'] is not None else Decimal('0.00')
+        context['recorded_expenses_total'] = recorded
+        context['budget_profit'] = self.object.budget - recorded
         context['has_recorded_expenses'] = (agg['c'] or 0) > 0
         context['today'] = date.today()
         context['gatepass_alert_horizon'] = date.today() + timedelta(days=10)
