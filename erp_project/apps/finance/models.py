@@ -523,8 +523,13 @@ class JournalEntry(BaseModel):
         """Get number of journal lines."""
         return self.lines.count()
     
-    def validate_for_posting(self, user=None):
-        """Validate journal entry before posting."""
+    def validate_for_posting(self, user=None, skip_ap_warning=False):
+        """Validate journal entry before posting.
+
+        Returns a list of hard error strings.
+        If skip_ap_warning=True the AP-outstanding check is omitted
+        (caller has already confirmed "Post Anyway").
+        """
         errors = []
         
         # Check balance
@@ -609,7 +614,7 @@ class JournalEntry(BaseModel):
                     "causes revenue overstatement, AR aging distortion, and tax base errors."
                 )
 
-            if has_expense_debit and has_bank_credit:
+            if has_expense_debit and has_bank_credit and not skip_ap_warning:
                 ap_balance = JournalEntryLine.objects.filter(
                     account__code='2000',
                     journal_entry__status='posted',
@@ -618,7 +623,9 @@ class JournalEntry(BaseModel):
                 )
                 outstanding_ap = (ap_balance['cr'] or Decimal('0')) - (ap_balance['dr'] or Decimal('0'))
                 if outstanding_ap > 0:
-                    errors.append(
+                    # Soft warning only — caller decides whether to block or allow.
+                    # Store on the instance so the view can surface a "Post Anyway" prompt.
+                    self._ap_warning = (
                         f"This journal debits an Expense account and credits Bank directly, "
                         f"but there is AED {outstanding_ap:,.2f} in outstanding Accounts Payable. "
                         f"Use the Payment module (Dr AP / Cr Bank) to clear vendor invoices. "

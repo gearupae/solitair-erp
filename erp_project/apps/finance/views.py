@@ -278,7 +278,11 @@ class JournalEntryDetailView(PermissionRequiredMixin, DetailView):
         
         # Audit History
         context['audit_history'] = get_entity_audit_history('JournalEntry', self.object.pk)
-        
+
+        # AP soft-warning: surfaced by journal_post when force_ap not yet confirmed.
+        session_key = f'ap_warning_{self.object.pk}'
+        context['ap_warning'] = self.request.session.pop(session_key, None)
+
         return context
 
 
@@ -286,27 +290,39 @@ class JournalEntryDetailView(PermissionRequiredMixin, DetailView):
 def journal_post(request, pk):
     """Post a journal entry - validates balance, min lines, leaf accounts, period."""
     from apps.core.audit import audit_journal_post
-    
+
     entry = get_object_or_404(JournalEntry, pk=pk)
-    
+
     if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'finance', 'edit')):
         messages.error(request, 'Permission denied.')
         return redirect('finance:journal_list')
-    
+
     if entry.status != 'draft':
         messages.error(request, 'Only draft entries can be posted.')
         return redirect('finance:journal_detail', pk=pk)
-    
-    # Validate before posting
-    errors = entry.validate_for_posting(user=request.user)
+
+    # force_ap=1 means the user clicked "Post Anyway" on the AP soft-warning prompt.
+    force_ap = request.GET.get('force_ap') == '1' or request.POST.get('force_ap') == '1'
+
+    # Validate before posting — skip AP warning if user already confirmed.
+    errors = entry.validate_for_posting(user=request.user, skip_ap_warning=force_ap)
     if errors:
         for error in errors:
             messages.error(request, error)
         return redirect('finance:journal_detail', pk=pk)
-    
+
+    # Check for soft AP warning (only present when force_ap is False).
+    ap_warning = getattr(entry, '_ap_warning', None)
+    if ap_warning and not force_ap:
+        # Surface the warning and show "Post Anyway" / "Cancel" in the template.
+        request.session[f'ap_warning_{pk}'] = ap_warning
+        return redirect('finance:journal_detail', pk=pk)
+
+    # Clear any stale session warning before posting.
+    request.session.pop(f'ap_warning_{pk}', None)
+
     try:
         entry.post(user=request.user)
-        # Audit log with IP address
         audit_journal_post(entry, request.user, request=request)
         messages.success(request, f'Journal Entry {entry.entry_number} posted successfully.')
     except ValidationError as e:
@@ -314,7 +330,7 @@ def journal_post(request, pk):
             messages.error(request, error)
     except Exception as e:
         messages.error(request, str(e))
-    
+
     return redirect('finance:journal_detail', pk=pk)
 
 
