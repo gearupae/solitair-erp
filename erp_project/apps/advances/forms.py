@@ -173,13 +173,21 @@ class SecurityChequeOutwardForm(_BootstrapMixin, forms.ModelForm):
     class Meta:
         model = SecurityChequeOutward
         fields = [
-            'party_name', 'cheque_number', 'cheque_date', 'bank_name',
+            'vendor', 'cheque_number', 'cheque_date', 'bank_name',
             'amount', 'issued_date', 'purpose', 'notes',
         ]
         widgets = {
             'cheque_date': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
             'issued_date': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        from apps.purchase.models import Vendor
+        self.fields['vendor'].queryset = Vendor.objects.filter(is_active=True).order_by('name')
+        self.fields['vendor'].required = True
+        self.fields['vendor'].label = 'Vendor / Party'
+        self.fields['vendor'].label_from_instance = lambda obj: obj.name
 
     def clean_amount(self):
         amount = self.cleaned_data.get('amount')

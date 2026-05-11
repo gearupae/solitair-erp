@@ -22,8 +22,9 @@
             {% csrf_token %}
             <div class="row g-3">
                 <div class="col-md-6">
-                    <label class="form-label">Vendor / Party Name <span class="text-danger">*</span></label>
-                    {{ form.party_name }}
+                    <label class="form-label">Vendor / Party <span class="text-danger">*</span></label>
+                    {{ form.vendor }}
+                    {% if form.vendor.errors %}<div class="text-danger small mt-1">{{ form.vendor.errors|join:", " }}</div>{% endif %}
                 </div>
                 <div class="col-md-6">
                     <label class="form-label">Cheque Number <span class="text-danger">*</span></label>

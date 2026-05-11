@@ -554,7 +554,13 @@ class SecurityChequeOutward(BaseModel):
     ]
 
     cheque_number = models.CharField(max_length=100)
-    party_name = models.CharField(max_length=200)
+    vendor = models.ForeignKey(
+        'purchase.Vendor',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='security_cheques',
+    )
+    party_name = models.CharField(max_length=200, help_text='Auto-filled from vendor; editable for non-vendor parties')
     bank_name = models.CharField(max_length=200)
     cheque_date = models.DateField()
     issued_date = models.DateField()

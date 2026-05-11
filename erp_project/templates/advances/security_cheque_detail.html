@@ -12,7 +12,7 @@
     <div class="d-flex justify-content-between align-items-center">
         <div>
             <h4 class="mb-1 fw-bold">{{ cheque.cheque_number }}</h4>
-            <span class="text-muted">{{ cheque.party_name }} · {{ cheque.bank_name }}</span>
+            <span class="text-muted">{% if cheque.vendor %}{{ cheque.vendor.name }}{% else %}{{ cheque.party_name }}{% endif %} · {{ cheque.bank_name }}</span>
         </div>
         <div class="d-flex gap-2">
             {% if can_edit and cheque.status == 'issued' %}
@@ -43,7 +43,15 @@
                 <div class="row g-3">
                     <div class="col-md-6">
                         <label class="form-label text-muted small">Party / Vendor</label>
-                        <p class="fw-semibold mb-0">{{ cheque.party_name }}</p>
+                        <p class="fw-semibold mb-0">
+                            {% if cheque.vendor %}
+                            <a href="{% url 'advances:vendor_detail' cheque.vendor.pk %}" class="text-decoration-none">
+                                {{ cheque.vendor.name }}
+                            </a>
+                            {% else %}
+                            {{ cheque.party_name }}
+                            {% endif %}
+                        </p>
                     </div>
                     <div class="col-md-6">
                         <label class="form-label text-muted small">Cheque Number</label>

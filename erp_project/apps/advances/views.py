@@ -353,7 +353,11 @@ def security_cheque_create(request):
     if request.method == 'POST':
         form = SecurityChequeOutwardForm(request.POST)
         if form.is_valid():
-            cheque = form.save()
+            cheque = form.save(commit=False)
+            # Auto-populate party_name from selected vendor
+            if cheque.vendor:
+                cheque.party_name = cheque.vendor.name
+            cheque.save()
             try:
                 cheque.post_issue_journal(user=request.user)
                 messages.success(

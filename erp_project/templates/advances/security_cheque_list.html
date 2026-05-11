@@ -109,7 +109,13 @@
                 <tbody>
                     {% for cheque in cheques %}
                     <tr>
-                        <td class="ps-3 fw-medium">{{ cheque.party_name }}</td>
+                        <td class="ps-3 fw-medium">
+                            {% if cheque.vendor %}
+                            <a href="{% url 'advances:vendor_detail' cheque.vendor.pk %}" class="text-decoration-none">{{ cheque.vendor.name }}</a>
+                            {% else %}
+                            {{ cheque.party_name }}
+                            {% endif %}
+                        </td>
                         <td>{{ cheque.cheque_number }}</td>
                         <td class="text-muted">{{ cheque.bank_name }}</td>
                         <td>{{ cheque.cheque_date|date:"d/m/Y" }}</td>
