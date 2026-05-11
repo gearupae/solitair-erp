@@ -83,7 +83,9 @@ class AccountListView(PermissionRequiredMixin, ListView):
         
         form = AccountForm(request.POST)
         if form.is_valid():
-            account = form.save()
+            account = form.save(commit=False)
+            account.opening_balance = Decimal('0.00')
+            account.save()
             messages.success(request, f'Account {account.code} created.')
         else:
             for field, errors in form.errors.items():
