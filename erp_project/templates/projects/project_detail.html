@@ -20,7 +20,19 @@
                     <div class="col-md-4"><h6 class="text-muted mb-2">Manager</h6><p class="mb-0">{% if project.manager %}{{ project.manager.get_full_name|default:project.manager.username }}{% else %}-{% endif %}</p></div>
                     <div class="col-md-4"><h6 class="text-muted mb-2">Budget</h6><p class="mb-0">AED {{ project.budget|floatformat:2 }}</p></div>
                     <div class="col-md-4"><h6 class="text-muted mb-2">Estimated cost</h6><p class="mb-0">AED {{ project.estimated_cost|floatformat:2 }}</p></div>
-                    <div class="col-md-4"><h6 class="text-muted mb-2">Total profit <span class="small fw-normal">(budget − total expense)</span></h6><p class="mb-0 fw-semibold">AED {{ budget_profit|floatformat:2 }}</p></div>
+                    <div class="col-md-4">
+                        <h6 class="text-muted mb-2">Total profit <span class="small fw-normal">(budget − total expense)</span></h6>
+                        <p class="mb-0 fw-semibold d-flex align-items-center flex-wrap gap-2">
+                            AED {{ budget_profit|floatformat:2 }}
+                            {% if budget_profit > 0 %}
+                            <span class="badge badge-active">Profitable</span>
+                            {% elif budget_profit < 0 %}
+                            <span class="badge badge-inactive">Over budget</span>
+                            {% else %}
+                            <span class="badge" style="background:#fef3c7;color:#92400e;">Break-even</span>
+                            {% endif %}
+                        </p>
+                    </div>
                     <div class="col-md-4"><h6 class="text-muted mb-2">Team</h6><p class="mb-0">{{ project.members.count }} member{% if project.members.count != 1 %}s{% endif %} (see table below)</p></div>
                     <div class="col-md-4"><h6 class="text-muted mb-2">Start Date</h6><p class="mb-0">{{ project.start_date|date:"d/m/Y"|default:"-" }}</p></div>
                     <div class="col-md-4"><h6 class="text-muted mb-2">End Date</h6><p class="mb-0">{{ project.end_date|date:"d/m/Y"|default:"-" }}</p></div>
