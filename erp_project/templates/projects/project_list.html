@@ -103,11 +103,11 @@
                                 {% widthratio project.recorded_expenses_sum project.budget 100 as exp_pct %}
                                 {% with p=exp_pct|add:0 %}
                                 {% if p < 50 %}
-                                <span class="badge rounded-pill bg-success">{{ exp_pct }}% of budget</span>
+                                <span class="badge badge-active">{{ exp_pct }}% of budget</span>
                                 {% elif p <= 80 %}
-                                <span class="badge rounded-pill bg-warning text-dark">{{ exp_pct }}% of budget</span>
+                                <span class="badge" style="background:#fef3c7;color:#92400e;">{{ exp_pct }}% of budget</span>
                                 {% else %}
-                                <span class="badge rounded-pill bg-danger">{{ exp_pct }}% of budget</span>
+                                <span class="badge badge-inactive">{{ exp_pct }}% of budget</span>
                                 {% endif %}
                                 {% endwith %}
                             {% else %}
