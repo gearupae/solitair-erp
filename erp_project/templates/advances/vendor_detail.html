@@ -102,7 +102,7 @@
                         <h6 class="mb-0 fw-semibold">Record New Advance</h6>
                         <button type="button" class="btn-close" onclick="cancelInlineForm('advanceForm')"></button>
                     </div>
-                    <form method="post" action="">
+                    <form method="post" action="{% url 'advances:vendor_detail' vendor.pk %}">
                         {% csrf_token %}
                         <div class="row g-3">
                             <div class="col-md-3">
@@ -301,4 +301,18 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function toggleInlineForm(id) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.style.display = (el.style.display === 'none' || el.style.display === '') ? 'block' : 'none';
+}
+function cancelInlineForm(id) {
+    var el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+}
+</script>
 {% endblock %}
