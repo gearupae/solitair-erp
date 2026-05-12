@@ -2,38 +2,22 @@
 {% block content %}
 <div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2">
     <div><h4 class="mb-1 fw-bold">{{ title }}</h4><p class="text-muted mb-0">Daily attendance records</p></div>
-    {% if can_create %}
-    <div class="d-flex gap-2">
+    <div class="d-flex gap-2 flex-wrap">
+        {% if can_create %}
         <a href="{% url 'hr:attendance_mark' %}" class="btn btn-primary"><i class="fas fa-plus me-2"></i>Mark attendance</a>
+        {% endif %}
+        {% if public_attendance_url %}
+        <a href="{{ public_attendance_url }}" class="btn btn-outline-info" target="_blank" rel="noopener noreferrer" title="Opens the shareable page for employees to clock in/out without signing in">
+            <i class="fas fa-link me-2"></i>Public attendance
+        </a>
+        {% endif %}
+        {% if can_create %}
         <a href="{% url 'hr:attendance_summary_month' %}" class="btn btn-outline-secondary">Monthly summary</a>
         <a href="{% url 'hr:holiday_list' %}" class="btn btn-outline-secondary">Holidays</a>
         <a href="{% url 'hr:attendance_settings' %}" class="btn btn-outline-secondary">Settings</a>
-    </div>
-    {% endif %}
-</div>
-
-{% if public_attendance_url %}
-<div class="card mb-4 border-info">
-    <div class="card-body py-3 d-flex flex-wrap align-items-center justify-content-between gap-2">
-        <div>
-            <h6 class="fw-semibold mb-1">Public attendance link</h6>
-            <p class="text-muted small mb-0">Share this URL with employees to clock in/out without signing in. Records appear below with source <span class="badge bg-warning text-dark">public link</span>.</p>
-        </div>
-        <div class="input-group" style="max-width: 36rem;">
-            <input type="text" class="form-control form-control-sm" readonly value="{{ public_attendance_url }}" id="public-attendance-url-field"/>
-            <button class="btn btn-outline-secondary btn-sm" type="button" id="copy-public-attendance-url">Copy</button>
-        </div>
+        {% endif %}
     </div>
 </div>
-<script>
-document.getElementById('copy-public-attendance-url')?.addEventListener('click', function () {
-    const el = document.getElementById('public-attendance-url-field');
-    if (!el) return;
-    el.select();
-    navigator.clipboard.writeText(el.value).catch(function () {});
-});
-</script>
-{% endif %}
 
 <div class="card mb-4">
     <div class="card-body py-3">
