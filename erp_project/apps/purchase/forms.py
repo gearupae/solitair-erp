@@ -17,6 +17,7 @@ from .models import (
     ExpenseClaim, ExpenseClaimItem, RecurringExpense
 )
 from apps.finance.models import TaxCode
+from apps.projects.models import Project
 
 
 class VendorForm(forms.ModelForm):
@@ -319,7 +320,7 @@ class VendorBillForm(forms.ModelForm):
     class Meta:
         model = VendorBill
         fields = [
-            'vendor', 'purchase_order', 'goods_received',
+            'vendor', 'project', 'purchase_order', 'goods_received',
             'vendor_invoice_number', 'bill_date', 'due_date', 'status', 'notes',
         ]
         widgets = {
@@ -333,6 +334,12 @@ class VendorBillForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.fields['vendor'].queryset = Vendor.objects.filter(is_active=True)
         self.fields['vendor'].widget.attrs['class'] = 'form-select'
+        self.fields['project'].queryset = Project.objects.filter(is_active=True).exclude(
+            status='cancelled'
+        ).order_by('name')
+        self.fields['project'].required = False
+        self.fields['project'].widget.attrs['class'] = 'form-select'
+        self.fields['project'].empty_label = '— None (not charged to a project) —'
         self.fields['purchase_order'].queryset = PurchaseOrder.objects.filter(is_active=True)
         self.fields['purchase_order'].widget.attrs['class'] = 'form-select'
         self.fields['purchase_order'].required = False

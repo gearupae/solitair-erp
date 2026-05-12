@@ -45,11 +45,21 @@
                         <h6 class="text-muted mb-2">Vendor</h6>
                         <p class="fw-medium mb-0">{{ bill.vendor.name }}</p>
                     </div>
-                    <div class="col-md-3">
+                    <div class="col-md-6">
+                        <h6 class="text-muted mb-2">Project</h6>
+                        <p class="mb-0">
+                            {% if bill.project %}
+                            <a href="{% url 'projects:project_detail' bill.project.pk %}" class="text-decoration-none">{{ bill.project.project_code }} — {{ bill.project.name }}</a>
+                            {% else %}
+                            <span class="text-muted">—</span>
+                            {% endif %}
+                        </p>
+                    </div>
+                    <div class="col-md-4 mt-3">
                         <h6 class="text-muted mb-2">Bill Date</h6>
                         <p class="mb-0">{{ bill.bill_date|date:"d/m/Y" }}</p>
                     </div>
-                    <div class="col-md-3">
+                    <div class="col-md-4 mt-3">
                         <h6 class="text-muted mb-2">Due Date</h6>
                         <p class="mb-0">{{ bill.due_date|date:"d/m/Y" }}</p>
                     </div>
@@ -103,6 +113,30 @@
     </div>
     
     <div class="col-lg-4">
+        {% with atts=bill.attachments.all %}
+        {% if atts %}
+        <div class="card mb-4">
+            <div class="card-header bg-transparent border-bottom-0">
+                <h6 class="mb-0 fw-semibold"><i class="fas fa-paperclip me-2 text-muted"></i>Attachments</h6>
+            </div>
+            <div class="card-body pt-0">
+                <ul class="list-unstyled mb-0 small">
+                    {% for att in atts %}
+                    <li class="mb-2 d-flex justify-content-between align-items-start gap-2">
+                        <a href="{{ att.file.url }}" target="_blank" rel="noopener" class="text-decoration-none">
+                            {% if att.filename %}{{ att.filename }}{% else %}{{ att.file.name }}{% endif %}
+                        </a>
+                        {% if att.uploaded_at %}
+                        <span class="text-muted text-nowrap">{{ att.uploaded_at|date:"d/m/Y H:i" }}</span>
+                        {% endif %}
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+        {% endif %}
+        {% endwith %}
+
         <div class="card mb-4">
             <div class="card-body">
                 <h6 class="text-muted mb-3">Status</h6>

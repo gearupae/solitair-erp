@@ -414,7 +414,7 @@ class ProjectExpenseListView(PermissionRequiredMixin, ListView):
     
     def get_queryset(self):
         queryset = ProjectExpense.objects.filter(is_active=True).select_related(
-            'project', 'vendor', 'approved_by', 'journal_entry'
+            'project', 'vendor', 'approved_by', 'journal_entry', 'vendor_bill',
         )
         
         search = self.request.GET.get('search')
@@ -526,7 +526,7 @@ class ProjectExpenseDetailView(PermissionRequiredMixin, DetailView):
     
     def get_queryset(self):
         return ProjectExpense.objects.select_related(
-            'project', 'vendor', 'approved_by', 'expense_account', 'journal_entry'
+            'project', 'vendor', 'approved_by', 'expense_account', 'journal_entry', 'vendor_bill',
         )
     
     def get_context_data(self, **kwargs):

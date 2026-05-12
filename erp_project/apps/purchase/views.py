@@ -20,7 +20,7 @@ from django.views.decorators.http import require_POST
 
 from .models import (
     Vendor, PurchaseRequest, PurchaseRequestItem, PurchaseRequestAttachment,
-    PurchaseOrder, PurchaseOrderItem, VendorBill, VendorBillItem,
+    PurchaseOrder, PurchaseOrderItem, VendorBill, VendorBillItem, VendorBillAttachment,
     ExpenseClaim, ExpenseClaimItem, RecurringExpense, RecurringExpenseLog
 )
 from .forms import (
@@ -31,6 +31,7 @@ from .forms import (
     RecurringExpenseForm
 )
 from apps.core.mixins import PermissionRequiredMixin, CreatePermissionMixin, UpdatePermissionMixin
+from apps.core.utils import PermissionChecker
 
 
 def _active_inventory_items_json():
@@ -53,7 +54,20 @@ def _active_inventory_items_json():
 
 def _pr_inventory_items_json():
     return _active_inventory_items_json()
-from apps.core.utils import PermissionChecker
+
+
+def _save_vendor_bill_attachments(request, bill):
+    """Persist uploaded files from `attachments` multi-file input."""
+    uploaded = request.FILES.getlist('attachments')
+    if not uploaded:
+        return
+    for f in uploaded:
+        VendorBillAttachment.objects.create(
+            vendor_bill=bill,
+            file=f,
+            filename=getattr(f, 'name', '') or '',
+            uploaded_by=request.user if request.user.is_authenticated else None,
+        )
 
 
 def _can_manage_pr_vendor_attachments(user, pr) -> bool:
@@ -942,7 +956,7 @@ class VendorBillListView(PermissionRequiredMixin, ListView):
     paginate_by = 25
     
     def get_queryset(self):
-        queryset = VendorBill.objects.filter(is_active=True).select_related('vendor')
+        queryset = VendorBill.objects.filter(is_active=True).select_related('vendor', 'project')
         search = self.request.GET.get('search')
         if search:
             queryset = queryset.filter(
@@ -1009,6 +1023,7 @@ class VendorBillCreateView(CreatePermissionMixin, CreateView):
         self.object = form.save()
         items_formset.instance = self.object
         items_formset.save()
+        _save_vendor_bill_attachments(self.request, self.object)
         self.object.calculate_totals()
         messages.success(self.request, f'Vendor Bill {self.object.bill_number} created.')
         return redirect(self.success_url)
@@ -1073,6 +1088,7 @@ class VendorBillUpdateView(UpdatePermissionMixin, UpdateView):
         self.object = form.save()
         items_formset.instance = self.object
         items_formset.save()
+        _save_vendor_bill_attachments(self.request, self.object)
         self.object.calculate_totals()
         messages.success(self.request, f'Vendor Bill {self.object.bill_number} updated.')
         return redirect('purchase:bill_detail', pk=self.object.pk)
@@ -1089,7 +1105,14 @@ class VendorBillDetailView(PermissionRequiredMixin, DetailView):
     context_object_name = 'bill'
     module_name = 'purchase'
     permission_type = 'view'
-    
+
+    def get_queryset(self):
+        return (
+            VendorBill.objects.filter(is_active=True)
+            .select_related('vendor', 'journal_entry', 'project')
+            .prefetch_related('items', 'attachments')
+        )
+
     def get_context_data(self, **kwargs):
         from apps.core.audit import get_entity_audit_history
         

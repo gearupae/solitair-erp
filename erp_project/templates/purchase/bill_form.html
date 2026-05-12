@@ -26,7 +26,7 @@
 </div>
 {% endif %}
 
-<form method="post">
+<form method="post" enctype="multipart/form-data">
     {% csrf_token %}
     
     <div class="card mb-4">
@@ -37,6 +37,12 @@
                     <label class="form-label">Vendor <span class="text-danger">*</span></label>
                     {{ form.vendor }}
                     {% if form.vendor.errors %}<div class="text-danger small">{{ form.vendor.errors|join:", " }}</div>{% endif %}
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Project</label>
+                    {{ form.project }}
+                    {% if form.project.errors %}<div class="text-danger small">{{ form.project.errors|join:", " }}</div>{% endif %}
+                    <small class="text-muted d-block mt-1">After you post this bill, the amount appears under this project and counts against its budget.</small>
                 </div>
                 <div class="col-md-4">
                     <label class="form-label">Vendor Invoice #</label>
@@ -151,6 +157,32 @@
                     </tfoot>
                 </table>
             </div>
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header"><h6 class="mb-0 fw-semibold">Attachments</h6></div>
+        <div class="card-body">
+            {% if object.pk %}
+            {% with atts=object.attachments.all %}
+            {% if atts %}
+            <p class="text-muted small mb-2">Current files (upload more below to add):</p>
+            <ul class="list-unstyled mb-3 small">
+                {% for att in atts %}
+                <li class="mb-1">
+                    <a href="{{ att.file.url }}" target="_blank" rel="noopener" class="text-decoration-none">
+                        <i class="fas fa-paperclip me-1"></i>{% if att.filename %}{{ att.filename }}{% else %}{{ att.file.name }}{% endif %}
+                    </a>
+                </li>
+                {% endfor %}
+            </ul>
+            {% endif %}
+            {% endwith %}
+            {% endif %}
+            <label class="form-label">Upload files</label>
+            <input type="file" name="attachments" class="form-control" multiple
+                   accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.xls,.xlsx,.txt">
+            <small class="text-muted d-block mt-1">Optional — e.g. vendor tax invoice, delivery note. You can select multiple files.</small>
         </div>
     </div>
     

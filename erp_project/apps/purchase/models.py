@@ -344,6 +344,14 @@ class VendorBill(BaseModel):
         on_delete=models.PROTECT,
         related_name='bills'
     )
+    project = models.ForeignKey(
+        'projects.Project',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='vendor_bills',
+        help_text='If set, bill totals count toward this project after posting (see Projects → Expenses).',
+    )
     vendor_invoice_number = models.CharField(max_length=100, blank=True)
     bill_date = models.DateField()
     due_date = models.DateField()
@@ -499,7 +507,83 @@ class VendorBill(BaseModel):
         self.status = 'posted'
         self.save(update_fields=['journal_entry', 'status'])
 
+        self._sync_linked_project_expense(user=user)
+
         return journal
+
+    def _sync_linked_project_expense(self, user=None):
+        """
+        When a bill is posted with a project, create/update a ProjectExpense line
+        for budget and overview totals. Uses this bill's journal entry only (no second posting).
+        """
+        if not self.project_id:
+            return None
+        from apps.projects.models import ProjectExpense
+
+        notes = (self.notes or '').strip()
+        desc = notes[:500] if notes else f'Vendor bill {self.bill_number}'
+        inv_ref = (self.vendor_invoice_number or '')[:100] or self.bill_number[:100]
+
+        expense, created = ProjectExpense.objects.get_or_create(
+            vendor_bill=self,
+            defaults={
+                'project_id': self.project_id,
+                'vendor': self.vendor,
+                'category': 'other',
+                'description': desc,
+                'expense_date': self.bill_date,
+                'amount': self.subtotal,
+                'vat_amount': self.vat_amount,
+                'status': 'posted',
+                'posted': True,
+                'journal_entry': self.journal_entry,
+                'invoice_reference': inv_ref,
+            },
+        )
+        if not created:
+            expense.project_id = self.project_id
+            expense.vendor = self.vendor
+            expense.description = desc
+            expense.expense_date = self.bill_date
+            expense.amount = self.subtotal
+            expense.vat_amount = self.vat_amount
+            expense.journal_entry = self.journal_entry
+            expense.invoice_reference = inv_ref
+            expense.status = 'posted'
+            expense.posted = True
+            expense.save()
+
+        self.project.update_totals()
+        return expense
+
+
+class VendorBillAttachment(models.Model):
+    """Files linked to a vendor bill (e.g. scanned vendor invoice, GRN)."""
+
+    vendor_bill = models.ForeignKey(
+        VendorBill,
+        on_delete=models.CASCADE,
+        related_name='attachments',
+    )
+    file = models.FileField(upload_to='vendor_bill_attachments/%Y/%m/')
+    filename = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text='Original filename for display',
+    )
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+    uploaded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+    )
+
+    class Meta:
+        ordering = ['id']
+
+    def __str__(self):
+        return self.filename or (self.file.name if self.file else str(self.pk))
 
 
 class VendorBillItem(models.Model):

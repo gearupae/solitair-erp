@@ -96,6 +96,12 @@
                                 <td>{{ expense.invoice_reference }}</td>
                             </tr>
                             {% endif %}
+                            {% if expense.vendor_bill %}
+                            <tr>
+                                <td class="text-muted">Vendor bill:</td>
+                                <td><a href="{% url 'purchase:bill_detail' expense.vendor_bill.pk %}">{{ expense.vendor_bill.bill_number }}</a></td>
+                            </tr>
+                            {% endif %}
                         </table>
                     </div>
                 </div>

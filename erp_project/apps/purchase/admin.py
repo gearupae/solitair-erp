@@ -1,8 +1,14 @@
 from django.contrib import admin
 from .models import (
     Vendor, PurchaseRequest, PurchaseRequestItem,
-    PurchaseOrder, PurchaseOrderItem, VendorBill, VendorBillItem
+    PurchaseOrder, PurchaseOrderItem, VendorBill, VendorBillItem, VendorBillAttachment,
 )
+
+
+class VendorBillAttachmentInline(admin.TabularInline):
+    model = VendorBillAttachment
+    extra = 0
+    readonly_fields = ['file', 'filename', 'uploaded_at', 'uploaded_by']
 
 
 @admin.register(Vendor)
@@ -50,11 +56,11 @@ class VendorBillItemInline(admin.TabularInline):
 
 @admin.register(VendorBill)
 class VendorBillAdmin(admin.ModelAdmin):
-    list_display = ['bill_number', 'vendor', 'bill_date', 'due_date', 'status', 'total_amount', 'paid_amount']
+    list_display = ['bill_number', 'vendor', 'project', 'bill_date', 'due_date', 'status', 'total_amount', 'paid_amount']
     list_filter = ['status', 'bill_date']
     search_fields = ['bill_number', 'vendor__name']
     readonly_fields = ['bill_number', 'subtotal', 'vat_amount', 'total_amount']
-    inlines = [VendorBillItemInline]
+    inlines = [VendorBillItemInline, VendorBillAttachmentInline]
 
 
 

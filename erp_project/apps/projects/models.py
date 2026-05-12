@@ -6,7 +6,7 @@ With full accounting integration:
 - All postings flow automatically to GL with project/cost center tracking
 """
 from django.db import models
-from django.db.models import Sum
+from django.db.models import Sum, Q
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from decimal import Decimal
@@ -284,7 +284,16 @@ class ProjectExpense(BaseModel):
         related_name='project_expenses'
     )
     invoice_reference = models.CharField(max_length=100, blank=True)
-    
+
+    # Link to posted vendor bill (expense line mirrors bill; single JE via vendor bill)
+    vendor_bill = models.ForeignKey(
+        'purchase.VendorBill',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='linked_project_expenses',
+    )
+
     # Status & Approval
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft')
     approved_by = models.ForeignKey(
@@ -312,6 +321,13 @@ class ProjectExpense(BaseModel):
     
     class Meta:
         ordering = ['-expense_date', '-created_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['vendor_bill'],
+                condition=Q(vendor_bill__isnull=False),
+                name='uniq_project_expense_per_vendor_bill',
+            ),
+        ]
     
     def __str__(self):
         return f"{self.expense_number} - {self.project.project_code}: {self.description}"
@@ -333,6 +349,12 @@ class ProjectExpense(BaseModel):
 
         if self.posted:
             raise ValidationError("Expense already posted to accounting.")
+
+        if self.vendor_bill_id:
+            raise ValidationError(
+                "This expense is created from a vendor bill. "
+                "Amounts and posting are managed from Purchase → Vendor Bills."
+            )
 
         if self.status != 'approved':
             raise ValidationError("Only approved expenses can be posted.")
