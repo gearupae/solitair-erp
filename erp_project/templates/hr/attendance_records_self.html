@@ -68,10 +68,13 @@
                         <th>Status</th>
                         <th>In</th>
                         <th>Out</th>
+                        <th>In location</th>
+                        <th>Out location</th>
                         <th class="text-end">Working hrs</th>
                         <th class="text-end">Late (min)</th>
                         <th class="text-end">OT hrs</th>
                         <th>OT type</th>
+                        <th>Source</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -81,13 +84,16 @@
                         <td>{{ r.get_status_display }}</td>
                         <td>{{ r.check_in|default:"—" }}</td>
                         <td>{{ r.check_out|default:"—" }}</td>
+                        <td class="small text-muted font-monospace">{% if r.check_in_latitude is not None and r.check_in_longitude is not None %}{{ r.check_in_latitude }}, {{ r.check_in_longitude }}{% else %}—{% endif %}</td>
+                        <td class="small text-muted font-monospace">{% if r.check_out_latitude is not None and r.check_out_longitude is not None %}{{ r.check_out_latitude }}, {{ r.check_out_longitude }}{% else %}—{% endif %}</td>
                         <td class="text-end">{% if r.working_hours is not None %}{{ r.working_hours }}{% else %}—{% endif %}</td>
                         <td class="text-end">{{ r.late_minutes }}</td>
                         <td class="text-end">{{ r.overtime_hours }}</td>
                         <td class="small text-muted">{{ r.get_overtime_type_display }}</td>
+                        <td>{% if r.source == 'manual' %}<span class="badge bg-secondary">manual</span>{% elif r.source == 'import' %}<span class="badge bg-info text-dark">import</span>{% elif r.source == 'biometric' %}<span class="badge bg-success">biometric</span>{% elif r.source == 'public_link' %}<span class="badge bg-warning text-dark">public link</span>{% elif r.source == 'self_service' %}<span class="badge bg-primary">self-service</span>{% else %}<span class="badge bg-light text-dark">{{ r.source }}</span>{% endif %}</td>
                     </tr>
                     {% empty %}
-                    <tr><td colspan="8" class="text-muted text-center py-4">No rows for this period.</td></tr>
+                    <tr><td colspan="11" class="text-muted text-center py-4">No rows for this period.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>

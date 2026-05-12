@@ -2,9 +2,10 @@
 from __future__ import annotations
 
 import csv
+import json
 from urllib.parse import urlencode
 from datetime import date, datetime as datetime_cls
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from io import StringIO
 
 from django.contrib import messages
@@ -14,6 +15,10 @@ from django.db.models import Count, Q, Sum
 from django.http import HttpResponse, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, HttpResponseRedirect, redirect, render
 from django.urls import reverse, reverse_lazy
+from django.utils import timezone as django_timezone
+from django.utils.decorators import method_decorator
+from django.views.decorators.csrf import ensure_csrf_cookie
+from django.views.decorators.http import require_POST
 from django.views.generic import DeleteView, FormView, ListView, TemplateView, UpdateView
 from django.views.generic.edit import CreateView
 
@@ -102,6 +107,10 @@ class AttendanceRecordListView(PermissionRequiredMixin, ListView):
                 'status',
                 'check_in',
                 'check_out',
+                'check_in_latitude',
+                'check_in_longitude',
+                'check_out_latitude',
+                'check_out_longitude',
                 'working_hours',
                 'late_minutes',
                 'overtime_hours',
@@ -118,6 +127,10 @@ class AttendanceRecordListView(PermissionRequiredMixin, ListView):
                     r.get_status_display(),
                     r.check_in or '',
                     r.check_out or '',
+                    r.check_in_latitude if r.check_in_latitude is not None else '',
+                    r.check_in_longitude if r.check_in_longitude is not None else '',
+                    r.check_out_latitude if r.check_out_latitude is not None else '',
+                    r.check_out_longitude if r.check_out_longitude is not None else '',
                     r.working_hours if r.working_hours is not None else '',
                     r.late_minutes,
                     r.overtime_hours,
@@ -144,6 +157,7 @@ class AttendanceRecordListView(PermissionRequiredMixin, ListView):
             q.pop(obsolete, None)
         q['export'] = 'csv'
         ctx['export_querystring'] = urlencode(q)
+        ctx['public_attendance_url'] = self.request.build_absolute_uri(reverse('hr:public_attendance'))
         return ctx
 
 
@@ -600,3 +614,167 @@ def attendance_import_csv(request):
         },
     )
 
+
+def _coerce_lat_lng(lat, lng):
+    try:
+        if lat is None or lng is None:
+            return None, None
+        la = Decimal(str(lat))
+        lo = Decimal(str(lng))
+        if not (Decimal('-90') <= la <= Decimal('90') and Decimal('-180') <= lo <= Decimal('180')):
+            return None, None
+        return la, lo
+    except (InvalidOperation, TypeError, ValueError, ArithmeticError):
+        return None, None
+
+
+def _parse_client_datetime(raw):
+    if not raw:
+        return django_timezone.localtime()
+    try:
+        s = str(raw).strip().replace('Z', '+00:00')
+        dt = datetime_cls.fromisoformat(s)
+        if dt.tzinfo is None:
+            dt = django_timezone.make_aware(dt, django_timezone.get_current_timezone())
+        return django_timezone.localtime(dt)
+    except ValueError:
+        return django_timezone.localtime()
+
+
+def _fmt_coords(la, lo):
+    if la is None or lo is None:
+        return None
+    return f'{la},{lo}'
+
+
+def _punch_record_json(rec: AttendanceRecord, action: str):
+    msg = 'Clock in saved.' if action == 'check_in' else 'Clock out saved.'
+    return {
+        'ok': True,
+        'message': msg,
+        'employee_code': rec.employee.employee_code,
+        'date': rec.date.isoformat(),
+        'check_in': rec.check_in.isoformat() if rec.check_in else None,
+        'check_out': rec.check_out.isoformat() if rec.check_out else None,
+        'check_in_coords': _fmt_coords(rec.check_in_latitude, rec.check_in_longitude),
+        'check_out_coords': _fmt_coords(rec.check_out_latitude, rec.check_out_longitude),
+    }
+
+
+def _perform_attendance_punch(*, employee: Employee, action: str, when, lat, lng, source: str):
+    if action not in ('check_in', 'check_out'):
+        return False, 'Invalid action.'
+    la, lo = _coerce_lat_lng(lat, lng)
+    d = when.date()
+    t = when.time().replace(microsecond=0)
+
+    if action == 'check_in':
+        rec, _created = AttendanceRecord.objects.get_or_create(
+            employee=employee,
+            date=d,
+            defaults={'status': 'present', 'source': source},
+        )
+        if rec.check_in and not rec.check_out:
+            return False, 'Already clocked in for this date.'
+        if rec.check_in and rec.check_out:
+            return False, 'Attendance for this date is already complete.'
+        if (
+            not is_uae_weekend(d)
+            and not holiday_on_date_for_employee(d, employee)
+            and rec.status == 'absent'
+        ):
+            rec.status = 'present'
+        rec.check_in = t
+        rec.check_in_latitude = la
+        rec.check_in_longitude = lo
+        rec.source = source
+        rec.save()
+        recalculate_summary_for_employee_month(employee, d.year, d.month)
+        return True, rec
+
+    try:
+        rec = AttendanceRecord.objects.get(employee=employee, date=d)
+    except AttendanceRecord.DoesNotExist:
+        return False, 'Clock in first.'
+
+    if not rec.check_in:
+        return False, 'Clock in first.'
+    if rec.check_out:
+        return False, 'Already clocked out for this date.'
+
+    rec.check_out = t
+    rec.check_out_latitude = la
+    rec.check_out_longitude = lo
+    rec.save()
+    recalculate_summary_for_employee_month(employee, d.year, d.month)
+    return True, rec
+
+
+@method_decorator(ensure_csrf_cookie, name='dispatch')
+class PublicAttendancePunchView(TemplateView):
+    """Anonymous-friendly clock in/out (shareable link)."""
+
+    template_name = 'hr/public_attendance_punch.html'
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        from apps.hr.views_leave_extended import _public_leave_branding_context
+
+        ctx.update(_public_leave_branding_context())
+        ctx['title'] = 'Mark attendance'
+        return ctx
+
+
+@require_POST
+def attendance_public_punch(request):
+    try:
+        data = json.loads(request.body.decode() or '{}')
+    except json.JSONDecodeError:
+        return JsonResponse({'ok': False, 'error': 'Invalid JSON.'}, status=400)
+
+    code = (data.get('employee_code') or '').strip()
+    action = (data.get('action') or '').strip()
+    if not code:
+        return JsonResponse({'ok': False, 'error': 'Employee code is required.'}, status=400)
+
+    emp = Employee.objects.filter(employee_code__iexact=code, is_active=True).first()
+    if not emp:
+        return JsonResponse({'ok': False, 'error': 'Employee not found for this code.'}, status=404)
+
+    when = _parse_client_datetime(data.get('client_time'))
+    ok, result = _perform_attendance_punch(
+        employee=emp,
+        action=action,
+        when=when,
+        lat=data.get('latitude'),
+        lng=data.get('longitude'),
+        source='public_link',
+    )
+    if not ok:
+        return JsonResponse({'ok': False, 'error': result}, status=400)
+    return JsonResponse(_punch_record_json(result, action))
+
+
+@login_required
+@require_POST
+def attendance_self_punch(request):
+    emp = employee_for_user(request.user)
+    if not emp:
+        return JsonResponse({'ok': False, 'error': 'No employee profile is linked to your user.'}, status=400)
+    try:
+        data = json.loads(request.body.decode() or '{}')
+    except json.JSONDecodeError:
+        return JsonResponse({'ok': False, 'error': 'Invalid JSON.'}, status=400)
+    action = (data.get('action') or '').strip()
+    when = _parse_client_datetime(data.get('client_time'))
+    ok, result = _perform_attendance_punch(
+        employee=emp,
+        action=action,
+        when=when,
+        lat=data.get('latitude'),
+        lng=data.get('longitude'),
+        source='self_service',
+    )
+    if not ok:
+        return JsonResponse({'ok': False, 'error': result}, status=400)
+    return JsonResponse(_punch_record_json(result, action))

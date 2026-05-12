@@ -164,6 +164,8 @@ class AttendanceRecord(BaseModel):
         ('manual', 'Manual'),
         ('import', 'Import'),
         ('biometric', 'Biometric'),
+        ('public_link', 'Public link'),
+        ('self_service', 'Self-service'),
     ]
     STATUS_CHOICES = [
         ('present', 'Present'),
@@ -178,6 +180,10 @@ class AttendanceRecord(BaseModel):
     date = models.DateField(db_index=True)
     check_in = models.TimeField(null=True, blank=True)
     check_out = models.TimeField(null=True, blank=True)
+    check_in_latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    check_in_longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    check_out_latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    check_out_longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='present')
     notes = models.TextField(blank=True)
     source = models.CharField(max_length=20, choices=SOURCE_CHOICES, default='manual')

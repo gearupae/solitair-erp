@@ -1,0 +1,127 @@
+{% extends 'hr/base_public.html' %}
+{% load static %}
+{% block title %}Mark attendance{% endblock %}
+{% block extra_head %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"/>
+{% endblock %}
+{% block heading %}Mark attendance{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-6">
+        <div class="card shadow-sm border-0">
+            <div class="card-body p-4">
+                <p class="text-muted small mb-3">
+                    Enter your employee code (for example <code>EMP-2026-0002</code>), allow location when prompted,
+                    then use <strong>Clock in</strong> at the start of your shift and <strong>Clock out</strong> when you leave.
+                </p>
+                <div class="mb-3">
+                    <label class="form-label" for="emp-code">Employee code</label>
+                    <input type="text" class="form-control form-control-lg" id="emp-code"
+                           placeholder="EMP-2026-0002" autocomplete="username"/>
+                </div>
+                <div class="d-grid gap-2 mb-3">
+                    <button type="button" class="btn btn-success btn-lg" id="btn-check-in">
+                        <i class="fas fa-sign-in-alt me-2"></i>Clock in
+                    </button>
+                    <button type="button" class="btn btn-outline-primary btn-lg" id="btn-check-out" disabled>
+                        <i class="fas fa-sign-out-alt me-2"></i>Clock out
+                    </button>
+                </div>
+                <div id="punch-feedback" class="alert d-none" role="alert"></div>
+                <p class="text-muted small mb-0">
+                    Time and date are taken from your device clock (shown in the company timezone on records).
+                    HR can review entries under Attendance including map coordinates and source.
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+(function () {
+  const punchUrl = "{% url 'hr:attendance_public_punch' %}";
+  const codeInput = document.getElementById('emp-code');
+  const btnIn = document.getElementById('btn-check-in');
+  const btnOut = document.getElementById('btn-check-out');
+  const feedback = document.getElementById('punch-feedback');
+
+  function getCsrf() {
+    const m = document.cookie.match(/csrftoken=([^;]+)/);
+    return m ? decodeURIComponent(m[1]) : '';
+  }
+
+  function showFeedback(text, ok) {
+    feedback.textContent = text;
+    feedback.classList.remove('d-none', 'alert-success', 'alert-danger');
+    feedback.classList.add(ok ? 'alert-success' : 'alert-danger');
+  }
+
+  function updateButtonsAfterPunch(data) {
+    if (data.check_in && !data.check_out) {
+      btnIn.disabled = true;
+      btnOut.disabled = false;
+    } else {
+      btnIn.disabled = true;
+      btnOut.disabled = true;
+    }
+  }
+
+  function geoThenPunch(action) {
+    const code = (codeInput.value || '').trim();
+    if (!code) {
+      showFeedback('Please enter your employee code.', false);
+      return;
+    }
+    const finish = (lat, lng) => {
+      fetch(punchUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': getCsrf(),
+        },
+        body: JSON.stringify({
+          employee_code: code,
+          action: action,
+          latitude: lat,
+          longitude: lng,
+          client_time: new Date().toISOString(),
+        }),
+      })
+        .then((r) => r.json().then((data) => ({ status: r.status, data })))
+        .then(({ status, data }) => {
+          if (data.ok) {
+            showFeedback(
+              data.message +
+                ' — ' +
+                (data.date || '') +
+                ' In: ' +
+                (data.check_in || '—') +
+                ' · Out: ' +
+                (data.check_out || '—'),
+              true
+            );
+            updateButtonsAfterPunch(data);
+          } else {
+            showFeedback(data.error || 'Something went wrong.', false);
+          }
+        })
+        .catch(() => showFeedback('Network error. Try again.', false));
+    };
+
+    if (!navigator.geolocation) {
+      finish(null, null);
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => finish(pos.coords.latitude, pos.coords.longitude),
+      () => finish(null, null),
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+    );
+  }
+
+  btnIn.addEventListener('click', () => geoThenPunch('check_in'));
+  btnOut.addEventListener('click', () => geoThenPunch('check_out'));
+})();
+</script>
+{% endblock %}
