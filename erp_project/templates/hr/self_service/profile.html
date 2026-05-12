@@ -10,7 +10,7 @@
 {% if not employee %}
 <div class="alert alert-info">
     <p class="mb-2">Your login is not linked to an employee record, so you cannot clock in or out here.</p>
-    <p class="mb-0 small text-muted">Ask HR to open your employee in HR → Employees, set <strong>User account</strong> to this login, and save.</p>
+    <p class="mb-0 small text-muted">Ask HR to open <strong>HR → Employees → your name → Edit</strong>, set the <strong>ERP login</strong> field to your Gearup username, save, then try again.</p>
     {% if can_link_help %}
     <p class="mb-0 mt-3"><a href="{% url 'hr:employee_list' %}" class="btn btn-sm btn-outline-primary">Open employee list</a></p>
     {% endif %}

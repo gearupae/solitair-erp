@@ -1,4 +1,5 @@
 from django import forms
+from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError as CoreValidationError
 from django.db.models import Q, Sum, F, IntegerField
 from django.db import models
@@ -58,6 +59,7 @@ class EmployeeForm(forms.ModelForm):
         model = Employee
         fields = [
             'employee_code',
+            'user',
             'first_name',
             'last_name',
             'email',
@@ -77,6 +79,9 @@ class EmployeeForm(forms.ModelForm):
             'visa_number',
             'visa_expiry',
         ]
+        labels = {
+            'user': 'ERP login',
+        }
         widgets = {
             # Match contracts/finance: explicit form-control + ISO format for HTML5 date inputs
             'date_of_birth': forms.DateInput(
@@ -115,6 +120,20 @@ class EmployeeForm(forms.ModelForm):
         self.fields['salary_template'].widget.attrs['class'] = 'form-select'
         self.fields['salary_template'].help_text = (
             'Optional. Allowances will be pulled from the selected template when generating payroll.'
+        )
+
+        User = get_user_model()
+        user_qs = User.objects.filter(is_active=True).order_by('username', 'email')
+        if self.instance and self.instance.pk and self.instance.user_id:
+            user_qs = User.objects.filter(Q(is_active=True) | Q(pk=self.instance.user_id)).order_by(
+                'username', 'email'
+            )
+        self.fields['user'].queryset = user_qs
+        self.fields['user'].required = False
+        self.fields['user'].empty_label = '— None —'
+        self.fields['user'].widget.attrs['class'] = 'form-select'
+        self.fields['user'].help_text = (
+            'Link this person’s Gearup login for clock in/out, self-service, and payslips.'
         )
 
         def _tpl_label(obj):
@@ -163,7 +182,7 @@ class EmployeeForm(forms.ModelForm):
         )
 
         for name, field in self.fields.items():
-            if name in ['department', 'designation', 'status', 'gender', 'company', 'location']:
+            if name in ['department', 'designation', 'status', 'gender', 'company', 'location', 'user']:
                 field.widget.attrs['class'] = 'form-select'
             elif name in ('date_of_birth', 'date_of_joining', 'visa_expiry'):
                 field.input_formats = ['%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y']
@@ -180,8 +199,19 @@ class EmployeeForm(forms.ModelForm):
         if self.instance.pk:
             qs = qs.exclude(pk=self.instance.pk)
         if qs.exists():
-            raise ValidationError('This employee code is already in use.')
+            raise forms.ValidationError('This employee code is already in use.')
         return raw
+
+    def clean_user(self):
+        u = self.cleaned_data.get('user')
+        if u is None:
+            return u
+        qs = Employee.objects.filter(user=u, is_active=True)
+        if self.instance.pk:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise forms.ValidationError('This login is already linked to another employee.')
+        return u
 
     def clean_emirates_id(self):
         value = (self.cleaned_data.get('emirates_id') or '').strip()

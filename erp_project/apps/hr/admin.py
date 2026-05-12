@@ -39,7 +39,7 @@ class DesignationAdmin(admin.ModelAdmin):
 
 @admin.register(Employee)
 class EmployeeAdmin(admin.ModelAdmin):
-    list_display = ['employee_code', 'first_name', 'last_name', 'company', 'department', 'designation', 'status']
+    list_display = ['employee_code', 'first_name', 'last_name', 'user', 'company', 'department', 'designation', 'status']
     list_filter = ['status', 'department', 'location']
 
 @admin.register(LeaveType)

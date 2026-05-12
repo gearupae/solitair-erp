@@ -50,6 +50,12 @@
                     {% endif %}
                     {% if form.employee_code.errors %}<div class="text-danger small mt-1">{{ form.employee_code.errors|join:", " }}</div>{% endif %}
                 </div>
+                <div class="col-md-5">
+                    <label class="form-label" for="{{ form.user.id_for_label }}">{{ form.user.label }}</label>
+                    {{ form.user }}
+                    {% if form.user.help_text %}<small class="text-muted d-block mt-1">{{ form.user.help_text }}</small>{% endif %}
+                    {% if form.user.errors %}<div class="text-danger small mt-1">{{ form.user.errors|join:", " }}</div>{% endif %}
+                </div>
                 <div class="col-md-3"><label class="form-label">First Name <span class="text-danger">*</span></label>{{ form.first_name }}</div>
                 <div class="col-md-3"><label class="form-label">Last Name <span class="text-danger">*</span></label>{{ form.last_name }}</div>
                 <div class="col-md-3"><label class="form-label">Email <span class="text-danger">*</span></label>{{ form.email }}</div>
