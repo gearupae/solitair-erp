@@ -100,7 +100,8 @@
                         <td>{{ project.completed_tasks }}/{{ project.total_tasks }} tasks</td>
                         <td class="text-end text-nowrap">
                             {% if project.budget > 0 %}
-                                {% widthratio project.recorded_expenses_sum project.budget 100 as exp_pct %}
+                                {% with total_exp=project.manual_expenses_sum|add:project.vendor_bills_sum %}
+                                {% widthratio total_exp project.budget 100 as exp_pct %}
                                 {% with p=exp_pct|add:0 %}
                                 {% if p < 50 %}
                                 <span class="badge badge-active">{{ exp_pct }}% of budget</span>
@@ -109,6 +110,7 @@
                                 {% else %}
                                 <span class="badge badge-inactive">{{ exp_pct }}% of budget</span>
                                 {% endif %}
+                                {% endwith %}
                                 {% endwith %}
                             {% else %}
                                 <span class="text-muted">—</span>

@@ -34,13 +34,26 @@ class ProjectListView(PermissionRequiredMixin, ListView):
         status = self.request.GET.get('status')
         if status:
             queryset = queryset.filter(status=status)
-        # Sum recorded project expenses (same rule as detail: active, not rejected)
+        # Sum manual project expenses (active, not rejected, not from a vendor bill)
         queryset = queryset.annotate(
-            recorded_expenses_sum=Coalesce(
+            manual_expenses_sum=Coalesce(
                 Sum(
                     'project_expenses__total_amount',
                     filter=Q(project_expenses__is_active=True)
-                    & ~Q(project_expenses__status='rejected'),
+                    & ~Q(project_expenses__status='rejected')
+                    & Q(project_expenses__vendor_bill__isnull=True),
+                ),
+                Value(Decimal('0.00')),
+                output_field=DecimalField(max_digits=18, decimal_places=2),
+            )
+        )
+        # Sum vendor bill amounts linked to the project (all active, non-cancelled)
+        queryset = queryset.annotate(
+            vendor_bills_sum=Coalesce(
+                Sum(
+                    'vendor_bills__total_amount',
+                    filter=Q(vendor_bills__is_active=True)
+                    & ~Q(vendor_bills__status='cancelled'),
                 ),
                 Value(Decimal('0.00')),
                 output_field=DecimalField(max_digits=18, decimal_places=2),
@@ -247,12 +260,32 @@ class ProjectDetailView(PermissionRequiredMixin, DetailView):
         context['can_create_projects'] = self.request.user.is_superuser or PermissionChecker.has_permission(
             self.request.user, 'projects', 'create'
         )
-        pe = self.object.project_expenses.filter(is_active=True).exclude(status='rejected')
+        pe = self.object.project_expenses.filter(is_active=True).exclude(
+            status='rejected'
+        ).exclude(vendor_bill__isnull=False)   # bill-synced rows counted via vendor bills below
         agg = pe.aggregate(s=Sum('total_amount'), c=Count('id'))
-        recorded = agg['s'] if agg['s'] is not None else Decimal('0.00')
+        manual_expenses_total = agg['s'] if agg['s'] is not None else Decimal('0.00')
+        context['manual_expenses_total'] = manual_expenses_total
+        context['has_manual_expenses'] = (agg['c'] or 0) > 0
+
+        # Vendor bills linked to this project (all active statuses — draft counts as committed)
+        from apps.purchase.models import VendorBill
+        vendor_bills = (
+            self.object.vendor_bills
+            .filter(is_active=True)
+            .exclude(status='cancelled')
+            .select_related('vendor')
+            .order_by('-bill_date')
+        )
+        bills_total = vendor_bills.aggregate(s=Sum('total_amount'))['s'] or Decimal('0.00')
+        context['project_vendor_bills'] = vendor_bills
+        context['project_vendor_bills_total'] = bills_total
+        context['has_vendor_bills'] = vendor_bills.exists()
+
+        recorded = manual_expenses_total + bills_total
         context['recorded_expenses_total'] = recorded
         context['budget_profit'] = self.object.budget - recorded
-        context['has_recorded_expenses'] = (agg['c'] or 0) > 0
+        context['has_recorded_expenses'] = recorded > 0
         context['today'] = date.today()
         context['gatepass_alert_horizon'] = date.today() + timedelta(days=10)
         return context

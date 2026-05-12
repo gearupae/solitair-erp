@@ -273,12 +273,70 @@
                 <p class="small text-muted mb-0 mt-2">Progress is equal weight per task (e.g. 2 tasks → 50% each).</p>
             </div>
         </div>
-        {% if has_recorded_expenses %}
+        {% if has_vendor_bills or has_manual_expenses %}
         <div class="card">
-            <div class="card-body">
-                <h6 class="text-muted mb-2">Recorded expenses</h6>
-                <p class="mb-2 fs-5 fw-bold">AED {{ recorded_expenses_total|floatformat:2 }}</p>
-                <a href="{% url 'projects:expense_list' %}?project={{ project.pk }}" class="btn btn-sm btn-outline-primary">View expenses for this project</a>
+            <div class="card-header bg-transparent">
+                <h6 class="mb-0 fw-semibold">Project Expenses</h6>
+            </div>
+            <div class="card-body pt-2 pb-2">
+
+                {% if has_vendor_bills %}
+                <p class="text-muted small text-uppercase fw-semibold mb-1 mt-2">Vendor Bills</p>
+                <div class="table-responsive mb-2">
+                    <table class="table table-sm mb-0 small">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Bill #</th>
+                                <th>Vendor</th>
+                                <th>Date</th>
+                                <th>Status</th>
+                                <th class="text-end">Amount (AED)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for bill in project_vendor_bills %}
+                            <tr>
+                                <td><a href="{% url 'purchase:bill_detail' bill.pk %}" class="text-decoration-none fw-medium">{{ bill.bill_number }}</a></td>
+                                <td>{{ bill.vendor.name }}</td>
+                                <td>{{ bill.bill_date|date:"d/m/Y" }}</td>
+                                <td>
+                                    {% if bill.status == 'draft' %}<span class="badge bg-secondary">Draft</span>
+                                    {% elif bill.status == 'posted' %}<span class="badge" style="background:#dcfce7;color:#166534;">Posted</span>
+                                    {% elif bill.status == 'paid' %}<span class="badge badge-active">Paid</span>
+                                    {% elif bill.status == 'partial' %}<span class="badge" style="background:#dbeafe;color:#1e40af;">Partial</span>
+                                    {% elif bill.status == 'overdue' %}<span class="badge badge-inactive">Overdue</span>
+                                    {% else %}<span class="badge bg-secondary">{{ bill.get_status_display }}</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-end fw-medium">{{ bill.total_amount|floatformat:2 }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                        <tfoot class="table-light">
+                            <tr>
+                                <td colspan="4" class="text-end fw-semibold small">Bills Total</td>
+                                <td class="text-end fw-bold">{{ project_vendor_bills_total|floatformat:2 }}</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+                {% endif %}
+
+                {% if has_manual_expenses %}
+                <p class="text-muted small text-uppercase fw-semibold mb-1 mt-2">Other Expenses</p>
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span class="small text-muted">Manual project expenses</span>
+                    <span class="fw-bold small">AED {{ manual_expenses_total|floatformat:2 }}</span>
+                </div>
+                <a href="{% url 'projects:expense_list' %}?project={{ project.pk }}" class="btn btn-sm btn-outline-secondary w-100 mb-2">
+                    <i class="fas fa-list me-1"></i>View all expenses
+                </a>
+                {% endif %}
+
+            </div>
+            <div class="card-footer bg-transparent d-flex justify-content-between align-items-center py-2">
+                <span class="fw-semibold">Total Expenses</span>
+                <span class="fw-bold fs-6">AED {{ recorded_expenses_total|floatformat:2 }}</span>
             </div>
         </div>
         {% endif %}
