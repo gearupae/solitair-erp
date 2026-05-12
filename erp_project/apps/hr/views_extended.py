@@ -915,12 +915,15 @@ class SelfServiceProfileView(LoginRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
         emp = employee_for_user(self.request.user)
-        if not emp:
-            raise Http404()
-        prof, _ = EmployeeHRProfile.objects.get_or_create(employee=emp)
         ctx['employee'] = emp
-        ctx['profile'] = prof
+        ctx['profile'] = None
+        if emp:
+            prof, _ = EmployeeHRProfile.objects.get_or_create(employee=emp)
+            ctx['profile'] = prof
         ctx['title'] = 'My profile'
+        ctx['can_link_help'] = self.request.user.is_superuser or PermissionChecker.has_permission(
+            self.request.user, 'hr', 'edit'
+        )
         return ctx
 
 
