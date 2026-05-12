@@ -1,23 +1,162 @@
 {% extends 'base.html' %}
 {% block content %}
-<div class="page-header mb-4"><h4 class="mb-1 fw-bold">{{ title }}</h4></div>
+<div class="page-header mb-4">
+    <h4 class="mb-1 fw-bold">{{ title }}</h4>
+    {% if employee %}
+    <p class="text-muted mb-0">{{ employee.full_name }} · {{ employee.employee_code }}</p>
+    {% endif %}
+</div>
+
 {% if not employee %}
 <div class="alert alert-info">
-    <p class="mb-2">Your login is not linked to an employee record yet, so this page has no profile to show.</p>
+    <p class="mb-2">Your login is not linked to an employee record, so you cannot clock in or out here.</p>
     <p class="mb-0 small text-muted">Ask HR to open your employee in HR → Employees, set <strong>User account</strong> to this login, and save.</p>
     {% if can_link_help %}
     <p class="mb-0 mt-3"><a href="{% url 'hr:employee_list' %}" class="btn btn-sm btn-outline-primary">Open employee list</a></p>
     {% endif %}
 </div>
 {% else %}
-<div class="card"><div class="card-body">
-<table class="table table-borderless mb-0">
-    <tr><td class="text-muted">Code</td><td>{{ employee.employee_code }}</td></tr>
-    <tr><td class="text-muted">Email</td><td>{{ employee.email }}</td></tr>
-    <tr><td class="text-muted">Department</td><td>{{ employee.department|default:"-" }}</td></tr>
-    <tr><td class="text-muted">Designation</td><td>{{ employee.designation|default:"-" }}</td></tr>
-    <tr><td class="text-muted">Entity</td><td>{{ profile.get_employment_entity_display }}</td></tr>
-</table>
-</div></div>
+<p class="text-muted small mb-3">Allow location when your browser asks. Records appear in HR attendance with source <span class="badge bg-primary">self-service</span>.</p>
+
+<div class="card shadow-sm mb-4">
+    <div class="card-body p-4">
+        <p class="small text-muted mb-2">Today · <span id="svc-today-date"></span></p>
+        <div id="svc-complete-msg" class="alert alert-success d-none mb-3 py-2" role="status"></div>
+
+        <div id="svc-clock-in-block">
+            <button type="button" class="btn btn-success btn-lg w-100 w-sm-auto px-5" id="svc-btn-check-in"
+                {% if today_attendance.has_check_in %}disabled style="display:none"{% endif %}>
+                <i class="fas fa-sign-in-alt me-2"></i>Clock in
+            </button>
+        </div>
+
+        <div id="svc-clock-out-block" class="mt-3 {% if not today_attendance.has_check_in %}d-none{% endif %}">
+            <p class="small text-muted mb-2">Clock in recorded{% if today_attendance.check_in_display %}: <strong>{{ today_attendance.check_in_display }}</strong>{% endif %}</p>
+            <button type="button" class="btn btn-outline-primary btn-lg w-100 w-sm-auto px-5" id="svc-btn-check-out"
+                {% if today_attendance.has_check_out %}disabled{% endif %}>
+                <i class="fas fa-sign-out-alt me-2"></i>Clock out
+            </button>
+            {% if today_attendance.has_check_out and today_attendance.check_out_display %}
+            <p class="small text-muted mt-2 mb-0">Out: <strong>{{ today_attendance.check_out_display }}</strong></p>
+            {% endif %}
+        </div>
+
+        <div id="svc-feedback" class="alert d-none mt-3 mb-0" role="alert"></div>
+    </div>
+</div>
+
+<p class="small text-muted mb-0">
+    <a href="{% url 'hr:attendance_records_self' %}">My attendance history</a>
+    <span class="mx-1">·</span>
+    <a href="{% url 'hr:self_service_payslips' %}">My payslips</a>
+</p>
+
+<script>
+(function () {
+  const punchUrl = "{% url 'hr:attendance_self_punch' %}";
+  const ta = {
+    hasIn: {{ today_attendance.has_check_in|yesno:"true,false" }},
+    hasOut: {{ today_attendance.has_check_out|yesno:"true,false" }},
+    inDisplay: "{{ today_attendance.check_in_display|escapejs }}",
+    outDisplay: "{{ today_attendance.check_out_display|escapejs }}"
+  };
+  const btnIn = document.getElementById('svc-btn-check-in');
+  const btnOut = document.getElementById('svc-btn-check-out');
+  const blockOut = document.getElementById('svc-clock-out-block');
+  const feedback = document.getElementById('svc-feedback');
+  const completeMsg = document.getElementById('svc-complete-msg');
+  const elToday = document.getElementById('svc-today-date');
+  if (elToday) {
+    elToday.textContent = new Date().toLocaleDateString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
+  }
+
+  function getCsrf() {
+    const m = document.cookie.match(/csrftoken=([^;]+)/);
+    return m ? decodeURIComponent(m[1]) : '';
+  }
+
+  function showFeedback(text, ok) {
+    feedback.textContent = text;
+    feedback.classList.remove('d-none', 'alert-success', 'alert-danger');
+    feedback.classList.add(ok ? 'alert-success' : 'alert-danger');
+  }
+
+  function applyState(data) {
+    const hasIn = !!(data.check_in);
+    const hasOut = !!(data.check_out);
+    if (hasIn) {
+      btnIn.style.display = 'none';
+      btnIn.disabled = true;
+      blockOut.classList.remove('d-none');
+    }
+    btnOut.disabled = hasOut;
+    if (hasIn && hasOut) {
+      completeMsg.textContent = 'You are clocked out for today. Times are saved in attendance.';
+      completeMsg.classList.remove('d-none');
+      btnOut.style.display = 'none';
+    }
+  }
+
+  if (ta.hasIn && ta.hasOut) {
+    completeMsg.textContent = 'You are clocked out for today (' + ta.inDisplay + ' – ' + ta.outDisplay + ').';
+    completeMsg.classList.remove('d-none');
+    if (btnOut) btnOut.style.display = 'none';
+  }
+
+  function geoThenPunch(action) {
+    const finish = function (lat, lng) {
+      fetch(punchUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': getCsrf(),
+        },
+        body: JSON.stringify({
+          action: action,
+          latitude: lat,
+          longitude: lng,
+          client_time: new Date().toISOString(),
+        }),
+      })
+        .then(function (r) { return r.json().then(function (data) { return { okHttp: r.ok, data: data }; }); })
+        .then(function (_ref) {
+          const data = _ref.data;
+          if (data.ok) {
+            showFeedback(
+              (data.message || 'Saved') + ' — In: ' + (data.check_in || '—') + ' · Out: ' + (data.check_out || '—'),
+              true
+            );
+            applyState(data);
+            if (data.check_in && !data.check_out && blockOut) {
+              var p = blockOut.querySelector('p.small');
+              if (p) p.innerHTML = 'Clock in recorded: <strong>' + (data.check_in || '') + '</strong>';
+            }
+            if (window.toastr) toastr.success(data.message || 'Saved');
+          } else {
+            var err = data.error || 'Something went wrong.';
+            showFeedback(err, false);
+            if (window.toastr) toastr.error(err);
+          }
+        })
+        .catch(function () {
+          showFeedback('Network error. Try again.', false);
+          if (window.toastr) toastr.error('Network error');
+        });
+    };
+    if (!navigator.geolocation) {
+      finish(null, null);
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      function (pos) { finish(pos.coords.latitude, pos.coords.longitude); },
+      function () { finish(null, null); },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+    );
+  }
+
+  if (btnIn && !btnIn.disabled) btnIn.addEventListener('click', function () { geoThenPunch('check_in'); });
+  if (btnOut && !btnOut.disabled) btnOut.addEventListener('click', function () { geoThenPunch('check_out'); });
+})();
+</script>
 {% endif %}
 {% endblock %}

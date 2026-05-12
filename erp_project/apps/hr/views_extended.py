@@ -38,6 +38,7 @@ from apps.hr.forms_extended import EmployeeAdvanceForm, PayrollSettingsForm, Pay
 from apps.hr.models import Department, Employee, LeaveBalance, LeaveRequest, Payroll
 from apps.hr.models_extended import (
     AdvanceRepayment,
+    AttendanceRecord,
     AttendanceSummary,
     EmployeeAdvance,
     EmployeeHRProfile,
@@ -916,11 +917,27 @@ class SelfServiceProfileView(LoginRequiredMixin, TemplateView):
         ctx = super().get_context_data(**kwargs)
         emp = employee_for_user(self.request.user)
         ctx['employee'] = emp
-        ctx['profile'] = None
+        ctx['today_attendance'] = None
         if emp:
-            prof, _ = EmployeeHRProfile.objects.get_or_create(employee=emp)
-            ctx['profile'] = prof
-        ctx['title'] = 'My profile'
+            today = timezone.localdate()
+            rec = AttendanceRecord.objects.filter(
+                employee=emp, date=today, is_active=True
+            ).first()
+            if rec:
+                ctx['today_attendance'] = {
+                    'has_check_in': bool(rec.check_in),
+                    'has_check_out': bool(rec.check_out),
+                    'check_in_display': rec.check_in.strftime('%H:%M') if rec.check_in else '',
+                    'check_out_display': rec.check_out.strftime('%H:%M') if rec.check_out else '',
+                }
+            else:
+                ctx['today_attendance'] = {
+                    'has_check_in': False,
+                    'has_check_out': False,
+                    'check_in_display': '',
+                    'check_out_display': '',
+                }
+        ctx['title'] = 'Clock in / out'
         ctx['can_link_help'] = self.request.user.is_superuser or PermissionChecker.has_permission(
             self.request.user, 'hr', 'edit'
         )

@@ -653,21 +653,9 @@
                         <li><hr class="dropdown-divider"></li>
                         <li>
                             <a class="dropdown-item" href="{% url 'hr:self_service_profile' %}">
-                                <i class="fas fa-id-badge me-2"></i>My HR portal
+                                <i class="fas fa-clock me-2"></i>Clock in / out
                             </a>
                         </li>
-                        {% if header_linked_employee %}
-                        <li>
-                            <button type="button" class="dropdown-item nav-attendance-punch" data-action="check_in">
-                                <i class="fas fa-sign-in-alt me-2"></i>Clock in
-                            </button>
-                        </li>
-                        <li>
-                            <button type="button" class="dropdown-item nav-attendance-punch" data-action="check_out">
-                                <i class="fas fa-sign-out-alt me-2"></i>Clock out
-                            </button>
-                        </li>
-                        {% endif %}
                         <li><hr class="dropdown-divider"></li>
                         <li>
                             <a class="dropdown-item text-danger" href="{% url 'logout' %}">
@@ -680,71 +668,6 @@
         </div>
     </div>
 </nav>
-
-{% if user.is_authenticated and header_linked_employee %}
-<script>
-(function () {
-  const punchUrl = "{% url 'hr:attendance_self_punch' %}";
-  function getCsrf() {
-    const m = document.cookie.match(/csrftoken=([^;]+)/);
-    return m ? decodeURIComponent(m[1]) : '';
-  }
-  function geoThenPunch(action) {
-    const finish = (lat, lng) => {
-      fetch(punchUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-CSRFToken': getCsrf(),
-        },
-        body: JSON.stringify({
-          action: action,
-          latitude: lat,
-          longitude: lng,
-          client_time: new Date().toISOString(),
-        }),
-      })
-        .then((r) => r.json().then((data) => ({ data })))
-        .then(({ data }) => {
-          if (data.ok) {
-            if (window.toastr) {
-              toastr.success(data.message || 'Saved');
-            } else {
-              alert(data.message || 'Saved');
-            }
-          } else {
-            const err = data.error || 'Failed';
-            if (window.toastr) {
-              toastr.error(err);
-            } else {
-              alert(err);
-            }
-          }
-        })
-        .catch(() => {
-          if (window.toastr) {
-            toastr.error('Network error');
-          } else {
-            alert('Network error');
-          }
-        });
-    };
-    if (!navigator.geolocation) {
-      finish(null, null);
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => finish(pos.coords.latitude, pos.coords.longitude),
-      () => finish(null, null),
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
-    );
-  }
-  document.querySelectorAll('.nav-attendance-punch').forEach((btn) => {
-    btn.addEventListener('click', () => geoThenPunch(btn.getAttribute('data-action')));
-  });
-})();
-</script>
-{% endif %}
 
 <!-- Reports Panel (Separate from dropdown) -->
 <div id="reportsPanel">
