@@ -15,12 +15,17 @@ urlpatterns = [
     path('estimates/create/', views.EstimateCreateView.as_view(), name='estimate_create'),
     path('estimates/<int:pk>/', views.EstimateDetailView.as_view(), name='estimate_detail'),
     path('estimates/<int:pk>/edit/', views.EstimateUpdateView.as_view(), name='estimate_edit'),
+    path('estimates/<int:pk>/approve-edit/', views.estimate_approve_edit, name='estimate_approve_edit'),
+    path('estimates/<int:pk>/reject-edit/', views.estimate_reject_edit, name='estimate_reject_edit'),
+    path('estimates/<int:pk>/duplicate/', views.estimate_duplicate, name='estimate_duplicate'),
     path('estimates/<int:pk>/delete/', views.estimate_delete, name='estimate_delete'),
     path('estimates/<int:pk>/convert/', views.estimate_convert_to_invoice, name='estimate_convert'),
+    path('estimates/<int:pk>/convert-project/', views.estimate_convert_to_project, name='estimate_convert_project'),
     path('estimates/<int:pk>/status/<str:status>/', views.estimate_update_status, name='estimate_status'),
     path('estimates/<int:pk>/set-status/', views.estimate_set_status, name='estimate_set_status'),
     path('estimates/<int:pk>/pdf/', views.estimate_pdf, name='estimate_pdf'),
     path('estimates/<int:pk>/pdf/proforma/', views.estimate_proforma_pdf, name='estimate_proforma_pdf'),
+    path('estimates/<int:pk>/send-email/', views.estimate_send_email, name='estimate_send_email'),
     path('api/inventory-item/<int:pk>/', views.inventory_item_json, name='inventory_item_json'),
 
     # Legacy /quotations/ URLs → estimates (permanent redirect)

@@ -8,7 +8,12 @@
             <li class="breadcrumb-item active">{{ title }}</li>
         </ol>
     </nav>
-    <h4 class="mb-0 fw-bold">{{ title }}</h4>
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mt-2">
+        <h4 class="mb-0 fw-bold">{{ title }}</h4>
+        <a href="{% url 'inventory:consumable_request_create' %}" class="btn btn-outline-primary">
+            <i class="fas fa-plus me-2"></i>Request items
+        </a>
+    </div>
 </div>
 
 {% if form.errors or items_formset.non_form_errors %}
@@ -45,6 +50,12 @@
                 <div class="col-md-4">
                     <label class="form-label">Required By Date</label>
                     {{ form.required_by_date }}
+                </div>
+                <div class="col-md-8">
+                    <label class="form-label">Project</label>
+                    {{ form.project }}
+                    {% if form.project.errors %}<div class="text-danger small">{{ form.project.errors }}</div>{% endif %}
+                    <small class="text-muted">Link this request to an existing project (optional).</small>
                 </div>
                 <div class="col-12">
                     <label class="form-label">Notes</label>

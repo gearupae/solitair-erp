@@ -87,7 +87,9 @@ def dashboard(request):
     try:
         from apps.sales.models import Estimate, Invoice
 
-        context['estimates_approved'] = Estimate.objects.filter(is_active=True, status='approved').count()
+        context['estimates_approved'] = Estimate.objects.filter(
+            is_active=True, status__in=['approved', 'quotation_won'],
+        ).count()
         inv = Invoice.objects.filter(
             is_active=True,
             invoice_date__gte=today.replace(day=1),

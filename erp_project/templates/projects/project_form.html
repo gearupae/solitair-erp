@@ -9,6 +9,17 @@ $(function () {
             placeholder: 'Select team members…',
             closeOnSelect: false,
             allowClear: true,
+            minimumResultsForSearch: 0,
+        });
+    }
+    if ($('.select2-technicians').length) {
+        $('.select2-technicians').select2({
+            theme: 'bootstrap-5',
+            width: '100%',
+            placeholder: 'Select technicians…',
+            closeOnSelect: false,
+            allowClear: true,
+            minimumResultsForSearch: 0,
         });
     }
 });
@@ -39,7 +50,13 @@ $(function () {
                     <label class="form-label" for="{{ form.members.id_for_label }}">Members</label>
                     {{ form.members }}
                     {% if form.members.errors %}<div class="text-danger small">{{ form.members.errors }}</div>{% endif %}
-                    <div class="form-text">Search and select one or more users.</div>
+                    <div class="form-text">All user accounts (inactive accounts sort after active). HR-only profiles still need a linked user to assign here.</div>
+                </div>
+                <div class="col-12">
+                    <label class="form-label" for="{{ form.technicians.id_for_label }}">Technicians</label>
+                    {{ form.technicians }}
+                    {% if form.technicians.errors %}<div class="text-danger small">{{ form.technicians.errors }}</div>{% endif %}
+                    <div class="form-text">Same list as Members.</div>
                 </div>
                 <div class="col-12"><label class="form-label">Description</label>{{ form.description }}{% if form.description.errors %}<div class="text-danger small">{{ form.description.errors }}</div>{% endif %}</div>
             </div>

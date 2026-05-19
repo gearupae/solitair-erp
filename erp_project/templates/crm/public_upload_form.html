@@ -1,0 +1,201 @@
+{% extends 'minimal_public.html' %}
+{% block title %}Upload to lead or customer{% endblock %}
+{% block content %}
+<div class="card shadow-sm border-0">
+    <div class="card-body p-4">
+        <h1 class="h4 fw-bold mb-1">Upload files to a lead or customer</h1>
+        <p class="text-muted small mb-4">No login required. Pick a lead or customer, then take photos or attach files. You can send many at once. Files appear on that record in CRM for your team.</p>
+
+        {% if not crm_leads and not crm_customers %}
+        <div class="alert alert-warning small">There are no active leads or customers to attach files to yet.</div>
+        {% endif %}
+
+        <form method="post" enctype="multipart/form-data" id="publicUploadForm">
+            {% csrf_token %}
+            <div class="mb-3">
+                <label for="id_customer" class="form-label">Lead or customer <span class="text-danger">*</span></label>
+                <select name="customer" id="id_customer" class="form-select" required>
+                    <option value="">— Select —</option>
+                    {% if crm_leads %}
+                    <optgroup label="Leads">
+                        {% for c in crm_leads %}
+                        <option value="{{ c.pk }}" {% if selected_customer_id == c.pk %}selected{% endif %}>{{ c.customer_number }} — {{ c.display_name }}</option>
+                        {% endfor %}
+                    </optgroup>
+                    {% endif %}
+                    {% if crm_customers %}
+                    <optgroup label="Customers">
+                        {% for c in crm_customers %}
+                        <option value="{{ c.pk }}" {% if selected_customer_id == c.pk %}selected{% endif %}>{{ c.customer_number }} — {{ c.display_name }}</option>
+                        {% endfor %}
+                    </optgroup>
+                    {% endif %}
+                </select>
+            </div>
+            <div class="mb-3">
+                <label for="id_note" class="form-label">Note <span class="text-muted fw-normal">(optional)</span></label>
+                <textarea name="note" id="id_note" class="form-control" rows="2" maxlength="500" placeholder="Short description for your upload">{{ posted_note|default:'' }}</textarea>
+            </div>
+
+            <input type="file" id="inputFiles" class="d-none" multiple accept="image/*,application/pdf,.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv,.zip">
+
+            <div class="d-grid gap-2 mb-3">
+                <button type="button" class="btn btn-primary" id="btnCamera">
+                    <i class="fas fa-camera me-2"></i>Take photo
+                </button>
+                <button type="button" class="btn btn-outline-primary" id="btnPickFiles">
+                    <i class="fas fa-paperclip me-2"></i>Choose files or images
+                </button>
+            </div>
+
+            <p class="small text-muted mb-2"><strong>Selected (<span id="fileCount">0</span>)</strong></p>
+            <ul class="list-group list-group-flush border rounded small mb-4" id="fileList" style="max-height: 220px; overflow-y: auto;">
+                <li class="list-group-item text-muted py-3 text-center" id="fileListEmpty">No files yet. Use the buttons above.</li>
+            </ul>
+
+            <noscript>
+                <div class="alert alert-warning small mb-3 mb-0">Turn on JavaScript for the camera button and combined file list. You can still upload using the field below.</div>
+                <input type="file" name="files" class="form-control mb-3" multiple>
+            </noscript>
+
+            <button type="submit" class="btn btn-success w-100 py-2" id="publicUploadSubmit">
+                <i class="fas fa-cloud-upload-alt me-2"></i>Upload
+            </button>
+        </form>
+    </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+(function () {
+    var form = document.getElementById('publicUploadForm');
+    var submitBtn = document.getElementById('publicUploadSubmit');
+    var dt = new DataTransfer();
+    var posting = false;
+
+    function renderList() {
+        var ul = document.getElementById('fileList');
+        var empty = document.getElementById('fileListEmpty');
+        ul.querySelectorAll('li.file-item').forEach(function (n) { n.remove(); });
+        document.getElementById('fileCount').textContent = dt.files.length;
+        if (dt.files.length === 0) {
+            empty.style.display = '';
+            return;
+        }
+        empty.style.display = 'none';
+        for (var i = 0; i < dt.files.length; i++) {
+            (function (file, index) {
+                var li = document.createElement('li');
+                li.className = 'list-group-item file-item d-flex justify-content-between align-items-center py-2';
+                li.innerHTML = '<span class="text-truncate me-2" title="' + file.name.replace(/"/g, '&quot;') + '">' + file.name + '</span>' +
+                    '<button type="button" class="btn btn-sm btn-outline-danger btn-remove" data-idx="' + index + '">Remove</button>';
+                ul.appendChild(li);
+            })(dt.files[i], i);
+        }
+        ul.querySelectorAll('.btn-remove').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                var idx = parseInt(btn.getAttribute('data-idx'), 10);
+                var next = new DataTransfer();
+                for (var j = 0; j < dt.files.length; j++) {
+                    if (j !== idx) next.items.add(dt.files[j]);
+                }
+                dt = next;
+                renderList();
+            });
+        });
+    }
+
+    function addFiles(fileList) {
+        for (var i = 0; i < fileList.length; i++) {
+            dt.items.add(fileList[i]);
+        }
+        renderList();
+    }
+
+    var captureInput = document.createElement('input');
+    captureInput.type = 'file';
+    captureInput.accept = 'image/*';
+    captureInput.capture = 'environment';
+    captureInput.style.display = 'none';
+    document.body.appendChild(captureInput);
+    captureInput.addEventListener('change', function () {
+        if (captureInput.files && captureInput.files.length) {
+            addFiles(captureInput.files);
+            captureInput.value = '';
+        }
+    });
+
+    document.getElementById('btnCamera').addEventListener('click', function () {
+        captureInput.click();
+    });
+
+    document.getElementById('btnPickFiles').addEventListener('click', function () {
+        document.getElementById('inputFiles').click();
+    });
+
+    document.getElementById('inputFiles').addEventListener('change', function () {
+        if (this.files && this.files.length) {
+            addFiles(this.files);
+        }
+        this.value = '';
+    });
+
+    form.addEventListener('submit', function (e) {
+        e.preventDefault();
+        if (posting) return;
+        if (dt.files.length === 0) {
+            alert('Please add at least one file or photo.');
+            return;
+        }
+        var customerEl = document.getElementById('id_customer');
+        if (!customerEl || !customerEl.value) {
+            alert('Please select a lead or customer.');
+            return;
+        }
+
+        var fd = new FormData();
+        var csrfInput = form.querySelector('input[name="csrfmiddlewaretoken"]');
+        if (csrfInput) fd.append('csrfmiddlewaretoken', csrfInput.value);
+        fd.append('customer', customerEl.value);
+        fd.append('note', (document.getElementById('id_note') && document.getElementById('id_note').value) || '');
+        for (var k = 0; k < dt.files.length; k++) {
+            fd.append('files', dt.files[k], dt.files[k].name);
+        }
+
+        posting = true;
+        submitBtn.disabled = true;
+        var origHtml = submitBtn.innerHTML;
+        submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Uploading…';
+
+        var action = form.getAttribute('action') || window.location.pathname;
+        fetch(action, {
+            method: 'POST',
+            body: fd,
+            credentials: 'same-origin',
+            redirect: 'follow',
+        })
+            .then(function (resp) {
+                if (resp.ok) {
+                    window.location.href = resp.url || action;
+                    return;
+                }
+                return resp.text().then(function (html) {
+                    document.open();
+                    document.write(html);
+                    document.close();
+                });
+            })
+            .catch(function () {
+                alert('Upload failed. Check your connection and try again.');
+            })
+            .then(function () {
+                posting = false;
+                if (submitBtn && submitBtn.isConnected) {
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = origHtml;
+                }
+            });
+    });
+})();
+</script>
+{% endblock %}

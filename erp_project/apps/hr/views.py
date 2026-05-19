@@ -33,6 +33,33 @@ def _employee_bank_form(request, employee):
     return EmployeeBankDetailForm(instance=inst)
 
 
+def _provision_employee_login_if_needed(request, form, employee):
+    """When the form includes ERP role and employee has no login yet, create User + roles."""
+    if 'portal_role' not in form.fields:
+        return
+    if employee.user_id:
+        return
+    _pr = form.cleaned_data.get('portal_role')
+    roles = [_pr] if _pr else []
+    from django.conf import settings as dj_settings
+
+    from .user_provisioning import provision_user_for_employee
+
+    try:
+        user, temp_pw = provision_user_for_employee(employee, roles)
+    except ValueError as e:
+        messages.error(request, str(e))
+        return
+    if temp_pw:
+        default_pw = getattr(dj_settings, 'HR_EMPLOYEE_DEFAULT_PASSWORD', '')
+        messages.warning(
+            request,
+            f'System login created — username: {user.username}. '
+            f'Default password: {default_pw} (override HR_EMPLOYEE_DEFAULT_PASSWORD in .env; '
+            'change password under Settings → Users).',
+        )
+
+
 def leave_requests_queryset_for_user(user):
     """Leave rows the user may see: full HR access, or own employee only."""
     qs = LeaveRequest.objects.filter(is_active=True).select_related(
@@ -202,6 +229,7 @@ class EmployeeCreateView(CreatePermissionMixin, CreateView):
         try:
             with transaction.atomic():
                 employee = form.save()
+                _provision_employee_login_if_needed(request, form, employee)
                 uc, _ = UAECompliance.objects.get_or_create(employee=employee)
                 kc, _ = KSACompliance.objects.get_or_create(employee=employee)
                 if employee.location == 'uae':
@@ -330,6 +358,7 @@ class EmployeeUpdateView(UpdatePermissionMixin, UpdateView):
         try:
             with transaction.atomic():
                 employee = form.save()
+                _provision_employee_login_if_needed(request, form, employee)
                 uc, _ = UAECompliance.objects.get_or_create(employee=employee)
                 kc, _ = KSACompliance.objects.get_or_create(employee=employee)
                 if employee.location == 'uae':

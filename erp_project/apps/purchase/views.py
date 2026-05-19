@@ -7,10 +7,12 @@ from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.views.generic import ListView, CreateView, UpdateView, DetailView
 from django.urls import reverse, reverse_lazy
-from django.db.models import Q, Sum
+from django.db.models import Q, Sum, Prefetch
 from django.core.exceptions import ValidationError
 from django.http import JsonResponse, HttpResponse
+from django.utils.dateparse import parse_date
 from django.utils import timezone
+
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -20,7 +22,8 @@ from django.views.decorators.http import require_POST
 
 from .models import (
     Vendor, PurchaseRequest, PurchaseRequestItem, PurchaseRequestAttachment,
-    PurchaseOrder, PurchaseOrderItem, VendorBill, VendorBillItem, VendorBillAttachment,
+    PurchaseOrder, PurchaseOrderItem, PurchaseOrderReceipt, PurchaseOrderReceiptLine,
+    VendorBill, VendorBillItem, VendorBillAttachment,
     ExpenseClaim, ExpenseClaimItem, RecurringExpense, RecurringExpenseLog
 )
 from .forms import (
@@ -668,7 +671,7 @@ class PurchaseOrderListView(PermissionRequiredMixin, ListView):
         all_pos = PurchaseOrder.objects.filter(is_active=True)
         context['total_pos'] = all_pos.count()
         context['total_amount'] = all_pos.aggregate(total=Sum('total_amount'))['total'] or 0
-        context['pending_pos'] = all_pos.filter(status__in=['draft', 'sent']).count()
+        context['pending_pos'] = all_pos.filter(status__in=['draft', 'sent', 'confirmed', 'partial_received']).count()
         context['confirmed_pos'] = all_pos.filter(status='confirmed').count()
         
         return context
@@ -789,16 +792,33 @@ class PurchaseOrderDetailView(PermissionRequiredMixin, DetailView):
     permission_type = 'view'
 
     def get_queryset(self):
+        rcpt_qs = (
+            PurchaseOrderReceipt.objects.select_related('warehouse', 'created_by')
+            .prefetch_related(
+                Prefetch(
+                    'lines',
+                    queryset=PurchaseOrderReceiptLine.objects.select_related(
+                        'purchase_order_item',
+                        'purchase_order_item__inventory_item',
+                    ),
+                )
+            )
+            .order_by('created_at')
+        )
         return (
             PurchaseOrder.objects.filter(is_active=True)
             .select_related('vendor', 'purchase_request', 'service_request')
-            .prefetch_related('items')
+            .prefetch_related(
+                Prefetch('goods_receipts', queryset=rcpt_qs),
+                'items__inventory_item',
+            )
         )
-    
+
     def get_context_data(self, **kwargs):
         from apps.settings_app.models import CompanySettings
 
         from .email_outbound import outgoing_mail_hint
+        from .receiving import purchase_order_can_receive
 
         context = super().get_context_data(**kwargs)
         context['title'] = f'PO: {self.object.po_number}'
@@ -821,7 +841,103 @@ class PurchaseOrderDetailView(PermissionRequiredMixin, DetailView):
         if self.object.vendor_id and (self.object.vendor.email or '').strip():
             ve = self.object.vendor.email.strip()
         context['po_email_default_to'] = ve
+
+        context['can_receive_po'] = (
+            context['can_edit'] and purchase_order_can_receive(self.object)
+        )
+        context['po_receive_url'] = reverse('purchase:po_receive', args=[self.object.pk])
         return context
+
+
+@login_required
+def po_receive(request, pk):
+    """Goods receipt against PO — partial/full receive, stock in, audit trail."""
+    from apps.inventory.models import Warehouse
+
+    from .receiving import purchase_order_can_receive, process_goods_receipt
+
+    po = get_object_or_404(
+        PurchaseOrder.objects.filter(is_active=True).prefetch_related('items__inventory_item'),
+        pk=pk,
+    )
+
+    can_edit = request.user.is_superuser or PermissionChecker.has_permission(request.user, 'purchase', 'edit')
+    if not can_edit:
+        messages.error(request, 'Permission denied.')
+        return redirect('purchase:po_detail', pk=pk)
+
+    if not purchase_order_can_receive(po):
+        messages.error(request, 'This purchase order cannot receive goods.')
+        return redirect('purchase:po_detail', pk=pk)
+
+    warehouses = Warehouse.objects.filter(is_active=True, status='active').order_by('name')
+
+    if request.method == 'POST':
+        wid_raw = request.POST.get('warehouse')
+        try:
+            warehouse_pk = int(wid_raw)
+        except (TypeError, ValueError):
+            warehouse_pk = None
+        recv_date = parse_date(request.POST.get('received_on') or '')
+        if not recv_date:
+            recv_date = timezone.now().date()
+        notes = (request.POST.get('notes') or '').strip()
+
+        payloads = []
+        for line in po.items.all():
+            payloads.append(
+                {
+                    'purchase_order_item_id': line.pk,
+                    'qty_raw': request.POST.get(f'qty_{line.pk}', ''),
+                    'unit_price_raw': request.POST.get(f'price_{line.pk}', ''),
+                }
+            )
+
+        try:
+            process_goods_receipt(
+                po.pk,
+                warehouse_pk,
+                recv_date,
+                notes,
+                payloads,
+                request.user,
+            )
+        except ValidationError as exc:
+            errs = getattr(exc, 'messages', None)
+            if errs:
+                for msg in errs:
+                    messages.error(request, msg)
+            else:
+                messages.error(request, str(exc))
+            return render(
+                request,
+                'purchase/po_receive.html',
+                {
+                    'title': f'Receive — {po.po_number}',
+                    'po': po,
+                    'warehouses': warehouses,
+                    'posted_warehouse_pk': warehouse_pk,
+                    'posted_received_on': recv_date.isoformat(),
+                    'posted_notes': notes,
+                },
+            )
+
+        messages.success(request, f'Goods received for PO {po.po_number}. Inventory updated.')
+        return redirect('purchase:po_detail', pk=po.pk)
+
+    first_wh = warehouses.first()
+    return render(
+        request,
+        'purchase/po_receive.html',
+        {
+            'title': f'Receive — {po.po_number}',
+            'po': po,
+            'warehouses': warehouses,
+            'posted_warehouse_pk': first_wh.pk if first_wh else None,
+            'posted_received_on': timezone.now().date().isoformat(),
+            'posted_notes': '',
+        },
+    )
 
 
 @login_required

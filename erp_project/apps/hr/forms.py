@@ -136,6 +136,17 @@ class EmployeeForm(forms.ModelForm):
             'Link this person’s Gearup login for clock in/out, self-service, and payslips.'
         )
 
+        role_qs = Role.objects.filter(is_active=True).order_by('name')
+        if not self.instance.pk or not self.instance.user_id:
+            self.fields.pop('user', None)
+            self.fields['portal_role'] = forms.ModelChoiceField(
+                label='ERP access role',
+                queryset=role_qs,
+                required=False,
+                empty_label='— Default (Employee role) —',
+                widget=forms.Select(attrs={'class': 'form-select'}),
+            )
+
         def _tpl_label(obj):
             tot = template_allowances_total(obj)
             return f'{obj.name} (AED {tot:,.2f} allowances)'
@@ -177,12 +188,18 @@ class EmployeeForm(forms.ModelForm):
         self.fields['company'].empty_label = '-- Select Company --'
 
         self.fields['employee_code'].required = False
-        self.fields['employee_code'].widget.attrs.setdefault(
-            'placeholder', 'Leave blank to generate automatically'
-        )
 
         for name, field in self.fields.items():
-            if name in ['department', 'designation', 'status', 'gender', 'company', 'location', 'user']:
+            if name in [
+                'department',
+                'designation',
+                'status',
+                'gender',
+                'company',
+                'location',
+                'user',
+                'portal_role',
+            ]:
                 field.widget.attrs['class'] = 'form-select'
             elif name in ('date_of_birth', 'date_of_joining', 'visa_expiry'):
                 field.input_formats = ['%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y']

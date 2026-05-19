@@ -51,31 +51,157 @@
     color: #1e40af;
 }
 .estimate-status-select.estimate-status-approved {
-    background-color: #dcfce7;
-    color: #166534;
+    background-color: #e0e7ff;
+    color: #3730a3;
+    border-color: #c7d2fe;
 }
 .estimate-status-select.estimate-status-rejected {
+    background-color: #ffedd5;
+    color: #9a3412;
+    border-color: #fed7aa;
+}
+.estimate-status-select.estimate-status-quotation_won {
+    background-color: #dcfce7;
+    color: #14532d;
+    border-color: #bbf7d0;
+}
+.estimate-status-select.estimate-status-quotation_lost {
     background-color: #fee2e2;
     color: #991b1b;
+    border-color: #fecaca;
 }
-.estimate-status-select.estimate-status-expired {
-    background-color: #f3f4f6;
-    color: #6b7280;
-    border-color: #d1d5db;
+.estimate-status-badge-approved {
+    background-color: #e0e7ff !important;
+    color: #3730a3 !important;
 }
+.estimate-status-badge-rejected {
+    background-color: #ffedd5 !important;
+    color: #9a3412 !important;
+}
+.estimate-sort-th {
+    font-weight: 600;
+}
+.estimate-sort-link {
+    color: inherit;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    white-space: nowrap;
+}
+.estimate-sort-link:hover {
+    color: var(--bs-primary);
+}
+.estimate-sort-link .fa-sort {
+    font-size: 0.75rem;
+}
+
+/* Kanban — same structure/classes as tasks (projects/task_list) */
+.kanban-board {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1rem;
+    align-items: start;
+}
+@media (max-width: 991.98px) {
+    .kanban-board { grid-template-columns: 1fr; }
+}
+.kanban-col {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    min-height: 200px;
+    display: flex;
+    flex-direction: column;
+}
+.kanban-col-header {
+    padding: 0.65rem 0.85rem;
+    font-weight: 600;
+    font-size: 0.8125rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    border-bottom: 1px solid #e2e8f0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.kanban-col-body {
+    padding: 0.65rem;
+    flex: 1;
+    min-height: 120px;
+}
+.kanban-col--pending .kanban-col-header { background: #f3f4f6; color: #374151; }
+.kanban-col--progress .kanban-col-header { background: #dbeafe; color: #1e40af; }
+.kanban-col--done .kanban-col-header { background: #dcfce7; color: #166534; }
+.kanban-card {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 0.65rem 0.75rem;
+    margin-bottom: 0.5rem;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+    cursor: grab;
+}
+.kanban-card:last-child { margin-bottom: 0; }
+.kanban-card.kanban-card--readonly { cursor: default; }
+.kanban-card:active { cursor: grabbing; }
+.kanban-card-title { font-weight: 600; font-size: 0.9rem; margin-bottom: 0.35rem; line-height: 1.3; }
+.kanban-card-meta { font-size: 0.75rem; color: #64748b; }
+.kanban-col-body.kanban-drop-hover { outline: 2px dashed #94a3b8; outline-offset: 2px; }
+/* Estimates Kanban — horizontal scroll (six columns), vertical scroll inside each column */
+.estimate-kanban-scroll {
+    width: 100%;
+    overflow-x: auto;
+    overflow-y: visible;
+    padding-bottom: 0.5rem;
+    margin-bottom: 1rem;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-gutter: stable;
+}
+.estimate-kanban-scroll .estimate-kanban-board.kanban-board {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(12.5rem, 16rem));
+    width: max-content;
+    gap: 0.75rem;
+    align-items: stretch;
+}
+.estimate-kanban-scroll .estimate-kanban-board .kanban-col {
+    min-height: 200px;
+    height: min(70vh, 44rem);
+    overflow: hidden;
+}
+.estimate-kanban-scroll .estimate-kanban-board .kanban-col-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+.estimate-kanban-board .kanban-col-header {
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.estimate-kanban-board .estimate-k-col--draft .kanban-col-header { background: #f3f4f6; color: #374151; }
+.estimate-kanban-board .estimate-k-col--sent .kanban-col-header { background: #dbeafe; color: #1e40af; }
+.estimate-kanban-board .estimate-k-col--approved .kanban-col-header { background: #e0e7ff; color: #3730a3; }
+.estimate-kanban-board .estimate-k-col--lost .kanban-col-header { background: #ffedd5; color: #9a3412; }
+.estimate-kanban-board .estimate-k-col--quot-won .kanban-col-header { background: #dcfce7; color: #166534; }
+.estimate-kanban-board .estimate-k-col--quot-lost .kanban-col-header { background: #fee2e2; color: #991b1b; }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="page-header d-flex justify-content-between align-items-center">
+<div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2">
     <div>
         <h4 class="mb-1 fw-bold">{{ title }}</h4>
         <p class="text-muted mb-0">Manage your sales estimates</p>
     </div>
-    <div>
+    <div class="d-flex flex-wrap gap-2 align-items-center">
+        <div class="btn-group" role="group" aria-label="View mode">
+            <a href="{% url 'sales:estimate_list' %}{{ estimate_list_url_list }}" class="btn btn-sm {% if view_mode != 'kanban' %}btn-primary{% else %}btn-outline-primary{% endif %}"><i class="fas fa-list me-1"></i>List</a>
+            <a href="{% url 'sales:estimate_list' %}{{ estimate_list_url_kanban }}" class="btn btn-sm {% if view_mode == 'kanban' %}btn-primary{% else %}btn-outline-primary{% endif %}"><i class="fas fa-columns me-1"></i>Kanban</a>
+        </div>
         {% if can_create %}
-        <a href="{% url 'sales:estimate_create' %}" class="btn btn-primary">
-            <i class="fas fa-plus me-2"></i>Create Estimate
+        <a href="{% url 'sales:estimate_create' %}" class="btn btn-primary btn-sm">
+            <i class="fas fa-plus me-1"></i>Create Estimate
         </a>
         {% endif %}
     </div>
@@ -149,13 +275,18 @@
 <div class="card mb-4">
     <div class="card-body py-3">
         <form method="get" class="row g-3 align-items-end">
+            {% if view_mode == 'kanban' %}
+            <input type="hidden" name="view" value="kanban">
+            {% endif %}
+            <input type="hidden" name="sort" value="{{ sort_field }}">
+            <input type="hidden" name="order" value="{{ sort_order }}">
             <div class="col-md-4">
-                <label class="form-label small text-muted">Search</label>
-                <input type="text" name="search" class="form-control" placeholder="Estimate #, Customer..." value="{{ request.GET.search }}">
+                <label class="form-label small text-muted mb-0">Search</label>
+                <input type="text" name="search" class="form-control form-control-sm" placeholder="Estimate #, Customer..." value="{{ request.GET.search }}">
             </div>
             <div class="col-md-3">
-                <label class="form-label small text-muted">Status</label>
-                <select name="status" class="form-select">
+                <label class="form-label small text-muted mb-0">Status</label>
+                <select name="status" class="form-select form-select-sm">
                     <option value="">All Status</option>
                     {% for value, label in status_choices %}
                     <option value="{{ value }}" {% if request.GET.status == value %}selected{% endif %}>{{ label }}</option>
@@ -163,15 +294,83 @@
                 </select>
             </div>
             <div class="col-md-5">
-                <button type="submit" class="btn btn-primary me-2">
+                <button type="submit" class="btn btn-primary btn-sm me-2">
                     <i class="fas fa-filter me-1"></i>Filter
                 </button>
-                <a href="{% url 'sales:estimate_list' %}" class="btn btn-light">Clear</a>
+                <a href="{% url 'sales:estimate_list' %}{% if view_mode == 'kanban' %}?view=kanban{% endif %}" class="btn btn-light btn-sm">Clear</a>
             </div>
         </form>
     </div>
 </div>
 
+{% if view_mode == 'kanban' %}
+<div class="estimate-kanban-scroll" id="estimateKanbanScroll">
+<div class="kanban-board estimate-kanban-board" id="estimateKanbanBoard">
+    <div class="kanban-col estimate-k-col--draft kanban-col--pending" data-status="draft">
+        <div class="kanban-col-header">draft <span class="badge bg-secondary">{{ estimates_board_draft|length }}</span></div>
+        <div class="kanban-col-body">
+            {% for estimate in estimates_board_draft %}
+            {% include "sales/includes/estimate_kanban_card.html" with estimate=estimate %}
+            {% empty %}
+            <p class="text-muted small mb-0 py-2 text-center">No estimates</p>
+            {% endfor %}
+        </div>
+    </div>
+    <div class="kanban-col estimate-k-col--sent kanban-col--progress" data-status="sent">
+        <div class="kanban-col-header">sent <span class="badge" style="background:#1e40af;">{{ estimates_board_sent|length }}</span></div>
+        <div class="kanban-col-body">
+            {% for estimate in estimates_board_sent %}
+            {% include "sales/includes/estimate_kanban_card.html" with estimate=estimate %}
+            {% empty %}
+            <p class="text-muted small mb-0 py-2 text-center">No estimates</p>
+            {% endfor %}
+        </div>
+    </div>
+    <div class="kanban-col estimate-k-col--approved" data-status="approved">
+        <div class="kanban-col-header">approved <span class="badge" style="background:#3730a3;">{{ estimates_board_approved|length }}</span></div>
+        <div class="kanban-col-body">
+            {% for estimate in estimates_board_approved %}
+            {% include "sales/includes/estimate_kanban_card.html" with estimate=estimate %}
+            {% empty %}
+            <p class="text-muted small mb-0 py-2 text-center">No estimates</p>
+            {% endfor %}
+        </div>
+    </div>
+    <div class="kanban-col estimate-k-col--lost" data-status="rejected">
+        <div class="kanban-col-header">lost <span class="badge" style="background:#c2410c;">{{ estimates_board_lost|length }}</span></div>
+        <div class="kanban-col-body">
+            {% for estimate in estimates_board_lost %}
+            {% include "sales/includes/estimate_kanban_card.html" with estimate=estimate %}
+            {% empty %}
+            <p class="text-muted small mb-0 py-2 text-center">No estimates</p>
+            {% endfor %}
+        </div>
+    </div>
+    <div class="kanban-col estimate-k-col--quot-won kanban-col--done" data-status="quotation_won">
+        <div class="kanban-col-header">quot won <span class="badge bg-success">{{ estimates_board_quot_won|length }}</span></div>
+        <div class="kanban-col-body">
+            {% for estimate in estimates_board_quot_won %}
+            {% include "sales/includes/estimate_kanban_card.html" with estimate=estimate %}
+            {% empty %}
+            <p class="text-muted small mb-0 py-2 text-center">No estimates</p>
+            {% endfor %}
+        </div>
+    </div>
+    <div class="kanban-col estimate-k-col--quot-lost" data-status="quotation_lost">
+        <div class="kanban-col-header">quot lost <span class="badge bg-danger">{{ estimates_board_quot_lost|length }}</span></div>
+        <div class="kanban-col-body">
+            {% for estimate in estimates_board_quot_lost %}
+            {% include "sales/includes/estimate_kanban_card.html" with estimate=estimate %}
+            {% empty %}
+            <p class="text-muted small mb-0 py-2 text-center">No estimates</p>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+</div>
+{% endif %}
+
+{% if view_mode != 'kanban' %}
 <!-- Estimates Table -->
 <div class="card">
     <div class="card-body p-0">
@@ -179,12 +378,36 @@
             <table class="table table-hover table-sm estimate-list-table mb-0">
                 <thead>
                     <tr>
-                        <th>Estimate #</th>
-                        <th class="col-customer">Customer</th>
-                        <th>Date</th>
-                        <th>Valid</th>
-                        <th>Status</th>
-                        <th class="text-end">Amount</th>
+                        <th class="estimate-sort-th">
+                            <a href="{% url 'sales:estimate_list' %}?{{ sort_links.estimate_number }}" class="estimate-sort-link" title="Sort by estimate number">
+                                Estimate #{% if sort_field == 'estimate_number' %}{% if sort_order == 'asc' %}<i class="fas fa-sort-up ms-1" aria-hidden="true"></i>{% else %}<i class="fas fa-sort-down ms-1" aria-hidden="true"></i>{% endif %}{% else %}<i class="fas fa-sort ms-1 text-muted opacity-50" aria-hidden="true"></i>{% endif %}
+                            </a>
+                        </th>
+                        <th class="estimate-sort-th col-customer">
+                            <a href="{% url 'sales:estimate_list' %}?{{ sort_links.customer }}" class="estimate-sort-link" title="Sort by customer">
+                                Customer{% if sort_field == 'customer' %}{% if sort_order == 'asc' %}<i class="fas fa-sort-up ms-1" aria-hidden="true"></i>{% else %}<i class="fas fa-sort-down ms-1" aria-hidden="true"></i>{% endif %}{% else %}<i class="fas fa-sort ms-1 text-muted opacity-50" aria-hidden="true"></i>{% endif %}
+                            </a>
+                        </th>
+                        <th class="estimate-sort-th">
+                            <a href="{% url 'sales:estimate_list' %}?{{ sort_links.date }}" class="estimate-sort-link" title="Sort by date">
+                                Date{% if sort_field == 'date' %}{% if sort_order == 'asc' %}<i class="fas fa-sort-up ms-1" aria-hidden="true"></i>{% else %}<i class="fas fa-sort-down ms-1" aria-hidden="true"></i>{% endif %}{% else %}<i class="fas fa-sort ms-1 text-muted opacity-50" aria-hidden="true"></i>{% endif %}
+                            </a>
+                        </th>
+                        <th class="estimate-sort-th">
+                            <a href="{% url 'sales:estimate_list' %}?{{ sort_links.valid }}" class="estimate-sort-link" title="Sort by valid until">
+                                Valid{% if sort_field == 'valid' %}{% if sort_order == 'asc' %}<i class="fas fa-sort-up ms-1" aria-hidden="true"></i>{% else %}<i class="fas fa-sort-down ms-1" aria-hidden="true"></i>{% endif %}{% else %}<i class="fas fa-sort ms-1 text-muted opacity-50" aria-hidden="true"></i>{% endif %}
+                            </a>
+                        </th>
+                        <th class="estimate-sort-th">
+                            <a href="{% url 'sales:estimate_list' %}?{{ sort_links.status }}" class="estimate-sort-link" title="Sort by status">
+                                Status{% if sort_field == 'status' %}{% if sort_order == 'asc' %}<i class="fas fa-sort-up ms-1" aria-hidden="true"></i>{% else %}<i class="fas fa-sort-down ms-1" aria-hidden="true"></i>{% endif %}{% else %}<i class="fas fa-sort ms-1 text-muted opacity-50" aria-hidden="true"></i>{% endif %}
+                            </a>
+                        </th>
+                        <th class="estimate-sort-th text-end">
+                            <a href="{% url 'sales:estimate_list' %}?{{ sort_links.amount }}" class="estimate-sort-link" title="Sort by amount">
+                                Amount{% if sort_field == 'amount' %}{% if sort_order == 'asc' %}<i class="fas fa-sort-up ms-1" aria-hidden="true"></i>{% else %}<i class="fas fa-sort-down ms-1" aria-hidden="true"></i>{% endif %}{% else %}<i class="fas fa-sort ms-1 text-muted opacity-50" aria-hidden="true"></i>{% endif %}
+                            </a>
+                        </th>
                         <th class="text-center estimate-list-actions">Actions</th>
                     </tr>
                 </thead>
@@ -222,11 +445,13 @@
                             {% elif estimate.status == 'sent' %}
                                 <span class="badge" style="background-color: #dbeafe; color: #1e40af;">Sent</span>
                             {% elif estimate.status == 'approved' %}
-                                <span class="badge badge-active">Approved</span>
+                                <span class="badge estimate-status-badge-approved">{{ estimate.get_status_display }}</span>
                             {% elif estimate.status == 'rejected' %}
-                                <span class="badge badge-inactive">Rejected</span>
-                            {% elif estimate.status == 'expired' %}
-                                <span class="badge bg-secondary">Expired</span>
+                                <span class="badge estimate-status-badge-rejected">{{ estimate.get_status_display }}</span>
+                            {% elif estimate.status == 'quotation_won' %}
+                                <span class="badge bg-success">{{ estimate.get_status_display }}</span>
+                            {% elif estimate.status == 'quotation_lost' %}
+                                <span class="badge bg-danger">{{ estimate.get_status_display }}</span>
                             {% else %}
                                 <span class="badge bg-secondary">{{ estimate.get_status_display }}</span>
                             {% endif %}
@@ -236,21 +461,31 @@
                         <td class="text-center estimate-list-actions">
                             <div class="d-flex flex-wrap gap-1 justify-content-center align-items-center">
                                 {% if can_edit %}
+                                {% if user.is_superuser or estimate.status != 'quotation_won' %}
                                 <a href="{% url 'sales:estimate_edit' estimate.pk %}" class="btn btn-action btn-outline-primary" title="Edit">
                                     <i class="fas fa-edit"></i>
                                 </a>
                                 {% endif %}
-                                {% if can_create and estimate.status == 'approved' %}
+                                {% endif %}
+                                {% if can_create and estimate.allows_follow_on_conversion %}
                                 <a href="{% url 'sales:estimate_convert' estimate.pk %}" class="btn btn-action btn-outline-success" title="Convert to Invoice" onclick="return confirm('Create invoice from this estimate?');">
                                     <i class="fas fa-file-invoice"></i>
                                 </a>
+                                {% endif %}
+                                {% if can_create %}
+                                <form method="post" action="{% url 'sales:estimate_duplicate' estimate.pk %}" class="d-inline" onsubmit="return confirm('Duplicate this estimate as a new draft?');">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn btn-action btn-outline-info" title="Duplicate">
+                                        <i class="fas fa-copy"></i>
+                                    </button>
+                                </form>
                                 {% endif %}
                                 {% if can_delete %}
                                 <a href="{% url 'sales:estimate_delete' estimate.pk %}" class="btn btn-action btn-outline-danger" title="Delete" onclick="return confirm('Delete this estimate?');">
                                     <i class="fas fa-trash"></i>
                                 </a>
                                 {% endif %}
-                                <a href="{% url 'sales:estimate_pdf' estimate.pk %}" class="btn btn-action btn-outline-secondary" title="Proposal PDF" target="_blank" rel="noopener">
+                                <a href="{% url 'sales:estimate_pdf' estimate.pk %}" class="btn btn-action btn-outline-secondary" title="Estimate PDF" target="_blank" rel="noopener">
                                     <i class="fas fa-file-pdf"></i>
                                 </a>
                                 <a href="{% url 'sales:estimate_proforma_pdf' estimate.pk %}" class="btn btn-action btn-outline-warning" title="Proforma invoice PDF" target="_blank" rel="noopener">
@@ -277,9 +512,10 @@
         </div>
     </div>
 </div>
+{% endif %}
 
 <!-- Pagination -->
-{% if page_obj.has_other_pages %}
+{% if view_mode != 'kanban' and page_obj.has_other_pages %}
 <nav class="mt-4">
     <ul class="pagination justify-content-center">
         {% if page_obj.has_previous %}
@@ -299,4 +535,3 @@
 </nav>
 {% endif %}
 {% endblock %}
-

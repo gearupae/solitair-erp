@@ -25,7 +25,17 @@ class Estimate(BaseModel):
         ('sent', 'Sent'),
         ('approved', 'Approved'),
         ('rejected', 'Rejected'),
-        ('expired', 'Expired'),
+        ('quotation_won', 'Quot Won'),
+        ('quotation_lost', 'Quot Lost'),
+    ]
+
+    #: Estimates allowed to convert to invoice / project (won or internally approved).
+    FOLLOW_ON_STATUSES = frozenset({'approved', 'quotation_won'})
+
+    EDIT_APPROVAL_STATUS_CHOICES = [
+        ('none', 'No pending edit review'),
+        ('pending', 'Pending edit approval'),
+        ('rejected', 'Edit rejected'),
     ]
 
     DISCOUNT_TYPE_CHOICES = [
@@ -69,6 +79,20 @@ class Estimate(BaseModel):
     date = models.DateField()
     valid_until = models.DateField(null=True, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft')
+    edit_approval_status = models.CharField(
+        max_length=20,
+        choices=EDIT_APPROVAL_STATUS_CHOICES,
+        default='none',
+        help_text='When approval is configured for estimates, edits from non-approvers queue here.',
+    )
+    edit_approval_submitted_at = models.DateTimeField(null=True, blank=True)
+    edit_approval_submitted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='estimate_edit_approval_submissions',
+    )
     notes = models.TextField(blank=True, help_text='Internal notes (optional)')
     client_note = models.TextField(blank=True, help_text='Note for the client (shown on estimate)')
     terms_and_conditions = models.TextField(blank=True)
@@ -111,6 +135,23 @@ class Estimate(BaseModel):
             self.estimate_number = generate_number('ESTIMATE', Estimate, 'estimate_number')
         super().save(*args, **kwargs)
     
+    def total_cost(self) -> Decimal:
+        """Sum of line base cost (qty × unit_price) before profit markup; used when converting to project budget."""
+        from django.db.models import DecimalField, ExpressionWrapper, F, Sum
+
+        agg = self.items.aggregate(
+            s=Sum(
+                ExpressionWrapper(
+                    F('quantity') * F('unit_price'),
+                    output_field=DecimalField(max_digits=15, decimal_places=2),
+                )
+            )
+        )
+        val = agg['s']
+        if val is None:
+            return Decimal('0.00')
+        return val.quantize(Decimal('0.01'))
+
     def calculate_totals(self):
         """Calculate subtotal, VAT, discount, and total from line items."""
         items = list(self.items.all())
@@ -138,6 +179,16 @@ class Estimate(BaseModel):
             return []
         labels = dict(self.SCOPE_CHOICES)
         return [labels.get(code, code) for code in self.scope]
+
+    @property
+    def allows_follow_on_conversion(self) -> bool:
+        """True when the estimate may be converted to an invoice or project."""
+        return self.status in self.FOLLOW_ON_STATUSES
+
+    def allows_edit_by(self, user) -> bool:
+        from apps.sales.approval_rules import user_can_edit_estimate
+
+        return user_can_edit_estimate(user, self)
 
 
 class EstimateItem(models.Model):

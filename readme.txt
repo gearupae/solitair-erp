@@ -1021,7 +1021,7 @@ Dashboard
 ├── Purchase (Vendors, Requests, Orders, Bills)
 ├── Inventory (Items, Categories, Stock)
 ├── Finance (Accounts, Journal, Payments, Expenses, Reports)
-├── Projects (Projects, Tasks, Timesheets)
+├── Projects (Projects, Tasks)
 ├── HR (Employees, Attendance, Leaves, Payroll)
 ├── Documents (All Documents, Categories)
 └── Settings (Users, Roles, Approvals, Email, Company, Logs)

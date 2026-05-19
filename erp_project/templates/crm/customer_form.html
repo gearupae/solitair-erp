@@ -3,6 +3,22 @@
 {% block extra_js %}
 <script>
 $(function () {
+    function crmEditToggleCustomerFields() {
+        var typeSel = document.getElementById('crmEditCustomerType');
+        var seg = document.querySelector('[name="business_segment"]');
+        var busWrap = document.getElementById('crmEditBusinessWrap');
+        var docs = document.getElementById('crmEditB2bDocs');
+        var isCustomer = typeSel && typeSel.value === 'customer';
+        if (busWrap) busWrap.style.display = isCustomer ? '' : 'none';
+        var isB2b = isCustomer && seg && seg.value === 'b2b';
+        if (docs) docs.classList.toggle('d-none', !isB2b);
+    }
+    var typeSel = document.getElementById('crmEditCustomerType');
+    var seg = document.querySelector('[name="business_segment"]');
+    if (typeSel) typeSel.addEventListener('change', crmEditToggleCustomerFields);
+    if (seg) seg.addEventListener('change', crmEditToggleCustomerFields);
+    crmEditToggleCustomerFields();
+
     if ($('.select2-crm-scope').length) {
         $('.select2-crm-scope').select2({
             theme: 'bootstrap-5',
@@ -32,7 +48,7 @@ $(function () {
 
 <div class="card border-0 shadow-sm">
     <div class="card-body p-4">
-        <form method="post">
+        <form method="post" enctype="multipart/form-data">
             {% csrf_token %}
             
             <h6 class="fw-semibold mb-3">
@@ -49,10 +65,16 @@ $(function () {
                 </div>
                 <div class="col-md-6">
                     <label class="form-label">Type <span class="text-danger">*</span></label>
-                    <select name="customer_type" class="form-select" required>
+                    <select name="customer_type" class="form-select" id="crmEditCustomerType" required>
                         <option value="lead" {% if object.customer_type == 'lead' %}selected{% endif %}>Lead</option>
                         <option value="customer" {% if object.customer_type == 'customer' %}selected{% endif %}>Customer</option>
                     </select>
+                </div>
+                <div class="col-md-6" id="crmEditBusinessWrap" style="display:none;">
+                    <label class="form-label" for="{{ form.business_segment.id_for_label }}">{{ form.business_segment.label }} <span class="text-danger">*</span></label>
+                    {{ form.business_segment }}
+                    {% for err in form.business_segment.errors %}<div class="text-danger small">{{ err }}</div>{% endfor %}
+                    <div class="form-text">Required when type is Customer.</div>
                 </div>
                 <div class="col-md-6">
                     <label class="form-label">Status</label>
@@ -69,6 +91,27 @@ $(function () {
             <h6 class="fw-semibold mb-3">
                 <i class="fas fa-briefcase me-2 text-primary"></i>Business Details
             </h6>
+            <div class="row g-3 mb-3 d-none" id="crmEditB2bDocs">
+                <div class="col-12">
+                    <p class="small text-muted mb-0">B2B customers must provide a VAT (TRN) number and upload a trade license (TRN certificate upload is optional).</p>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label" for="{{ form.trn_document.id_for_label }}">{{ form.trn_document.label }} <span class="text-muted small">(optional)</span></label>
+                    {{ form.trn_document }}
+                    {% for err in form.trn_document.errors %}<div class="text-danger small">{{ err }}</div>{% endfor %}
+                    {% if object.trn_document %}
+                    <div class="small mt-1"><a href="{{ object.trn_document.url }}" target="_blank" rel="noopener"><i class="fas fa-paperclip me-1"></i>Current TRN document</a></div>
+                    {% endif %}
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label" for="{{ form.trade_license_document.id_for_label }}">{{ form.trade_license_document.label }} <span class="text-danger">*</span></label>
+                    {{ form.trade_license_document }}
+                    {% for err in form.trade_license_document.errors %}<div class="text-danger small">{{ err }}</div>{% endfor %}
+                    {% if object.trade_license_document %}
+                    <div class="small mt-1"><a href="{{ object.trade_license_document.url }}" target="_blank" rel="noopener"><i class="fas fa-paperclip me-1"></i>Current trade license</a></div>
+                    {% endif %}
+                </div>
+            </div>
             <div class="row g-3 mb-3">
                 <div class="col-md-6">
                     <label class="form-label">{{ form.trn.label }}</label>

@@ -85,6 +85,21 @@ class Warehouse(BaseModel):
         super().save(*args, **kwargs)
 
 
+class ItemGroup(models.Model):
+    """
+    Named group; items can belong to many groups (M2M).
+    """
+    name = models.CharField(max_length=200, unique=True)
+
+    class Meta:
+        ordering = ['name']
+        verbose_name = 'Item group'
+        verbose_name_plural = 'Item groups'
+
+    def __str__(self):
+        return self.name
+
+
 class Item(BaseModel):
     """
     Inventory Item model.
@@ -115,6 +130,12 @@ class Item(BaseModel):
         null=True,
         blank=True,
         related_name='items'
+    )
+    item_groups = models.ManyToManyField(
+        ItemGroup,
+        blank=True,
+        related_name='items',
+        verbose_name='Groups',
     )
     item_type = models.CharField(max_length=20, choices=TYPE_CHOICES, default='product')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active')
@@ -183,6 +204,18 @@ class Item(BaseModel):
     
     class Meta:
         ordering = ['name']
+
+    def clean(self):
+        super().clean()
+        if self.name:
+            self.name = self.name.strip()
+        name = self.name or ''
+        if name:
+            dup = Item.objects.filter(name__iexact=name, is_active=True)
+            if self.pk:
+                dup = dup.exclude(pk=self.pk)
+            if dup.exists():
+                raise ValidationError({'name': 'An item with this name already exists. Use a unique name.'})
     
     def __str__(self):
         return f"{self.item_code} - {self.name}"
@@ -665,6 +698,14 @@ class ConsumableRequest(BaseModel):
         related_name='consumable_requests',
         null=True,
         blank=True
+    )
+    project = models.ForeignKey(
+        'projects.Project',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='consumable_requests',
+        help_text='Optional project this consumable request is for.',
     )
     priority = models.CharField(max_length=20, choices=PRIORITY_CHOICES, default='medium')
     required_by_date = models.DateField(null=True, blank=True)

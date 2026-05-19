@@ -1,19 +1,29 @@
 """Projects Views"""
 from django.shortcuts import render, redirect, get_object_or_404
 from django.http import HttpResponseNotAllowed
+from django.views.decorators.cache import never_cache
+from django.views.decorators.http import require_http_methods
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.views.generic import ListView, CreateView, UpdateView, DetailView
 from django.urls import reverse, reverse_lazy
-from django.db.models import Q, Sum, Count, Value
+from django.db.models import Q, Sum, Count, Value, Prefetch
 from django.db.models.fields import DecimalField
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 from datetime import date, timedelta
 from decimal import Decimal
-from .models import Project, Task, Timesheet, ProjectExpense, ProjectGatepass
-from .forms import ProjectForm, TaskForm, TimesheetForm, ProjectExpenseForm, ProjectGatepassForm
+from .models import (
+    Project,
+    Task,
+    ProjectExpense,
+    ProjectGatepass,
+    ProjectPublicUpload,
+    ProjectItemLine,
+)
+from .forms import ProjectForm, TaskForm, ProjectExpenseForm, ProjectGatepassForm
 from .gatepass_alerts import pick_display_gatepass
+from .labour_utils import project_labour_summary
 from apps.core.mixins import PermissionRequiredMixin, CreatePermissionMixin, UpdatePermissionMixin
 from apps.core.notification_utils import notify_if_new_assignee, notify_user
 from apps.core.utils import PermissionChecker
@@ -75,6 +85,84 @@ class ProjectListView(PermissionRequiredMixin, ListView):
         context['completed_projects'] = all_projects.filter(status='completed').count()
         
         return context
+
+
+@never_cache
+@require_http_methods(['GET', 'POST'])
+def public_project_upload(request):
+    """
+    Public (no login): select a project and attach many files or camera photos.
+    Files appear on the project overview page for staff.
+    """
+    project_qs = Project.objects.filter(is_active=True).order_by('project_code', 'name')
+
+    if request.method == 'POST':
+        raw_pid = request.POST.get('project')
+        note = (request.POST.get('note') or '').strip()[:500]
+        if not raw_pid or not str(raw_pid).isdigit():
+            messages.error(request, 'Please select a project.')
+            return render(
+                request,
+                'projects/public_upload_form.html',
+                {'projects': project_qs, 'posted_note': note},
+                status=400,
+            )
+        project = Project.objects.filter(pk=int(raw_pid), is_active=True).first()
+        if not project:
+            messages.error(request, 'Invalid project.')
+            return render(
+                request,
+                'projects/public_upload_form.html',
+                {'projects': project_qs, 'posted_note': note},
+                status=400,
+            )
+        files = request.FILES.getlist('files')
+        if not files:
+            messages.error(request, 'Please add at least one file or photo.')
+            return render(
+                request,
+                'projects/public_upload_form.html',
+                {
+                    'projects': project_qs,
+                    'selected_project_id': project.pk,
+                    'posted_note': note,
+                },
+                status=400,
+            )
+        created = 0
+        for f in files:
+            if not f.name:
+                continue
+            ProjectPublicUpload.objects.create(
+                project=project,
+                file=f,
+                original_filename=(getattr(f, 'name', '') or '')[:255],
+                note=note,
+            )
+            created += 1
+        if created == 0:
+            messages.error(request, 'No files were saved. Try again.')
+            return render(
+                request,
+                'projects/public_upload_form.html',
+                {
+                    'projects': project_qs,
+                    'selected_project_id': project.pk,
+                    'posted_note': note,
+                },
+                status=400,
+            )
+        messages.success(
+            request,
+            f'Thank you. {created} file(s) were uploaded to {project.project_code} — {project.name}.',
+        )
+        return redirect('projects:public_upload')
+
+    return render(
+        request,
+        'projects/public_upload_form.html',
+        {'projects': project_qs},
+    )
 
 
 class TaskListView(PermissionRequiredMixin, ListView):
@@ -167,6 +255,7 @@ class ProjectCreateView(CreatePermissionMixin, CreateView):
         if project.manager_id:
             recipients.append(project.manager)
         recipients.extend(list(project.members.all()))
+        recipients.extend(list(project.technicians.all()))
         for u in recipients:
             if not u or u.pk in seen:
                 continue
@@ -187,7 +276,25 @@ class ProjectUpdateView(UpdatePermissionMixin, UpdateView):
     template_name = 'projects/project_form.html'
     success_url = reverse_lazy('projects:project_list')
     module_name = 'projects'
-    
+
+    def form_valid(self, form):
+        self.object = form.save()
+        self.object.refresh_from_db()
+        from apps.settings_app.document_edit_approval import apply_after_document_edit
+
+        apply_after_document_edit(
+            self.request,
+            module='project',
+            obj=self.object,
+            amount_accessor=lambda o: o.contract_value or 0,
+        )
+        self.object.refresh_from_db()
+        msg = 'Project saved successfully.'
+        if self.object.edit_approval_status == 'pending':
+            msg += ' Changes are queued for approval (Settings → Approval configuration → Project).'
+        messages.success(self.request, msg)
+        return redirect(self.get_success_url())
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['title'] = f'Edit Project: {self.object.name}'
@@ -202,12 +309,22 @@ class ProjectDetailView(PermissionRequiredMixin, DetailView):
     permission_type = 'view'
 
     def get_queryset(self):
-        return Project.objects.select_related('customer', 'manager').prefetch_related('members', 'gatepasses')
+        item_line_qs = ProjectItemLine.objects.select_related('inventory_item').order_by(
+            'sort_order', 'id'
+        )
+        return Project.objects.select_related('customer', 'manager').prefetch_related(
+            'members',
+            'gatepasses',
+            'public_uploads',
+            'technicians',
+            Prefetch('item_lines', queryset=item_line_qs),
+        )
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['title'] = f'Project: {self.object.name}'
         context['tasks'] = self.object.tasks.filter(is_active=True).select_related('assigned_to')
+        context['project_item_lines'] = list(self.object.item_lines.all())
         if 'task_form' not in context:
             context['task_form'] = TaskForm()
 
@@ -254,12 +371,17 @@ class ProjectDetailView(PermissionRequiredMixin, DetailView):
             for m in members
         ]
         context['project_gatepasses'] = all_gp
-        context['can_edit'] = self.request.user.is_superuser or PermissionChecker.has_permission(
-            self.request.user, 'projects', 'edit'
-        )
+        context['can_edit'] = self.object.allows_edit_by(self.request.user)
         context['can_create_projects'] = self.request.user.is_superuser or PermissionChecker.has_permission(
             self.request.user, 'projects', 'create'
         )
+        from .approval_rules import user_can_approve_project_edit
+
+        context['can_approve_project_edit'] = (
+            user_can_approve_project_edit(self.request.user, self.object)
+            and self.object.edit_approval_status == 'pending'
+        )
+        context['can_reject_project_edit'] = context['can_approve_project_edit']
         pe = self.object.project_expenses.filter(is_active=True).exclude(
             status='rejected'
         ).exclude(vendor_bill__isnull=False)   # bill-synced rows counted via vendor bills below
@@ -284,10 +406,40 @@ class ProjectDetailView(PermissionRequiredMixin, DetailView):
 
         recorded = manual_expenses_total + bills_total
         context['recorded_expenses_total'] = recorded
-        context['budget_profit'] = self.object.budget - recorded
+        budget_prop = self.object.budget
+        context['budget_profit'] = budget_prop - recorded
+        # Header “profit” vs expenses: use contract value when set (e.g. from estimate conversion),
+        # since budget may hold cost baseline rather than customer revenue.
+        cv = self.object.contract_value or Decimal('0.00')
+        if cv > 0:
+            context['header_profit_vs_expenses'] = cv - recorded
+            context['header_profit_label'] = 'Contract value − total expense'
+        else:
+            context['header_profit_vs_expenses'] = budget_prop - recorded
+            context['header_profit_label'] = 'Budget − total expense'
+        if budget_prop > 0:
+            pct = (recorded / budget_prop * Decimal('100')).quantize(Decimal('0.1'))
+            context['budget_pct_used'] = pct
+            context['budget_over'] = recorded > budget_prop
+            cap = Decimal('100')
+            context['budget_bar_width'] = float(pct if pct <= cap else cap)
+        else:
+            context['budget_pct_used'] = None
+            context['budget_bar_width'] = None
+            context['budget_over'] = False
         context['has_recorded_expenses'] = recorded > 0
         context['today'] = date.today()
         context['gatepass_alert_horizon'] = date.today() + timedelta(days=10)
+        context['public_uploads'] = (
+            self.object.public_uploads.filter(is_active=True).order_by('-created_at')
+        )
+        labour_rows, labour_hours, labour_cost = project_labour_summary(self.object)
+        context['labour_rows'] = labour_rows
+        context['labour_total_hours'] = labour_hours
+        context['labour_total_cost'] = labour_cost
+        context['show_labour_card'] = (
+            self.object.technicians.exists() or labour_hours > 0 or labour_cost > 0
+        )
         return context
 
     def post(self, request, *args, **kwargs):
@@ -361,38 +513,6 @@ class ProjectDetailView(PermissionRequiredMixin, DetailView):
         context = self.get_context_data()
         context['task_form'] = form
         return self.render_to_response(context)
-
-
-class TimesheetListView(PermissionRequiredMixin, ListView):
-    model = Timesheet
-    template_name = 'projects/timesheet_list.html'
-    context_object_name = 'timesheets'
-    module_name = 'projects'
-    permission_type = 'view'
-    paginate_by = 25
-    
-    def get_queryset(self):
-        queryset = Timesheet.objects.filter(is_active=True).select_related('task', 'task__project', 'user')
-        if not self.request.user.is_superuser:
-            queryset = queryset.filter(user=self.request.user)
-        return queryset
-    
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context['title'] = 'Timesheets'
-        context['form'] = TimesheetForm()
-        context['total_hours'] = self.get_queryset().aggregate(Sum('hours'))['hours__sum'] or 0
-        context['can_create'] = self.request.user.is_superuser or PermissionChecker.has_permission(self.request.user, 'projects', 'create')
-        return context
-    
-    def post(self, request, *args, **kwargs):
-        form = TimesheetForm(request.POST)
-        if form.is_valid():
-            timesheet = form.save(commit=False)
-            timesheet.user = request.user
-            timesheet.save()
-            messages.success(request, 'Timesheet entry added.')
-        return redirect('projects:timesheet_list')
 
 
 @login_required
@@ -707,4 +827,77 @@ def expense_post_to_accounting(request, pk):
         messages.error(request, f'Error posting to accounting: {str(e)}')
     
     return redirect('projects:expense_detail', pk=pk)
+
+
+@login_required
+def project_approve_edit(request, pk):
+    if request.method != 'POST':
+        return HttpResponseNotAllowed(['POST'])
+    project = get_object_or_404(Project, pk=pk, is_active=True)
+    from .approval_rules import user_can_approve_project_edit
+
+    if not user_can_approve_project_edit(request.user, project):
+        messages.error(request, 'Permission denied.')
+        return redirect('projects:project_detail', pk=pk)
+    if project.edit_approval_status != 'pending':
+        messages.warning(request, 'This project does not have a pending edit approval.')
+        return redirect('projects:project_detail', pk=pk)
+    project.edit_approval_status = 'none'
+    project.edit_approval_submitted_at = None
+    project.edit_approval_submitted_by_id = None
+    project.save(
+        update_fields=[
+            'edit_approval_status',
+            'edit_approval_submitted_at',
+            'edit_approval_submitted_by',
+            'updated_at',
+        ]
+    )
+    from apps.settings_app.models import ApprovalAuditLog
+
+    ApprovalAuditLog.objects.create(
+        module='project',
+        reference=project.project_code,
+        approver=request.user,
+        action='approve',
+        comment='Project edit acknowledged',
+    )
+    messages.success(request, f'{project.project_code}: edit changes approved.')
+    return redirect('projects:project_detail', pk=pk)
+
+
+@login_required
+def project_reject_edit(request, pk):
+    if request.method != 'POST':
+        return HttpResponseNotAllowed(['POST'])
+    project = get_object_or_404(Project, pk=pk, is_active=True)
+    from .approval_rules import user_can_approve_project_edit
+
+    if not user_can_approve_project_edit(request.user, project):
+        messages.error(request, 'Permission denied.')
+        return redirect('projects:project_detail', pk=pk)
+    if project.edit_approval_status != 'pending':
+        messages.warning(request, 'This project does not have a pending edit approval.')
+        return redirect('projects:project_detail', pk=pk)
+    comment = (request.POST.get('comment') or '').strip()
+    project.edit_approval_status = 'rejected'
+    project.save(update_fields=['edit_approval_status', 'updated_at'])
+    from apps.settings_app.models import ApprovalAuditLog, Notification
+
+    ApprovalAuditLog.objects.create(
+        module='project',
+        reference=project.project_code,
+        approver=request.user,
+        action='reject',
+        comment=comment[:2000],
+    )
+    if project.edit_approval_submitted_by_id:
+        Notification.create(
+            user=project.edit_approval_submitted_by,
+            title=f'Project edit rejected — {project.project_code}',
+            message=(comment[:500] if comment else 'The approver rejected the latest project edits.') + '',
+            link=reverse('projects:project_detail', kwargs={'pk': project.pk}),
+        )
+    messages.success(request, 'Edit marked as rejected; the assigned user has been notified.')
+    return redirect('projects:project_detail', pk=pk)
 

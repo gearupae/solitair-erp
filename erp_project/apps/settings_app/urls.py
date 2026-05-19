@@ -30,6 +30,7 @@ urlpatterns = [
     
     # Approval Configuration
     path('approval-configuration/', views.ApprovalConfigurationView.as_view(), name='approval_configuration'),
+    path('crm-kanban/', views.CrmKanbanSettingsView.as_view(), name='crm_kanban'),
 ]
 
 

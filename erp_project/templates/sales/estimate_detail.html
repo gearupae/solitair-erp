@@ -1,5 +1,18 @@
 {% extends 'base.html' %}
 
+{% block extra_css %}
+<style>
+.estimate-status-badge-approved {
+    background-color: #e0e7ff !important;
+    color: #3730a3 !important;
+}
+.estimate-status-badge-rejected {
+    background-color: #ffedd5 !important;
+    color: #9a3412 !important;
+}
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="page-header">
     <nav aria-label="breadcrumb">
@@ -13,16 +26,50 @@
             <h4 class="mb-1 fw-bold">{{ estimate.estimate_number }}</h4>
             <span class="text-muted">{{ estimate.customer.name }}</span>
         </div>
-        <div>
+        <div class="d-flex flex-wrap gap-2 align-items-center">
+            {% if estimate.edit_approval_status == 'pending' %}
+            <span class="badge bg-warning text-dark"><i class="fas fa-clock me-1"></i>Edit pending approval</span>
+            {% elif estimate.edit_approval_status == 'rejected' %}
+            <span class="badge bg-danger"><i class="fas fa-times-circle me-1"></i>Edit rejected — review needed</span>
+            {% endif %}
+            {% if can_approve_estimate_edit %}
+            <form method="post" action="{% url 'sales:estimate_approve_edit' estimate.pk %}" class="d-inline" onsubmit="return confirm('Approve these estimate changes?');">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-success btn-sm"><i class="fas fa-check me-1"></i>Approve edit</button>
+            </form>
+            <form method="post" action="{% url 'sales:estimate_reject_edit' estimate.pk %}" class="d-inline" onsubmit="return confirm('Reject this edit review?');">
+                {% csrf_token %}
+                <input type="text" name="comment" class="form-control form-control-sm d-inline-block" style="width:11rem;" placeholder="Comment (optional)">
+                <button type="submit" class="btn btn-outline-danger btn-sm"><i class="fas fa-times me-1"></i>Reject</button>
+            </form>
+            {% endif %}
             {% if can_edit %}
             <a href="{% url 'sales:estimate_edit' estimate.pk %}" class="btn btn-primary">
                 <i class="fas fa-edit me-2"></i>Edit
             </a>
             {% endif %}
-            {% if estimate.status == 'approved' %}
+            {% if estimate.allows_follow_on_conversion %}
             <a href="{% url 'sales:estimate_convert' estimate.pk %}" class="btn btn-outline-success" onclick="return confirm('Create invoice from this estimate?');">
                 <i class="fas fa-file-invoice me-2"></i>Convert to Invoice
             </a>
+            {% endif %}
+            {% if estimate.project %}
+            <a href="{% url 'projects:project_detail' estimate.project.pk %}" class="btn btn-outline-primary">
+                <i class="fas fa-project-diagram me-2"></i>View linked project
+            </a>
+            {% elif estimate.allows_follow_on_conversion and estimate.is_active %}
+                {% if estimate_to_project_prompt_include_lines %}
+                <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#convertProjectModal">
+                    <i class="fas fa-project-diagram me-2"></i>Convert to Project
+                </button>
+                {% else %}
+                <form method="post" action="{% url 'sales:estimate_convert_project' estimate.pk %}" class="d-inline" onsubmit="return confirm('Create a project from this estimate? Scope Items will not be copied (company setting).');">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-outline-primary">
+                        <i class="fas fa-project-diagram me-2"></i>Convert to Project
+                    </button>
+                </form>
+                {% endif %}
             {% endif %}
             <a href="{% url 'sales:estimate_pdf' estimate.pk %}" class="btn btn-outline-danger" target="_blank">
                 <i class="fas fa-file-pdf me-2"></i>PDF
@@ -36,38 +83,38 @@
         <!-- Estimate Info -->
         <div class="card mb-4">
             <div class="card-body">
-                <div class="row g-4">
-                    <div class="col-md-6">
-                        <h6 class="text-muted mb-2">Customer</h6>
+                <div class="row row-cols-1 row-cols-sm-2 row-cols-lg-3 g-4 align-items-start">
+                    <div class="col">
+                        <h6 class="text-muted mb-2 text-uppercase small fw-semibold">Customer</h6>
                         <p class="fw-medium mb-0">{{ estimate.customer.name }}</p>
                         {% if estimate.customer.company %}
-                        <small class="text-muted">{{ estimate.customer.company }}</small>
+                        <small class="text-muted d-block mt-1">{{ estimate.customer.company }}</small>
                         {% endif %}
                     </div>
-                    <div class="col-md-3">
-                        <h6 class="text-muted mb-2">Date</h6>
+                    <div class="col">
+                        <h6 class="text-muted mb-2 text-uppercase small fw-semibold">Date</h6>
                         <p class="mb-0">{{ estimate.date|date:"d/m/Y" }}</p>
                     </div>
-                    <div class="col-md-3">
-                        <h6 class="text-muted mb-2">Valid Until</h6>
-                        <p class="mb-0">{{ estimate.valid_until|date:"d/m/Y"|default:"-" }}</p>
+                    <div class="col">
+                        <h6 class="text-muted mb-2 text-uppercase small fw-semibold">Valid until</h6>
+                        <p class="mb-0">{{ estimate.valid_until|date:"d/m/Y"|default:"—" }}</p>
                     </div>
-                    <div class="col-md-4">
-                        <h6 class="text-muted mb-2">Assigned to</h6>
+                    <div class="col">
+                        <h6 class="text-muted mb-2 text-uppercase small fw-semibold">Assigned to</h6>
                         <p class="mb-0">{% if estimate.assigned_to %}{{ estimate.assigned_to.get_full_name|default:estimate.assigned_to.username }}{% else %}—{% endif %}</p>
                     </div>
-                    <div class="col-md-4">
-                        <h6 class="text-muted mb-2">Prepared by</h6>
+                    <div class="col">
+                        <h6 class="text-muted mb-2 text-uppercase small fw-semibold">Prepared by</h6>
                         <p class="mb-0">{{ estimate.prepared_by|default:"—" }}</p>
                     </div>
-                    <div class="col-md-4">
-                        <h6 class="text-muted mb-2">Project</h6>
-                        <p class="mb-0">{% if estimate.project %}{{ estimate.project.name }}{% else %}—{% endif %}</p>
+                    <div class="col">
+                        <h6 class="text-muted mb-2 text-uppercase small fw-semibold">Project</h6>
+                        <p class="mb-0 text-break">{% if estimate.project %}{{ estimate.project.name }}{% else %}—{% endif %}</p>
                     </div>
                     {% if estimate.scope %}
                     <div class="col-12">
-                        <h6 class="text-muted mb-2">Scope</h6>
-                        <p class="mb-0">{% for label in estimate.scope_display_labels %}<span class="badge bg-light text-dark border me-1">{{ label }}</span>{% endfor %}</p>
+                        <h6 class="text-muted mb-2 text-uppercase small fw-semibold">Scope</h6>
+                        <p class="mb-0">{% for label in estimate.scope_display_labels %}<span class="badge bg-light text-dark border me-1 mb-1">{{ label }}</span>{% endfor %}</p>
                     </div>
                     {% endif %}
                 </div>
@@ -220,11 +267,13 @@
                     {% elif estimate.status == 'sent' %}
                         <span class="badge fs-6" style="background-color: #dbeafe; color: #1e40af;">Sent</span>
                     {% elif estimate.status == 'approved' %}
-                        <span class="badge badge-active fs-6">Approved</span>
+                        <span class="badge estimate-status-badge-approved fs-6">{{ estimate.get_status_display }}</span>
                     {% elif estimate.status == 'rejected' %}
-                        <span class="badge badge-inactive fs-6">Rejected</span>
-                    {% elif estimate.status == 'expired' %}
-                        <span class="badge bg-warning text-dark fs-6">Expired</span>
+                        <span class="badge estimate-status-badge-rejected fs-6">{{ estimate.get_status_display }}</span>
+                    {% elif estimate.status == 'quotation_won' %}
+                        <span class="badge bg-success fs-6">{{ estimate.get_status_display }}</span>
+                    {% elif estimate.status == 'quotation_lost' %}
+                        <span class="badge bg-danger fs-6">{{ estimate.get_status_display }}</span>
                     {% else %}
                         <span class="badge bg-secondary fs-6">{{ estimate.get_status_display }}</span>
                     {% endif %}
@@ -254,26 +303,51 @@
                             <i class="fas fa-check me-2"></i>Approve
                         </button>
                     </form>
+                    <form method="post" action="{% url 'sales:estimate_status' estimate.pk 'quotation_won' %}" class="d-grid">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-sm btn-outline-success">
+                            <i class="fas fa-trophy me-2"></i>Mark estimate won
+                        </button>
+                    </form>
+                    <form method="post" action="{% url 'sales:estimate_status' estimate.pk 'quotation_lost' %}" class="d-grid">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-sm btn-outline-secondary">
+                            <i class="fas fa-times-circle me-2"></i>Mark estimate lost
+                        </button>
+                    </form>
                     <form method="post" action="{% url 'sales:estimate_status' estimate.pk 'rejected' %}" class="d-grid">
                         {% csrf_token %}
                         <button type="submit" class="btn btn-sm btn-outline-danger">
                             <i class="fas fa-times me-2"></i>Reject
                         </button>
                     </form>
-                    <form method="post" action="{% url 'sales:estimate_status' estimate.pk 'expired' %}" class="d-grid">
+                    {% elif estimate.status == 'approved' %}
+                    <form method="post" action="{% url 'sales:estimate_status' estimate.pk 'quotation_won' %}" class="d-grid">
                         {% csrf_token %}
-                        <button type="submit" class="btn btn-sm btn-outline-warning">
-                            <i class="fas fa-clock me-2"></i>Mark Expired
+                        <button type="submit" class="btn btn-sm btn-outline-success">
+                            <i class="fas fa-trophy me-2"></i>Mark estimate won
                         </button>
                     </form>
-                    {% elif estimate.status == 'approved' %}
+                    <form method="post" action="{% url 'sales:estimate_status' estimate.pk 'quotation_lost' %}" class="d-grid">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-sm btn-outline-secondary">
+                            <i class="fas fa-times-circle me-2"></i>Mark estimate lost
+                        </button>
+                    </form>
                     <form method="post" action="{% url 'sales:estimate_status' estimate.pk 'draft' %}" class="d-grid">
                         {% csrf_token %}
                         <button type="submit" class="btn btn-sm btn-outline-secondary">
                             <i class="fas fa-undo me-2"></i>Revert to Draft
                         </button>
                     </form>
-                    {% elif estimate.status == 'rejected' or estimate.status == 'expired' %}
+                    {% elif estimate.status == 'quotation_won' %}
+                    <form method="post" action="{% url 'sales:estimate_status' estimate.pk 'draft' %}" class="d-grid">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-sm btn-outline-secondary">
+                            <i class="fas fa-undo me-2"></i>Revert to Draft
+                        </button>
+                    </form>
+                    {% elif estimate.status == 'rejected' or estimate.status == 'quotation_lost' %}
                     <form method="post" action="{% url 'sales:estimate_status' estimate.pk 'draft' %}" class="d-grid">
                         {% csrf_token %}
                         <button type="submit" class="btn btn-sm btn-outline-secondary">
@@ -311,6 +385,40 @@
                 </div>
             </div>
         </div>
+
+        {% if can_send_estimate_email %}
+        <div class="card mb-4 border-primary border-opacity-25">
+            <div class="card-header">
+                <h6 class="mb-0 fw-semibold"><i class="fas fa-envelope me-2 text-primary"></i>Email this quotation</h6>
+            </div>
+            <div class="card-body">
+                {% if estimate_email_hint %}
+                <div class="alert alert-warning py-2 small mb-3">{{ estimate_email_hint }}</div>
+                {% endif %}
+                {% csrf_token %}
+                <div class="mb-2">
+                    <label class="form-label small fw-semibold" for="estimate-email-subject">Subject</label>
+                    <input type="text" class="form-control form-control-sm" id="estimate-email-subject" value="{{ estimate_email_default_subject }}">
+                </div>
+                <div class="mb-2">
+                    <label class="form-label small fw-semibold" for="estimate-email-to">To</label>
+                    <input type="text" class="form-control form-control-sm" id="estimate-email-to" value="{{ estimate_email_default_to }}" placeholder="email@example.com (comma-separated for multiple)">
+                </div>
+                <div class="mb-2">
+                    <label class="form-label small fw-semibold" for="estimate-email-cc">Cc</label>
+                    <input type="text" class="form-control form-control-sm" id="estimate-email-cc" placeholder="Optional, comma-separated">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small fw-semibold" for="estimate-email-body">Message</label>
+                    <textarea class="form-control form-control-sm" id="estimate-email-body" rows="6">{{ estimate_email_default_body }}</textarea>
+                </div>
+                <button type="button" class="btn btn-primary btn-sm" id="estimate-email-send-btn">
+                    <i class="fas fa-paper-plane me-1"></i>Send email with PDF
+                </button>
+                <span class="text-muted small ms-2" id="estimate-email-send-status"></span>
+            </div>
+        </div>
+        {% endif %}
         
         <!-- Audit Info -->
         <div class="card">
@@ -328,5 +436,79 @@
         </div>
     </div>
 </div>
+
+{% if estimate.allows_follow_on_conversion and estimate.is_active and not estimate.project and estimate_to_project_prompt_include_lines %}
+<div class="modal fade" id="convertProjectModal" tabindex="-1" aria-labelledby="convertProjectModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="convertProjectModalLabel">Convert to project</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form method="post" action="{% url 'sales:estimate_convert_project' estimate.pk %}">
+                    {% csrf_token %}
+                    <p class="mb-3">Include all estimate line items on the new project under <strong>Items</strong>? (Operational work stays in Tasks, added separately.)</p>
+                    <div class="d-flex flex-wrap gap-2">
+                        <button type="submit" name="include_items" value="1" class="btn btn-primary">Yes, include all lines</button>
+                        <button type="submit" name="include_items" value="0" class="btn btn-outline-secondary">No, empty project</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+{% if can_send_estimate_email %}
+<script>
+(function() {
+    var btn = document.getElementById('estimate-email-send-btn');
+    if (!btn) return;
+    var csrf = document.querySelector('[name=csrfmiddlewaretoken]')?.value || '';
+    var statusEl = document.getElementById('estimate-email-send-status');
+    var url = "{{ estimate_email_send_url|escapejs }}";
+
+    btn.addEventListener('click', function() {
+        var subject = document.getElementById('estimate-email-subject')?.value?.trim() || '';
+        var to = document.getElementById('estimate-email-to')?.value?.trim() || '';
+        var cc = document.getElementById('estimate-email-cc')?.value?.trim() || '';
+        var body = document.getElementById('estimate-email-body')?.value?.trim() || '';
+        if (!subject || !to || !body) {
+            toastr.error('Please fill in subject, To, and message.');
+            return;
+        }
+        btn.disabled = true;
+        if (statusEl) statusEl.textContent = 'Sending…';
+        var fd = new FormData();
+        fd.append('csrfmiddlewaretoken', csrf);
+        fd.append('subject', subject);
+        fd.append('to', to);
+        fd.append('cc', cc);
+        fd.append('body', body);
+        fetch(url, { method: 'POST', headers: { 'X-CSRFToken': csrf }, body: fd })
+            .then(function(r) { return r.json().then(function(data) { return { ok: r.ok, data: data }; }); })
+            .then(function(res) {
+                btn.disabled = false;
+                var data = res.data;
+                if (!res.ok || !data.ok) {
+                    if (statusEl) statusEl.textContent = '';
+                    toastr.error(data.error || 'Send failed.');
+                    return;
+                }
+                if (statusEl) statusEl.textContent = 'Sent.';
+                toastr.success(data.message || 'Email sent.');
+            })
+            .catch(function() {
+                btn.disabled = false;
+                if (statusEl) statusEl.textContent = '';
+                toastr.error('Network error.');
+            });
+    });
+})();
+</script>
+{% endif %}
 {% endblock %}
 

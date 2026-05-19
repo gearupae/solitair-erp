@@ -15,7 +15,7 @@ import csv
 import json
 
 from django.http import HttpResponse, HttpResponseForbidden, JsonResponse
-from django.views.decorators.http import require_http_methods
+from django.views.decorators.http import require_http_methods, require_POST
 from decimal import Decimal
 
 from .models import (
@@ -23,6 +23,7 @@ from .models import (
     Warehouse,
     StorageLocation,
     Item,
+    ItemGroup,
     Stock,
     StockMovement,
     ConsumableRequest,
@@ -32,6 +33,8 @@ from .models import (
 )
 from .consumable_inventory_reports import REPORT_BUILDERS, build_report
 from .consumable_report_export import export_report_pdf, export_report_xlsx
+from apps.purchase.models import ItemPurchaseReceiptHistory
+from .consumable_project_lines import sync_consumable_request_to_project_item_lines
 from .forms import (
     CategoryForm, WarehouseForm, ItemForm, StockAdjustmentForm,
     ConsumableRequestForm, ConsumableRequestItemFormSet,
@@ -221,6 +224,7 @@ class ItemListView(PermissionRequiredMixin, ListView):
     def get_queryset(self):
         # Annotate total_stock at database level to ensure fresh data
         queryset = Item.objects.filter(is_active=True).select_related('category').prefetch_related(
+            'item_groups',
             Prefetch(
                 'stock_records',
                 queryset=Stock.objects.filter(
@@ -254,7 +258,13 @@ class ItemListView(PermissionRequiredMixin, ListView):
         item_type = self.request.GET.get('item_type')
         if item_type:
             queryset = queryset.filter(item_type=item_type)
-        
+
+        group = (self.request.GET.get('group') or '').strip()
+        if group == '__none__':
+            queryset = queryset.annotate(_gc=Count('item_groups')).filter(_gc=0)
+        elif group.isdigit():
+            queryset = queryset.filter(item_groups__pk=int(group)).distinct()
+
         return queryset
     
     def get_context_data(self, **kwargs):
@@ -275,6 +285,11 @@ class ItemListView(PermissionRequiredMixin, ListView):
             if item.item_type == 'product' 
             and (item.total_stock_calc or Decimal('0.00')) < item.minimum_stock
         )
+
+        context['item_groups'] = list(ItemGroup.objects.all().order_by('name'))
+        q = self.request.GET.copy()
+        q.pop('page', None)
+        context['filter_querystring'] = q.urlencode()
         
         return context
 
@@ -295,6 +310,7 @@ def item_export_csv(request):
             'name',
             'description',
             'category_code',
+            'groups',
             'item_type',
             'unit',
             'purchase_price',
@@ -306,14 +322,21 @@ def item_export_csv(request):
             'storage_location',
         ]
     )
-    qs = Item.objects.filter(is_active=True).select_related('category', 'tax_code', 'storage_location_master').order_by('item_code')
+    qs = (
+        Item.objects.filter(is_active=True)
+        .select_related('category', 'tax_code', 'storage_location_master')
+        .prefetch_related('item_groups')
+        .order_by('item_code')
+    )
     for item in qs:
+        group_names = ' | '.join(item.item_groups.order_by('name').values_list('name', flat=True))
         w.writerow(
             [
                 item.item_code,
                 item.name,
                 (item.description or '').replace('\n', ' ').replace('\r', ' ')[:2000],
                 item.category.code if item.category and item.category.code else (item.category.name if item.category else ''),
+                group_names,
                 item.item_type,
                 item.unit,
                 item.purchase_price,
@@ -326,6 +349,87 @@ def item_export_csv(request):
             ]
         )
     return response
+
+
+@login_required
+@require_POST
+def item_bulk_group(request):
+    """Add/remove M2M groups for selected items, rename ItemGroup, or clear all groups."""
+    if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'inventory', 'edit')):
+        messages.error(request, 'Permission denied.')
+        return redirect('inventory:item_list')
+
+    action = request.POST.get('action')
+    raw_ids = [x.strip() for x in request.POST.get('item_ids', '').split(',') if x.strip().isdigit()]
+    items_qs = Item.objects.filter(pk__in=raw_ids, is_active=True)
+
+    if action == 'add':
+        if not raw_ids:
+            messages.warning(request, 'Select at least one item.')
+            return redirect('inventory:item_list')
+        did_any = False
+        for pk in request.POST.getlist('add_group_ids'):
+            if not str(pk).isdigit():
+                continue
+            g = ItemGroup.objects.filter(pk=int(pk)).first()
+            if g:
+                did_any = True
+                for it in items_qs:
+                    it.item_groups.add(g)
+        for part in (request.POST.get('new_groups') or '').split(','):
+            name = part.strip()[:200]
+            if not name:
+                continue
+            g, _ = ItemGroup.objects.get_or_create(name=name)
+            did_any = True
+            for it in items_qs:
+                it.item_groups.add(g)
+        if not did_any:
+            messages.warning(request, 'Pick existing groups or type new names (comma-separated).')
+            return redirect('inventory:item_list')
+        messages.success(request, 'Groups added to selected items (existing links kept).')
+    elif action == 'remove':
+        if not raw_ids:
+            messages.warning(request, 'Select at least one item.')
+            return redirect('inventory:item_list')
+        rm = request.POST.get('remove_group_id')
+        if rm and str(rm).isdigit():
+            g = ItemGroup.objects.filter(pk=int(rm)).first()
+            if g:
+                for it in items_qs:
+                    it.item_groups.remove(g)
+                messages.success(request, 'Removed that group from selected items.')
+            else:
+                messages.warning(request, 'Group not found.')
+        else:
+            messages.warning(request, 'Choose a group to remove.')
+    elif action == 'clear':
+        if not raw_ids:
+            messages.warning(request, 'Select at least one item.')
+            return redirect('inventory:item_list')
+        for it in items_qs:
+            it.item_groups.clear()
+        messages.success(request, 'All groups cleared from selected items.')
+    elif action == 'rename':
+        gid = request.POST.get('rename_group_id')
+        new_name = (request.POST.get('rename_new_name') or '').strip()[:200]
+        if not (gid and str(gid).isdigit() and new_name):
+            messages.warning(request, 'Choose a group and enter a new name.')
+            return redirect('inventory:item_list')
+        g = ItemGroup.objects.filter(pk=int(gid)).first()
+        if not g:
+            messages.error(request, 'Group not found.')
+            return redirect('inventory:item_list')
+        if ItemGroup.objects.filter(name__iexact=new_name).exclude(pk=g.pk).exists():
+            messages.error(request, 'Another group already uses that name.')
+            return redirect('inventory:item_list')
+        g.name = new_name
+        g.save(update_fields=['name'])
+        messages.success(request, 'Group renamed for all items using it.')
+    else:
+        messages.error(request, 'Invalid action.')
+
+    return redirect('inventory:item_list')
 
 
 class ItemCreateView(CreatePermissionMixin, CreateView):
@@ -373,7 +477,7 @@ class ItemDetailView(PermissionRequiredMixin, DetailView):
     
     def get_queryset(self):
         # Annotate total_stock at database level to ensure fresh data
-        return Item.objects.annotate(
+        return Item.objects.prefetch_related('item_groups').annotate(
             total_stock_calc=Coalesce(
                 Sum(
                     'stock_records__quantity',
@@ -394,6 +498,17 @@ class ItemDetailView(PermissionRequiredMixin, DetailView):
         context['movements'] = StockMovement.objects.filter(
             item=self.object
         ).select_related('warehouse', 'to_warehouse')[:50]
+        context['purchase_receipt_history'] = (
+            ItemPurchaseReceiptHistory.objects.filter(item=self.object, is_active=True)
+            .select_related(
+                'vendor',
+                'purchase_order',
+                'receipt',
+                'receipt__created_by',
+                'stock_movement',
+            )
+            .order_by('-created_at')[:100]
+        )
         context['condition_logs'] = ConditionLog.objects.filter(
             item=self.object
         ).select_related('changed_by')[:20]
@@ -900,7 +1015,13 @@ class ConsumableRequestListView(PermissionRequiredMixin, ListView):
     def get_queryset(self):
         user = self.request.user
         queryset = ConsumableRequest.objects.filter(is_active=True).select_related(
-            'item', 'requested_by', 'warehouse', 'approved_by', 'dispensed_by', 'department'
+            'item',
+            'requested_by',
+            'warehouse',
+            'approved_by',
+            'dispensed_by',
+            'department',
+            'project',
         ).prefetch_related('items')
         
         # Non-admins only see their own requests
@@ -919,7 +1040,9 @@ class ConsumableRequestListView(PermissionRequiredMixin, ListView):
                 Q(item__name__icontains=search) |
                 Q(items__item__name__icontains=search) |
                 Q(requested_by__first_name__icontains=search) |
-                Q(requested_by__last_name__icontains=search)
+                Q(requested_by__last_name__icontains=search) |
+                Q(project__name__icontains=search) |
+                Q(project__project_code__icontains=search)
             ).distinct()
         
         return queryset.order_by('-created_at')
@@ -971,11 +1094,19 @@ def consumable_request_create(request):
             messages.success(request, f'Request {consumable_request.request_number} submitted!')
             return redirect('inventory:consumable_request_list')
     else:
-        form = ConsumableRequestForm()
+        initial = {}
+        raw_project = (request.GET.get('project') or '').strip()
+        if raw_project.isdigit():
+            from apps.projects.models import Project
+
+            proj = Project.objects.filter(pk=int(raw_project), is_active=True).first()
+            if proj:
+                initial['project'] = proj.pk
+        form = ConsumableRequestForm(initial=initial)
         items_formset = ConsumableRequestItemFormSet()
     
     return render(request, 'inventory/consumable_request_form.html', {
-        'title': 'Request Consumables',
+        'title': 'Request items',
         'form': form,
         'items_formset': items_formset,
         'today': date.today().isoformat(),
@@ -987,7 +1118,14 @@ def consumable_request_detail(request, pk):
     """View request details."""
     consumable_request = get_object_or_404(
         ConsumableRequest.objects.select_related(
-            'item', 'requested_by', 'warehouse', 'approved_by', 'dispensed_by', 'stock_movement', 'department'
+            'item',
+            'requested_by',
+            'warehouse',
+            'approved_by',
+            'dispensed_by',
+            'stock_movement',
+            'department',
+            'project',
         ).prefetch_related('items', 'items__item', 'attachments'),
         pk=pk
     )
@@ -1039,8 +1177,13 @@ def consumable_request_approve(request, pk):
                 warehouse = form.cleaned_data['warehouse']
                 admin_notes = form.cleaned_data.get('admin_notes', '')
                 consumable_request.admin_notes = admin_notes
-                consumable_request.approve(request.user, warehouse)
-                messages.success(request, f'Request {consumable_request.request_number} approved.')
+                with transaction.atomic():
+                    consumable_request.approve(request.user, warehouse)
+                    n_lines = sync_consumable_request_to_project_item_lines(consumable_request)
+                msg = f'Request {consumable_request.request_number} approved.'
+                if n_lines:
+                    msg += f' {n_lines} line(s) added to project items.'
+                messages.success(request, msg)
             except Exception as e:
                 messages.error(request, f'Error approving request: {str(e)}')
         else:
@@ -1072,11 +1215,15 @@ def consumable_request_dispense(request, pk):
         if form.is_valid():
             try:
                 warehouse = form.cleaned_data['warehouse']
-                consumable_request.dispense(request.user, warehouse)
+                with transaction.atomic():
+                    consumable_request.dispense(request.user, warehouse)
+                    n_lines = sync_consumable_request_to_project_item_lines(consumable_request)
                 items_dispensed = consumable_request.get_items_for_dispense()
                 msg = f'Request {consumable_request.request_number} dispensed.'
                 if items_dispensed:
                     msg += f' Stock reduced for {len(items_dispensed)} item(s).'
+                if n_lines:
+                    msg += f' {n_lines} line(s) added to project items.'
                 messages.success(request, msg)
             except Exception as e:
                 messages.error(request, f'Error dispensing: {str(e)}')

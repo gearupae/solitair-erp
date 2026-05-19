@@ -1,6 +1,6 @@
 from django import forms
 from django.core.exceptions import ValidationError
-from .models import Project, Task, Timesheet, ProjectExpense, ProjectGatepass
+from .models import Project, Task, ProjectExpense, ProjectGatepass
 from apps.crm.models import Customer
 from apps.purchase.models import Vendor
 from apps.finance.models import Account
@@ -8,12 +8,24 @@ from django.contrib.auth import get_user_model
 
 User = get_user_model()
 
+
+def project_staff_select_queryset():
+    """
+    Every user account for Members / Technicians.
+
+    Project membership is stored against Django users; HR may list more people than
+    have (or have active) logins — we still expose **all** ``User`` rows so nothing
+    is hidden by ``is_active`` or HR link state. Active accounts sort first.
+    """
+    return User.objects.all().order_by('-is_active', 'first_name', 'last_name', 'username')
+
+
 class ProjectForm(forms.ModelForm):
     class Meta:
         model = Project
         fields = [
             'name', 'description', 'customer', 'manager', 'status',
-            'start_date', 'end_date', 'budget', 'estimated_cost', 'members',
+            'start_date', 'end_date', 'budget', 'estimated_cost', 'members', 'technicians',
         ]
         widgets = {
             'start_date': forms.DateInput(attrs={'type': 'date'}),
@@ -22,19 +34,27 @@ class ProjectForm(forms.ModelForm):
             'members': forms.SelectMultiple(
                 attrs={'class': 'form-select select2-members', 'data-placeholder': 'Search users…'}
             ),
+            'technicians': forms.SelectMultiple(
+                attrs={'class': 'form-select select2-technicians', 'data-placeholder': 'Search technicians…'}
+            ),
         }
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        user_qs = User.objects.filter(is_active=True).order_by('first_name', 'last_name', 'username')
-        self.fields['manager'].queryset = user_qs
-        self.fields['members'].queryset = user_qs
+        manager_qs = User.objects.filter(is_active=True).order_by('first_name', 'last_name', 'username')
+        self.fields['manager'].queryset = manager_qs
+
+        staff_qs = project_staff_select_queryset()
+        self.fields['members'].queryset = staff_qs
         self.fields['members'].required = False
         self.fields['members'].label = 'Members'
+        self.fields['technicians'].queryset = staff_qs
+        self.fields['technicians'].required = False
+        self.fields['technicians'].label = 'Technicians'
         for name, field in self.fields.items():
             if name in ['customer', 'manager', 'status']:
                 field.widget.attrs['class'] = 'form-select'
-            elif name == 'members':
+            elif name in ('members', 'technicians'):
                 pass  # class set on widget
             else:
                 field.widget.attrs['class'] = 'form-control'
@@ -102,24 +122,6 @@ class ProjectGatepassForm(forms.ModelForm):
         if start and end and start > end:
             raise ValidationError('Start date must be on or before expiry date.')
         return cleaned
-
-
-class TimesheetForm(forms.ModelForm):
-    class Meta:
-        model = Timesheet
-        fields = ['task', 'date', 'hours', 'description']
-        widgets = {
-            'date': forms.DateInput(attrs={'type': 'date'}),
-            'description': forms.Textarea(attrs={'rows': 2}),
-        }
-    
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        for name, field in self.fields.items():
-            if name == 'task':
-                field.widget.attrs['class'] = 'form-select'
-            else:
-                field.widget.attrs['class'] = 'form-control'
 
 
 class ProjectExpenseForm(forms.ModelForm):

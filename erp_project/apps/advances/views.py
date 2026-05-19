@@ -120,6 +120,103 @@ def customer_advance_detail(request, pk):
 
 
 @login_required
+def customer_advance_receipt_pdf(request, pk):
+    """
+    Receipt payment voucher PDF/HTML using the same layout as sales invoice_pdf.
+    """
+    from django.http import HttpResponse
+    from django.template.loader import get_template
+
+    from apps.settings_app.models import CompanySettings
+
+    advance = get_object_or_404(
+        CustomerAdvance.objects.select_related('customer', 'bank_account', 'journal_entry'),
+        pk=pk,
+        is_active=True,
+    )
+
+    if not _can(request.user, 'crm', 'view'):
+        messages.error(request, 'Permission denied.')
+        return redirect('crm:customer_list')
+
+    company = CompanySettings.get_settings()
+
+    def number_to_words(n):
+        ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine',
+                'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen',
+                'Seventeen', 'Eighteen', 'Nineteen']
+        tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety']
+
+        if n < 20:
+            return ones[n]
+        elif n < 100:
+            return tens[n // 10] + ('' if n % 10 == 0 else ' ' + ones[n % 10])
+        elif n < 1000:
+            return ones[n // 100] + ' Hundred' + ('' if n % 100 == 0 else ' and ' + number_to_words(n % 100))
+        elif n < 1000000:
+            return number_to_words(n // 1000) + ' Thousand' + ('' if n % 1000 == 0 else ' ' + number_to_words(n % 1000))
+        elif n < 1000000000:
+            return number_to_words(n // 1000000) + ' Million' + ('' if n % 1000000 == 0 else ' ' + number_to_words(n % 1000000))
+        return str(n)
+
+    try:
+        amount_whole = int(advance.total_amount)
+        amount_decimal = int((advance.total_amount - amount_whole) * 100)
+        amount_words = number_to_words(amount_whole)
+        if amount_decimal > 0:
+            amount_words += f' and {amount_decimal}/100'
+        amount_words += ' Dirhams Only'
+    except (TypeError, ValueError, OverflowError):
+        amount_words = ''
+
+    vat_summary = {}
+    if advance.vat_amount > 0 and advance.amount > 0:
+        rate = float((advance.vat_amount / advance.amount) * 100)
+        vat_summary[rate] = {'taxable': float(advance.amount), 'vat': float(advance.vat_amount)}
+    elif advance.vat_amount > 0:
+        vat_summary[5.0] = {'taxable': float(advance.amount), 'vat': float(advance.vat_amount)}
+
+    if advance.amount > 0 and advance.vat_amount > 0:
+        line_vat_rate = (advance.vat_amount / advance.amount) * 100
+    else:
+        line_vat_rate = Decimal('0')
+
+    logo_absolute_url = ''
+    if company.logo:
+        logo_absolute_url = request.build_absolute_uri(company.logo.url)
+
+    context = {
+        'advance': advance,
+        'company': company,
+        'amount_words': amount_words,
+        'vat_summary': vat_summary,
+        'logo_absolute_url': logo_absolute_url,
+        'is_pdf': True,
+        'line_vat_rate': line_vat_rate,
+    }
+
+    output_format = request.GET.get('format', 'html')
+
+    if output_format == 'pdf':
+        try:
+            from weasyprint import HTML
+
+            template = get_template('advances/customer_advance_receipt_pdf.html')
+            html_string = template.render(context)
+            html = HTML(string=html_string, base_url=request.build_absolute_uri('/'))
+            pdf = html.write_pdf()
+            response = HttpResponse(pdf, content_type='application/pdf')
+            safe_ref = advance.advance_number.replace('/', '-')
+            response['Content-Disposition'] = f'inline; filename="Receipt_{safe_ref}.pdf"'
+            return response
+        except ImportError:
+            messages.info(request, 'PDF generation requires WeasyPrint. Showing printable HTML version.')
+            return render(request, 'advances/customer_advance_receipt_pdf.html', context)
+
+    return render(request, 'advances/customer_advance_receipt_pdf.html', context)
+
+
+@login_required
 def customer_advance_post(request, pk):
     advance = get_object_or_404(CustomerAdvance, pk=pk, is_active=True)
 

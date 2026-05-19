@@ -1,5 +1,5 @@
 """
-Projects Models - Projects, Tasks, Timesheets, Project Expenses
+Projects Models - Projects, Tasks, Project Expenses
 With full accounting integration:
 - Project Expenses → Project Expense Ledger
 - Project Revenue → Project Revenue Ledger
@@ -20,6 +20,12 @@ class Project(BaseModel):
     Project model with cost center functionality.
     Acts as a cost center for tracking project-specific revenue and expenses.
     """
+    EDIT_APPROVAL_STATUS_CHOICES = [
+        ('none', 'No pending edit review'),
+        ('pending', 'Pending edit approval'),
+        ('rejected', 'Edit rejected'),
+    ]
+
     STATUS_CHOICES = [
         ('planning', 'Planning'),
         ('in_progress', 'In Progress'),
@@ -40,6 +46,20 @@ class Project(BaseModel):
     customer = models.ForeignKey(Customer, on_delete=models.SET_NULL, null=True, blank=True, related_name='projects')
     manager = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='managed_projects')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='planning')
+    edit_approval_status = models.CharField(
+        max_length=20,
+        choices=EDIT_APPROVAL_STATUS_CHOICES,
+        default='none',
+        help_text='When approval is configured for projects, edits from non-approvers queue here.',
+    )
+    edit_approval_submitted_at = models.DateTimeField(null=True, blank=True)
+    edit_approval_submitted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='project_edit_approval_submissions',
+    )
     start_date = models.DateField(null=True, blank=True)
     end_date = models.DateField(null=True, blank=True)
     
@@ -59,6 +79,12 @@ class Project(BaseModel):
         blank=True,
         related_name='project_memberships',
         help_text='Team members assigned to this project',
+    )
+    technicians = models.ManyToManyField(
+        settings.AUTH_USER_MODEL,
+        blank=True,
+        related_name='technician_projects',
+        help_text='Field technicians; clock in to this project on the public attendance link to allocate hours here.',
     )
     
     # Accounting Tracking
@@ -90,7 +116,12 @@ class Project(BaseModel):
         if not self.project_code:
             self.project_code = generate_number('PROJECT', Project, 'project_code')
         super().save(*args, **kwargs)
-    
+
+    def allows_edit_by(self, user):
+        from apps.projects.approval_rules import user_can_edit_project
+
+        return user_can_edit_project(user, self)
+
     @property
     def total_tasks(self):
         return self.tasks.filter(is_active=True).count()
@@ -180,6 +211,46 @@ class Task(BaseModel):
         return f"{self.project.project_code} - {self.name}"
 
 
+class ProjectItemLine(models.Model):
+    """
+    Commercial / scope lines copied from an estimate when converting to a project.
+    Distinct from Task (operational work items).
+    """
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='item_lines')
+    sort_order = models.PositiveIntegerField(default=0)
+    group_name = models.CharField(max_length=200, blank=True)
+    description = models.CharField(max_length=500)
+    inventory_item = models.ForeignKey(
+        'inventory.Item',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='project_item_lines',
+    )
+    quantity = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('1'))
+    unit_price = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0'))
+    rate = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0'))
+    line_net = models.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        default=Decimal('0'),
+        help_text='Line amount excluding VAT (matches estimate line total)',
+    )
+    vat_amount = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0'))
+
+    class Meta:
+        ordering = ['sort_order', 'id']
+        verbose_name = 'Project item line'
+        verbose_name_plural = 'Project item lines'
+
+    def __str__(self):
+        return f'{self.project.project_code}: {self.description[:50]}'
+
+    @property
+    def line_total_incl_vat(self):
+        return (self.line_net or Decimal('0')) + (self.vat_amount or Decimal('0'))
+
+
 class ProjectGatepass(BaseModel):
     """Site / client gate pass for a project team member, with expiry tracking."""
 
@@ -212,28 +283,6 @@ class ProjectGatepass(BaseModel):
         if self.project_id and self.member_id:
             if not self.project.members.filter(pk=self.member_id).exists():
                 raise ValidationError({'member': 'Selected user must be a member of this project.'})
-
-
-class Timesheet(BaseModel):
-    """Timesheet entry model."""
-    task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name='timesheets')
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='timesheets')
-    date = models.DateField()
-    hours = models.DecimalField(max_digits=5, decimal_places=2)
-    hourly_rate = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
-    total_cost = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
-    description = models.TextField(blank=True)
-    billable = models.BooleanField(default=True)
-    
-    class Meta:
-        ordering = ['-date']
-    
-    def __str__(self):
-        return f"{self.user.username} - {self.task.name} - {self.hours}h"
-    
-    def save(self, *args, **kwargs):
-        self.total_cost = self.hours * self.hourly_rate
-        super().save(*args, **kwargs)
 
 
 class ProjectExpense(BaseModel):
@@ -421,6 +470,33 @@ class ProjectExpense(BaseModel):
         self.project.update_totals()
         
         return journal
+
+
+class ProjectPublicUpload(BaseModel):
+    """
+    File uploaded via the anonymous public project upload form.
+    Appears on the project detail (overview) page for staff.
+    """
+
+    project = models.ForeignKey(
+        Project,
+        on_delete=models.CASCADE,
+        related_name='public_uploads',
+    )
+    file = models.FileField(upload_to='project_public/%Y/%m/', max_length=500)
+    original_filename = models.CharField(max_length=255, blank=True)
+    note = models.CharField(max_length=500, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.project.project_code}: {self.original_filename or self.file.name}'
+
+    @property
+    def is_probably_image(self):
+        name = (self.original_filename or self.file.name or '').lower()
+        return name.endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.heic', '.heif'))
 
 
 class ProjectInvoice(BaseModel):

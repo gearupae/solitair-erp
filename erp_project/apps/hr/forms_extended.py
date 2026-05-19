@@ -19,6 +19,7 @@ from apps.hr.models_extended import (
     UAECompliance,
 )
 from apps.hr.payroll_allowances import normalize_template_allowance_lines_json
+from apps.projects.models import Project
 
 
 class PayrollSettingsForm(forms.ModelForm):
@@ -194,7 +195,7 @@ class HolidayForm(forms.ModelForm):
 class AttendanceMarkForm(forms.ModelForm):
     class Meta:
         model = AttendanceRecord
-        fields = ['employee', 'date', 'check_in', 'check_out', 'status', 'overtime_type', 'notes', 'source']
+        fields = ['employee', 'date', 'check_in', 'check_out', 'status', 'overtime_type', 'notes', 'source', 'project']
         widgets = {
             'date': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
             'check_in': forms.TimeInput(attrs={'type': 'time', 'class': 'form-control'}),
@@ -205,11 +206,14 @@ class AttendanceMarkForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields['employee'].queryset = Employee.objects.filter(is_active=True).order_by('first_name', 'last_name')
+        self.fields['project'].queryset = Project.objects.filter(is_active=True).order_by('project_code', 'name')
+        self.fields['project'].required = False
+        self.fields['project'].label = 'Project (labour / site)'
         for name, field in self.fields.items():
             if name not in self.Meta.widgets:
                 field.widget.attrs.setdefault(
                     'class',
-                    'form-select' if name in ('employee', 'status', 'source', 'overtime_type') else 'form-control',
+                    'form-select' if name in ('employee', 'status', 'source', 'overtime_type', 'project') else 'form-control',
                 )
 
 

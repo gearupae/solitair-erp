@@ -20,6 +20,11 @@
             <a href="{% url 'purchase:po_pdf' po.pk %}?format=pdf" class="btn btn-outline-success" target="_blank" rel="noopener">
                 <i class="fas fa-download me-2"></i>Download PDF
             </a>
+            {% if can_receive_po %}
+            <a href="{% url 'purchase:po_receive' po.pk %}" class="btn btn-success">
+                <i class="fas fa-dolly me-2"></i>Receive items
+            </a>
+            {% endif %}
             {% if can_edit %}
             <a href="{% url 'purchase:po_edit' po.pk %}" class="btn btn-primary">
                 <i class="fas fa-edit me-2"></i>Edit
@@ -70,17 +75,21 @@
                         <thead>
                             <tr>
                                 <th>Description</th>
-                                <th class="text-center">Qty</th>
-                                <th class="text-end">Price</th>
-                                <th class="text-center">VAT</th>
-                                <th class="text-end">Total</th>
+                                <th class="text-center text-nowrap">Ordered</th>
+                                <th class="text-center text-nowrap">Received</th>
+                                <th class="text-center text-nowrap">Remaining</th>
+                                <th class="text-end text-nowrap">Unit price</th>
+                                <th class="text-center text-nowrap">VAT</th>
+                                <th class="text-end text-nowrap">Total</th>
                             </tr>
                         </thead>
                         <tbody>
                             {% for item in po.items.all %}
                             <tr>
                                 <td>{{ item.description }}</td>
-                                <td class="text-center">{{ item.quantity }}</td>
+                                <td class="text-center">{{ item.quantity|floatformat:2 }}</td>
+                                <td class="text-center">{{ item.quantity_received|floatformat:2 }}</td>
+                                <td class="text-center {% if item.quantity_remaining > 0 %}fw-medium{% endif %}">{{ item.quantity_remaining|floatformat:2 }}</td>
                                 <td class="text-end">{{ item.unit_price|floatformat:2 }}</td>
                                 <td class="text-center">{{ item.vat_rate }}%</td>
                                 <td class="text-end">{{ item.total|floatformat:2 }}</td>
@@ -89,15 +98,15 @@
                         </tbody>
                         <tfoot>
                             <tr>
-                                <td colspan="4" class="text-end">Subtotal:</td>
+                                <td colspan="6" class="text-end">Subtotal:</td>
                                 <td class="text-end fw-medium">AED {{ po.subtotal|floatformat:2 }}</td>
                             </tr>
                             <tr>
-                                <td colspan="4" class="text-end">VAT:</td>
+                                <td colspan="6" class="text-end">VAT:</td>
                                 <td class="text-end fw-medium">AED {{ po.vat_amount|floatformat:2 }}</td>
                             </tr>
                             <tr>
-                                <td colspan="4" class="text-end fw-bold">Total:</td>
+                                <td colspan="6" class="text-end fw-bold">Total:</td>
                                 <td class="text-end fw-bold">AED {{ po.total_amount|floatformat:2 }}</td>
                             </tr>
                         </tfoot>
@@ -105,6 +114,55 @@
                 </div>
             </div>
         </div>
+
+        {% if po.goods_receipts.all %}
+        <div class="card mb-4">
+            <div class="card-header">
+                <h6 class="mb-0 fw-semibold"><i class="fas fa-history me-2"></i>Receive history</h6>
+                <p class="small text-muted mb-0">Chronological log of goods receipts against this PO.</p>
+            </div>
+            <div class="card-body">
+                {% for rcpt in po.goods_receipts.all %}
+                <div class="border rounded p-3 mb-3">
+                    <div class="d-flex flex-wrap justify-content-between gap-2 mb-2">
+                        <div>
+                            <span class="fw-semibold">{{ rcpt.created_at|date:"d/m/Y H:i" }}</span>
+                            <span class="text-muted ms-2">{{ rcpt.warehouse.name }}</span>
+                        </div>
+                        <div class="small text-muted">
+                            {% if rcpt.created_by %}
+                            Received by {{ rcpt.created_by.get_full_name|default:rcpt.created_by.username }}
+                            {% else %}—{% endif %}
+                        </div>
+                    </div>
+                    {% if rcpt.notes %}
+                    <p class="small text-muted mb-2">{{ rcpt.notes|linebreaksbr }}</p>
+                    {% endif %}
+                    <div class="table-responsive">
+                        <table class="table table-sm mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Item</th>
+                                    <th class="text-end text-nowrap">Qty received</th>
+                                    <th class="text-end text-nowrap">Unit price</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for rl in rcpt.lines.all %}
+                                <tr>
+                                    <td class="small">{{ rl.purchase_order_item.description }}</td>
+                                    <td class="text-end">{{ rl.quantity_received|floatformat:2 }}</td>
+                                    <td class="text-end">{{ rl.unit_price|floatformat:2 }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
     </div>
     
     <div class="col-lg-4">
@@ -117,6 +175,8 @@
                 <span class="badge fs-6" style="background:#dbeafe;color:#1e40af;">Sent</span>
                 {% elif po.status == 'confirmed' %}
                 <span class="badge badge-active fs-6">Confirmed</span>
+                {% elif po.status == 'partial_received' %}
+                <span class="badge fs-6" style="background:#fef3c7;color:#92400e;">Partially Received</span>
                 {% elif po.status == 'received' %}
                 <span class="badge fs-6" style="background:#dcfce7;color:#166534;">Received</span>
                 {% else %}

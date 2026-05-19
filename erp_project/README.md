@@ -136,7 +136,7 @@ erp_project/
 - Purchase (Vendors, PO, Bills)
 - Inventory (Items, Stock)
 - Finance (UAE VAT & Tax Compliant)
-- Projects (Tasks, Timesheets)
+- Projects (Tasks)
 - HR (Employees, Leave, Payroll)
 - Documents (Doc Expiry)
 

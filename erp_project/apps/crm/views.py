@@ -7,11 +7,14 @@ from django.contrib import messages
 from django.views.generic import ListView, CreateView, UpdateView, DeleteView, DetailView
 from django.urls import reverse_lazy
 from django.http import JsonResponse, HttpResponseNotAllowed
+from django.views.decorators.cache import never_cache
+from django.views.decorators.http import require_http_methods, require_POST
 from django.db.models import Q, Count
+import json
 
 from apps.projects.models import Project
 
-from .models import Customer
+from .models import Customer, CustomerPublicUpload, CrmLeadKanbanStage
 from .forms import CustomerForm
 from apps.core.mixins import PermissionRequiredMixin, CreatePermissionMixin, UpdatePermissionMixin, DeletePermissionMixin
 from apps.core.utils import PermissionChecker
@@ -105,16 +108,57 @@ class CustomerListView(PermissionRequiredMixin, ListView):
         context['crm_customer_type_choices'] = Customer.CUSTOMER_TYPE_CHOICES
         context['crm_status_choices'] = Customer.STATUS_CHOICES
 
+        # Kanban board (leads pipeline + fixed customers column)
+        board_stages = list(
+            CrmLeadKanbanStage.objects.filter(
+                is_active=True,
+                converts_to_customer=False,
+            ).order_by('sort_order', 'id')
+        )
+        context['crm_kanban_stages'] = board_stages
+        context['crm_kanban_won_stage'] = (
+            CrmLeadKanbanStage.objects.filter(
+                is_active=True,
+                converts_to_customer=True,
+            ).first()
+        )
+        board_leads = (
+            Customer.objects.filter(customer_type='lead', is_active=True)
+            .select_related('lead_kanban_stage')
+            .order_by('customer_number')
+        )
+        leads_by_stage = {s.id: [] for s in board_stages}
+        unassigned = []
+        for lead in board_leads:
+            sid = lead.lead_kanban_stage_id
+            if sid and sid in leads_by_stage:
+                leads_by_stage[sid].append(lead)
+            else:
+                unassigned.append(lead)
+        context['kanban_lead_columns'] = [
+            {'stage': s, 'leads': leads_by_stage[s.id]} for s in board_stages
+        ]
+        context['kanban_leads_unassigned'] = unassigned
+        context['kanban_customers'] = (
+            Customer.objects.filter(customer_type='customer', is_active=True)
+            .order_by('name', 'customer_number')[:400]
+        )
+        context['can_configure_kanban'] = (
+            self.request.user.is_superuser
+            or PermissionChecker.has_permission(self.request.user, 'settings', 'edit')
+        )
+
         return context
-    
+
     def post(self, request, *args, **kwargs):
         """Handle inline form submission."""
         if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'crm', 'create')):
             messages.error(request, 'You do not have permission to create customers.')
             return redirect('crm:customer_list')
-        
+
         form = CustomerForm(
             request.POST,
+            request.FILES,
             projects_queryset=Project.objects.filter(is_active=True).order_by('name'),
         )
         if form.is_valid():
@@ -128,8 +172,198 @@ class CustomerListView(PermissionRequiredMixin, ListView):
             for field, errors in form.errors.items():
                 for error in errors:
                     messages.error(request, f'{field}: {error}')
-        
+
         return redirect('crm:customer_list')
+
+
+@login_required
+@require_POST
+def crm_kanban_move(request):
+    """JSON: move lead between pipeline stages, unassigned, or Won (converts to customer)."""
+    if not (
+        request.user.is_superuser
+        or PermissionChecker.has_permission(request.user, 'crm', 'edit')
+    ):
+        return JsonResponse({'error': 'Permission denied.'}, status=403)
+
+    try:
+        body = json.loads(request.body.decode() or '{}')
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON.'}, status=400)
+
+    pk = body.get('customer_id')
+    stage_raw = body.get('stage_id')
+
+    if not pk:
+        return JsonResponse({'error': 'customer_id required.'}, status=400)
+
+    try:
+        pk = int(pk)
+    except (TypeError, ValueError):
+        return JsonResponse({'error': 'Invalid customer_id.'}, status=400)
+
+    # Won / convert
+    if stage_raw in ('won', '__won__', True):
+        won = CrmLeadKanbanStage.objects.filter(
+            is_active=True,
+            converts_to_customer=True,
+        ).first()
+        if not won:
+            return JsonResponse(
+                {'error': 'No “Won” stage configured. Add one under Settings → CRM Kanban.'},
+                status=400,
+            )
+        cust = Customer.objects.filter(
+            pk=pk,
+            customer_type='lead',
+            is_active=True,
+        ).first()
+        if not cust:
+            return JsonResponse({'error': 'Lead not found.'}, status=404)
+        cust.customer_type = 'customer'
+        cust.lead_kanban_stage = None
+        cust.save()
+        log_action(
+            request.user,
+            'update',
+            'Customer',
+            cust.id,
+            {'action': 'kanban_won', 'converted_to_customer': True},
+        )
+        return JsonResponse({'ok': True, 'converted': True})
+
+    cust = Customer.objects.filter(pk=pk, is_active=True).first()
+    if not cust or cust.customer_type != 'lead':
+        return JsonResponse(
+            {'error': 'Only active leads can be moved on the pipeline.'},
+            status=400,
+        )
+
+    if stage_raw in (None, '', 0, '0', 'null', 'unassigned'):
+        Customer.objects.filter(pk=pk).update(lead_kanban_stage=None)
+        log_action(
+            request.user,
+            'update',
+            'Customer',
+            pk,
+            {'lead_kanban_stage': 'unassigned'},
+        )
+        return JsonResponse({'ok': True})
+
+    try:
+        stage_id = int(stage_raw)
+    except (TypeError, ValueError):
+        return JsonResponse({'error': 'Invalid stage_id.'}, status=400)
+
+    stage = CrmLeadKanbanStage.objects.filter(
+        pk=stage_id,
+        is_active=True,
+        converts_to_customer=False,
+    ).first()
+    if not stage:
+        return JsonResponse({'error': 'Invalid pipeline stage.'}, status=400)
+
+    cust.lead_kanban_stage = stage
+    cust.save()
+    log_action(
+        request.user,
+        'update',
+        'Customer',
+        pk,
+        {'lead_kanban_stage': stage.slug},
+    )
+    return JsonResponse({'ok': True})
+
+
+@never_cache
+@require_http_methods(['GET', 'POST'])
+def public_customer_upload(request):
+    """
+    Public (no login): select a lead or customer and attach files or photos.
+    Files appear on that record's CRM detail page for staff.
+    """
+    base = Customer.objects.filter(is_active=True).order_by('customer_number')
+    crm_leads = list(base.filter(customer_type='lead'))
+    crm_customers = list(base.filter(customer_type='customer'))
+
+    if request.method == 'POST':
+        raw_id = request.POST.get('customer')
+        note = (request.POST.get('note') or '').strip()[:500]
+        if not raw_id or not str(raw_id).isdigit():
+            messages.error(request, 'Please select a lead or customer.')
+            return render(
+                request,
+                'crm/public_upload_form.html',
+                {
+                    'crm_leads': crm_leads,
+                    'crm_customers': crm_customers,
+                    'posted_note': note,
+                },
+                status=400,
+            )
+        cust = Customer.objects.filter(pk=int(raw_id), is_active=True).first()
+        if not cust:
+            messages.error(request, 'Invalid record.')
+            return render(
+                request,
+                'crm/public_upload_form.html',
+                {
+                    'crm_leads': crm_leads,
+                    'crm_customers': crm_customers,
+                    'posted_note': note,
+                },
+                status=400,
+            )
+        files = request.FILES.getlist('files')
+        if not files:
+            messages.error(request, 'Please add at least one file or photo.')
+            return render(
+                request,
+                'crm/public_upload_form.html',
+                {
+                    'crm_leads': crm_leads,
+                    'crm_customers': crm_customers,
+                    'selected_customer_id': cust.pk,
+                    'posted_note': note,
+                },
+                status=400,
+            )
+        created = 0
+        for f in files:
+            if not f.name:
+                continue
+            CustomerPublicUpload.objects.create(
+                customer=cust,
+                file=f,
+                original_filename=(getattr(f, 'name', '') or '')[:255],
+                note=note,
+            )
+            created += 1
+        if created == 0:
+            messages.error(request, 'No files were saved. Try again.')
+            return render(
+                request,
+                'crm/public_upload_form.html',
+                {
+                    'crm_leads': crm_leads,
+                    'crm_customers': crm_customers,
+                    'selected_customer_id': cust.pk,
+                    'posted_note': note,
+                },
+                status=400,
+            )
+        type_label = 'Lead' if cust.customer_type == 'lead' else 'Customer'
+        messages.success(
+            request,
+            f'Thank you. {created} file(s) were uploaded to {type_label} {cust.customer_number} — {cust.display_name}.',
+        )
+        return redirect('crm:public_upload')
+
+    return render(
+        request,
+        'crm/public_upload_form.html',
+        {'crm_leads': crm_leads, 'crm_customers': crm_customers},
+    )
 
 
 @login_required
@@ -180,7 +414,9 @@ class CustomerDetailView(PermissionRequiredMixin, DetailView):
     permission_type = 'view'
 
     def get_queryset(self):
-        return Customer.objects.select_related('primary_project').prefetch_related('projects')
+        return Customer.objects.select_related('primary_project', 'lead_kanban_stage').prefetch_related(
+            'projects', 'public_uploads'
+        )
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -200,6 +436,9 @@ class CustomerDetailView(PermissionRequiredMixin, DetailView):
         except Exception:
             context['customer_advances'] = []
             context['advance_form'] = None
+        context['public_uploads'] = (
+            self.object.public_uploads.filter(is_active=True).order_by('-created_at')
+        )
         return context
 
 
@@ -270,13 +509,18 @@ def convert_to_customer(request, pk):
     
     if customer.customer_type == 'lead':
         customer.customer_type = 'customer'
+        customer.lead_kanban_stage = None
         customer.save()
         log_action(request.user, 'update', 'Customer', customer.id, {
             'action': 'converted_to_customer',
             'old_type': 'lead',
             'new_type': 'customer'
         })
-        messages.success(request, f'{customer.name} has been converted to a customer.')
+        messages.success(
+            request,
+            f'{customer.name} has been converted to a customer. Set B2B/B2C and any B2B documents on the next screen.',
+        )
+        return redirect('crm:customer_edit', pk=customer.pk)
     else:
         messages.info(request, f'{customer.name} is already a customer.')
     

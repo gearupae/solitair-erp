@@ -1,0 +1,15 @@
+<div class="kanban-card kanban-card--readonly" draggable="false">
+    <div class="kanban-card-title">
+        <a href="{% url 'sales:estimate_detail' estimate.pk %}" class="text-decoration-none text-dark">{{ estimate.estimate_number }}</a>
+    </div>
+    <div class="kanban-card-meta text-truncate fw-medium" title="{{ estimate.customer.name }}">{{ estimate.customer.name }}</div>
+    <div class="kanban-card-meta text-nowrap">AED {{ estimate.total_amount|default:0|floatformat:2 }}</div>
+    <div class="kanban-card-meta d-flex gap-2 align-items-start small">
+        <span class="text-muted text-nowrap">Assigned</span>
+        {% if estimate.assigned_to %}
+        <span class="text-truncate" title="{{ estimate.assigned_to.get_full_name|default:estimate.assigned_to.username }}">{{ estimate.assigned_to.get_full_name|default:estimate.assigned_to.username }}</span>
+        {% else %}
+        <span class="text-muted">—</span>
+        {% endif %}
+    </div>
+</div>

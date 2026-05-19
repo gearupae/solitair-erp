@@ -10,6 +10,11 @@
         <a href="{% url 'inventory:item_export_csv' %}" class="btn btn-outline-secondary">
             <i class="fas fa-file-export me-2"></i>Export CSV
         </a>
+        {% if can_edit %}
+        <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#itemGroupModal">
+            <i class="fas fa-object-group me-1"></i>Groups
+        </button>
+        {% endif %}
         {% if can_create %}
         <a href="{% url 'inventory:item_create' %}" class="btn btn-primary">
             <i class="fas fa-plus me-2"></i>Add Item
@@ -56,10 +61,10 @@
 <div class="card mb-4">
     <div class="card-body py-3">
         <form method="get" class="row g-3 align-items-end">
-            <div class="col-md-3">
+            <div class="col-md-2">
                 <input type="text" name="search" class="form-control" placeholder="Search items..." value="{{ request.GET.search }}">
             </div>
-            <div class="col-md-3">
+            <div class="col-md-2">
                 <select name="category" class="form-select">
                     <option value="">All Categories</option>
                     {% for cat in categories %}
@@ -75,7 +80,16 @@
                     {% endfor %}
                 </select>
             </div>
-            <div class="col-md-4">
+            <div class="col-md-3">
+                <select name="group" class="form-select">
+                    <option value="">All groups</option>
+                    <option value="__none__" {% if request.GET.group == '__none__' %}selected{% endif %}>No group</option>
+                    {% for g in item_groups %}
+                    <option value="{{ g.pk }}" {% if request.GET.group == g.pk|stringformat:'s' %}selected{% endif %}>{{ g.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
                 <button type="submit" class="btn btn-primary me-2"><i class="fas fa-filter me-1"></i>Filter</button>
                 <a href="{% url 'inventory:item_list' %}" class="btn btn-light">Clear</a>
             </div>
@@ -90,9 +104,11 @@
             <table class="table table-hover mb-0">
                 <thead>
                     <tr>
+                        {% if can_edit %}<th class="text-center" style="width:2.25rem;" title="Select rows"><input type="checkbox" id="itemSelectAll" class="form-check-input m-0"></th>{% endif %}
                         <th>Code</th>
                         <th>Name</th>
                         <th>Category</th>
+                        <th>Group</th>
                         <th>Type</th>
                         <th>Location</th>
                         <th class="text-end">Purchase Price</th>
@@ -106,11 +122,21 @@
                 <tbody>
                     {% for item in items %}
                     <tr>
+                        {% if can_edit %}<td class="text-center align-middle"><input type="checkbox" class="form-check-input item-check m-0" value="{{ item.pk }}"></td>{% endif %}
                         <td>
                             <a href="{% url 'inventory:item_detail' item.pk %}" class="fw-medium text-decoration-none">{{ item.item_code }}</a>
                         </td>
                         <td>{{ item.name }}</td>
                         <td>{{ item.category.name|default:"-" }}</td>
+                        <td class="small">
+                            {% if item.item_groups.all %}
+                            {% for g in item.item_groups.all %}
+                            <span class="badge bg-light text-dark border me-1">{{ g.name }}</span>
+                            {% endfor %}
+                            {% else %}
+                            <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
                         <td>
                             {% if item.item_type == 'product' %}
                             <span class="badge" style="background:#dbeafe;color:#1e40af;">Product</span>
@@ -182,7 +208,7 @@
                     </tr>
                     {% empty %}
                     <tr>
-                        <td colspan="11" class="text-center py-5 text-muted">
+                        <td colspan="{% if can_edit %}13{% else %}12{% endif %}" class="text-center py-5 text-muted">
                             <i class="fas fa-cubes fa-3x mb-3 d-block"></i>
                             No items found
                         </td>
@@ -200,12 +226,12 @@
             <ul class="pagination pagination-sm mb-0 justify-content-center">
                 {% if page_obj.has_previous %}
                 <li class="page-item">
-                    <a class="page-link" href="?page=1{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}{% if request.GET.category %}&category={{ request.GET.category }}{% endif %}{% if request.GET.item_type %}&item_type={{ request.GET.item_type }}{% endif %}">
+                    <a class="page-link" href="?page=1{% if filter_querystring %}&{{ filter_querystring }}{% endif %}">
                         <i class="fas fa-angle-double-left"></i>
                     </a>
                 </li>
                 <li class="page-item">
-                    <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}{% if request.GET.category %}&category={{ request.GET.category }}{% endif %}{% if request.GET.item_type %}&item_type={{ request.GET.item_type }}{% endif %}">
+                    <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if filter_querystring %}&{{ filter_querystring }}{% endif %}">
                         <i class="fas fa-angle-left"></i>
                     </a>
                 </li>
@@ -216,19 +242,19 @@
                     <li class="page-item active"><span class="page-link">{{ num }}</span></li>
                     {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
                     <li class="page-item">
-                        <a class="page-link" href="?page={{ num }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}{% if request.GET.category %}&category={{ request.GET.category }}{% endif %}{% if request.GET.item_type %}&item_type={{ request.GET.item_type }}{% endif %}">{{ num }}</a>
+                        <a class="page-link" href="?page={{ num }}{% if filter_querystring %}&{{ filter_querystring }}{% endif %}">{{ num }}</a>
                     </li>
                     {% endif %}
                 {% endfor %}
                 
                 {% if page_obj.has_next %}
                 <li class="page-item">
-                    <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}{% if request.GET.category %}&category={{ request.GET.category }}{% endif %}{% if request.GET.item_type %}&item_type={{ request.GET.item_type }}{% endif %}">
+                    <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if filter_querystring %}&{{ filter_querystring }}{% endif %}">
                         <i class="fas fa-angle-right"></i>
                     </a>
                 </li>
                 <li class="page-item">
-                    <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}{% if request.GET.category %}&category={{ request.GET.category }}{% endif %}{% if request.GET.item_type %}&item_type={{ request.GET.item_type }}{% endif %}">
+                    <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}{% if filter_querystring %}&{{ filter_querystring }}{% endif %}">
                         <i class="fas fa-angle-double-right"></i>
                     </a>
                 </li>
@@ -241,5 +267,162 @@
     </div>
     {% endif %}
 </div>
+
+{% if can_edit %}
+<div class="modal fade" id="itemGroupModal" tabindex="-1" aria-labelledby="itemGroupModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header py-2">
+                <h5 class="modal-title fs-6" id="itemGroupModalLabel">Item groups</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p class="small text-muted mb-3">Selected on this page: <strong id="bulkSelectedCount">0</strong></p>
+
+                <form method="post" action="{% url 'inventory:item_bulk_group' %}" id="formAddGroups">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="add">
+                    <input type="hidden" name="item_ids" class="bulk-item-ids" value="">
+                    <label class="form-label small fw-semibold">Add to group(s) — keeps existing groups</label>
+                    <select name="add_group_ids" id="addGroupSelect" class="form-select form-select-sm mb-2" multiple size="5">
+                        {% for g in item_groups %}
+                        <option value="{{ g.pk }}">{{ g.name }}</option>
+                        {% endfor %}
+                    </select>
+                    <label class="form-label small text-muted mb-0">New groups (comma-separated, optional)</label>
+                    <input type="text" name="new_groups" id="newGroupsInput" class="form-control form-control-sm mb-2" maxlength="500" placeholder="e.g. Kit A, Spares" autocomplete="off">
+                    <button type="submit" class="btn btn-primary btn-sm">Add groups</button>
+                </form>
+
+                <hr class="my-3">
+
+                <form method="post" action="{% url 'inventory:item_bulk_group' %}" id="formRemoveGroup">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="remove">
+                    <input type="hidden" name="item_ids" class="bulk-item-ids" value="">
+                    <label class="form-label small fw-semibold">Remove one group from selected items</label>
+                    <select name="remove_group_id" id="removeGroupSelect" class="form-select form-select-sm mb-2">
+                        <option value="">— Choose —</option>
+                        {% for g in item_groups %}
+                        <option value="{{ g.pk }}">{{ g.name }}</option>
+                        {% endfor %}
+                    </select>
+                    <button type="submit" class="btn btn-outline-warning btn-sm">Remove from selected</button>
+                </form>
+
+                <hr class="my-3">
+
+                <form method="post" action="{% url 'inventory:item_bulk_group' %}" id="formClearGroups" class="d-inline">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="clear">
+                    <input type="hidden" name="item_ids" class="bulk-item-ids" value="">
+                    <label class="form-label small fw-semibold d-block">Clear all groups from selected</label>
+                    <button type="submit" class="btn btn-outline-danger btn-sm">Clear all groups</button>
+                </form>
+
+                <hr class="my-3">
+
+                <form method="post" action="{% url 'inventory:item_bulk_group' %}" id="formRenameGroup">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="rename">
+                    <label class="form-label small fw-semibold">Rename a group (all items using it)</label>
+                    <select name="rename_group_id" class="form-select form-select-sm mb-2">
+                        <option value="">— Choose —</option>
+                        {% for g in item_groups %}
+                        <option value="{{ g.pk }}">{{ g.name }}</option>
+                        {% endfor %}
+                    </select>
+                    <input type="text" name="rename_new_name" class="form-control form-control-sm mb-2" maxlength="200" placeholder="New name" autocomplete="off">
+                    <button type="submit" class="btn btn-outline-secondary btn-sm">Rename</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
 {% endblock %}
 
+{% block extra_js %}
+{% if can_edit %}
+<script>
+(function () {
+    var selectAll = document.getElementById('itemSelectAll');
+      var modal = document.getElementById('itemGroupModal');
+      var bulkCount = document.getElementById('bulkSelectedCount');
+      var formAdd = document.getElementById('formAddGroups');
+      var formRemove = document.getElementById('formRemoveGroup');
+      var formClear = document.getElementById('formClearGroups');
+      var formRename = document.getElementById('formRenameGroup');
+
+    function syncBulkIds() {
+      var ids = Array.from(document.querySelectorAll('.item-check:checked')).map(function (cb) { return cb.value; });
+      var s = ids.join(',');
+      document.querySelectorAll('.bulk-item-ids').forEach(function (el) { el.value = s; });
+      if (bulkCount) bulkCount.textContent = String(ids.length);
+    }
+
+      function needItems(e) {
+      var form = e.currentTarget;
+      var el = form.querySelector('.bulk-item-ids');
+      if (!el || !el.value.trim()) {
+        e.preventDefault();
+        alert('Select one or more items with the checkboxes.');
+        return false;
+      }
+      return true;
+    }
+
+    if (selectAll) {
+        selectAll.addEventListener('change', function () {
+            document.querySelectorAll('.item-check').forEach(function (cb) { cb.checked = selectAll.checked; });
+        });
+    }
+    if (modal) {
+        modal.addEventListener('show.bs.modal', syncBulkIds);
+    }
+    if (formAdd) {
+      formAdd.addEventListener('submit', function (e) {
+        if (!needItems(e)) return;
+        var ms = document.getElementById('addGroupSelect');
+        var newG = (document.getElementById('newGroupsInput') && document.getElementById('newGroupsInput').value.trim()) || '';
+        if (ms && ms.selectedOptions.length === 0 && !newG) {
+          e.preventDefault();
+          alert('Pick one or more existing groups (Ctrl/Cmd-click) and/or type new names.');
+        }
+      });
+    }
+    if (formRemove) {
+      formRemove.addEventListener('submit', function (e) {
+        if (!needItems(e)) return;
+        var sel = document.getElementById('removeGroupSelect');
+        if (!sel || !sel.value) {
+          e.preventDefault();
+          alert('Choose which group to remove.');
+        }
+      });
+    }
+    if (formClear) {
+      formClear.addEventListener('submit', function (e) {
+        if (!needItems(e)) return;
+        if (!window.confirm('Remove every group from the selected items?')) e.preventDefault();
+      });
+    }
+    if (formRename) {
+      formRename.addEventListener('submit', function (e) {
+        var sel = formRename.querySelector('[name="rename_group_id"]');
+        var inp = formRename.querySelector('[name="rename_new_name"]');
+        if (!sel || !sel.value) {
+          e.preventDefault();
+          alert('Choose a group to rename.');
+          return;
+        }
+        if (!inp || !inp.value.trim()) {
+          e.preventDefault();
+          alert('Enter the new name.');
+        }
+      });
+    }
+})();
+</script>
+{% endif %}
+{% endblock %}

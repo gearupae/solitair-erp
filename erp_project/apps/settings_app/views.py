@@ -9,6 +9,8 @@ from django.contrib import messages
 from django.views.generic import ListView, CreateView, UpdateView, View, TemplateView
 from django.urls import reverse_lazy
 from django.http import JsonResponse
+from django.db.models import Prefetch
+
 from .models import (
     Role,
     Permission,
@@ -24,6 +26,7 @@ from .models import (
 )
 from .forms import UserForm, RoleForm, CompanySettingsForm, CompanyForm
 from apps.core.mixins import PermissionRequiredMixin
+from apps.hr.models import Employee
 
 
 class UserListView(PermissionRequiredMixin, ListView):
@@ -35,8 +38,21 @@ class UserListView(PermissionRequiredMixin, ListView):
     permission_type = 'view'
     
     def get_queryset(self):
-        return User.objects.all().order_by('-date_joined')
-    
+        from apps.hr.user_provisioning import sync_pending_employees_to_users
+
+        sync_pending_employees_to_users()
+        return (
+            User.objects.all()
+            .prefetch_related(
+                Prefetch(
+                    'employee_profile',
+                    queryset=Employee.objects.filter(is_active=True),
+                ),
+                'user_roles__role',
+            )
+            .order_by('-date_joined')
+        )
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['title'] = 'User Management'
@@ -355,7 +371,8 @@ class AuditLogListView(PermissionRequiredMixin, ListView):
 
 class ApprovalConfigurationView(PermissionRequiredMixin, TemplateView):
     """
-    Configure approval workflows for Purchase Request, Inventory Request, Service Request.
+    Configure approval workflows for Purchase Request, Inventory Request, Service Request,
+    optional per-edit review for Sales Estimates and Projects.
     Single Level: one approver regardless of amount.
     Multi Level: sequential approvers based on value (AED).
     """
@@ -431,4 +448,49 @@ class ApprovalConfigurationView(PermissionRequiredMixin, TemplateView):
         
         messages.success(request, f'Approval configuration for {dict(ApprovalConfiguration.MODULE_CHOICES).get(module, module)} saved.')
         return redirect('settings:approval_configuration')
+
+
+class CrmKanbanSettingsView(PermissionRequiredMixin, TemplateView):
+    """Configure CRM lead pipeline columns (hot / warm / cold / won, etc.)."""
+
+    template_name = 'settings/crm_kanban_stages.html'
+    module_name = 'settings'
+    permission_type = 'edit'
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        from apps.crm.models import CrmLeadKanbanStage
+
+        ctx['title'] = 'CRM lead pipeline (Kanban)'
+        ctx['stages'] = CrmLeadKanbanStage.objects.all().order_by('sort_order', 'id')
+        return ctx
+
+    def post(self, request, *args, **kwargs):
+        from apps.crm.models import CrmLeadKanbanStage
+
+        action = request.POST.get('action')
+        if action == 'add':
+            name = (request.POST.get('name') or '').strip()[:80]
+            if not name:
+                messages.error(request, 'Stage name is required.')
+                return redirect('settings:crm_kanban')
+            sort_order = int(request.POST.get('sort_order') or 0)
+            CrmLeadKanbanStage.objects.create(name=name, sort_order=sort_order)
+            messages.success(request, 'Stage added.')
+        elif action == 'save' and request.POST.get('stage_id'):
+            s = get_object_or_404(CrmLeadKanbanStage, pk=int(request.POST['stage_id']))
+            s.name = (request.POST.get('name') or '').strip()[:80] or s.name
+            s.sort_order = int(request.POST.get('sort_order') or 0)
+            s.is_active = request.POST.get('is_active') == 'on'
+            s.converts_to_customer = request.POST.get('converts_to_customer') == 'on'
+            s.save()
+            messages.success(request, f'Stage “{s.name}” saved.')
+        elif action == 'delete' and request.POST.get('stage_id'):
+            s = get_object_or_404(CrmLeadKanbanStage, pk=int(request.POST['stage_id']))
+            nm = s.name
+            s.delete()
+            messages.success(request, f'Stage “{nm}” deleted.')
+        else:
+            messages.error(request, 'Invalid request.')
+        return redirect('settings:crm_kanban')
 

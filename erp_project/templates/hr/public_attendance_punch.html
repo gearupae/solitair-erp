@@ -11,13 +11,20 @@
         <div class="card shadow-sm border-0">
             <div class="card-body p-4">
                 <p class="text-muted small mb-3">
-                    Enter your employee code (for example <code>EMP-2026-0002</code>), allow location when prompted,
-                    then use <strong>Clock in</strong> at the start of your shift and <strong>Clock out</strong> when you leave.
+                    Enter your employee code (for example <code>EMP-2026-0002</code>), allow location when prompted.
+                    If you work on a project as a <strong>technician</strong>, choose that project before <strong>Clock in</strong> so your hours count on that job.
                 </p>
                 <div class="mb-3">
                     <label class="form-label" for="emp-code">Employee code</label>
                     <input type="text" class="form-control form-control-lg" id="emp-code"
                            placeholder="EMP-2026-0002" autocomplete="username"/>
+                </div>
+                <div class="mb-3 d-none" id="project-wrap">
+                    <label class="form-label" for="project-select">Project (optional)</label>
+                    <select class="form-select" id="project-select">
+                        <option value="">— Not on a project site —</option>
+                    </select>
+                    <p class="form-text small mb-0">Shown only if you are assigned as a technician on at least one project.</p>
                 </div>
                 <div class="d-grid gap-2 mb-3">
                     <button type="button" class="btn btn-success btn-lg" id="btn-check-in">
@@ -41,7 +48,10 @@
 <script>
 (function () {
   const punchUrl = "{% url 'hr:attendance_public_punch' %}";
+  const projectsUrl = "{% url 'hr:attendance_technician_projects' %}";
   const codeInput = document.getElementById('emp-code');
+  const projectWrap = document.getElementById('project-wrap');
+  const projectSelect = document.getElementById('project-select');
   const btnIn = document.getElementById('btn-check-in');
   const btnOut = document.getElementById('btn-check-out');
   const feedback = document.getElementById('punch-feedback');
@@ -67,6 +77,31 @@
     }
   }
 
+  function loadTechnicianProjects() {
+    const code = (codeInput.value || '').trim();
+    if (!code) {
+      projectWrap.classList.add('d-none');
+      return;
+    }
+    fetch(projectsUrl + '?code=' + encodeURIComponent(code), { credentials: 'same-origin' })
+      .then((r) => r.json())
+      .then((data) => {
+        projectSelect.innerHTML = '<option value="">— Not on a project site —</option>';
+        if (data.ok && data.projects && data.projects.length) {
+          data.projects.forEach((p) => {
+            const o = document.createElement('option');
+            o.value = p.id;
+            o.textContent = p.project_code + ' — ' + p.name;
+            projectSelect.appendChild(o);
+          });
+          projectWrap.classList.remove('d-none');
+        } else {
+          projectWrap.classList.add('d-none');
+        }
+      })
+      .catch(() => projectWrap.classList.add('d-none'));
+  }
+
   function geoThenPunch(action) {
     const code = (codeInput.value || '').trim();
     if (!code) {
@@ -74,19 +109,23 @@
       return;
     }
     const finish = (lat, lng) => {
+      const body = {
+        employee_code: code,
+        action: action,
+        latitude: lat,
+        longitude: lng,
+        client_time: new Date().toISOString(),
+      };
+      if (action === 'check_in' && projectSelect && projectSelect.value) {
+        body.project_id = parseInt(projectSelect.value, 10);
+      }
       fetch(punchUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'X-CSRFToken': getCsrf(),
         },
-        body: JSON.stringify({
-          employee_code: code,
-          action: action,
-          latitude: lat,
-          longitude: lng,
-          client_time: new Date().toISOString(),
-        }),
+        body: JSON.stringify(body),
       })
         .then((r) => r.json().then((data) => ({ status: r.status, data })))
         .then(({ status, data }) => {
@@ -120,6 +159,8 @@
     );
   }
 
+  codeInput.addEventListener('blur', loadTechnicianProjects);
+  codeInput.addEventListener('change', loadTechnicianProjects);
   btnIn.addEventListener('click', () => geoThenPunch('check_in'));
   btnOut.addEventListener('click', () => geoThenPunch('check_out'));
 })();

@@ -77,6 +77,14 @@
                         <p class="mb-0">{{ request_obj.department.name }}</p>
                     </div>
                     {% endif %}
+                    {% if request_obj.project %}
+                    <div class="col-md-6">
+                        <h6 class="text-muted mb-2">Project</h6>
+                        <p class="mb-0 fw-medium">
+                            <a href="{% url 'projects:project_detail' request_obj.project.pk %}">{{ request_obj.project.project_code }} — {{ request_obj.project.name }}</a>
+                        </p>
+                    </div>
+                    {% endif %}
                     {% if request_obj.required_by_date %}
                     <div class="col-md-4">
                         <h6 class="text-muted mb-2">Required By</h6>

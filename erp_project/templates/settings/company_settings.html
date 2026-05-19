@@ -147,6 +147,13 @@
                     <label class="form-label">Default terms &amp; conditions</label>
                     <textarea name="estimate_default_terms" class="form-control" rows="5">{{ object.estimate_default_terms }}</textarea>
                 </div>
+                <div class="col-12">
+                    <div class="form-check form-switch mt-2">
+                        <input class="form-check-input" type="checkbox" name="estimate_to_project_prompt_include_lines" id="id_estimate_to_project_prompt_include_lines" value="1" {% if object.estimate_to_project_prompt_include_lines %}checked{% endif %}>
+                        <label class="form-check-label" for="id_estimate_to_project_prompt_include_lines">When converting an approved estimate to a project, ask whether to copy all line items into the project <strong>Items</strong> scope table</label>
+                    </div>
+                    <p class="text-muted small mb-0">If this is off, converting creates the project only (no line items are copied).</p>
+                </div>
             </div>
 
             <hr class="my-4">

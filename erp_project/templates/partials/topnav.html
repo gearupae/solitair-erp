@@ -157,7 +157,7 @@
                         <li class="dropdown-header">Medical Consumables</li>
                         <li>
                             <a class="dropdown-item" href="{% url 'inventory:consumable_request_list' %}">
-                                <i class="fas fa-clipboard-list me-2"></i>Request Consumables
+                                <i class="fas fa-clipboard-list me-2"></i>Request items
                             </a>
                         </li>
                         <li>
@@ -419,11 +419,6 @@
                                 <i class="fas fa-list-check me-2"></i>All Tasks
                             </a>
                         </li>
-                        <li>
-                            <a class="dropdown-item" href="{% url 'projects:timesheet_list' %}">
-                                <i class="fas fa-clock me-2"></i>Timesheets
-                            </a>
-                        </li>
                         <li><hr class="dropdown-divider"></li>
                         <li>
                             <a class="dropdown-item" href="{% url 'projects:expense_list' %}">
@@ -571,6 +566,11 @@
                         <li>
                             <a class="dropdown-item" href="{% url 'settings:company' %}">
                                 <i class="fas fa-building me-2"></i>Company
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'settings:crm_kanban' %}">
+                                <i class="fas fa-columns me-2"></i>CRM Kanban
                             </a>
                         </li>
                         <li>

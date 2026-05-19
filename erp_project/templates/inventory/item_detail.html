@@ -38,6 +38,18 @@
                         <p class="mb-0">{{ item.category.name|default:"-" }}</p>
                     </div>
                     <div class="col-md-4">
+                        <h6 class="text-muted mb-2">Groups</h6>
+                        <p class="mb-0">
+                            {% if item.item_groups.all %}
+                            {% for g in item.item_groups.all %}
+                            <span class="badge bg-light text-dark border me-1 mb-1">{{ g.name }}</span>
+                            {% endfor %}
+                            {% else %}
+                            —
+                            {% endif %}
+                        </p>
+                    </div>
+                    <div class="col-md-4">
                         <h6 class="text-muted mb-2">Type</h6>
                         <p class="mb-0">{{ item.get_item_type_display }}</p>
                     </div>
@@ -104,6 +116,70 @@
             </div>
         </div>
         {% endif %}
+
+        <!-- Purchase receipts (goods received against POs) -->
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h6 class="mb-0 fw-semibold"><i class="fas fa-truck-loading me-2"></i>Purchase Receipt History</h6>
+                <span class="badge bg-secondary">{{ purchase_receipt_history|length }} {% if purchase_receipt_history|length == 1 %}entry{% else %}entries{% endif %}</span>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>Received</th>
+                                <th>Vendor</th>
+                                <th>PO #</th>
+                                <th class="text-end">Qty</th>
+                                <th class="text-end">Unit price</th>
+                                <th>Stock movement</th>
+                                <th>Recorded by</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in purchase_receipt_history %}
+                            <tr>
+                                <td class="text-nowrap">
+                                    {{ row.receipt.received_on|date:"d/m/Y" }}
+                                    {% if row.receipt.created_at %}
+                                    <small class="text-muted d-block">{{ row.receipt.created_at|date:"H:i" }}</small>
+                                    {% endif %}
+                                </td>
+                                <td>{{ row.vendor.name }}</td>
+                                <td>
+                                    <a href="{% url 'purchase:po_detail' row.purchase_order_id %}" class="text-decoration-none fw-medium">{{ row.po_number }}</a>
+                                </td>
+                                <td class="text-end">{{ row.quantity }} {{ item.unit }}</td>
+                                <td class="text-end">AED {{ row.unit_price|floatformat:2 }}</td>
+                                <td>
+                                    {% if row.stock_movement_id %}
+                                    <a href="{% url 'inventory:movement_detail' row.stock_movement_id %}" class="text-decoration-none">{{ row.stock_movement.movement_number }}</a>
+                                    {% else %}
+                                    <span class="text-muted">—</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if row.receipt.created_by %}
+                                    <small>{{ row.receipt.created_by.get_full_name|default:row.receipt.created_by.username }}</small>
+                                    {% else %}
+                                    <span class="text-muted">—</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="7" class="text-center py-4 text-muted">
+                                    <i class="fas fa-file-invoice fa-2x mb-2 d-block"></i>
+                                    No purchase receipts recorded for this item yet
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
         
         {% if item.item_type == 'product' %}
         <!-- Stock by Warehouse -->

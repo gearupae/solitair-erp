@@ -105,7 +105,12 @@ class EstimateItemForm(forms.ModelForm):
             'profit_type', 'profit_value', 'rate', 'tax_code', 'is_vat_inclusive',
         ]
         widgets = {
-            'group_name': forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Group name'}),
+            'group_name': forms.TextInput(attrs={
+                'class': 'form-control form-control-sm item-group-name',
+                'placeholder': 'PDF section',
+                'list': 'estimate-group-names',
+                'title': 'Estimate / PDF section title for this line. Editing this does not change inventory masters—only how this estimate is grouped on the PDF.',
+            }),
             'sort_order': forms.HiddenInput(),
             'description': forms.TextInput(attrs={'class': 'form-control form-control-sm'}),
             'quantity': forms.NumberInput(attrs={'class': 'form-control form-control-sm item-qty', 'step': '0.01', 'min': '0.01'}),
@@ -146,6 +151,9 @@ class EstimateItemForm(forms.ModelForm):
         ]
         self.fields['profit_value'].label = 'Profit'
         self.fields['profit_value'].help_text = 'Percent markup on base, or AED added to base per unit (not one lump for the whole line).'
+
+        self.fields['group_name'].required = False
+        self.fields['group_name'].help_text = 'Shown when this estimate is printed / on the PDF; does not update inventory.'
 
         if not self.instance.pk:
             default_tax_code = TaxCode.objects.filter(is_active=True, is_default=True).first()
@@ -193,7 +201,9 @@ class InvoiceForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.fields['customer'].queryset = Customer.objects.filter(is_active=True)
         self.fields['customer'].widget.attrs['class'] = 'form-select'
-        self.fields['estimate'].queryset = Estimate.objects.filter(is_active=True, status='approved')
+        self.fields['estimate'].queryset = Estimate.objects.filter(
+            is_active=True, status__in=['approved', 'quotation_won'],
+        )
         self.fields['estimate'].widget.attrs['class'] = 'form-select'
         self.fields['estimate'].required = False
         self.fields['status'].widget.attrs['class'] = 'form-select'

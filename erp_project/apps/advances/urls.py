@@ -28,6 +28,11 @@ urlpatterns = [
         views.customer_advance_apply,
         name='customer_advance_apply',
     ),
+    path(
+        'customer-advances/<int:pk>/receipt/',
+        views.customer_advance_receipt_pdf,
+        name='customer_advance_receipt_pdf',
+    ),
 
     # -----------------------------------------------------------------------
     # Vendor Detail + Vendor Advance

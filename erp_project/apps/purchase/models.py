@@ -191,6 +191,7 @@ class PurchaseOrder(BaseModel):
         ('draft', 'Draft'),
         ('sent', 'Sent'),
         ('confirmed', 'Confirmed'),
+        ('partial_received', 'Partially Received'),
         ('received', 'Received'),
         ('cancelled', 'Cancelled'),
     ]
@@ -287,10 +288,24 @@ class PurchaseOrderItem(models.Model):
     # Calculated
     total = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     vat_amount = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
-    
+
+    quantity_received = models.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        help_text='Cumulative quantity received against this PO line (goods receipt)',
+    )
+
     class Meta:
         ordering = ['id']
-    
+
+    @property
+    def quantity_remaining(self):
+        """Qty still to receive for this line."""
+        ordered = self.quantity or Decimal('0')
+        got = self.quantity_received or Decimal('0')
+        return (ordered - got).quantize(Decimal('0.01'))
+
     def save(self, *args, **kwargs):
         if self.inventory_item_id:
             inv = self.inventory_item
@@ -315,6 +330,106 @@ class PurchaseOrderItem(models.Model):
             self.vat_amount = (self.total * (self.vat_rate / 100)).quantize(Decimal('0.01'))
         
         super().save(*args, **kwargs)
+
+
+class PurchaseOrderReceipt(BaseModel):
+    """
+    Header for one goods-receipt event against a PO (may include multiple lines).
+    """
+    purchase_order = models.ForeignKey(
+        PurchaseOrder,
+        on_delete=models.CASCADE,
+        related_name='goods_receipts',
+    )
+    warehouse = models.ForeignKey(
+        'inventory.Warehouse',
+        on_delete=models.PROTECT,
+        related_name='purchase_goods_receipts',
+    )
+    received_on = models.DateField(
+        help_text='Receipt date recorded on stock movements',
+    )
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'GRN {self.pk} — {self.purchase_order.po_number}'
+
+
+class PurchaseOrderReceiptLine(models.Model):
+    """Lines recorded on a single goods receipt."""
+    receipt = models.ForeignKey(
+        PurchaseOrderReceipt,
+        on_delete=models.CASCADE,
+        related_name='lines',
+    )
+    purchase_order_item = models.ForeignKey(
+        PurchaseOrderItem,
+        on_delete=models.CASCADE,
+        related_name='receipt_lines',
+    )
+    quantity_received = models.DecimalField(max_digits=15, decimal_places=2)
+    unit_price = models.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        help_text='Unit cost captured at receive time',
+    )
+
+    class Meta:
+        ordering = ['id']
+
+    def __str__(self):
+        return f'{self.receipt_id}: {self.purchase_order_item_id} × {self.quantity_received}'
+
+
+class ItemPurchaseReceiptHistory(BaseModel):
+    """
+    Audit trail of inventory purchased via PO receives — shown on item detail.
+    """
+    item = models.ForeignKey(
+        'inventory.Item',
+        on_delete=models.CASCADE,
+        related_name='purchase_receipt_history',
+    )
+    vendor = models.ForeignKey(
+        Vendor,
+        on_delete=models.PROTECT,
+        related_name='item_purchase_histories',
+    )
+    purchase_order = models.ForeignKey(
+        PurchaseOrder,
+        on_delete=models.CASCADE,
+        related_name='item_purchase_histories',
+    )
+    purchase_order_item = models.ForeignKey(
+        PurchaseOrderItem,
+        on_delete=models.CASCADE,
+        related_name='item_purchase_histories',
+    )
+    receipt = models.ForeignKey(
+        PurchaseOrderReceipt,
+        on_delete=models.CASCADE,
+        related_name='item_histories',
+    )
+    quantity = models.DecimalField(max_digits=15, decimal_places=2)
+    unit_price = models.DecimalField(max_digits=15, decimal_places=2)
+    po_number = models.CharField(max_length=50)
+    stock_movement = models.ForeignKey(
+        'inventory.StockMovement',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='po_receipt_histories',
+    )
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name_plural = 'Item purchase receipt histories'
+
+    def __str__(self):
+        return f'{self.item.item_code}: {self.po_number} +{self.quantity}'
 
 
 class VendorBill(BaseModel):

@@ -127,6 +127,7 @@ class AttendanceRecordAdmin(admin.ModelAdmin):
     list_display = [
         'employee',
         'date',
+        'project',
         'status',
         'check_in',
         'check_out',
@@ -137,6 +138,7 @@ class AttendanceRecordAdmin(admin.ModelAdmin):
         'source',
     ]
     list_filter = ['status', 'source', 'overtime_type']
+    raw_id_fields = ['project']
 
 
 @admin.register(AttendanceSummary)

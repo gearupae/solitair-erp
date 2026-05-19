@@ -252,6 +252,13 @@ class CompanySettings(models.Model):
         blank=True,
         help_text='Default terms & conditions for new contracts. Edit here; each contract can still be customized.',
     )
+    estimate_to_project_prompt_include_lines = models.BooleanField(
+        default=True,
+        help_text=(
+            'If on: converting an estimate to a project asks whether to copy all estimate lines '
+            'into the project Items scope table (not Tasks). If off: only the empty project shell is created.'
+        ),
+    )
 
     class Meta:
         verbose_name = 'Company Settings'
@@ -372,6 +379,8 @@ class ApprovalConfiguration(BaseModel):
         ('purchase_request', 'Purchase Request'),
         ('inventory_request', 'Consumable / Inventory Request'),
         ('service_request', 'Service Request'),
+        ('estimate', 'Sales Estimate'),
+        ('project', 'Project'),
     ]
     
     module = models.CharField(max_length=50, choices=MODULE_CHOICES, unique=True)
@@ -417,21 +426,37 @@ class ApprovalConfiguration(BaseModel):
     @classmethod
     def notify_approver(cls, request_obj, module):
         """Create in-app notification for approver when action is needed."""
-        amount = getattr(request_obj, 'total_amount', 0) or getattr(request_obj, 'total_cost', 0) or 0
+        amount = getattr(request_obj, 'total_amount', 0) or getattr(request_obj, 'total_cost', 0) or getattr(request_obj, 'contract_value', 0) or 0
         approver = cls.get_approver_for_amount(module, amount)
         if approver:
-            ref = getattr(request_obj, 'sr_number', None) or getattr(request_obj, 'pr_number', None) or getattr(request_obj, 'request_number', None) or str(request_obj.pk)
+            ref = (
+                getattr(request_obj, 'estimate_number', None)
+                or getattr(request_obj, 'project_code', None)
+                or getattr(request_obj, 'sr_number', None)
+                or getattr(request_obj, 'pr_number', None)
+                or getattr(request_obj, 'request_number', None)
+                or str(request_obj.pk)
+            )
             pk = getattr(request_obj, 'pk', None)
             link_map = {
                 'service_request': f'/service-request/{pk}/' if pk else '',
                 'purchase_request': f'/purchase/requests/{pk}/' if pk else '',
                 'inventory_request': f'/inventory/consumables/{pk}/' if pk else '',
+                'estimate': f'/sales/estimates/{pk}/' if pk else '',
+                'project': f'/projects/{pk}/' if pk else '',
             }
             link = link_map.get(module, str(pk) if pk else '')
+            title = f'Approval Required: {module.replace("_", " ").title()}'
+            if module == 'estimate':
+                msg = f'{ref} was edited and needs your approval to clear the review queue.'
+            elif module == 'project':
+                msg = f'{ref} was edited and needs your approval to clear the review queue.'
+            else:
+                msg = f'{ref} requires your approval. Amount: AED {amount:,.2f}'
             Notification.create(
                 user=approver,
-                title=f'Approval Required: {module.replace("_", " ").title()}',
-                message=f'{ref} requires your approval. Amount: AED {amount:,.2f}',
+                title=title,
+                message=msg,
                 link=link,
             )
 

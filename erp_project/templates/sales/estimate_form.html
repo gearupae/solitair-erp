@@ -37,15 +37,26 @@
 }
 /* Percent widths sum to 100% — keeps table inside card (no overflow-x scroll) */
 #itemsTable .items-col-group {
-    width: 7%;
+    width: 13%;
 }
-#itemsTable .items-col-group .form-control {
+#itemsTable .items-col-group .form-control,
+#itemsTable .items-col-group .form-select {
     padding-left: 0.25rem;
     padding-right: 0.25rem;
-    font-size: 0.75rem;
+    font-size: 0.72rem;
+}
+#itemsTable .items-col-group .estimate-group-combo .estimate-pick-group {
+    flex: 0 0 auto;
+    width: 38%;
+    min-width: 3.25rem;
+    max-width: 6.5rem;
+    padding-right: 1rem;
+}
+#itemsTable .items-col-group .estimate-group-combo .item-group-name {
+    min-width: 0;
 }
 #itemsTable .items-col-inventory {
-    width: 13%;
+    width: 12%;
 }
 #itemsTable .items-col-inventory .form-select {
     font-size: 0.8rem;
@@ -53,7 +64,7 @@
     padding-right: 1.35rem;
 }
 #itemsTable .items-col-desc {
-    width: 23%;
+    width: 17%;
 }
 /* Qty / Base / Profit / Profit # / Rate / Tax — a bit wider; totals 100% with other cols */
 #itemsTable .items-col-qty {
@@ -104,6 +115,13 @@
     min-height: 8rem;
     resize: vertical;
 }
+#lineItemsCardHeader .btn {
+    white-space: nowrap;
+}
+#lineItemsCardHeader label.btn {
+    max-width: 12rem;
+    overflow: hidden;
+}
 </style>
 {% endblock %}
 
@@ -135,7 +153,10 @@
 
 <form method="post" id="estimateForm" enctype="multipart/form-data">
     {% csrf_token %}
-    
+    <datalist id="estimate-group-names">
+        {% for gn in inventory_group_names %}<option value="{{ gn }}">{% endfor %}
+    </datalist>
+
     <div class="card mb-4">
         <div class="card-header">
             <h6 class="mb-0 fw-semibold"><i class="fas fa-info-circle me-2"></i>Estimate Details</h6>
@@ -212,35 +233,22 @@
     
     <!-- Line Items -->
     <div class="card mb-4">
-        <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
-            <h6 class="mb-0 fw-semibold"><i class="fas fa-list me-2"></i>Line items (group by repeating the same group name)</h6>
-            <button type="button" class="btn btn-sm btn-primary" onclick="addItemRow()">
-                <i class="fas fa-plus me-1"></i>Add line
-            </button>
-        </div>
-        <div class="px-3 pt-3">
-            <div class="alert alert-light border small mb-0 alert-permanent">
-                <div class="row g-2 align-items-start">
-                    <div class="col-lg-7">
-                        <strong>CSV import</strong>
-                        <p class="text-muted mb-2 mb-lg-0">
-                            Download the sample or export inventory for <code>item_code</code> values. Required column: <code>item_code</code>.
-                            Optional: <code>group_name</code>, <code>description</code>, <code>quantity</code>, <code>unit_price</code>,
-                            <code>profit_percent</code>, <code>profit_amount</code>.
-                            Line order in the file is the line order on the estimate. All imported lines use <strong>VAT 5%</strong> (tax code VAT5)
-                            and <strong>VAT-inclusive</strong> pricing. If both <code>profit_percent</code> and <code>profit_amount</code> are set, <strong>percent</strong> wins.
-                            On save with a CSV attached, imported lines replace manually entered rows (edit: replaces all existing lines).
-                        </p>
-                    </div>
-                    <div class="col-lg-5">
-                        <div class="d-flex flex-wrap gap-2 align-items-center justify-content-lg-end mb-2">
-                            <a href="{{ estimate_items_sample_csv_url }}" class="btn btn-sm btn-outline-secondary">Download sample CSV</a>
-                            <a href="{{ inventory_items_export_csv_url }}" class="btn btn-sm btn-outline-secondary">Export inventory (CSV)</a>
-                        </div>
-                        <label class="form-label small text-muted mb-0">Attach CSV (optional, then click Save estimate)</label>
-                        <input type="file" name="items_csv" accept=".csv,text/csv" class="form-control form-control-sm">
-                    </div>
-                </div>
+        <div id="lineItemsCardHeader" class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <h6 class="mb-0 fw-semibold"><i class="fas fa-list me-2"></i>Line items</h6>
+            <div class="d-flex flex-wrap align-items-center gap-2">
+                <a href="{{ estimate_items_sample_csv_url }}" class="btn btn-sm btn-outline-secondary" title="Estimate line items template">
+                    <i class="fas fa-download me-1"></i>Download CSV
+                </a>
+                <a href="{{ inventory_items_export_csv_url }}" class="btn btn-sm btn-outline-secondary" title="Export active inventory as CSV">
+                    <i class="fas fa-file-export me-1"></i>Export inventory
+                </a>
+                <label class="btn btn-sm btn-outline-secondary mb-0 text-truncate" title="Attach CSV (optional)">
+                    <i class="fas fa-folder-open me-1"></i><span id="itemsCsvLabel">Choose file</span>
+                    <input type="file" name="items_csv" id="itemsCsvInput" class="d-none" accept=".csv,text/csv,application/vnd.ms-excel">
+                </label>
+                <button type="button" class="btn btn-sm btn-primary" onclick="addItemRow()">
+                    <i class="fas fa-plus me-1"></i>Add line
+                </button>
             </div>
         </div>
         <div class="card-body p-0">
@@ -255,7 +263,7 @@
                 <table class="table mb-0 table-sm align-middle" id="itemsTable">
                     <thead class="table-light">
                         <tr>
-                            <th class="items-col-group">Group</th>
+                            <th class="items-col-group" title="Choose a group on the left to load items; edit the PDF section title on the right (screen layout only—does not change inventory).">Group</th>
                             <th class="items-col-inventory">Inventory</th>
                             <th class="items-col-desc">Description</th>
                             <th class="items-col-qty">Qty</th>
@@ -274,7 +282,10 @@
                         <tr class="item-row" {% if item_form.DELETE.value %}style="display:none;"{% endif %}>
                             <td class="items-col-group">
                                 {{ item_form.id }}
-                                {{ item_form.group_name }}
+                                <div class="input-group input-group-sm flex-nowrap estimate-group-combo">
+                                    <select class="form-select form-select-sm estimate-add-from-group estimate-pick-group" aria-label="Pick inventory group to add all its lines on this estimate"></select>
+                                    {{ item_form.group_name }}
+                                </div>
                                 {{ item_form.sort_order }}
                             </td>
                             <td class="items-col-inventory">{{ item_form.inventory_item }}</td>
@@ -393,6 +404,7 @@ const taxCodes = [
     {% endfor %}
 ];
 const inventoryItems = {{ inventory_items_json|safe }};
+const inventoryGroups = {{ inventory_groups_json|safe }};
 const defaultTaxCodeId = {% if default_tax_code %}{{ default_tax_code.id }}{% else %}null{% endif %};
 const profitChoices = [
     {v: 'none', l: 'None'},
@@ -469,6 +481,66 @@ function onInventoryChange(sel) {
         });
 }
 
+function applyInventoryItemToRow(row, invId, groupName) {
+    const meta = inventoryItems.find(x => String(x.id) === String(invId));
+    if (!meta) return;
+    const g = row.querySelector('.item-group-name');
+    if (g) g.value = groupName;
+    const sel = row.querySelector('.item-inventory');
+    if (sel) sel.value = invId;
+    const desc = row.querySelector('input[name$="-description"]');
+    if (desc) desc.value = meta.name;
+    const bp = row.querySelector('.item-base-price');
+    if (bp) bp.value = parseFloat(meta.selling_price).toFixed(2);
+    const tc = row.querySelector('.item-tax-code');
+    if (tc && meta.tax_code_id) tc.value = meta.tax_code_id;
+    computeRate(row);
+    calculateRowTotal(row.querySelector('.item-qty'));
+}
+
+function fillInventoryGroupBulkSelect(sel) {
+    if (!sel) return;
+    sel.innerHTML = '';
+    const o0 = document.createElement('option');
+    o0.value = '';
+    o0.textContent = 'Group…';
+    sel.appendChild(o0);
+    inventoryGroups.forEach((g, idx) => {
+        const o = document.createElement('option');
+        o.value = String(idx);
+        const n = g.items ? g.items.length : 0;
+        o.textContent = `${g.name} (${n})`;
+        sel.appendChild(o);
+    });
+}
+
+function addLinesFromInventoryGroupSelect(sel) {
+    const idx = sel.value;
+    if (idx === '' || idx == null) return;
+    const g = inventoryGroups[parseInt(idx, 10)];
+    sel.selectedIndex = 0;
+    if (!g) return;
+    if (!g.items || !g.items.length) {
+        alert('This group has no active inventory items.');
+        return;
+    }
+    const row = sel.closest('tr.item-row');
+    const tbody = document.getElementById('itemsBody');
+    if (!row || !tbody) return;
+    let first = true;
+    g.items.forEach(it => {
+        let targetRow;
+        if (first) {
+            targetRow = row;
+            first = false;
+        } else {
+            addItemRow();
+            targetRow = tbody.lastElementChild;
+        }
+        applyInventoryItemToRow(targetRow, it.id, g.name);
+    });
+}
+
 function addItemRow() {
     const tbody = document.getElementById('itemsBody');
     const tr = document.createElement('tr');
@@ -476,7 +548,10 @@ function addItemRow() {
     tr.innerHTML = `
         <td class="items-col-group">
             <input type="hidden" name="items-${formCount}-id" id="id_items-${formCount}-id">
-            <input type="text" name="items-${formCount}-group_name" class="form-control form-control-sm" placeholder="Group">
+            <div class="input-group input-group-sm flex-nowrap estimate-group-combo">
+                <select class="form-select form-select-sm estimate-add-from-group estimate-pick-group" aria-label="Pick inventory group to add all its lines on this estimate"></select>
+                <input type="text" name="items-${formCount}-group_name" class="form-control form-control-sm item-group-name" value="" list="estimate-group-names" placeholder="PDF section" title="Estimate / PDF section title for this line. Editing this does not change inventory masters—only how this estimate is grouped on the PDF.">
+            </div>
             <input type="hidden" name="items-${formCount}-sort_order" value="${formCount}" id="id_items-${formCount}-sort_order">
         </td>
         <td class="items-col-inventory"><select name="items-${formCount}-inventory_item" class="form-select form-select-sm item-inventory">${getInventoryOptions()}</select></td>
@@ -496,6 +571,7 @@ function addItemRow() {
         </td>
     `;
     tbody.appendChild(tr);
+    fillInventoryGroupBulkSelect(tr.querySelector('.estimate-add-from-group'));
     formCount++;
     document.getElementById('id_items-TOTAL_FORMS').value = formCount;
     calculateRowTotal(tr.querySelector('.item-qty'));
@@ -574,6 +650,10 @@ function bindLineItemsTableEvents() {
 
     tbody.addEventListener('change', function(e) {
         const t = e.target;
+        if (t.matches('.estimate-add-from-group')) {
+            addLinesFromInventoryGroupSelect(t);
+            return;
+        }
         if (t.matches('.item-inventory')) {
             onInventoryChange(t);
             return;
@@ -586,8 +666,20 @@ function bindLineItemsTableEvents() {
     });
 }
 
+function setupEstimateItemsCsvLabel() {
+    const inp = document.getElementById('itemsCsvInput');
+    const lbl = document.getElementById('itemsCsvLabel');
+    if (!inp || !lbl) return;
+    inp.addEventListener('change', function() {
+        const f = inp.files && inp.files[0];
+        lbl.textContent = f ? f.name : 'Choose file';
+    });
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     bindLineItemsTableEvents();
+    setupEstimateItemsCsvLabel();
+    document.querySelectorAll('.estimate-add-from-group').forEach(fillInventoryGroupBulkSelect);
     document.querySelectorAll('#itemsBody .item-row').forEach(row => {
         const q = row.querySelector('.item-qty');
         if (q) calculateRowTotal(q);

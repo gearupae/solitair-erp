@@ -4,7 +4,23 @@
     <nav aria-label="breadcrumb"><ol class="breadcrumb mb-2"><li class="breadcrumb-item"><a href="{% url 'projects:project_list' %}">Projects</a></li><li class="breadcrumb-item active">{{ project.project_code }}</li></ol></nav>
     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
         <div><h4 class="mb-1 fw-bold">{{ project.name }}</h4><span class="text-muted">{{ project.project_code }}</span></div>
-        <div class="d-flex flex-wrap gap-2">
+        <div class="d-flex flex-wrap gap-2 align-items-center">
+            {% if project.edit_approval_status == 'pending' %}
+            <span class="badge bg-warning text-dark"><i class="fas fa-clock me-1"></i>Edit pending approval</span>
+            {% elif project.edit_approval_status == 'rejected' %}
+            <span class="badge bg-danger"><i class="fas fa-times-circle me-1"></i>Edit rejected</span>
+            {% endif %}
+            {% if can_approve_project_edit %}
+            <form method="post" action="{% url 'projects:project_approve_edit' project.pk %}" class="d-inline" onsubmit="return confirm('Approve these project changes?');">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-success btn-sm"><i class="fas fa-check me-1"></i>Approve edit</button>
+            </form>
+            <form method="post" action="{% url 'projects:project_reject_edit' project.pk %}" class="d-inline" onsubmit="return confirm('Reject this edit review?');">
+                {% csrf_token %}
+                <input type="text" name="comment" class="form-control form-control-sm d-inline-block" style="width:11rem;" placeholder="Comment (optional)">
+                <button type="submit" class="btn btn-outline-danger btn-sm"><i class="fas fa-times me-1"></i>Reject</button>
+            </form>
+            {% endif %}
             <a href="{% url 'projects:project_report_pdf' project.pk %}" class="btn btn-light" target="_blank" rel="noopener"><i class="fas fa-file-pdf me-2"></i>Project report</a>
             {% if can_edit %}<a href="{% url 'projects:project_edit' project.pk %}" class="btn btn-primary"><i class="fas fa-edit me-2"></i>Edit</a>{% endif %}
         </div>
@@ -19,14 +35,14 @@
                     <div class="col-md-4"><h6 class="text-muted mb-2">Customer</h6><p class="mb-0">{{ project.customer.name|default:"-" }}</p></div>
                     <div class="col-md-4"><h6 class="text-muted mb-2">Manager</h6><p class="mb-0">{% if project.manager %}{{ project.manager.get_full_name|default:project.manager.username }}{% else %}-{% endif %}</p></div>
                     <div class="col-md-4"><h6 class="text-muted mb-2">Budget</h6><p class="mb-0">AED {{ project.budget|floatformat:2 }}</p></div>
-                    <div class="col-md-4"><h6 class="text-muted mb-2">Estimated cost</h6><p class="mb-0">AED {{ project.estimated_cost|floatformat:2 }}</p></div>
+                    <div class="col-md-4"><h6 class="text-muted mb-2">Estimated cost</h6><p class="mb-0">{% if project.estimated_cost and project.estimated_cost > 0 %}AED {{ project.estimated_cost|floatformat:2 }}{% else %}—{% endif %}</p></div>
                     <div class="col-md-4">
-                        <h6 class="text-muted mb-2">Total profit <span class="small fw-normal">(budget − total expense)</span></h6>
+                        <h6 class="text-muted mb-2">Total profit <span class="small fw-normal">({{ header_profit_label }})</span></h6>
                         <p class="mb-0 fw-semibold d-flex align-items-center flex-wrap gap-2">
-                            AED {{ budget_profit|floatformat:2 }}
-                            {% if budget_profit > 0 %}
+                            AED {{ header_profit_vs_expenses|floatformat:2 }}
+                            {% if header_profit_vs_expenses > 0 %}
                             <span class="badge badge-active">Profitable</span>
-                            {% elif budget_profit < 0 %}
+                            {% elif header_profit_vs_expenses < 0 %}
                             <span class="badge badge-inactive">Over budget</span>
                             {% else %}
                             <span class="badge" style="background:#fef3c7;color:#92400e;">Break-even</span>
@@ -39,6 +55,39 @@
                 </div>
             </div>
         </div>
+        
+        {% if public_uploads %}
+        <div class="card mb-4">
+            <div class="card-header">
+                <h6 class="mb-0 fw-semibold">Public uploads</h6>
+                <p class="small text-muted mb-0">Files received from the public upload form.</p>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    {% for u in public_uploads %}
+                    <div class="col-md-4 col-sm-6">
+                        <div class="border rounded p-2 h-100">
+                            {% if u.is_probably_image %}
+                            <a href="{{ u.file.url }}" target="_blank" rel="noopener" class="d-block mb-2">
+                                <img src="{{ u.file.url }}" alt="" class="img-fluid rounded" style="max-height: 140px; width: 100%; object-fit: cover;">
+                            </a>
+                            {% else %}
+                            <div class="text-center py-3 mb-2 bg-light rounded">
+                                <i class="fas fa-file fa-2x text-secondary"></i>
+                            </div>
+                            {% endif %}
+                            <div class="small">
+                                <a href="{{ u.file.url }}" target="_blank" rel="noopener" class="fw-medium text-break d-block">{{ u.original_filename|default:u.file.name }}</a>
+                                {% if u.note %}<div class="text-muted mt-1">{{ u.note }}</div>{% endif %}
+                                <div class="text-muted mt-1">{{ u.created_at|date:"d/m/Y H:i" }}</div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
         
         <div class="card mb-4">
             <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
@@ -157,6 +206,60 @@
             </div>
             {% endif %}
         </div>
+
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <h6 class="mb-0 fw-semibold">Items</h6>
+                <div class="d-flex flex-wrap gap-2 align-items-center">
+                    <a href="{% url 'inventory:consumable_request_create' %}?project={{ project.pk }}" class="btn btn-sm btn-primary">
+                        <i class="fas fa-plus me-1"></i>Request items
+                    </a>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                {% if project_item_lines %}
+                <div class="table-responsive">
+                    <table class="table mb-0 table-sm align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Item</th>
+                                <th class="text-center">Qty</th>
+                                <th class="text-end">Net (excl. VAT)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for line in project_item_lines %}
+                            {% ifchanged line.group_name %}
+                            {% if line.group_name %}
+                            <tr class="table-secondary">
+                                <td colspan="3" class="fw-semibold small text-uppercase">{{ line.group_name }}</td>
+                            </tr>
+                            {% endif %}
+                            {% endifchanged %}
+                            <tr>
+                                <td>
+                                    {% if line.inventory_item %}
+                                        <span class="fw-medium">{{ line.inventory_item.name }}</span>
+                                        {% if line.description and line.description != line.inventory_item.name %}
+                                        <br><small class="text-muted">{{ line.description }}</small>
+                                        {% endif %}
+                                        <br><small class="text-muted">{{ line.inventory_item.item_code }}</small>
+                                    {% else %}
+                                        {{ line.description }}
+                                    {% endif %}
+                                </td>
+                                <td class="text-center">{{ line.quantity|floatformat:2 }}</td>
+                                <td class="text-end fw-medium text-nowrap">AED {{ line.line_net|floatformat:2 }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-muted small mb-0 p-3">No items yet.</p>
+                {% endif %}
+            </div>
+        </div>
         
         <div class="card">
             <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
@@ -252,6 +355,87 @@
     </div>
     
     <div class="col-lg-4">
+        <div class="card mb-4 border-0 shadow-sm">
+            <div class="card-header bg-transparent py-3 border-bottom">
+                <h6 class="mb-0 fw-semibold"><i class="fas fa-scale-balanced me-2 text-primary"></i>Budget comparison</h6>
+                <p class="small text-muted mb-0">Proposed budget vs expenses recorded on this project (vendor bills + other expenses).</p>
+            </div>
+            <div class="card-body pt-3">
+                <div class="d-flex justify-content-between align-items-baseline mb-2">
+                    <span class="text-muted small">Proposed budget</span>
+                    <span class="fw-semibold text-nowrap">AED {{ project.budget|floatformat:2 }}</span>
+                </div>
+                <div class="d-flex justify-content-between align-items-baseline mb-3">
+                    <span class="text-muted small">Actual spend</span>
+                    <span class="fw-semibold text-nowrap">AED {{ recorded_expenses_total|floatformat:2 }}</span>
+                </div>
+                {% if budget_pct_used != None %}
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between small mb-1">
+                        <span class="text-muted">Used of budget</span>
+                        <span class="fw-medium {% if budget_over %}text-danger{% endif %}">{{ budget_pct_used|floatformat:1 }}%</span>
+                    </div>
+                    <div class="progress" style="height: 8px;">
+                        <div class="progress-bar {% if budget_over %}bg-danger{% else %}bg-primary{% endif %}" role="progressbar"
+                             style="width: {{ budget_bar_width }}%;"
+                             aria-valuenow="{{ budget_bar_width }}" aria-valuemin="0" aria-valuemax="100"></div>
+                    </div>
+                </div>
+                {% endif %}
+                <hr class="my-2">
+                <div class="d-flex justify-content-between align-items-center">
+                    <span class="small fw-semibold">Variance <span class="text-muted fw-normal">(proposed − actual)</span></span>
+                    <span class="fw-bold text-nowrap {% if budget_profit > 0 %}text-success{% elif budget_profit < 0 %}text-danger{% else %}text-secondary{% endif %}">
+                        AED {{ budget_profit|floatformat:2 }}
+                    </span>
+                </div>
+                {% if budget_profit > 0 %}
+                <p class="small text-success mb-0 mt-2">Under budget.</p>
+                {% elif budget_profit < 0 %}
+                <p class="small text-danger mb-0 mt-2">Over proposed budget.</p>
+                {% else %}
+                <p class="small text-muted mb-0 mt-2">Matches proposed budget.</p>
+                {% endif %}
+            </div>
+        </div>
+        {% if show_labour_card %}
+        <div class="card mb-4">
+            <div class="card-header bg-transparent py-3">
+                <h6 class="mb-0 fw-semibold"><i class="fas fa-hard-hat me-2 text-primary"></i>Labour expense</h6>
+            </div>
+            <div class="card-body pt-0">
+                {% if labour_rows %}
+                <div class="table-responsive">
+                    <table class="table table-sm mb-0 small">
+                        <thead><tr><th>Technician</th><th class="text-end">Hours</th><th class="text-end">Rate/hr</th><th class="text-end">Cost</th></tr></thead>
+                        <tbody>
+                            {% for row in labour_rows %}
+                            <tr>
+                                <td>
+                                    {{ row.display_name }}
+                                </td>
+                                <td class="text-end text-nowrap">{{ row.hours|floatformat:2 }}</td>
+                                <td class="text-end text-nowrap">{% if row.hourly_rate %}AED {{ row.hourly_rate|floatformat:2 }}{% else %}—{% endif %}</td>
+                                <td class="text-end text-nowrap fw-medium">AED {{ row.labour_cost|floatformat:2 }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                        <tfoot class="table-light">
+                            <tr>
+                                <td class="fw-semibold">Total</td>
+                                <td class="text-end fw-semibold">{{ labour_total_hours|floatformat:2 }}</td>
+                                <td></td>
+                                <td class="text-end fw-bold">AED {{ labour_total_cost|floatformat:2 }}</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-muted small mb-0">No technicians listed on this project yet.</p>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
         <div class="card mb-4">
             <div class="card-body">
                 <h6 class="text-muted mb-3">Status</h6>

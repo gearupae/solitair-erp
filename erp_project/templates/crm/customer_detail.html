@@ -72,6 +72,23 @@
                         </p>
                     </div>
                     <div class="col-md-6">
+                        <label class="form-label text-muted small">Type</label>
+                        <p class="fw-medium mb-0">
+                            {% if customer.customer_type == 'lead' %}Lead{% else %}Customer{% endif %}
+                        </p>
+                    </div>
+                    {% if customer.customer_type == 'customer' %}
+                    <div class="col-md-6">
+                        <label class="form-label text-muted small">Business type</label>
+                        <p class="fw-medium mb-0">{{ customer.get_business_segment_display|default:"—" }}</p>
+                    </div>
+                    {% elif customer.customer_type == 'lead' and customer.lead_kanban_stage %}
+                    <div class="col-md-6">
+                        <label class="form-label text-muted small">Pipeline stage</label>
+                        <p class="fw-medium mb-0">{{ customer.lead_kanban_stage.name }}</p>
+                    </div>
+                    {% endif %}
+                    <div class="col-md-6">
                         <label class="form-label text-muted small">VAT (TRN)</label>
                         <p class="fw-medium mb-0">{{ customer.trn|default:"-" }}</p>
                     </div>
@@ -128,7 +145,76 @@
                 </div>
             </div>
         </div>
-        
+
+        {% if customer.business_segment == 'b2b' %}
+        <div class="card border-0 shadow-sm mt-4">
+            <div class="card-header bg-transparent py-3">
+                <h6 class="mb-0 fw-semibold">
+                    <i class="fas fa-building me-2 text-primary"></i>B2B registration documents
+                </h6>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label text-muted small">TRN certificate</label>
+                        <p class="mb-0">
+                            {% if customer.trn_document %}
+                            <a href="{{ customer.trn_document.url }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary"><i class="fas fa-file-download me-1"></i>Download</a>
+                            {% else %}
+                            <span class="text-muted">Not uploaded</span>
+                            {% endif %}
+                        </p>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label text-muted small">Trade license</label>
+                        <p class="mb-0">
+                            {% if customer.trade_license_document %}
+                            <a href="{{ customer.trade_license_document.url }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary"><i class="fas fa-file-download me-1"></i>Download</a>
+                            {% else %}
+                            <span class="text-muted">Not uploaded</span>
+                            {% endif %}
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if public_uploads %}
+        <div class="card border-0 shadow-sm mt-4">
+            <div class="card-header bg-transparent py-3">
+                <h6 class="mb-0 fw-semibold">
+                    <i class="fas fa-cloud-upload-alt me-2 text-primary"></i>Public uploads
+                </h6>
+                <p class="small text-muted mb-0">Files received from the public CRM upload link.</p>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    {% for u in public_uploads %}
+                    <div class="col-md-4 col-sm-6">
+                        <div class="border rounded p-2 h-100">
+                            {% if u.is_probably_image %}
+                            <a href="{{ u.file.url }}" target="_blank" rel="noopener" class="d-block mb-2">
+                                <img src="{{ u.file.url }}" alt="" class="img-fluid rounded" style="max-height: 140px; width: 100%; object-fit: cover;">
+                            </a>
+                            {% else %}
+                            <div class="text-center py-3 mb-2 bg-light rounded">
+                                <i class="fas fa-file fa-2x text-secondary"></i>
+                            </div>
+                            {% endif %}
+                            <div class="small">
+                                <a href="{{ u.file.url }}" target="_blank" rel="noopener" class="fw-medium text-break d-block">{{ u.original_filename|default:u.file.name }}</a>
+                                {% if u.note %}<div class="text-muted mt-1">{{ u.note }}</div>{% endif %}
+                                <div class="text-muted mt-1">{{ u.created_at|date:"d/m/Y H:i" }}</div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
         <!-- Related Records (placeholders for future modules) -->
         <div class="card border-0 shadow-sm mt-4">
             <div class="card-header bg-transparent py-3">
@@ -189,8 +275,13 @@
                         </span>
                     {% endif %}
                 </div>
+                {% if customer.customer_type == 'customer' %}
                 <div class="d-flex justify-content-between align-items-center mb-3">
-                    <span class="text-muted">Status</span>
+                    <span class="text-muted">Business type</span>
+                    <span class="fw-medium small">{{ customer.get_business_segment_display|default:"—" }}</span>
+                </div>
+                {% endif %}
+                <div class="d-flex justify-content-between align-items-center mb-3">
                     {% if customer.status == 'active' %}
                         <span class="badge badge-active">Active</span>
                     {% elif customer.status == 'prospect' %}

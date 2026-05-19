@@ -176,6 +176,7 @@ class CompanySettingsForm(forms.ModelForm):
             'inventory_valuation_method',
             'estimate_default_client_note', 'estimate_default_terms',
             'contract_default_terms',
+            'estimate_to_project_prompt_include_lines',
         ]
     
     def __init__(self, *args, **kwargs):
@@ -195,6 +196,8 @@ class CompanySettingsForm(forms.ModelForm):
             elif field_name in ('estimate_default_client_note', 'estimate_default_terms', 'contract_default_terms'):
                 field.widget.attrs['class'] = 'form-control'
                 field.widget.attrs['rows'] = 5
+            elif field_name == 'estimate_to_project_prompt_include_lines':
+                field.widget.attrs['class'] = 'form-check-input'
             elif field_name == 'inventory_valuation_method':
                 field.widget.attrs['class'] = 'form-select'
             elif field_name in ('smtp_password', 'smtp_use_tls'):

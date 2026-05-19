@@ -188,6 +188,15 @@ class AttendanceRecord(BaseModel):
     notes = models.TextField(blank=True)
     source = models.CharField(max_length=20, choices=SOURCE_CHOICES, default='manual')
 
+    project = models.ForeignKey(
+        'projects.Project',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='attendance_records',
+        help_text='Optional job / site — use for technician labour on a project.',
+    )
+
     working_hours = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
     late_minutes = models.PositiveIntegerField(default=0)
     overtime_hours = models.DecimalField(max_digits=8, decimal_places=2, default=Decimal('0.00'))

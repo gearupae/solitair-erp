@@ -199,3 +199,10 @@ NUMBER_SERIES = {
     'VENDOR_ADVANCE': {'prefix': 'VADV', 'padding': 4},
 }
 
+# ERP login auto-created from HR → Employees (also see sync on Settings → Users).
+# Override in .env for production: HR_EMPLOYEE_DEFAULT_PASSWORD=YourStrongSecret
+HR_EMPLOYEE_DEFAULT_PASSWORD = config(
+    'HR_EMPLOYEE_DEFAULT_PASSWORD',
+    default='GearupEmployee123!',
+)
+

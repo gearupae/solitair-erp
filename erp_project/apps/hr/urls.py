@@ -57,6 +57,7 @@ urlpatterns = [
     path('payroll/<int:pk>/edit/', views.PayrollUpdateView.as_view(), name='payroll_edit'),
     path('payroll/<int:pk>/process/', views.payroll_process, name='payroll_process'),
     path('payroll/<int:pk>/pay/', views.payroll_pay, name='payroll_pay'),
+    path('attendance/api/technician-projects/', av.attendance_technician_projects, name='attendance_technician_projects'),
     path('attendance/', av.AttendanceRecordListView.as_view(), name='attendance_list'),
     path('attendance/public/', av.PublicAttendancePunchView.as_view(), name='public_attendance'),
     path('attendance/api/public-punch/', av.attendance_public_punch, name='attendance_public_punch'),

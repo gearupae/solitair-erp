@@ -18,6 +18,10 @@
             <span class="text-muted">Customer Advance — {{ advance.customer.name }}</span>
         </div>
         <div class="d-flex gap-2">
+            <a href="{% url 'advances:customer_advance_receipt_pdf' advance.pk %}"
+               class="btn btn-outline-primary" target="_blank" rel="noopener">
+                <i class="fas fa-file-pdf me-2"></i>Receipt voucher (PDF)
+            </a>
             {% if can_edit and advance.status == 'draft' %}
             <form method="post" action="{% url 'advances:customer_advance_post' advance.pk %}"
                   onsubmit="return confirm('Post this advance to accounting? This cannot be undone.');">

@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Receipt voucher — {{ advance.advance_number }}</title>
+    {% include 'sales/includes/invoice_pdf_styles.html' %}
+</head>
+<body>
+    <div class="print-actions no-print">
+        <button type="button" class="print-btn" onclick="window.print()">Print receipt</button>
+        <a href="?format=pdf" class="print-btn print-btn-secondary">Download PDF</a>
+        <a href="{% url 'advances:customer_advance_detail' advance.pk %}" class="print-btn print-btn-secondary">Back to advance</a>
+    </div>
+
+    <div class="estimate-container">
+        <div class="title-strip">
+            <div class="title-strip-main">
+                <div class="estimate-title-text">RECEIPT VOUCHER</div>
+                <div class="estimate-number">{{ advance.advance_number }}</div>
+            </div>
+        </div>
+
+        <div class="addr-grid">
+            <div class="addr-block addr-to">
+                <div class="addr-label">Received from</div>
+                {% if advance.customer.company %}
+                <div class="addr-name">{{ advance.customer.company }}</div>
+                {% if advance.customer.name %}
+                <div class="addr-lines" style="font-weight:600;margin-bottom:4px;">Attn: {{ advance.customer.name }}</div>
+                {% endif %}
+                {% else %}
+                <div class="addr-name">{{ advance.customer.name }}</div>
+                {% endif %}
+                <div class="addr-lines">
+                    {% if advance.customer.address %}
+                    <div>{{ advance.customer.address }}</div>
+                    {% endif %}
+                    {% if advance.customer.city or advance.customer.country %}
+                    <div>{% if advance.customer.city %}{{ advance.customer.city }}{% endif %}{% if advance.customer.city and advance.customer.country %}, {% endif %}{% if advance.customer.country %}{{ advance.customer.country }}{% endif %}</div>
+                    {% endif %}
+                    {% if advance.customer.phone %}
+                    <div>Tel: {{ advance.customer.phone }}</div>
+                    {% endif %}
+                    {% if advance.customer.email %}
+                    <div>{{ advance.customer.email }}</div>
+                    {% endif %}
+                    {% if advance.customer.website %}
+                    <div>{{ advance.customer.website }}</div>
+                    {% endif %}
+                    {% if advance.customer.trn %}
+                    <div class="trn">VAT / TRN: {{ advance.customer.trn }}</div>
+                    {% endif %}
+                </div>
+                <div class="addr-to-estimate-details">
+                    <div class="addr-label">Receipt details</div>
+                    <div class="addr-to-detail-row">
+                        <span class="addr-to-detail-label">Receipt date</span>
+                        <span class="addr-to-detail-value">{{ advance.date|date:"d/m/Y" }}</span>
+                    </div>
+                    <div class="addr-to-detail-row">
+                        <span class="addr-to-detail-label">Bank / account</span>
+                        <span class="addr-to-detail-value">{{ advance.bank_account.name }}</span>
+                    </div>
+                    {% if advance.reference %}
+                    <div class="addr-to-detail-row">
+                        <span class="addr-to-detail-label">Your reference</span>
+                        <span class="addr-to-detail-value">{{ advance.reference }}</span>
+                    </div>
+                    {% endif %}
+                    <div class="addr-to-detail-row">
+                        <span class="addr-to-detail-label">Status</span>
+                        <span class="addr-to-detail-value">{{ advance.get_status_display }}</span>
+                    </div>
+                    {% if advance.customer.customer_number %}
+                    <div class="addr-to-detail-row">
+                        <span class="addr-to-detail-label">Customer ID</span>
+                        <span class="addr-to-detail-value">{{ advance.customer.customer_number }}</span>
+                    </div>
+                    {% endif %}
+                    {% if advance.journal_entry %}
+                    <div class="addr-to-detail-row">
+                        <span class="addr-to-detail-label">Journal entry</span>
+                        <span class="addr-to-detail-value">{{ advance.journal_entry.entry_number }}</span>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="addr-block addr-from">
+                <div class="addr-label">From</div>
+                {% if company.logo and logo_absolute_url %}
+                <img src="{{ logo_absolute_url }}" alt="{{ company.company_name }}" class="addr-from-logo">
+                {% endif %}
+                <div class="addr-name">{{ company.company_name }}</div>
+                <div class="addr-lines">
+                    {% if company.address %}
+                    <div>{{ company.address|linebreaksbr }}</div>
+                    {% endif %}
+                    {% if company.phone %}
+                    <div>Tel: {{ company.phone }}</div>
+                    {% endif %}
+                    {% if company.email %}
+                    <div>{{ company.email }}</div>
+                    {% endif %}
+                    {% if company.website %}
+                    <div>{{ company.website }}</div>
+                    {% endif %}
+                    {% if company.tax_id %}
+                    <div class="trn">VAT / TRN: {{ company.tax_id }}</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <table class="items-table">
+            <thead>
+                <tr>
+                    <th style="width: 30px;">#</th>
+                    <th>Description</th>
+                    <th class="text-center" style="width: 60px;">Qty</th>
+                    <th class="text-right" style="width: 100px;">Unit Price</th>
+                    <th class="text-center" style="width: 60px;">VAT %</th>
+                    <th class="text-right" style="width: 90px;">VAT Amt</th>
+                    <th class="text-right" style="width: 110px;">Total (AED)</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td class="item-number">1</td>
+                    <td class="item-description">Customer advance payment received</td>
+                    <td class="text-center">1.00</td>
+                    <td class="text-right">{{ advance.amount|floatformat:2 }}</td>
+                    <td class="text-center">{{ line_vat_rate|floatformat:0 }}%</td>
+                    <td class="text-right">{{ advance.vat_amount|floatformat:2 }}</td>
+                    <td class="text-right">{{ advance.amount|floatformat:2 }}</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="totals-section">
+            <div class="totals-table">
+                <div class="totals-row subtotal">
+                    <span class="totals-label">Subtotal (excl. VAT)</span>
+                    <span class="totals-value">AED {{ advance.amount|floatformat:2 }}</span>
+                </div>
+                {% for rate, amounts in vat_summary.items %}
+                <div class="totals-row vat-row">
+                    <span class="totals-label">VAT @ {{ rate|floatformat:2 }}%</span>
+                    <span class="totals-value">AED {{ amounts.vat|floatformat:2 }}</span>
+                </div>
+                {% endfor %}
+                <div class="totals-row">
+                    <span class="totals-label">Total VAT</span>
+                    <span class="totals-value">AED {{ advance.vat_amount|floatformat:2 }}</span>
+                </div>
+                <div class="totals-row total">
+                    <span class="totals-label">Amount received</span>
+                    <span class="totals-value">AED {{ advance.total_amount|floatformat:2 }}</span>
+                </div>
+            </div>
+        </div>
+
+        {% if amount_words %}
+        <div class="amount-words">
+            <div class="amount-words-label">Amount in words</div>
+            <div>{{ amount_words }}</div>
+        </div>
+        {% endif %}
+
+        {% if advance.notes %}
+        <div class="notes-section">
+            <div class="notes-title">Notes</div>
+            <div class="notes-content">{{ advance.notes|linebreaks }}</div>
+        </div>
+        {% endif %}
+
+        <div class="notes-section">
+            <div class="notes-title">Payment acknowledgement</div>
+            <div class="notes-content">
+                The amount above confirms payment received and credited as a customer advance (before application to tax invoices).
+                <strong>Currency:</strong> UAE Dirham (AED).
+                {% if company.email %}<br><strong>Queries:</strong> {{ company.email }}{% endif %}
+            </div>
+        </div>
+
+        <footer class="doc-footer">
+            <div class="doc-footer-line">
+                <div class="doc-footer-company">
+                    <strong>{{ company.company_name }}</strong>
+                    {% if company.address %}<br>{{ company.address|linebreaksbr }}{% endif %}
+                    {% if company.phone %}<br>Tel: {{ company.phone }}{% endif %}
+                    {% if company.email %}<br>{{ company.email }}{% endif %}
+                    {% if company.website %}<br>{{ company.website }}{% endif %}
+                    {% if company.tax_id %}<br>VAT / TRN: {{ company.tax_id }}{% endif %}
+                </div>
+                <div class="doc-footer-page">
+                    Ref: {{ advance.advance_number }}
+                    <br>
+                    <span style="color:#a3a3a3;">Page</span> 1
+                </div>
+            </div>
+            <p style="margin-top:10px;font-size:8px;line-height:1.5;color:#737373;">
+                This document is a payment receipt voucher for monies received toward customer advance balances. Where VAT applies it is accounted for separately from tax invoicing until supply is invoiced. Computer-generated document.
+            </p>
+            <p style="margin-top:8px;text-align:center;color:#a3a3a3;">Thank you.</p>
+        </footer>
+    </div>
+
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('print') === '1') {
+            window.onload = function() { window.print(); };
+        }
+    </script>
+</body>
+</html>

@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Category, Warehouse, StorageLocation, Item, Stock, StockMovement
+from .models import Category, Warehouse, StorageLocation, Item, ItemGroup, Stock, StockMovement
 
 
 @admin.register(Category)
@@ -25,10 +25,28 @@ class WarehouseAdmin(admin.ModelAdmin):
     readonly_fields = ['code']
 
 
+@admin.register(ItemGroup)
+class ItemGroupAdmin(admin.ModelAdmin):
+    list_display = ['name']
+    search_fields = ['name']
+
+
 @admin.register(Item)
 class ItemAdmin(admin.ModelAdmin):
-    list_display = ['item_code', 'name', 'category', 'item_type', 'purchase_price', 'selling_price', 'status']
+    list_display = [
+        'item_code', 'name', 'category', 'item_groups_display', 'item_type',
+        'purchase_price', 'selling_price', 'status',
+    ]
     list_filter = ['item_type', 'status', 'category', 'is_active']
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related('category').prefetch_related('item_groups')
+
+    @staticmethod
+    def item_groups_display(obj):
+        return ', '.join(obj.item_groups.values_list('name', flat=True)[:12])
+
+    item_groups_display.short_description = 'Groups'
     search_fields = ['item_code', 'name']
     readonly_fields = ['item_code']
 

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ page_title|default:"Estimate" }}</title>
+    <title>{{ page_title|default:"Quotation" }}</title>
     <style>
         @page {
             size: A4;
@@ -143,9 +143,10 @@
 
         .status-draft { opacity: 0.9; border-color: rgba(148, 163, 184, 0.35); }
         .status-sent { border-color: rgba(125, 211, 252, 0.45); }
-        .status-approved { border-color: rgba(167, 243, 208, 0.4); }
-        .status-rejected { border-color: rgba(252, 165, 165, 0.45); color: #fecaca; }
-        .status-expired { border-color: rgba(148, 163, 184, 0.35); }
+        .status-approved { border-color: rgba(129, 140, 248, 0.55); color: #c7d2fe; }
+        .status-rejected { border-color: rgba(251, 191, 36, 0.5); color: #fde68a; }
+        .status-quotation_won { border-color: rgba(74, 222, 128, 0.65); color: #bbf7d0; }
+        .status-quotation_lost { border-color: rgba(248, 113, 113, 0.65); color: #fecaca; }
 
         /* Estimate details inside To block */
         .addr-to-estimate-details {
@@ -435,7 +436,7 @@
 </head>
 <body>
     <div class="print-actions no-print">
-        <button type="button" class="print-btn" onclick="window.print()">{{ print_button_label|default:"Print proposal" }}</button>
+        <button type="button" class="print-btn" onclick="window.print()">{{ print_button_label|default:"Print quotation" }}</button>
         <a href="{% url 'sales:estimate_detail' estimate.pk %}" class="print-btn print-btn-secondary">Back to estimate</a>
     </div>
 
@@ -443,7 +444,7 @@
         <!-- Top heading -->
         <div class="title-strip">
             <div class="title-strip-main">
-                <div class="estimate-title-text">{{ document_heading|default:"PROPOSAL" }}</div>
+                <div class="estimate-title-text">{{ document_heading|default:"QUOTATION" }}</div>
                 <div class="estimate-number">{{ document_number|default:estimate.estimate_number }}</div>
                 {% if show_pdf_status|default:True %}
                 <div class="status-badge status-{{ estimate.status }}">{{ estimate.get_status_display }}</div>
@@ -484,9 +485,9 @@
                     {% endif %}
                 </div>
                 <div class="addr-to-estimate-details">
-                    <div class="addr-label">Estimate details</div>
+                    <div class="addr-label">{{ pdf_details_heading|default:"Quotation details" }}</div>
                     <div class="addr-to-detail-row">
-                        <span class="addr-to-detail-label">Estimate date</span>
+                        <span class="addr-to-detail-label">{{ pdf_date_label|default:"Quotation date" }}</span>
                         <span class="addr-to-detail-value">{{ estimate.date|date:"d/m/Y" }}</span>
                     </div>
                     <div class="addr-to-detail-row">
@@ -547,7 +548,11 @@
 
         {% if estimate.valid_until %}
         <div class="validity-notice">
-            <strong>Validity:</strong> This estimate is valid until {{ estimate.valid_until|date:"d/m/Y" }}. Prices and availability may change after this date.
+            {% if pdf_variant == 'proforma' %}
+            <strong>Validity:</strong> This proforma invoice is valid until {{ estimate.valid_until|date:"d/m/Y" }}. Prices and availability may change after this date.
+            {% else %}
+            <strong>Validity:</strong> This quotation is valid until {{ estimate.valid_until|date:"d/m/Y" }}. Prices and availability may change after this date.
+            {% endif %}
         </div>
         {% endif %}
 
@@ -677,7 +682,11 @@
                 {% else %}
                 <ol class="terms-list">
                     <li>Prices quoted are in UAE Dirhams (AED) and include VAT where applicable.</li>
-                    <li>This estimate is valid as stated on this document unless otherwise agreed.</li>
+                    {% if pdf_variant == 'proforma' %}
+                    <li>This proforma invoice is valid as stated on this document unless otherwise agreed.</li>
+                    {% else %}
+                    <li>This quotation is valid as stated on this document unless otherwise agreed.</li>
+                    {% endif %}
                     <li>Payment and delivery terms are as agreed upon order confirmation.</li>
                 </ol>
                 {% endif %}
@@ -687,7 +696,11 @@
         <div class="acceptance-section">
             <div class="acceptance-title">Order confirmation</div>
             <div class="acceptance-text">
-                To accept this estimate, please sign below and return a copy to us. By signing, you agree to the terms and conditions stated above.
+                {% if pdf_variant == 'proforma' %}
+                To accept this proforma invoice, please sign below and return a copy to us. By signing, you agree to the terms and conditions stated above.
+                {% else %}
+                To accept this quotation, please sign below and return a copy to us. By signing, you agree to the terms and conditions stated above.
+                {% endif %}
             </div>
             <div class="signature-row">
                 <div class="signature-box">

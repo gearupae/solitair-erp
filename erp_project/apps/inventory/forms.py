@@ -7,6 +7,7 @@ from .models import (
     Warehouse,
     StorageLocation,
     Item,
+    ItemGroup,
     Stock,
     StockMovement,
     ConsumableRequest,
@@ -74,13 +75,19 @@ class ItemForm(forms.ModelForm):
     class Meta:
         model = Item
         fields = [
-            'name', 'description', 'category', 'item_type', 'status',
+            'name', 'description', 'category', 'item_groups', 'item_type', 'status',
             'purchase_price', 'selling_price', 'unit', 'minimum_stock', 'tax_code',
             'condition_status', 'condition_notes',
             'storage_location', 'storage_location_master', 'barcode',
             'brand', 'serial_batch_number', 'purchase_date', 'warranty_expiry',
         ]
         widgets = {
+            'item_groups': forms.SelectMultiple(
+                attrs={
+                    'class': 'form-select item-groups-multiselect',
+                    'data-placeholder': 'Search and select groups…',
+                },
+            ),
             'description': forms.Textarea(attrs={'rows': 2}),
             'purchase_price': forms.NumberInput(attrs={'step': 'any', 'min': '0', 'placeholder': '0.00'}),
             'selling_price': forms.NumberInput(attrs={'step': 'any', 'min': '0', 'placeholder': '0.00'}),
@@ -97,8 +104,12 @@ class ItemForm(forms.ModelForm):
         from apps.finance.models import TaxCode
         super().__init__(*args, **kwargs)
         for field_name, field in self.fields.items():
-            if field_name in ['category', 'item_type', 'status', 'tax_code', 'condition_status', 'storage_location_master']:
-                field.widget.attrs['class'] = 'form-select'
+            if field_name in ['category', 'item_type', 'status', 'tax_code', 'condition_status', 'storage_location_master', 'item_groups']:
+                if field_name == 'item_groups':
+                    # Select2 multi-select — initialized in item_form.html extra_js (not generic .select2)
+                    field.widget.attrs['class'] = 'form-select item-groups-multiselect'
+                else:
+                    field.widget.attrs['class'] = 'form-select'
             elif field_name == 'condition_notes':
                 field.widget = forms.Textarea(attrs={'class': 'form-control', 'rows': 2, 'placeholder': 'e.g., Assigned to John, Bay 3 / Sent for repair on...'})
             elif field_name in ('purchase_date', 'warranty_expiry'):
@@ -106,6 +117,8 @@ class ItemForm(forms.ModelForm):
             else:
                 field.widget.attrs['class'] = 'form-control'
         self.fields['category'].queryset = Category.objects.filter(is_active=True)
+        self.fields['item_groups'].queryset = ItemGroup.objects.all().order_by('name')
+        self.fields['item_groups'].required = False
         self.fields['storage_location_master'].queryset = StorageLocation.objects.filter(is_active=True)
         self.fields['storage_location_master'].required = False
         self.fields['storage_location_master'].empty_label = '— Preset location (optional) —'
@@ -215,9 +228,10 @@ class ConsumableRequestForm(forms.ModelForm):
     """
     class Meta:
         model = ConsumableRequest
-        fields = ['department', 'priority', 'required_by_date', 'remarks']
+        fields = ['department', 'project', 'priority', 'required_by_date', 'remarks']
         widgets = {
             'department': forms.Select(attrs={'class': 'form-select'}),
+            'project': forms.Select(attrs={'class': 'form-select'}),
             'priority': forms.Select(attrs={'class': 'form-select'}),
             'required_by_date': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
             'remarks': forms.Textarea(attrs={'rows': 3, 'class': 'form-control', 'placeholder': 'Optional notes'}),
@@ -226,8 +240,15 @@ class ConsumableRequestForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         from apps.hr.models import Department
+        from apps.projects.models import Project
+
         self.fields['department'].queryset = Department.objects.filter(is_active=True)
         self.fields['department'].required = False
+        self.fields['project'].queryset = Project.objects.filter(is_active=True).order_by(
+            '-created_at', 'name'
+        )
+        self.fields['project'].required = False
+        self.fields['project'].empty_label = '— Select project (optional) —'
         self.fields['required_by_date'].required = False
         self.fields['remarks'].required = False
 

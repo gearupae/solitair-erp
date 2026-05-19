@@ -1,12 +1,22 @@
 from django.contrib import admin
-from .models import Project, Task, Timesheet, ProjectGatepass
+from .models import Project, Task, ProjectGatepass, ProjectPublicUpload, ProjectItemLine
+
+
+class ProjectItemLineInline(admin.TabularInline):
+    model = ProjectItemLine
+    extra = 0
+    fields = ('sort_order', 'group_name', 'description', 'inventory_item', 'quantity', 'unit_price', 'rate', 'line_net', 'vat_amount')
+    raw_id_fields = ('inventory_item',)
+    show_change_link = True
+
 
 @admin.register(Project)
 class ProjectAdmin(admin.ModelAdmin):
     list_display = ['project_code', 'name', 'customer', 'manager', 'status', 'start_date', 'end_date']
     list_filter = ['status', 'start_date']
     search_fields = ['project_code', 'name']
-    filter_horizontal = ('members',)
+    filter_horizontal = ('members', 'technicians')
+    inlines = (ProjectItemLineInline,)
 
 @admin.register(Task)
 class TaskAdmin(admin.ModelAdmin):
@@ -24,12 +34,13 @@ class ProjectGatepassAdmin(admin.ModelAdmin):
     date_hierarchy = 'expiry_date'
 
 
-@admin.register(Timesheet)
-class TimesheetAdmin(admin.ModelAdmin):
-    list_display = ['task', 'user', 'date', 'hours']
-    list_filter = ['date', 'user']
-
-
+@admin.register(ProjectPublicUpload)
+class ProjectPublicUploadAdmin(admin.ModelAdmin):
+    list_display = ['project', 'original_filename', 'note', 'created_at', 'is_active']
+    list_filter = ['is_active', 'created_at', 'project']
+    search_fields = ['original_filename', 'note', 'project__project_code', 'project__name']
+    raw_id_fields = ['project']
+    readonly_fields = ['created_at', 'updated_at', 'created_by', 'updated_by']
 
 
 

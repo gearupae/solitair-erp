@@ -18,7 +18,7 @@ from django.urls import reverse, reverse_lazy
 from django.utils import timezone as django_timezone
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import ensure_csrf_cookie
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_GET, require_POST
 from django.views.generic import DeleteView, FormView, ListView, TemplateView, UpdateView
 from django.views.generic.edit import CreateView
 
@@ -297,6 +297,7 @@ def attendance_record_lookup(request):
             'overtime_type': rec.overtime_type,
             'notes': rec.notes,
             'source': rec.source,
+            'project_id': rec.project_id,
         }
     return JsonResponse(data)
 
@@ -647,6 +648,26 @@ def _fmt_coords(la, lo):
     return f'{la},{lo}'
 
 
+def _resolve_technician_project_for_punch(employee: Employee, raw_project_id):
+    """Optional project on clock-in: must be a project where this employee's user is a technician."""
+    from apps.projects.models import Project
+
+    if raw_project_id in (None, '', 0, '0', False):
+        return None, None
+    try:
+        pid = int(raw_project_id)
+    except (TypeError, ValueError):
+        return None, 'Invalid project.'
+    project = Project.objects.filter(pk=pid, is_active=True).first()
+    if not project:
+        return None, 'Project not found.'
+    if not employee.user_id:
+        return None, 'This employee has no linked user; project cannot be set from punch.'
+    if not project.technicians.filter(pk=employee.user_id).exists():
+        return None, 'This employee is not a technician on the selected project.'
+    return project, None
+
+
 def _punch_record_json(rec: AttendanceRecord, action: str):
     msg = 'Clock in saved.' if action == 'check_in' else 'Clock out saved.'
     return {
@@ -661,7 +682,7 @@ def _punch_record_json(rec: AttendanceRecord, action: str):
     }
 
 
-def _perform_attendance_punch(*, employee: Employee, action: str, when, lat, lng, source: str):
+def _perform_attendance_punch(*, employee: Employee, action: str, when, lat, lng, source: str, project=None):
     if action not in ('check_in', 'check_out'):
         return False, 'Invalid action.'
     la, lo = _coerce_lat_lng(lat, lng)
@@ -688,6 +709,8 @@ def _perform_attendance_punch(*, employee: Employee, action: str, when, lat, lng
         rec.check_in_latitude = la
         rec.check_in_longitude = lo
         rec.source = source
+        if project is not None:
+            rec.project = project
         rec.save()
         recalculate_summary_for_employee_month(employee, d.year, d.month)
         return True, rec
@@ -708,6 +731,28 @@ def _perform_attendance_punch(*, employee: Employee, action: str, when, lat, lng
     rec.save()
     recalculate_summary_for_employee_month(employee, d.year, d.month)
     return True, rec
+
+
+@require_GET
+def attendance_technician_projects(request):
+    """JSON: projects where employee (by code) is assigned as technician. For public punch project picker."""
+    from apps.projects.models import Project
+
+    code = (request.GET.get('code') or '').strip()
+    if not code:
+        return JsonResponse({'ok': False, 'error': 'Employee code is required.'}, status=400)
+    emp = Employee.objects.filter(employee_code__iexact=code, is_active=True).first()
+    if not emp:
+        return JsonResponse({'ok': False, 'error': 'Employee not found.'}, status=404)
+    if not emp.user_id:
+        return JsonResponse({'ok': True, 'projects': []})
+    rows = (
+        Project.objects.filter(is_active=True, technicians__pk=emp.user_id)
+        .distinct()
+        .order_by('project_code')
+        .values('id', 'project_code', 'name')
+    )
+    return JsonResponse({'ok': True, 'projects': list(rows)})
 
 
 @method_decorator(ensure_csrf_cookie, name='dispatch')
@@ -741,6 +786,10 @@ def attendance_public_punch(request):
     if not emp:
         return JsonResponse({'ok': False, 'error': 'Employee not found for this code.'}, status=404)
 
+    project, err = _resolve_technician_project_for_punch(emp, data.get('project_id'))
+    if err:
+        return JsonResponse({'ok': False, 'error': err}, status=400)
+
     when = _parse_client_datetime(data.get('client_time'))
     ok, result = _perform_attendance_punch(
         employee=emp,
@@ -749,6 +798,7 @@ def attendance_public_punch(request):
         lat=data.get('latitude'),
         lng=data.get('longitude'),
         source='public_link',
+        project=project if action == 'check_in' else None,
     )
     if not ok:
         return JsonResponse({'ok': False, 'error': result}, status=400)
@@ -767,6 +817,9 @@ def attendance_self_punch(request):
         return JsonResponse({'ok': False, 'error': 'Invalid JSON.'}, status=400)
     action = (data.get('action') or '').strip()
     when = _parse_client_datetime(data.get('client_time'))
+    project, err = _resolve_technician_project_for_punch(emp, data.get('project_id'))
+    if err:
+        return JsonResponse({'ok': False, 'error': err}, status=400)
     ok, result = _perform_attendance_punch(
         employee=emp,
         action=action,
@@ -774,6 +827,7 @@ def attendance_self_punch(request):
         lat=data.get('latitude'),
         lng=data.get('longitude'),
         source='self_service',
+        project=project if action == 'check_in' else None,
     )
     if not ok:
         return JsonResponse({'ok': False, 'error': result}, status=400)
