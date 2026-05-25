@@ -61,6 +61,61 @@
 .lead-stage-bar__fill--won { background: #198754; }
 .lead-stage-bar__fill--unassigned { background: #adb5bd; }
 
+.lead-status-badge,
+.lead-stage-badge {
+    font-weight: 500;
+    border: 0;
+}
+.lead-stage-badge {
+    background-color: #dbeafe;
+    color: #1e40af;
+}
+.lead-status-badge {
+    background-color: #e9ecef;
+    color: #495057;
+}
+.lead-status-badge--active {
+    background-color: #dcfce7;
+    color: #166534;
+}
+.lead-status-badge--prospect {
+    background-color: #fef3c7;
+    color: #b45309;
+}
+.lead-status-badge--inactive {
+    background-color: #fee2e2;
+    color: #991b1b;
+}
+.lead-stage-badge--hot {
+    background-color: #ffedd5;
+    color: #c2410c;
+}
+.lead-stage-badge--warm {
+    background-color: #fef9c3;
+    color: #a16207;
+}
+.lead-stage-badge--cold {
+    background-color: #cff4fc;
+    color: #055160;
+}
+.lead-stage-badge--lost {
+    background-color: #f8d7da;
+    color: #842029;
+}
+.lead-stage-badge--won {
+    background-color: #d1e7dd;
+    color: #0f5132;
+}
+.lead-stage-badge--unassigned {
+    background-color: #e9ecef;
+    color: #495057;
+}
+.lead-stage-badge--negotiation,
+.lead-stage-badge--negotiating {
+    background-color: #cfe2ff;
+    color: #084298;
+}
+
 @media print {
     .lead-report-kpi { break-inside: avoid; }
     .lead-stage-grid { grid-template-columns: repeat(4, 1fr); }
@@ -261,10 +316,12 @@
                     <td>{{ row.salesperson_name }}</td>
                     <td class="text-nowrap">{{ row.created_at|date:"d/m/Y" }}</td>
                     <td>
-                        <span class="badge bg-light text-dark border fw-normal">{{ row.status }}</span>
+                        <span class="badge lead-status-badge lead-status-badge--{{ row.status_code|default:'active' }} fw-normal">
+                            {{ row.status }}
+                        </span>
                     </td>
                     <td>
-                        <span class="badge bg-light text-dark border fw-normal lead-stage-badge--{{ row.stage_slug }}">
+                        <span class="badge lead-stage-badge lead-stage-badge--{{ row.stage_slug }} fw-normal">
                             {{ row.stage_name }}
                         </span>
                     </td>

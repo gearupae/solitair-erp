@@ -38,22 +38,24 @@ from apps.core.mixins import PermissionRequiredMixin, CreatePermissionMixin, Upd
 from apps.core.utils import PermissionChecker
 
 
-def _active_inventory_items_json():
+def _active_inventory_items_data():
     """Active inventory items for PR/PO line dropdowns (embedded in forms)."""
     from apps.inventory.models import Item
 
     rows = Item.objects.filter(is_active=True, status='active').order_by('name')
-    return json.dumps(
-        [
-            {
-                'id': r.pk,
-                'label': str(r),
-                'unit': (r.unit or 'pcs').strip(),
-                'purchase_price': str(r.purchase_price),
-            }
-            for r in rows
-        ]
-    )
+    return [
+        {
+            'id': r.pk,
+            'label': str(r),
+            'unit': (r.unit or 'pcs').strip(),
+            'purchase_price': str(r.purchase_price),
+        }
+        for r in rows
+    ]
+
+
+def _active_inventory_items_json():
+    return json.dumps(_active_inventory_items_data())
 
 
 def _pr_inventory_items_json():
@@ -230,7 +232,8 @@ class PurchaseRequestCreateView(CreatePermissionMixin, CreateView):
                 context['items_formset'] = PurchaseRequestItemFormSet()
         else:
             context['items_formset'] = kwargs['items_formset']
-        context['pr_inventory_items_json'] = _pr_inventory_items_json()
+        context['pr_inventory_items_data'] = _active_inventory_items_data()
+        context['pr_inventory_items_json'] = json.dumps(context['pr_inventory_items_data'])
         return context
     
     def post(self, request, *args, **kwargs):
@@ -284,7 +287,8 @@ class PurchaseRequestUpdateView(UpdatePermissionMixin, UpdateView):
                 context['items_formset'] = PurchaseRequestItemFormSet(instance=self.object)
         else:
             context['items_formset'] = kwargs['items_formset']
-        context['pr_inventory_items_json'] = _pr_inventory_items_json()
+        context['pr_inventory_items_data'] = _active_inventory_items_data()
+        context['pr_inventory_items_json'] = json.dumps(context['pr_inventory_items_data'])
         return context
     
     def post(self, request, *args, **kwargs):
@@ -703,7 +707,8 @@ class PurchaseOrderCreateView(CreatePermissionMixin, CreateView):
                 context['items_formset'] = PurchaseOrderItemFormSet()
         else:
             context['items_formset'] = kwargs['items_formset']
-        context['po_inventory_items_json'] = _active_inventory_items_json()
+        context['po_inventory_items_data'] = _active_inventory_items_data()
+        context['po_inventory_items_json'] = json.dumps(context['po_inventory_items_data'])
         return context
     
     def post(self, request, *args, **kwargs):
@@ -759,7 +764,8 @@ class PurchaseOrderUpdateView(UpdatePermissionMixin, UpdateView):
                 context['items_formset'] = PurchaseOrderItemFormSet(instance=self.object)
         else:
             context['items_formset'] = kwargs['items_formset']
-        context['po_inventory_items_json'] = _active_inventory_items_json()
+        context['po_inventory_items_data'] = _active_inventory_items_data()
+        context['po_inventory_items_json'] = json.dumps(context['po_inventory_items_data'])
         return context
     
     def post(self, request, *args, **kwargs):

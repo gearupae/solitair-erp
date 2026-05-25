@@ -1,5 +1,28 @@
 {% extends 'base.html' %}
 
+{% block extra_css %}
+<style>
+#itemsBody td:first-child .select2-container {
+    width: 100% !important;
+}
+#itemsBody td:first-child .select2-selection--single {
+    min-height: 31px;
+    font-size: 0.875rem;
+}
+#itemsBody td:first-child .select2-selection__rendered {
+    padding-left: 0.35rem;
+    line-height: 1.5;
+}
+.pr-inventory-select2-dropdown {
+    min-width: 18rem !important;
+    z-index: 1060;
+}
+.pr-inventory-select2-dropdown .select2-search__field {
+    width: 100% !important;
+}
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="page-header d-flex justify-content-between align-items-center">
     <div>
@@ -164,12 +187,71 @@
     <button type="submit" class="btn btn-primary"><i class="fas fa-save me-2"></i>Save</button>
     <a href="{% url 'purchase:pr_list' %}" class="btn btn-light">Cancel</a>
 </form>
+{% endblock %}
 
 {% block extra_js %}
+{{ pr_inventory_items_data|json_script:"pr-inventory-items-data" }}
 <script>
-const PR_INVENTORY_ITEMS = {{ pr_inventory_items_json|safe }};
+const PR_INVENTORY_ITEMS = JSON.parse(document.getElementById('pr-inventory-items-data').textContent);
 const PR_UNIT_KEYS = new Set(['pcs', 'box', 'kg', 'ltr', 'set', 'other']);
 let formCount = {{ items_formset.total_form_count }};
+
+function escapeHtml(text) {
+    return String(text || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/"/g, '&quot;');
+}
+
+function getPrInventoryOptions(selectedId) {
+    const selected = selectedId != null && selectedId !== '' ? String(selectedId) : '';
+    let html = '<option value=""></option>';
+    if (!Array.isArray(PR_INVENTORY_ITEMS) || !PR_INVENTORY_ITEMS.length) {
+        return html;
+    }
+    PR_INVENTORY_ITEMS.forEach(row => {
+        const sel = selected && selected === String(row.id) ? ' selected' : '';
+        html += `<option value="${row.id}"${sel}>${escapeHtml(row.label || '')}</option>`;
+    });
+    return html;
+}
+
+function destroyPrInventorySelect2(selectEl) {
+    if (!selectEl || typeof $ === 'undefined' || !$.fn.select2) return;
+    const $el = $(selectEl);
+    if ($el.data('select2')) {
+        $el.select2('destroy');
+    }
+}
+
+function initPrInventorySelect2(selectEl) {
+    if (!selectEl || typeof $ === 'undefined' || !$.fn.select2) return;
+    if (!Array.isArray(PR_INVENTORY_ITEMS) || !PR_INVENTORY_ITEMS.length) return;
+    const $el = $(selectEl);
+    const current = selectEl.value || '';
+    destroyPrInventorySelect2(selectEl);
+    selectEl.innerHTML = getPrInventoryOptions(current);
+    $el.select2({
+        theme: 'bootstrap-5',
+        width: '100%',
+        placeholder: 'Search by code or name…',
+        allowClear: true,
+        dropdownParent: $(document.body),
+        minimumResultsForSearch: 0,
+        dropdownAutoWidth: true,
+        dropdownCssClass: 'pr-inventory-select2-dropdown',
+        language: {
+            noResults: function() { return 'No matching items — try item code or name'; },
+        },
+    });
+    if (current) {
+        $el.val(current).trigger('change.select2');
+    }
+}
+
+function initAllPrInventorySelect2() {
+    document.querySelectorAll('#itemsBody .item-inventory-select').forEach(initPrInventorySelect2);
+}
 
 function updateRowTotal(row) {
     const qty = parseFloat(row.querySelector('.item-qty')?.value || 0) || 0;
@@ -201,12 +283,11 @@ function applyInventoryDefaults(selectEl, row) {
     updateRowTotal(row);
 }
 
-function buildInventorySelect(name) {
+function buildInventorySelect(name, selectedId) {
     const sel = document.createElement('select');
     sel.name = name;
     sel.className = 'form-select item-inventory-select';
-    sel.add(new Option('— Select inventory item —', '', true, false));
-    PR_INVENTORY_ITEMS.forEach(row => sel.add(new Option(row.label, String(row.id))));
+    sel.innerHTML = getPrInventoryOptions(selectedId);
     sel.addEventListener('change', () => applyInventoryDefaults(sel, sel.closest('tr')));
     return sel;
 }
@@ -226,22 +307,19 @@ function addItemRow() {
     `;
     tbody.appendChild(newRow);
     const tdInv = newRow.querySelector('.td-inv');
-    tdInv.appendChild(buildInventorySelect(`items-${idx}-inventory_item`));
+    const invSel = buildInventorySelect(`items-${idx}-inventory_item`);
+    tdInv.appendChild(invSel);
+    initPrInventorySelect2(invSel);
     formCount++;
     document.getElementById('id_items-TOTAL_FORMS').value = formCount;
     newRow.querySelectorAll('.item-qty, .item-cost').forEach(el => el.addEventListener('input', () => updateRowTotal(newRow)));
     updateRowTotal(newRow);
 }
 
-document.querySelectorAll('.item-row').forEach(row => {
-    row.querySelectorAll('.item-qty, .item-cost').forEach(el => el.addEventListener('input', () => updateRowTotal(row)));
-    const invSel = row.querySelector('.item-inventory-select');
-    if (invSel) invSel.addEventListener('change', () => applyInventoryDefaults(invSel, row));
-    updateRowTotal(row);
-});
-
 function removeItemRow(btn) {
     const row = btn.closest('tr');
+    const invSel = row.querySelector('.item-inventory-select');
+    if (invSel) destroyPrInventorySelect2(invSel);
     const deleteCheck = row.querySelector('.delete-check');
     if (deleteCheck) {
         deleteCheck.checked = true;
@@ -250,6 +328,21 @@ function removeItemRow(btn) {
         row.remove();
     }
 }
+
+$(function() {
+    initAllPrInventorySelect2();
+    const itemsBody = document.getElementById('itemsBody');
+    itemsBody.addEventListener('change', function(e) {
+        if (e.target.classList.contains('item-inventory-select')) {
+            applyInventoryDefaults(e.target, e.target.closest('tr'));
+        }
+    });
+    itemsBody.addEventListener('input', function(e) {
+        if (e.target.matches('.item-qty, .item-cost')) {
+            updateRowTotal(e.target.closest('tr'));
+        }
+    });
+    document.querySelectorAll('.item-row').forEach(row => updateRowTotal(row));
+});
 </script>
-{% endblock %}
 {% endblock %}

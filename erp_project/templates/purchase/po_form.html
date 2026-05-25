@@ -1,5 +1,28 @@
 {% extends 'base.html' %}
 
+{% block extra_css %}
+<style>
+#itemsBody td:first-child .select2-container {
+    width: 100% !important;
+}
+#itemsBody td:first-child .select2-selection--single {
+    min-height: 31px;
+    font-size: 0.875rem;
+}
+#itemsBody td:first-child .select2-selection__rendered {
+    padding-left: 0.35rem;
+    line-height: 1.5;
+}
+.po-inventory-select2-dropdown {
+    min-width: 18rem !important;
+    z-index: 1060;
+}
+.po-inventory-select2-dropdown .select2-search__field {
+    width: 100% !important;
+}
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="page-header">
     <nav aria-label="breadcrumb">
@@ -188,8 +211,10 @@
     <button type="submit" class="btn btn-primary"><i class="fas fa-save me-2"></i>Save</button>
     <a href="{% url 'purchase:po_list' %}" class="btn btn-light">Cancel</a>
 </form>
+{% endblock %}
 
 {% block extra_js %}
+{{ po_inventory_items_data|json_script:"po-inventory-items-data" }}
 <script>
 // Tax Code data for JavaScript
 const taxCodes = [
@@ -198,7 +223,7 @@ const taxCodes = [
     {% endfor %}
 ];
 const defaultTaxCodeId = {% if default_tax_code %}{{ default_tax_code.id }}{% else %}null{% endif %};
-const PO_INVENTORY_ITEMS = {{ po_inventory_items_json|safe }};
+const PO_INVENTORY_ITEMS = JSON.parse(document.getElementById('po-inventory-items-data').textContent);
 
 let formCount = {{ items_formset.total_form_count }};
 
@@ -224,16 +249,75 @@ function hydrateTaxCodeDataRates() {
     });
 }
 
+function escapeHtml(text) {
+    return String(text || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/"/g, '&quot;');
+}
+
+function getPoInventoryOptions(selectedId) {
+    const selected = selectedId != null && selectedId !== '' ? String(selectedId) : '';
+    let html = '<option value=""></option>';
+    if (!Array.isArray(PO_INVENTORY_ITEMS) || !PO_INVENTORY_ITEMS.length) {
+        return html;
+    }
+    PO_INVENTORY_ITEMS.forEach(row => {
+        const sel = selected && selected === String(row.id) ? ' selected' : '';
+        html += `<option value="${row.id}"${sel}>${escapeHtml(row.label || '')}</option>`;
+    });
+    return html;
+}
+
+function destroyPoInventorySelect2(selectEl) {
+    if (!selectEl || typeof $ === 'undefined' || !$.fn.select2) return;
+    const $el = $(selectEl);
+    if ($el.data('select2')) {
+        $el.select2('destroy');
+    }
+}
+
+function initPoInventorySelect2(selectEl) {
+    if (!selectEl || typeof $ === 'undefined' || !$.fn.select2) return;
+    if (!Array.isArray(PO_INVENTORY_ITEMS) || !PO_INVENTORY_ITEMS.length) return;
+    const $el = $(selectEl);
+    const current = selectEl.value || '';
+    destroyPoInventorySelect2(selectEl);
+    selectEl.innerHTML = getPoInventoryOptions(current);
+    $el.select2({
+        theme: 'bootstrap-5',
+        width: '100%',
+        placeholder: 'Search by code or name…',
+        allowClear: true,
+        dropdownParent: $(document.body),
+        minimumResultsForSearch: 0,
+        dropdownAutoWidth: true,
+        dropdownCssClass: 'po-inventory-select2-dropdown',
+        language: {
+            noResults: function() { return 'No matching items — try item code or name'; },
+        },
+    });
+    if (current) {
+        $el.val(current).trigger('change.select2');
+    }
+}
+
+function initAllPoInventorySelect2() {
+    document.querySelectorAll('#itemsBody .item-inventory-select').forEach(initPoInventorySelect2);
+}
+
+function clearItemsBody() {
+    document.querySelectorAll('#itemsBody .item-inventory-select').forEach(destroyPoInventorySelect2);
+    document.getElementById('itemsBody').innerHTML = '';
+    formCount = 0;
+    document.getElementById('id_items-TOTAL_FORMS').value = 0;
+}
+
 function buildInventorySelect(name, selectedId) {
     const sel = document.createElement('select');
     sel.name = name;
     sel.className = 'form-select form-select-sm item-inventory-select';
-    sel.add(new Option('— Select inventory item —', '', !selectedId, !selectedId));
-    PO_INVENTORY_ITEMS.forEach(row => {
-        const opt = new Option(row.label, String(row.id));
-        if (selectedId && parseInt(String(selectedId), 10) === row.id) opt.selected = true;
-        sel.add(opt);
-    });
+    sel.innerHTML = getPoInventoryOptions(selectedId);
     sel.addEventListener('change', () => applyInventoryDefaults(sel, sel.closest('tr')));
     return sel;
 }
@@ -279,6 +363,7 @@ function addItemRow(inventoryItemId = null, quantity = '0', unitPrice = '0', tax
     tdInv.appendChild(hiddenVat);
     const invSel = buildInventorySelect(`items-${idx}-inventory_item`, hasInv ? inventoryItemId : null);
     tdInv.appendChild(invSel);
+    initPoInventorySelect2(invSel);
     formCount++;
     document.getElementById('id_items-TOTAL_FORMS').value = formCount;
     hydrateTaxCodeDataRates();
@@ -289,6 +374,8 @@ function addItemRow(inventoryItemId = null, quantity = '0', unitPrice = '0', tax
 
 function removeItemRow(btn) {
     const row = btn.closest('tr');
+    const invSel = row.querySelector('.item-inventory-select');
+    if (invSel) destroyPoInventorySelect2(invSel);
     const deleteCheck = row.querySelector('.delete-check');
     if (deleteCheck) { deleteCheck.checked = true; row.style.display = 'none'; }
     else { row.remove(); }
@@ -342,10 +429,7 @@ function calculateTotals() {
 
 function loadPRItems(prId) {
     if (!prId) {
-        const tbody = document.getElementById('itemsBody');
-        tbody.innerHTML = '';
-        formCount = 0;
-        document.getElementById('id_items-TOTAL_FORMS').value = 0;
+        clearItemsBody();
         calculateTotals();
         return;
     }
@@ -354,9 +438,7 @@ function loadPRItems(prId) {
     fetch(url)
         .then(response => response.json())
         .then(data => {
-            const tbody = document.getElementById('itemsBody');
-            tbody.innerHTML = '';
-            formCount = 0;
+            clearItemsBody();
             
             if (data.items && data.items.length > 0) {
                 data.items.forEach(item => {
@@ -384,10 +466,7 @@ function loadPRItems(prId) {
 
 function loadSRItems(srId) {
     if (!srId) {
-        const tbody = document.getElementById('itemsBody');
-        tbody.innerHTML = '';
-        formCount = 0;
-        document.getElementById('id_items-TOTAL_FORMS').value = 0;
+        clearItemsBody();
         calculateTotals();
         return;
     }
@@ -396,9 +475,7 @@ function loadSRItems(srId) {
     fetch(url)
         .then(response => response.json())
         .then(data => {
-            const tbody = document.getElementById('itemsBody');
-            tbody.innerHTML = '';
-            formCount = 0;
+            clearItemsBody();
             
             if (data.items && data.items.length > 0) {
                 data.items.forEach(item => {
@@ -424,8 +501,9 @@ function loadSRItems(srId) {
         });
 }
 
-document.addEventListener('DOMContentLoaded', function() {
+$(function() {
     hydrateTaxCodeDataRates();
+    initAllPoInventorySelect2();
     const itemsBody = document.getElementById('itemsBody');
     itemsBody.addEventListener('change', function(e) {
         const t = e.target;
@@ -499,5 +577,4 @@ document.addEventListener('DOMContentLoaded', function() {
     {% endif %}
 });
 </script>
-{% endblock %}
 {% endblock %}
