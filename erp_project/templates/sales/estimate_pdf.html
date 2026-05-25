@@ -234,6 +234,14 @@
             color: #333;
         }
 
+        .group-total-row td {
+            background: #f0f0f0 !important;
+            font-weight: 700;
+            font-size: 10px;
+            color: #262626;
+            border-top: 1px solid #ccc;
+        }
+
         .item-number { color: #737373; font-size: 9px; }
         .item-description { font-weight: 500; }
 
@@ -437,6 +445,9 @@
 <body>
     <div class="print-actions no-print">
         <button type="button" class="print-btn" onclick="window.print()">{{ print_button_label|default:"Print quotation" }}</button>
+        {% if proforma_single_line and proforma_can_edit %}
+        <a href="{{ proforma_edit_url }}" class="print-btn print-btn-secondary">Edit proforma</a>
+        {% endif %}
         <a href="{% url 'sales:estimate_detail' estimate.pk %}" class="print-btn print-btn-secondary">Back to estimate</a>
     </div>
 
@@ -445,7 +456,7 @@
         <div class="title-strip">
             <div class="title-strip-main">
                 <div class="estimate-title-text">{{ document_heading|default:"QUOTATION" }}</div>
-                <div class="estimate-number">{{ document_number|default:estimate.estimate_number }}</div>
+                <div class="estimate-number">{{ document_number|default:estimate.display_estimate_number }}</div>
                 {% if show_pdf_status|default:True %}
                 <div class="status-badge status-{{ estimate.status }}">{{ estimate.get_status_display }}</div>
                 {% endif %}
@@ -568,26 +579,50 @@
                 </tr>
             </thead>
             <tbody>
-                {% for item in estimate.items.all %}
-                {% ifchanged item.group_name %}
-                {% if item.group_name %}
+                {% if proforma_single_line and proforma_invoice %}
+                <tr>
+                    <td class="item-number">1</td>
+                    <td class="item-description">
+                        <strong>{{ proforma_invoice.name }}</strong>
+                        {% if proforma_invoice.description %}
+                        <div style="margin-top:4px;color:#525252;font-weight:normal;">{{ proforma_invoice.description|linebreaksbr }}</div>
+                        {% endif %}
+                        {% if proforma_invoice.charge_type == 'percent' %}
+                        <div style="margin-top:4px;color:#737373;font-size:9px;">{{ proforma_invoice.charge_value|floatformat:2 }}% of quotation subtotal (AED {{ estimate.subtotal|floatformat:2 }})</div>
+                        {% endif %}
+                    </td>
+                    <td class="text-center">1.00</td>
+                    <td class="text-right">{{ proforma_invoice.line_subtotal|floatformat:2 }}</td>
+                    <td class="text-right">{{ proforma_invoice.total_amount|floatformat:2 }}</td>
+                </tr>
+                {% else %}
+                {% for group in pdf_item_groups %}
+                {% if group.name and not estimate.show_group_totals_on_pdf %}
                 <tr class="group-row">
-                    <td colspan="5">{{ item.group_name }}</td>
+                    <td colspan="5">{{ group.name }}</td>
                 </tr>
                 {% endif %}
-                {% endifchanged %}
+                {% for row in group.items %}
                 <tr>
-                    <td class="item-number">{{ forloop.counter }}</td>
-                    <td class="item-description">{{ item.description }}{% if item.inventory_item %} <span style="color:#737373;">({{ item.inventory_item.item_code }})</span>{% endif %}</td>
-                    <td class="text-center">{{ item.quantity|floatformat:2 }}</td>
-                    <td class="text-right">{{ item.rate|floatformat:2 }}</td>
-                    <td class="text-right">{{ item.total|add:item.vat_amount|floatformat:2 }}</td>
+                    <td class="item-number">{{ row.index }}</td>
+                    <td class="item-description">{{ row.item.description }}{% if row.item.inventory_item %} <span style="color:#737373;">({{ row.item.inventory_item.item_code }})</span>{% endif %}</td>
+                    <td class="text-center">{{ row.item.quantity|floatformat:2 }}</td>
+                    <td class="text-right">{{ row.item.rate|floatformat:2 }}</td>
+                    <td class="text-right">{{ row.item.total|add:row.item.vat_amount|floatformat:2 }}</td>
                 </tr>
+                {% endfor %}
+                {% if group.name and estimate.show_group_totals_on_pdf %}
+                <tr class="group-total-row">
+                    <td colspan="4" class="text-right">{{ group.name }} total</td>
+                    <td class="text-right">AED {{ group.line_total|floatformat:2 }}</td>
+                </tr>
+                {% endif %}
                 {% empty %}
                 <tr>
                     <td colspan="5" style="text-align:center;padding:20px;color:#737373;">No items</td>
                 </tr>
                 {% endfor %}
+                {% endif %}
             </tbody>
         </table>
         {% else %}
@@ -600,30 +635,64 @@
                 </tr>
             </thead>
             <tbody>
-                {% for item in estimate.items.all %}
-                {% ifchanged item.group_name %}
-                {% if item.group_name %}
+                {% if proforma_single_line and proforma_invoice %}
+                <tr>
+                    <td class="item-number">1</td>
+                    <td class="item-description">
+                        <strong>{{ proforma_invoice.name }}</strong>
+                        {% if proforma_invoice.description %}
+                        <div style="margin-top:4px;color:#525252;">{{ proforma_invoice.description|linebreaksbr }}</div>
+                        {% endif %}
+                    </td>
+                    <td class="text-center">1.00</td>
+                </tr>
+                {% else %}
+                {% for group in pdf_item_groups %}
+                {% if group.name and not estimate.show_group_totals_on_pdf %}
                 <tr class="group-row">
-                    <td colspan="3">{{ item.group_name }}</td>
+                    <td colspan="3">{{ group.name }}</td>
                 </tr>
                 {% endif %}
-                {% endifchanged %}
+                {% for row in group.items %}
                 <tr>
-                    <td class="item-number">{{ forloop.counter }}</td>
-                    <td class="item-description">{{ item.description }}{% if item.inventory_item %} <span style="color:#737373;">({{ item.inventory_item.item_code }})</span>{% endif %}</td>
-                    <td class="text-center">{{ item.quantity|floatformat:2 }}</td>
+                    <td class="item-number">{{ row.index }}</td>
+                    <td class="item-description">{{ row.item.description }}{% if row.item.inventory_item %} <span style="color:#737373;">({{ row.item.inventory_item.item_code }})</span>{% endif %}</td>
+                    <td class="text-center">{{ row.item.quantity|floatformat:2 }}</td>
                 </tr>
+                {% endfor %}
+                {% if group.name and estimate.show_group_totals_on_pdf %}
+                <tr class="group-total-row">
+                    <td colspan="3" class="text-right">{{ group.name }} total: AED {{ group.line_total|floatformat:2 }}</td>
+                </tr>
+                {% endif %}
                 {% empty %}
                 <tr>
                     <td colspan="3" style="text-align:center;padding:20px;color:#737373;">No items</td>
                 </tr>
                 {% endfor %}
+                {% endif %}
             </tbody>
         </table>
         {% endif %}
 
         <div class="totals-section">
             <div class="totals-table">
+                {% if proforma_single_line and proforma_invoice %}
+                <div class="totals-row subtotal">
+                    <span class="totals-label">Subtotal (excl. VAT)</span>
+                    <span class="totals-value">AED {{ proforma_invoice.line_subtotal|floatformat:2 }}</span>
+                </div>
+                {% for rate, amounts in vat_summary.items %}
+                <div class="totals-row vat-row">
+                    <span class="totals-label">VAT{% if rate %} @ {{ rate|floatformat:0 }}%{% endif %}</span>
+                    <span class="totals-value">AED {{ amounts.vat|floatformat:2 }}</span>
+                </div>
+                {% endfor %}
+                <div class="totals-row total">
+                    <span class="totals-label">Grand total</span>
+                    <span class="totals-value">AED {{ proforma_invoice.total_amount|floatformat:2 }}</span>
+                </div>
+                {% else %}
                 {% if estimate.show_rates_on_pdf %}
                 <div class="totals-row subtotal">
                     <span class="totals-label">Subtotal (excl. VAT)</span>
@@ -650,6 +719,7 @@
                     <span class="totals-label">Grand total</span>
                     <span class="totals-value">AED {{ estimate.total_amount|floatformat:2 }}</span>
                 </div>
+                {% endif %}
             </div>
         </div>
 
@@ -737,7 +807,7 @@
                     {% if company.tax_id %}<br>VAT / TRN: {{ company.tax_id }}{% endif %}
                 </div>
                 <div class="doc-footer-page">
-                    Ref: {{ document_number|default:estimate.estimate_number }}
+                    Ref: {{ document_number|default:estimate.display_estimate_number }}
                     <br>
                     <span style="color:#a3a3a3;">Page</span> 1
                 </div>

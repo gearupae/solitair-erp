@@ -3,6 +3,11 @@
 {% block title %}Mark attendance{% endblock %}
 {% block extra_head %}
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"/>
+<style>
+.project-lookup-wrap { min-height: 5.5rem; }
+.project-lookup-field { transition: opacity 0.15s ease; }
+.project-lookup-field.is-fetching { opacity: 0.72; }
+</style>
 {% endblock %}
 {% block heading %}Mark attendance{% endblock %}
 {% block content %}
@@ -19,12 +24,15 @@
                     <input type="text" class="form-control form-control-lg" id="emp-code"
                            placeholder="EMP-2026-0002" autocomplete="username"/>
                 </div>
-                <div class="mb-3 d-none" id="project-wrap">
-                    <label class="form-label" for="project-select">Project (optional)</label>
-                    <select class="form-select" id="project-select">
-                        <option value="">— Not on a project site —</option>
+                <div class="mb-3 project-lookup-wrap" id="project-wrap">
+                    <label class="form-label mb-1" for="project-select">
+                        Project
+                        <span class="text-muted fw-normal small" id="project-label-hint"></span>
+                    </label>
+                    <select class="form-select form-select-lg project-lookup-field d-none" id="project-select" disabled>
+                        <option value="">— Select project —</option>
                     </select>
-                    <p class="form-text small mb-0">Shown only if you are assigned as a technician on at least one project.</p>
+                    <p class="form-text small mb-0" id="project-help">Enter your full employee code above (e.g. EMP-2026-0002) — projects load when the code is complete.</p>
                 </div>
                 <div class="d-grid gap-2 mb-3">
                     <button type="button" class="btn btn-success btn-lg" id="btn-check-in">
@@ -50,7 +58,6 @@
   const punchUrl = "{% url 'hr:attendance_public_punch' %}";
   const projectsUrl = "{% url 'hr:attendance_technician_projects' %}";
   const codeInput = document.getElementById('emp-code');
-  const projectWrap = document.getElementById('project-wrap');
   const projectSelect = document.getElementById('project-select');
   const btnIn = document.getElementById('btn-check-in');
   const btnOut = document.getElementById('btn-check-out');
@@ -68,38 +75,151 @@
   }
 
   function updateButtonsAfterPunch(data) {
-    if (data.check_in && !data.check_out) {
-      btnIn.disabled = true;
-      btnOut.disabled = false;
-    } else {
-      btnIn.disabled = true;
-      btnOut.disabled = true;
+    const open = data.open_session !== undefined
+      ? data.open_session
+      : !!(data.check_in && !data.check_out);
+    btnIn.disabled = open;
+    btnOut.disabled = !open;
+  }
+
+  let technicianProjectCount = 0;
+  let projectLoadTimer = null;
+  let projectLoadSeq = 0;
+  let lastLoadedCode = '';
+  let projectUiState = 'idle';
+
+  const projectHelp = document.getElementById('project-help');
+  const projectLabelHint = document.getElementById('project-label-hint');
+
+  function normalizeCode(value) {
+    return (value || '').trim().toUpperCase();
+  }
+
+  function isCompleteEmployeeCode(code) {
+    return /^EMP-\d{4}-\d{4}$/.test(code);
+  }
+
+  function setProjectUiState(state) {
+    projectUiState = state;
+    projectSelect.classList.toggle('d-none', state !== 'ready');
+    projectSelect.disabled = state !== 'ready';
+    projectSelect.classList.remove('is-fetching');
+
+    if (state === 'idle') {
+      projectLabelHint.textContent = '';
+      projectHelp.textContent = 'Enter your full employee code above (e.g. EMP-2026-0002) — projects load when the code is complete.';
+    } else if (state === 'ready') {
+      projectHelp.textContent = technicianProjectCount > 1
+        ? 'Required — choose the job site you are working on today.'
+        : 'Your project was selected automatically. Change it if needed.';
+    } else if (state === 'none') {
+      projectLabelHint.textContent = '';
+      projectHelp.textContent = 'No active project assignments — you can clock in without selecting a project.';
     }
   }
 
-  function loadTechnicianProjects() {
-    const code = (codeInput.value || '').trim();
-    if (!code) {
-      projectWrap.classList.add('d-none');
-      return;
+  function populateProjects(projects) {
+    projectSelect.innerHTML = '<option value="">— Select project —</option>';
+    technicianProjectCount = projects.length;
+    projects.forEach((p) => {
+      const o = document.createElement('option');
+      o.value = p.id;
+      o.textContent = p.project_code + ' — ' + p.name;
+      projectSelect.appendChild(o);
+    });
+    if (technicianProjectCount === 1) {
+      projectSelect.selectedIndex = 1;
     }
-    fetch(projectsUrl + '?code=' + encodeURIComponent(code), { credentials: 'same-origin' })
-      .then((r) => r.json())
-      .then((data) => {
-        projectSelect.innerHTML = '<option value="">— Not on a project site —</option>';
-        if (data.ok && data.projects && data.projects.length) {
-          data.projects.forEach((p) => {
-            const o = document.createElement('option');
-            o.value = p.id;
-            o.textContent = p.project_code + ' — ' + p.name;
-            projectSelect.appendChild(o);
-          });
-          projectWrap.classList.remove('d-none');
+    projectLabelHint.textContent = technicianProjectCount > 1 ? '(required)' : '(optional)';
+    setProjectUiState('ready');
+  }
+
+  function loadTechnicianProjects(options) {
+    const force = !!(options && options.force);
+    const code = normalizeCode(codeInput.value);
+
+    if (!code) {
+      lastLoadedCode = '';
+      technicianProjectCount = 0;
+      projectSelect.innerHTML = '<option value="">— Select project —</option>';
+      setProjectUiState('idle');
+      return Promise.resolve();
+    }
+
+    if (!force && !isCompleteEmployeeCode(code)) {
+      if (projectUiState !== 'ready' && projectUiState !== 'none') {
+        setProjectUiState('idle');
+        projectHelp.textContent = 'Keep typing your full employee code (e.g. EMP-2026-0002)…';
+      }
+      return Promise.resolve();
+    }
+
+    if (!force && code === lastLoadedCode) {
+      return Promise.resolve();
+    }
+
+    const seq = ++projectLoadSeq;
+    if (projectUiState === 'ready') {
+      projectSelect.classList.add('is-fetching');
+    }
+
+    return fetch(projectsUrl + '?code=' + encodeURIComponent(code), { credentials: 'same-origin' })
+      .then((r) => r.json().then((data) => ({ status: r.status, data })))
+      .then(({ status, data }) => {
+        if (seq !== projectLoadSeq) return;
+
+        projectSelect.classList.remove('is-fetching');
+        projectSelect.innerHTML = '<option value="">— Select project —</option>';
+        technicianProjectCount = 0;
+
+        if (!data.ok) {
+          lastLoadedCode = '';
+          projectLabelHint.textContent = '';
+          setProjectUiState('idle');
+          projectHelp.textContent = status === 404
+            ? 'Employee code not found — check the code and try again.'
+            : (data.error || 'Could not load projects.');
+          return;
+        }
+
+        lastLoadedCode = code;
+        if (data.projects && data.projects.length) {
+          populateProjects(data.projects);
         } else {
-          projectWrap.classList.add('d-none');
+          setProjectUiState('none');
         }
       })
-      .catch(() => projectWrap.classList.add('d-none'));
+      .catch(() => {
+        if (seq !== projectLoadSeq) return;
+        lastLoadedCode = '';
+        projectSelect.classList.remove('is-fetching');
+        technicianProjectCount = 0;
+        projectLabelHint.textContent = '';
+        setProjectUiState('idle');
+        projectHelp.textContent = 'Network error while loading projects. Try again.';
+      });
+  }
+
+  function scheduleProjectLoad() {
+    clearTimeout(projectLoadTimer);
+    const code = normalizeCode(codeInput.value);
+    if (!code) {
+      loadTechnicianProjects();
+      return;
+    }
+    if (!isCompleteEmployeeCode(code)) {
+      if (lastLoadedCode && code !== lastLoadedCode) {
+        lastLoadedCode = '';
+        technicianProjectCount = 0;
+        projectSelect.innerHTML = '<option value="">— Select project —</option>';
+        setProjectUiState('idle');
+        projectHelp.textContent = 'Keep typing your full employee code (e.g. EMP-2026-0002)…';
+      }
+      return;
+    }
+    projectLoadTimer = setTimeout(function () {
+      loadTechnicianProjects();
+    }, 500);
   }
 
   function geoThenPunch(action) {
@@ -108,7 +228,14 @@
       showFeedback('Please enter your employee code.', false);
       return;
     }
-    const finish = (lat, lng) => {
+
+    clearTimeout(projectLoadTimer);
+    const runPunch = () => {
+      if (action === 'check_in' && technicianProjectCount > 1 && projectSelect && !projectSelect.value) {
+        showFeedback('Please choose the project you are working on before clocking in.', false);
+        return;
+      }
+      const finish = (lat, lng) => {
       const body = {
         employee_code: code,
         action: action,
@@ -157,12 +284,31 @@
       () => finish(null, null),
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
     );
+    };
+
+    loadTechnicianProjects({ force: true }).then(runPunch);
   }
 
-  codeInput.addEventListener('blur', loadTechnicianProjects);
-  codeInput.addEventListener('change', loadTechnicianProjects);
+  codeInput.addEventListener('input', scheduleProjectLoad);
+  codeInput.addEventListener('paste', function () { setTimeout(scheduleProjectLoad, 0); });
+  codeInput.addEventListener('blur', function () {
+    clearTimeout(projectLoadTimer);
+    loadTechnicianProjects({ force: true });
+  });
+  codeInput.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      clearTimeout(projectLoadTimer);
+      loadTechnicianProjects({ force: true });
+    }
+  });
   btnIn.addEventListener('click', () => geoThenPunch('check_in'));
   btnOut.addEventListener('click', () => geoThenPunch('check_out'));
+
+  setProjectUiState('idle');
+  if ((codeInput.value || '').trim()) {
+    loadTechnicianProjects();
+  }
 })();
 </script>
 {% endblock %}

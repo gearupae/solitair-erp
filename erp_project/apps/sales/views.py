@@ -18,16 +18,38 @@ from decimal import Decimal, InvalidOperation
 from collections import defaultdict
 import json
 
-from .models import Estimate, EstimateItem, Invoice, InvoiceItem
+from .models import Estimate, EstimateItem, EstimateProformaInvoice, Invoice, InvoiceItem
 from .forms import EstimateForm, EstimateItemFormSet, InvoiceForm, InvoiceItemFormSet
 from apps.crm.models import Customer
 from apps.core.mixins import PermissionRequiredMixin, CreatePermissionMixin, UpdatePermissionMixin
 from apps.core.notification_utils import notify_if_new_assignee
 from apps.core.utils import PermissionChecker
 from apps.settings_app.models import CompanySettings
-from apps.settings_app.document_edit_approval import apply_after_document_edit
 
 from .estimate_pdf_render import render_estimate_quotation_pdf_bytes
+from .estimate_change_detection import estimate_form_has_changes
+from .estimate_edit_flow import apply_after_estimate_save, EstimateEditApplyResult
+
+
+def _estimate_save_success_message(
+    estimate,
+    *,
+    has_changes: bool,
+    result: EstimateEditApplyResult | None,
+    rev_before: int,
+) -> str:
+    if not has_changes:
+        return 'No changes were made; the estimate was not sent for re-approval.'
+    msg = f'Estimate {estimate.display_estimate_number} updated successfully.'
+    if result and result.resubmitted_for_approval:
+        msg += ' Sent for approval again.'
+        if result.revision_bumped and estimate.revision_label:
+            msg += f' Revision {estimate.revision_label}.'
+    elif result and result.edit_pending:
+        msg += ' Changes are queued for approval (see Settings → Approval configuration).'
+        if (estimate.revision_count or 0) > rev_before and estimate.revision_label:
+            msg += f' Resubmitted as revision {estimate.revision_label}.'
+    return msg
 
 def _estimate_form_inventory_groups_context():
     """
@@ -131,6 +153,10 @@ class EstimateListView(PermissionRequiredMixin, ListView):
     paginate_by = 25
 
     def get_paginate_by(self, queryset):
+        from .approval_rules import user_is_estimate_approver_portal
+
+        if user_is_estimate_approver_portal(self.request.user):
+            return self.paginate_by
         # Match tasks (`view=kanban`); legacy `view=board` still works.
         v = (self.request.GET.get('view') or '').strip().lower()
         if v in ('kanban', 'board'):
@@ -147,10 +173,29 @@ class EstimateListView(PermissionRequiredMixin, ListView):
         return sort_key, order
     
     def get_queryset(self):
+        from .approval_rules import user_is_estimate_approver_portal
+
         queryset = Estimate.objects.filter(is_active=True).select_related(
             'customer',
             'assigned_to',
+        ).prefetch_related(
+            Prefetch(
+                'proforma_invoices',
+                queryset=EstimateProformaInvoice.objects.order_by('-created_at'),
+            ),
         )
+
+        is_portal = user_is_estimate_approver_portal(self.request.user)
+        if is_portal:
+            tab = (self.request.GET.get('tab') or 'pending').strip().lower()
+            if tab == 'approved':
+                queryset = queryset.filter(status__in=['approved', 'quotation_won'])
+            else:
+                queryset = queryset.filter(status='sent')
+        else:
+            status = self.request.GET.get('status')
+            if status:
+                queryset = queryset.filter(status=status)
 
         search = self.request.GET.get('search')
         if search:
@@ -159,13 +204,8 @@ class EstimateListView(PermissionRequiredMixin, ListView):
                 Q(customer__name__icontains=search)
             )
 
-        status = self.request.GET.get('status')
-        if status:
-            queryset = queryset.filter(status=status)
-
         v = (self.request.GET.get('view') or '').strip().lower()
-        if v in ('kanban', 'board'):
-            # Kanban: newest first regardless of table sort toggles (hidden).
+        if is_portal or v in ('kanban', 'board'):
             return queryset.order_by('-date', '-pk')
 
         sort_key, order = self._get_list_sort()
@@ -174,7 +214,17 @@ class EstimateListView(PermissionRequiredMixin, ListView):
         return queryset.order_by(f'{prefix}{field}', f'{prefix}pk')
     
     def get_context_data(self, **kwargs):
+        from .approval_rules import user_is_estimate_approver_portal
+
         context = super().get_context_data(**kwargs)
+        is_portal = user_is_estimate_approver_portal(self.request.user)
+        approver_tab = (self.request.GET.get('tab') or 'pending').strip().lower()
+        if approver_tab not in ('pending', 'approved'):
+            approver_tab = 'pending'
+        context['is_approver_portal'] = is_portal
+        context['approver_tab'] = approver_tab
+        context['approver_tab_readonly'] = is_portal and approver_tab == 'approved'
+
         sort_key, order_dir = self._get_list_sort()
         context['sort_field'] = sort_key
         context['sort_order'] = order_dir
@@ -185,19 +235,32 @@ class EstimateListView(PermissionRequiredMixin, ListView):
         context['title'] = 'Estimates'
         context['customers'] = Customer.objects.filter(is_active=True)
         context['status_choices'] = Estimate.STATUS_CHOICES
-        context['can_create'] = self.request.user.is_superuser or PermissionChecker.has_permission(
-            self.request.user, 'sales', 'create'
+        context['can_create'] = (
+            not is_portal
+            and (
+                self.request.user.is_superuser
+                or PermissionChecker.has_permission(self.request.user, 'sales', 'create')
+            )
         )
-        context['can_edit'] = self.request.user.is_superuser or PermissionChecker.has_permission(
-            self.request.user, 'sales', 'edit'
+        context['can_edit'] = (
+            not is_portal
+            and (
+                self.request.user.is_superuser
+                or PermissionChecker.has_permission(self.request.user, 'sales', 'edit')
+            )
         )
-        context['can_delete'] = self.request.user.is_superuser or PermissionChecker.has_permission(
-            self.request.user, 'sales', 'delete'
+        context['can_delete'] = (
+            not is_portal
+            and (
+                self.request.user.is_superuser
+                or PermissionChecker.has_permission(self.request.user, 'sales', 'delete')
+            )
         )
+        context['can_approve_status'] = is_portal and approver_tab == 'pending'
         context['today'] = date.today().isoformat()
 
         raw_view = (self.request.GET.get('view') or '').strip().lower()
-        context['view_mode'] = 'kanban' if raw_view in ('kanban', 'board') else 'list'
+        context['view_mode'] = 'list' if is_portal else ('kanban' if raw_view in ('kanban', 'board') else 'list')
         q = self.request.GET.copy()
         q.pop('view', None)
         list_q = q.copy()
@@ -206,15 +269,38 @@ class EstimateListView(PermissionRequiredMixin, ListView):
         context['estimate_list_url_list'] = '?' + list_q.urlencode()
         context['estimate_list_url_kanban'] = '?' + kanban_q.urlencode()
 
-        # Summary stats (full filtered queryset, not current page only)
-        estimates = self.get_queryset()
-        context['total_estimates'] = estimates.count()
-        context['total_amount'] = estimates.aggregate(Sum('total_amount'))['total_amount__sum'] or 0
-        context['approved_amount'] = estimates.filter(
-            status__in=['approved', 'quotation_won'],
-        ).aggregate(Sum('total_amount'))['total_amount__sum'] or 0
-        context['pending_count'] = estimates.filter(status__in=['draft', 'sent']).count()
+        base_qs = Estimate.objects.filter(is_active=True)
+        if is_portal:
+            context['pending_count'] = base_qs.filter(status='sent').count()
+            context['approved_tab_count'] = base_qs.filter(
+                status__in=['approved', 'quotation_won'],
+            ).count()
+            context['total_estimates'] = (
+                context['pending_count'] if approver_tab == 'pending' else context['approved_tab_count']
+            )
+            tab_qs = self.get_queryset()
+            context['total_amount'] = tab_qs.aggregate(Sum('total_amount'))['total_amount__sum'] or 0
+            context['approved_amount'] = context['total_amount'] if approver_tab == 'approved' else 0
+        else:
+            estimates = self.get_queryset()
+            context['total_estimates'] = estimates.count()
+            context['total_amount'] = estimates.aggregate(Sum('total_amount'))['total_amount__sum'] or 0
+            context['approved_amount'] = estimates.filter(
+                status__in=['approved', 'quotation_won'],
+            ).aggregate(Sum('total_amount'))['total_amount__sum'] or 0
+            context['pending_count'] = estimates.filter(status__in=['draft', 'sent']).count()
+            context['approved_tab_count'] = 0
 
+        q_tab = self.request.GET.copy()
+        q_tab.pop('tab', None)
+        pending_q = q_tab.copy()
+        pending_q['tab'] = 'pending'
+        approved_q = q_tab.copy()
+        approved_q['tab'] = 'approved'
+        context['approver_tab_url_pending'] = '?' + pending_q.urlencode()
+        context['approver_tab_url_approved'] = '?' + approved_q.urlencode()
+
+        estimates = self.get_queryset()
         if context['view_mode'] == 'kanban':
             bucket_statuses = frozenset(
                 {
@@ -243,6 +329,14 @@ class EstimateListView(PermissionRequiredMixin, ListView):
             context['estimates_board_lost'] = []
             context['estimates_board_quot_won'] = []
             context['estimates_board_quot_lost'] = []
+
+        from .approval_rules import allowed_status_choices_for_estimate
+
+        page_estimates = context.get('estimates') or []
+        for est in page_estimates:
+            est.allowed_status_choices = allowed_status_choices_for_estimate(
+                est, self.request.user
+            )
 
         return context
 
@@ -420,25 +514,26 @@ class EstimateUpdateView(UpdatePermissionMixin, UpdateView):
                     )
                     return self.form_invalid(form, items_formset)
                 old_assignee_id = self.object.assigned_to_id
+                pre_status = self.object.status
+                rev_before = self.object.revision_count or 0
                 self.object = form.save()
                 bulk_create_estimate_items(self.object, rows, replace_existing=True)
                 self.object.calculate_totals()
                 self.object.refresh_from_db()
-                apply_after_document_edit(
+                result = apply_after_estimate_save(
                     request,
-                    module='estimate',
-                    obj=self.object,
-                    amount_accessor=lambda o: o.total_amount,
+                    self.object,
+                    pre_status=pre_status,
                 )
                 self.object.refresh_from_db()
                 detail_url = redirect('sales:estimate_detail', pk=self.object.pk)
                 messages.success(
                     request,
-                    f'Estimate {self.object.estimate_number} updated successfully.'
-                    + (
-                        ' Changes are queued for approval under Settings → Approval configuration.'
-                        if self.object.edit_approval_status == 'pending'
-                        else ''
+                    _estimate_save_success_message(
+                        self.object,
+                        has_changes=True,
+                        result=result,
+                        rev_before=rev_before,
                     ),
                 )
                 est = self.object
@@ -476,27 +571,34 @@ class EstimateUpdateView(UpdatePermissionMixin, UpdateView):
             return self.form_invalid(form, items_formset)
     
     def form_valid(self, form, items_formset):
+        has_changes = estimate_form_has_changes(form, items_formset)
         old_assignee_id = self.object.assigned_to_id
-        # Save the main form first
+        pre_status = self.object.status
+        rev_before = self.object.revision_count or 0
         self.object = form.save()
-        # Then save the formset with the instance
         items_formset.instance = self.object
         items_formset.save()
-        # Recalculate totals
         self.object.calculate_totals()
-        # Refresh from database to ensure we have latest data
         self.object.refresh_from_db()
-        apply_after_document_edit(
+
+        result = None
+        if has_changes:
+            result = apply_after_estimate_save(
+                self.request,
+                self.object,
+                pre_status=pre_status,
+            )
+            self.object.refresh_from_db()
+
+        messages.success(
             self.request,
-            module='estimate',
-            obj=self.object,
-            amount_accessor=lambda o: o.total_amount,
+            _estimate_save_success_message(
+                self.object,
+                has_changes=has_changes,
+                result=result,
+                rev_before=rev_before,
+            ),
         )
-        self.object.refresh_from_db()
-        msg = f'Estimate {self.object.estimate_number} updated successfully.'
-        if self.object.edit_approval_status == 'pending':
-            msg += ' Changes are queued for approval (see Settings → Approval configuration).'
-        messages.success(self.request, msg)
         est = self.object
         if est.assigned_to_id and est.assigned_to_id != old_assignee_id:
             link = reverse('sales:estimate_detail', kwargs={'pk': est.pk})
@@ -529,16 +631,29 @@ class EstimateDetailView(PermissionRequiredMixin, DetailView):
         items_qs = EstimateItem.objects.select_related('inventory_item', 'tax_code').order_by('sort_order', 'id')
         return Estimate.objects.select_related(
             'customer', 'assigned_to', 'project', 'created_by', 'updated_by',
-        ).prefetch_related(Prefetch('items', queryset=items_qs))
+        ).prefetch_related(
+            Prefetch('items', queryset=items_qs),
+            Prefetch('proforma_invoices', queryset=EstimateProformaInvoice.objects.select_related('created_by')),
+        )
     
     def get_context_data(self, **kwargs):
         from apps.purchase.email_outbound import outgoing_mail_hint
 
         context = super().get_context_data(**kwargs)
         context['title'] = f'Estimate: {self.object.estimate_number}'
-        from .approval_rules import user_can_approve_estimate_edit
+        from .approval_rules import (
+            get_estimate_status_actions,
+            user_can_approve_estimate_edit,
+            user_is_configured_estimate_approver,
+        )
 
         context['can_edit'] = self.object.allows_edit_by(self.request.user)
+        context['can_approve_estimate_status'] = user_is_configured_estimate_approver(
+            self.request.user, self.object
+        )
+        context['estimate_status_actions'] = get_estimate_status_actions(
+            self.object, self.request.user
+        )
         context['can_approve_estimate_edit'] = (
             user_can_approve_estimate_edit(self.request.user, self.object)
             and self.object.edit_approval_status == 'pending'
@@ -569,6 +684,12 @@ class EstimateDetailView(PermissionRequiredMixin, DetailView):
         if (cust.email or '').strip():
             to_addr = cust.email.strip()
         context['estimate_email_default_to'] = to_addr
+        context['can_create_proforma'] = self.object.status == 'quotation_won'
+        context['proforma_invoices'] = list(
+            self.object.proforma_invoices.select_related('created_by').all()[:20]
+        )
+        from .estimate_pdf_groups import build_pdf_item_groups
+        context['item_groups'] = build_pdf_item_groups(self.object)
         return context
 
 
@@ -586,6 +707,8 @@ def estimate_approve_edit(request, pk):
     if estimate.edit_approval_status != 'pending':
         messages.warning(request, 'This estimate does not have a pending edit approval.')
         return redirect('sales:estimate_detail', pk=pk)
+
+    submitter = estimate.edit_approval_submitted_by
     estimate.edit_approval_status = 'none'
     estimate.edit_approval_submitted_at = None
     estimate.edit_approval_submitted_by_id = None
@@ -598,6 +721,7 @@ def estimate_approve_edit(request, pk):
         ]
     )
     from apps.settings_app.models import ApprovalAuditLog
+    from .estimate_approval_notifications import notify_submitter_estimate_edit_approved
 
     ApprovalAuditLog.objects.create(
         module='estimate',
@@ -606,6 +730,10 @@ def estimate_approve_edit(request, pk):
         action='approve',
         comment='Estimate edit acknowledged',
     )
+    if submitter:
+        notify_submitter_estimate_edit_approved(
+            estimate, approver=request.user, submitter=submitter
+        )
     messages.success(request, f'{estimate.estimate_number}: edit changes approved.')
     return redirect('sales:estimate_detail', pk=pk)
 
@@ -629,7 +757,8 @@ def estimate_reject_edit(request, pk):
     estimate.save(
         update_fields=['edit_approval_status', 'updated_at']
     )
-    from apps.settings_app.models import ApprovalAuditLog, Notification
+    from apps.settings_app.models import ApprovalAuditLog
+    from .estimate_approval_notifications import notify_submitter_estimate_edit_rejected
 
     ApprovalAuditLog.objects.create(
         module='estimate',
@@ -638,13 +767,9 @@ def estimate_reject_edit(request, pk):
         action='reject',
         comment=comment[:2000],
     )
-    if estimate.edit_approval_submitted_by_id:
-        Notification.create(
-            user=estimate.edit_approval_submitted_by,
-            title=f'Estimate edit rejected — {estimate.estimate_number}',
-            message=(comment[:500] if comment else 'The approver rejected the latest edits. Review and adjust if needed.') + '',
-            link=reverse('sales:estimate_detail', kwargs={'pk': estimate.pk}),
-        )
+    notify_submitter_estimate_edit_rejected(
+        estimate, approver=request.user, comment=comment
+    )
     messages.success(request, 'Edit marked as rejected; the assigned user has been notified.')
     return redirect('sales:estimate_detail', pk=pk)
 
@@ -680,6 +805,7 @@ def estimate_duplicate(request, pk):
             discount_type=source.discount_type,
             discount_value=source.discount_value,
             show_rates_on_pdf=source.show_rates_on_pdf,
+            show_group_totals_on_pdf=source.show_group_totals_on_pdf,
             # Fresh draft; avoids two estimates pinned to same project/invoices ambiguity
             project=None,
         )
@@ -746,11 +872,70 @@ def estimate_update_status(request, pk, status):
     if status not in valid_statuses:
         messages.error(request, 'Invalid status.')
         return redirect('sales:estimate_detail', pk=pk)
+
+    if status in ('approved', 'rejected'):
+        from .approval_rules import user_is_configured_estimate_approver
+
+        if not user_is_configured_estimate_approver(request.user, estimate):
+            messages.error(request, 'Only the configured estimate approver can approve or reject this estimate.')
+            return redirect('sales:estimate_detail', pk=pk)
+
+    from .approval_rules import estimate_status_change_allowed
+
+    if not estimate_status_change_allowed(
+        estimate.status, status, user=request.user, estimate=estimate
+    ):
+        if status in ('quotation_won', 'quotation_lost'):
+            from .approval_rules import user_can_mark_estimate_won_lost
+
+            if estimate.status != 'approved':
+                messages.error(
+                    request,
+                    'Mark estimate won or lost only after the estimate has been approved.',
+                )
+            elif not user_can_mark_estimate_won_lost(request.user, estimate):
+                messages.error(
+                    request,
+                    'Only the salesperson assigned to this estimate can mark it won or lost.',
+                )
+            else:
+                messages.error(request, 'That status change is not allowed.')
+        elif status == 'draft' and estimate.status == 'quotation_won':
+            messages.error(request, 'A won quotation cannot be reverted to draft.')
+        else:
+            messages.error(request, 'That status change is not allowed.')
+        return redirect('sales:estimate_detail', pk=pk)
     
     old_status = estimate.status
-    estimate.status = status
-    estimate.save()
-    
+    rejection_reason = (request.POST.get('rejection_reason') or '').strip()
+
+    from .estimate_status_change import (
+        after_estimate_status_saved,
+        apply_estimate_status_fields,
+        validate_status_rejection_reason,
+    )
+
+    reason_error = validate_status_rejection_reason(status, old_status, rejection_reason)
+    if reason_error:
+        messages.error(request, reason_error)
+        return redirect('sales:estimate_detail', pk=pk)
+
+    update_fields = apply_estimate_status_fields(
+        estimate,
+        new_status=status,
+        old_status=old_status,
+        user=request.user,
+        rejection_reason=rejection_reason,
+    )
+    estimate.save(update_fields=update_fields)
+    after_estimate_status_saved(
+        estimate,
+        new_status=status,
+        old_status=old_status,
+        user=request.user,
+        rejection_reason=rejection_reason,
+    )
+
     status_display = dict(Estimate.STATUS_CHOICES).get(status, status)
     messages.success(request, f'Estimate {estimate.estimate_number} status updated to {status_display}.')
     
@@ -847,12 +1032,14 @@ def estimate_convert_to_project(request, pk):
     return redirect('projects:project_detail', pk=project.pk)
 
 
-def _build_estimate_pdf_context(request, estimate):
+def _build_estimate_pdf_context(request, estimate, *, proforma_invoice=None):
     """
     Shared context for proposal and proforma invoice HTML (print/PDF).
     Caller adds document_heading, document_number, print_button_label, page_title.
     """
     from apps.settings_app.models import CompanySettings
+    from .estimate_pdf_groups import build_pdf_item_groups
+    from .proforma_calculation import resolve_proforma_vat_rate_percent
 
     company = CompanySettings.get_settings()
 
@@ -875,8 +1062,13 @@ def _build_estimate_pdf_context(request, estimate):
         return str(n)
 
     try:
-        amount_whole = int(estimate.total_amount)
-        amount_decimal = int((estimate.total_amount - amount_whole) * 100)
+        pdf_total = (
+            proforma_invoice.total_amount
+            if proforma_invoice is not None
+            else estimate.total_amount
+        )
+        amount_whole = int(pdf_total)
+        amount_decimal = int((pdf_total - amount_whole) * 100)
         amount_words = number_to_words(amount_whole)
         if amount_decimal > 0:
             amount_words += f" and {amount_decimal}/100"
@@ -885,12 +1077,28 @@ def _build_estimate_pdf_context(request, estimate):
         amount_words = ""
 
     vat_summary = {}
-    for item in estimate.items.all():
-        rate = float(item.vat_rate)
-        if rate not in vat_summary:
-            vat_summary[rate] = {'taxable': 0, 'vat': 0}
-        vat_summary[rate]['taxable'] += float(item.total)
-        vat_summary[rate]['vat'] += float(item.vat_amount)
+    if proforma_invoice is not None:
+        if proforma_invoice.line_subtotal > 0 and proforma_invoice.vat_amount > 0:
+            rate = float(
+                (proforma_invoice.vat_amount / proforma_invoice.line_subtotal * Decimal('100')).quantize(
+                    Decimal('0.01')
+                )
+            )
+        elif proforma_invoice.line_subtotal > 0:
+            rate = float(resolve_proforma_vat_rate_percent(estimate))
+        else:
+            rate = 0.0
+        vat_summary[rate] = {
+            'taxable': float(proforma_invoice.line_subtotal),
+            'vat': float(proforma_invoice.vat_amount),
+        }
+    else:
+        for item in estimate.items.all():
+            rate = float(item.vat_rate)
+            if rate not in vat_summary:
+                vat_summary[rate] = {'taxable': 0, 'vat': 0}
+            vat_summary[rate]['taxable'] += float(item.total)
+            vat_summary[rate]['vat'] += float(item.vat_amount)
 
     logo_absolute_url = ''
     if company.logo:
@@ -905,12 +1113,14 @@ def _build_estimate_pdf_context(request, estimate):
 
     return {
         'estimate': estimate,
+        'proforma_invoice': proforma_invoice,
         'company': company,
         'logo_absolute_url': logo_absolute_url,
         'authorized_signature_url': authorized_signature_url,
         'customer_signature_url': customer_signature_url,
         'amount_words': amount_words,
         'vat_summary': vat_summary,
+        'pdf_item_groups': build_pdf_item_groups(estimate),
         'is_pdf': True,
     }
 
@@ -935,8 +1145,8 @@ def estimate_pdf(request, pk):
     context = _build_estimate_pdf_context(request, estimate)
     context.update({
         'document_heading': 'QUOTATION',
-        'document_number': estimate.estimate_number,
-        'page_title': f'Quotation — {estimate.estimate_number}',
+        'document_number': estimate.display_estimate_number,
+        'page_title': f'Quotation — {estimate.display_estimate_number}',
         'print_button_label': 'Print quotation',
         'show_pdf_status': True,
         'pdf_variant': 'quotation',
@@ -948,7 +1158,7 @@ def estimate_pdf(request, pk):
 
 @login_required
 def estimate_proforma_pdf(request, pk):
-    """Proforma invoice: same template as proposal; document number PI-{estimate_number}."""
+    """Legacy full-estimate proforma; won quotations use partial proforma flow instead."""
     items_qs = EstimateItem.objects.select_related('inventory_item', 'tax_code').order_by('sort_order', 'id')
     estimate = get_object_or_404(
         Estimate.objects.select_related('customer', 'assigned_to', 'project').prefetch_related(
@@ -961,7 +1171,14 @@ def estimate_proforma_pdf(request, pk):
         messages.error(request, 'Permission denied.')
         return redirect('sales:estimate_list')
 
-    proforma_number = f'PI-{estimate.estimate_number}'
+    if estimate.status == 'quotation_won':
+        messages.info(
+            request,
+            'Use Create Proforma Invoice on a won quotation to bill a percentage or fixed amount.',
+        )
+        return redirect('sales:estimate_detail', pk=pk)
+
+    proforma_number = estimate.display_proforma_number
     context = _build_estimate_pdf_context(request, estimate)
     context.update({
         'document_heading': 'PROFORMA INVOICE',
@@ -972,6 +1189,126 @@ def estimate_proforma_pdf(request, pk):
         'pdf_variant': 'proforma',
         'pdf_details_heading': 'Proforma invoice details',
         'pdf_date_label': 'Date',
+    })
+    return render(request, 'sales/estimate_pdf.html', context)
+
+
+@login_required
+@require_POST
+def estimate_proforma_create(request, pk):
+    """Create a partial proforma invoice from a won quotation (AJAX from modal)."""
+    estimate = get_object_or_404(Estimate.objects.filter(is_active=True), pk=pk)
+
+    if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'sales', 'view')):
+        return JsonResponse({'ok': False, 'error': 'Permission denied.'}, status=403)
+
+    if estimate.status != 'quotation_won':
+        return JsonResponse(
+            {'ok': False, 'error': 'Proforma invoices can only be created for won quotations.'},
+            status=400,
+        )
+
+    estimate.calculate_totals()
+    estimate.refresh_from_db()
+
+    from .proforma_form import apply_proforma_form_data
+
+    proforma = EstimateProformaInvoice(
+        estimate=estimate,
+        proforma_number=EstimateProformaInvoice.allocate_number(estimate),
+        created_by=request.user,
+    )
+    try:
+        apply_proforma_form_data(proforma, estimate, request.POST)
+    except ValueError as exc:
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({'ok': False, 'error': str(exc)}, status=400)
+        messages.error(request, str(exc))
+        return redirect('sales:estimate_detail', pk=pk)
+
+    try:
+        proforma.save()
+    except Exception as exc:
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({'ok': False, 'error': f'Could not save proforma: {exc}'}, status=500)
+        messages.error(request, f'Could not save proforma: {exc}')
+        return redirect('sales:estimate_detail', pk=pk)
+
+    pdf_url = reverse('sales:estimate_proforma_invoice_pdf', kwargs={'pk': pk, 'proforma_pk': proforma.pk})
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return JsonResponse({'ok': True, 'pdf_url': pdf_url, 'proforma_number': proforma.proforma_number})
+    return redirect('sales:estimate_proforma_invoice_pdf', pk=pk, proforma_pk=proforma.pk)
+
+
+@login_required
+def estimate_proforma_edit(request, pk, proforma_pk):
+    """Edit an existing proforma invoice; save redirects to PDF."""
+    estimate = get_object_or_404(Estimate.objects.filter(is_active=True), pk=pk)
+    proforma = get_object_or_404(EstimateProformaInvoice, pk=proforma_pk, estimate=estimate)
+
+    if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'sales', 'edit')):
+        messages.error(request, 'Permission denied.')
+        return redirect('sales:estimate_detail', pk=pk)
+
+    if estimate.status != 'quotation_won':
+        messages.error(request, 'Proforma invoices apply to won quotations only.')
+        return redirect('sales:estimate_detail', pk=pk)
+
+    if request.method == 'POST':
+        estimate.calculate_totals()
+        estimate.refresh_from_db()
+        from .proforma_form import apply_proforma_form_data
+
+        try:
+            apply_proforma_form_data(proforma, estimate, request.POST)
+            proforma.save()
+        except ValueError as exc:
+            messages.error(request, str(exc))
+        else:
+            messages.success(request, f'Proforma {proforma.proforma_number} updated.')
+            return redirect('sales:estimate_proforma_invoice_pdf', pk=pk, proforma_pk=proforma.pk)
+
+    return render(request, 'sales/proforma_invoice_edit.html', {
+        'title': f'Edit {proforma.proforma_number}',
+        'estimate': estimate,
+        'proforma': proforma,
+    })
+
+
+@login_required
+def estimate_proforma_invoice_pdf(request, pk, proforma_pk):
+    """Print/PDF for a partial proforma invoice created from a won quotation."""
+    items_qs = EstimateItem.objects.select_related('inventory_item', 'tax_code').order_by('sort_order', 'id')
+    estimate = get_object_or_404(
+        Estimate.objects.select_related('customer', 'assigned_to', 'project').prefetch_related(
+            Prefetch('items', queryset=items_qs)
+        ),
+        pk=pk,
+    )
+    proforma = get_object_or_404(EstimateProformaInvoice, pk=proforma_pk, estimate=estimate)
+
+    if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'sales', 'view')):
+        messages.error(request, 'Permission denied.')
+        return redirect('sales:estimate_list')
+
+    context = _build_estimate_pdf_context(request, estimate, proforma_invoice=proforma)
+    context.update({
+        'document_heading': 'PROFORMA INVOICE',
+        'document_number': proforma.proforma_number,
+        'page_title': f'Proforma invoice — {proforma.proforma_number}',
+        'print_button_label': 'Print proforma invoice',
+        'show_pdf_status': False,
+        'pdf_variant': 'proforma',
+        'pdf_details_heading': 'Proforma invoice details',
+        'pdf_date_label': 'Date',
+        'proforma_single_line': True,
+        'proforma_can_edit': (
+            request.user.is_superuser
+            or PermissionChecker.has_permission(request.user, 'sales', 'edit')
+        ),
+        'proforma_edit_url': reverse(
+            'sales:estimate_proforma_edit', kwargs={'pk': pk, 'proforma_pk': proforma_pk}
+        ),
     })
     return render(request, 'sales/estimate_pdf.html', context)
 
@@ -1040,9 +1377,9 @@ def estimate_send_email(request, pk):
         connection=connection,
     )
     msg.content_subtype = 'plain'
-    safe_name = ''.join(c for c in estimate.estimate_number if c.isalnum() or c in ('-', '_')) or str(
-        estimate.pk
-    )
+    safe_name = ''.join(
+        c for c in estimate.display_estimate_number if c.isalnum() or c in ('-', '_')
+    ) or str(estimate.pk)
     msg.attach(f'Quotation_{safe_name}.pdf', pdf, 'application/pdf')
 
     try:
@@ -1061,18 +1398,94 @@ def estimate_set_status(request, pk):
 
     estimate = get_object_or_404(Estimate, pk=pk)
 
-    if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'sales', 'edit')):
-        messages.error(request, 'Permission denied.')
-        return redirect('sales:estimate_list')
-
     status = request.POST.get('status')
     valid_statuses = [c[0] for c in Estimate.STATUS_CHOICES]
     if status not in valid_statuses:
         messages.error(request, 'Invalid status.')
         return redirect('sales:estimate_list')
 
-    estimate.status = status
-    estimate.save()
+    from .approval_rules import user_is_configured_estimate_approver
+
+    can_change_status = (
+        request.user.is_superuser
+        or PermissionChecker.has_permission(request.user, 'sales', 'edit')
+    )
+    if status in ('approved', 'rejected') and user_is_configured_estimate_approver(request.user, estimate):
+        can_change_status = True
+
+    if not can_change_status:
+        messages.error(request, 'Permission denied.')
+        return redirect('sales:estimate_list')
+
+    if status in ('approved', 'rejected'):
+        if not user_is_configured_estimate_approver(request.user, estimate):
+            messages.error(request, 'Only the configured estimate approver can approve or reject this estimate.')
+            next_url = request.POST.get('next', '').strip()
+            if next_url and next_url.startswith('/') and not next_url.startswith('//'):
+                return redirect(next_url)
+            return redirect('sales:estimate_detail', pk=pk)
+
+    from .approval_rules import estimate_status_change_allowed
+
+    if not estimate_status_change_allowed(
+        estimate.status, status, user=request.user, estimate=estimate
+    ):
+        if status in ('quotation_won', 'quotation_lost'):
+            from .approval_rules import user_can_mark_estimate_won_lost
+
+            if estimate.status != 'approved':
+                messages.error(
+                    request,
+                    'Mark estimate won or lost only after the estimate has been approved.',
+                )
+            elif not user_can_mark_estimate_won_lost(request.user, estimate):
+                messages.error(
+                    request,
+                    'Only the salesperson assigned to this estimate can mark it won or lost.',
+                )
+            else:
+                messages.error(request, 'That status change is not allowed.')
+        elif status == 'draft' and estimate.status == 'quotation_won':
+            messages.error(request, 'A won quotation cannot be reverted to draft.')
+        else:
+            messages.error(request, 'That status change is not allowed.')
+        next_url = request.POST.get('next', '').strip()
+        if next_url and next_url.startswith('/') and not next_url.startswith('//'):
+            return redirect(next_url)
+        return redirect('sales:estimate_detail', pk=pk)
+
+    old_status = estimate.status
+    rejection_reason = (request.POST.get('rejection_reason') or '').strip()
+
+    from .estimate_status_change import (
+        after_estimate_status_saved,
+        apply_estimate_status_fields,
+        validate_status_rejection_reason,
+    )
+
+    reason_error = validate_status_rejection_reason(status, old_status, rejection_reason)
+    if reason_error:
+        messages.error(request, reason_error)
+        next_url = request.POST.get('next', '').strip()
+        if next_url and next_url.startswith('/') and not next_url.startswith('//'):
+            return redirect(next_url)
+        return redirect('sales:estimate_detail', pk=pk)
+
+    update_fields = apply_estimate_status_fields(
+        estimate,
+        new_status=status,
+        old_status=old_status,
+        user=request.user,
+        rejection_reason=rejection_reason,
+    )
+    estimate.save(update_fields=update_fields)
+    after_estimate_status_saved(
+        estimate,
+        new_status=status,
+        old_status=old_status,
+        user=request.user,
+        rejection_reason=rejection_reason,
+    )
 
     status_display = dict(Estimate.STATUS_CHOICES).get(status, status)
     messages.success(request, f'Estimate {estimate.estimate_number} status updated to {status_display}.')

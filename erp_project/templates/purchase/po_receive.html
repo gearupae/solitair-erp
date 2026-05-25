@@ -18,7 +18,7 @@
     </div>
 </div>
 
-<form method="post" class="card border-0 shadow-sm">
+<form method="post" class="card border-0 shadow-sm" id="poReceiveForm">
     {% csrf_token %}
     <div class="card-body">
         <div class="row g-3 mb-4">
@@ -54,12 +54,22 @@
                     </tr>
                 </thead>
                 <tbody>
-                    {% for line in po.items.all %}
+                    {% for row in receive_lines %}
+                    {% with line=row.line %}
                     <tr class="{% if line.quantity_remaining <= 0 %}table-secondary{% endif %}">
                         <td>
                             {{ line.description }}
                             {% if line.inventory_item %}
                             <div class="small text-muted">{{ line.inventory_item.item_code }}</div>
+                            {% if line.inventory_item.track_by_serial %}
+                            <span class="badge bg-info text-dark mt-1">Model # tracking</span>
+                            {% else %}
+                            <div class="small text-warning mt-1">
+                                <i class="fas fa-info-circle me-1"></i>Serial tracking is off —
+                                <a href="{% url 'inventory:item_edit' line.inventory_item.pk %}">enable on item</a>
+                                before receiving to enter model numbers.
+                            </div>
+                            {% endif %}
                             {% else %}
                             <div class="small text-warning"><i class="fas fa-exclamation-triangle me-1"></i>Link an inventory item on the PO to receive stock.</div>
                             {% endif %}
@@ -71,12 +81,15 @@
                             {% if line.inventory_item_id and line.quantity_remaining > 0 %}
                             <input type="number"
                                    name="qty_{{ line.pk }}"
-                                   class="form-control form-control-sm text-center mx-auto"
+                                   class="form-control form-control-sm text-center mx-auto po-qty-input"
                                    style="max-width:110px;"
-                                   step="0.01"
+                                   step="{% if line.inventory_item.track_by_serial %}1{% else %}0.01{% endif %}"
                                    min="0"
                                    max="{{ line.quantity_remaining }}"
-                                   value="0"
+                                   value="{{ row.posted_qty }}"
+                                   data-line-pk="{{ line.pk }}"
+                                   data-track-serial="{% if line.inventory_item.track_by_serial %}1{% else %}0{% endif %}"
+                                   data-posted-models="{{ row.posted_model_numbers|join:'|' }}"
                                    inputmode="decimal">
                             {% else %}
                             <span class="text-muted small">—</span>
@@ -89,7 +102,7 @@
                                    name="price_{{ line.pk }}"
                                    class="form-control form-control-sm text-end ms-auto"
                                    style="max-width:140px;"
-                                   value="{{ line.unit_price|floatformat:2 }}"
+                                   value="{{ row.posted_price }}"
                                    inputmode="decimal">
                             {% else %}
                             <span class="text-muted">—</span>
@@ -97,13 +110,36 @@
                             {% endif %}
                         </td>
                     </tr>
+                    {% if line.inventory_item_id and line.inventory_item.track_by_serial and line.quantity_remaining > 0 %}
+                    <tr class="serial-panel-row" data-serial-panel="{{ line.pk }}">
+                        <td colspan="6" class="bg-light">
+                            <div class="py-2 px-1">
+                                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+                                    <span class="fw-semibold small">Model numbers <span class="text-danger">*</span></span>
+                                    <span class="text-muted small serial-qty-hint" data-line-pk="{{ line.pk }}">Enter receive quantity above first</span>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary serial-paste-toggle d-none" data-line-pk="{{ line.pk }}">
+                                        Paste bulk list
+                                    </button>
+                                </div>
+                                <div class="serial-paste-box d-none mb-3" data-line-pk="{{ line.pk }}">
+                                    <label class="form-label small mb-1">One model number per line</label>
+                                    <textarea class="form-control form-control-sm serial-paste-text" rows="4" data-line-pk="{{ line.pk }}" placeholder="FHP-2024-001&#10;FHP-2024-002"></textarea>
+                                    <button type="button" class="btn btn-sm btn-primary mt-2 serial-paste-apply" data-line-pk="{{ line.pk }}">Apply to rows</button>
+                                </div>
+                                <div class="serial-rows" data-line-pk="{{ line.pk }}"></div>
+                                <div class="text-danger small d-none serial-error" data-line-pk="{{ line.pk }}"></div>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endif %}
+                    {% endwith %}
                     {% endfor %}
                 </tbody>
             </table>
         </div>
 
         <p class="small text-muted mb-3">
-            Enter <strong>0</strong> for lines not delivered yet. Unit price may differ from the PO line — posted cost uses these values.
+            Enter <strong>0</strong> for lines not delivered yet. For serial-tracked items, enter the receive quantity first — model number fields appear below that line (one serial per unit).
             You cannot receive more than the remaining quantity per line.
         </p>
 
@@ -111,4 +147,133 @@
         <a href="{% url 'purchase:po_detail' po.pk %}" class="btn btn-light">Cancel</a>
     </div>
 </form>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    function rebuildSerialRows(linePk, count) {
+        const panel = document.querySelector(`tr[data-serial-panel="${linePk}"]`);
+        const container = document.querySelector(`.serial-rows[data-line-pk="${linePk}"]`);
+        const hint = document.querySelector(`.serial-qty-hint[data-line-pk="${linePk}"]`);
+        const pasteBtn = document.querySelector(`.serial-paste-toggle[data-line-pk="${linePk}"]`);
+        if (!panel || !container) return;
+
+        const n = Math.max(0, parseInt(count, 10) || 0);
+        if (n <= 0) {
+            container.innerHTML = '';
+            if (hint) {
+                hint.classList.remove('d-none');
+                hint.textContent = 'Enter receive quantity above first';
+            }
+            if (pasteBtn) pasteBtn.classList.add('d-none');
+            return;
+        }
+        if (hint) hint.classList.add('d-none');
+        if (pasteBtn) pasteBtn.classList.remove('d-none');
+
+        const existing = {};
+        container.querySelectorAll('input[name="model_number_' + linePk + '"]').forEach(function (inp) {
+            const idx = inp.getAttribute('data-row-idx');
+            if (idx !== null) existing[idx] = inp.value;
+        });
+
+        let html = '<table class="table table-sm table-bordered mb-0 bg-white"><thead><tr><th style="width:3rem;">#</th><th>Model number</th></tr></thead><tbody>';
+        for (let i = 0; i < n; i++) {
+            const val = existing[i] !== undefined ? existing[i] : '';
+            html += '<tr><td class="text-muted">' + (i + 1) + '</td><td>' +
+                '<input type="text" class="form-control form-control-sm serial-model-input" ' +
+                'name="model_number_' + linePk + '" data-line-pk="' + linePk + '" data-row-idx="' + i + '" ' +
+                'value="' + val.replace(/"/g, '&quot;') + '" required maxlength="120" placeholder="Model number"></td></tr>';
+        }
+        html += '</tbody></table>';
+        container.innerHTML = html;
+    }
+
+    document.querySelectorAll('.po-qty-input[data-track-serial="1"]').forEach(function (input) {
+        const pk = input.getAttribute('data-line-pk');
+        rebuildSerialRows(pk, input.value);
+        const posted = (input.getAttribute('data-posted-models') || '').split('|').filter(Boolean);
+        if (posted.length) {
+            const container = document.querySelector('.serial-rows[data-line-pk="' + pk + '"]');
+            if (container) {
+                container.querySelectorAll('input.serial-model-input').forEach(function (inp, idx) {
+                    if (posted[idx]) inp.value = posted[idx];
+                });
+            }
+        }
+        input.addEventListener('input', function () {
+            rebuildSerialRows(input.getAttribute('data-line-pk'), input.value);
+        });
+    });
+
+    document.querySelectorAll('.serial-paste-toggle').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            const pk = btn.getAttribute('data-line-pk');
+            const box = document.querySelector('.serial-paste-box[data-line-pk="' + pk + '"]');
+            if (box) box.classList.toggle('d-none');
+        });
+    });
+
+    document.querySelectorAll('.serial-paste-apply').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            const pk = btn.getAttribute('data-line-pk');
+            const ta = document.querySelector('.serial-paste-text[data-line-pk="' + pk + '"]');
+            const qtyInput = document.querySelector('.po-qty-input[data-line-pk="' + pk + '"]');
+            if (!ta || !qtyInput) return;
+            const lines = ta.value.split(/\r?\n/).map(function (s) { return s.trim(); }).filter(Boolean);
+            qtyInput.value = lines.length;
+            rebuildSerialRows(pk, lines.length);
+            const container = document.querySelector('.serial-rows[data-line-pk="' + pk + '"]');
+            container.querySelectorAll('input.serial-model-input').forEach(function (inp, idx) {
+                if (lines[idx]) inp.value = lines[idx];
+            });
+        });
+    });
+
+    document.getElementById('poReceiveForm').addEventListener('submit', function (e) {
+        let ok = true;
+        document.querySelectorAll('.po-qty-input[data-track-serial="1"]').forEach(function (qtyInput) {
+            const pk = qtyInput.getAttribute('data-line-pk');
+            const qty = parseInt(qtyInput.value, 10) || 0;
+            const errEl = document.querySelector('.serial-error[data-line-pk="' + pk + '"]');
+            if (errEl) {
+                errEl.classList.add('d-none');
+                errEl.textContent = '';
+            }
+            if (qty <= 0) return;
+
+            const inputs = document.querySelectorAll('input[name="model_number_' + pk + '"]');
+            const values = [];
+            let empty = false;
+            inputs.forEach(function (inp) {
+                const v = (inp.value || '').trim();
+                if (!v) empty = true;
+                values.push(v.toLowerCase());
+            });
+            if (inputs.length !== qty || empty) {
+                ok = false;
+                if (errEl) {
+                    errEl.textContent = 'Enter exactly ' + qty + ' model number(s).';
+                    errEl.classList.remove('d-none');
+                }
+                return;
+            }
+            const seen = new Set();
+            for (const v of values) {
+                if (seen.has(v)) {
+                    ok = false;
+                    if (errEl) {
+                        errEl.textContent = 'Duplicate model numbers are not allowed.';
+                        errEl.classList.remove('d-none');
+                    }
+                    return;
+                }
+                seen.add(v);
+            }
+        });
+        if (!ok) e.preventDefault();
+    });
+})();
+</script>
 {% endblock %}

@@ -6,7 +6,7 @@ $(function () {
         $('.select2-members').select2({
             theme: 'bootstrap-5',
             width: '100%',
-            placeholder: 'Select team members…',
+            placeholder: 'Search by name or employee code…',
             closeOnSelect: false,
             allowClear: true,
             minimumResultsForSearch: 0,
@@ -16,7 +16,7 @@ $(function () {
         $('.select2-technicians').select2({
             theme: 'bootstrap-5',
             width: '100%',
-            placeholder: 'Select technicians…',
+            placeholder: 'Search by name or employee code…',
             closeOnSelect: false,
             allowClear: true,
             minimumResultsForSearch: 0,
@@ -36,6 +36,15 @@ $(function () {
             {% csrf_token %}
             {% if form.non_field_errors %}
             <div class="alert alert-danger">{{ form.non_field_errors }}</div>
+            {% endif %}
+            {% if object %}
+            {% if object.edit_approval_status == 'pending' %}
+            <div class="alert alert-warning mb-0"><i class="fas fa-clock me-1"></i>Completion is pending approver sign-off. Status will remain <strong>{{ object.get_status_display }}</strong> until approved.</div>
+            {% elif object.edit_approval_status == 'rejected' %}
+            <div class="alert alert-danger mb-0"><i class="fas fa-times-circle me-1"></i>Your last completion request was rejected. Set status to <strong>Completed</strong> again to resubmit.</div>
+            {% else %}
+            <div class="alert alert-info mb-0"><i class="fas fa-info-circle me-1"></i>Choosing <strong>Completed</strong> here only <strong>requests</strong> completion — status stays as-is until the project approver clicks <strong>Approve completion</strong> on the project page.</div>
+            {% endif %}
             {% endif %}
             <div class="row g-3">
                 <div class="col-md-6"><label class="form-label">Project Name <span class="text-danger">*</span></label>{{ form.name }}{% if form.name.errors %}<div class="text-danger small">{{ form.name.errors }}</div>{% endif %}</div>

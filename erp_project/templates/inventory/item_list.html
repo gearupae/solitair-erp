@@ -279,10 +279,10 @@
             <div class="modal-body">
                 <p class="small text-muted mb-3">Selected on this page: <strong id="bulkSelectedCount">0</strong></p>
 
-                <form method="post" action="{% url 'inventory:item_bulk_group' %}" id="formAddGroups">
+                <form method="post" action="{% url 'inventory:item_bulk_group' %}" id="itemGroupForm">
                     {% csrf_token %}
-                    <input type="hidden" name="action" value="add">
-                    <input type="hidden" name="item_ids" class="bulk-item-ids" value="">
+                    <input type="hidden" name="item_ids" id="bulkItemIds" value="">
+
                     <label class="form-label small fw-semibold">Add to group(s) — keeps existing groups</label>
                     <select name="add_group_ids" id="addGroupSelect" class="form-select form-select-sm mb-2" multiple size="5">
                         {% for g in item_groups %}
@@ -291,15 +291,10 @@
                     </select>
                     <label class="form-label small text-muted mb-0">New groups (comma-separated, optional)</label>
                     <input type="text" name="new_groups" id="newGroupsInput" class="form-control form-control-sm mb-2" maxlength="500" placeholder="e.g. Kit A, Spares" autocomplete="off">
-                    <button type="submit" class="btn btn-primary btn-sm">Add groups</button>
-                </form>
+                    <button type="submit" name="action" value="add" class="btn btn-primary btn-sm group-action-btn">Add groups</button>
 
-                <hr class="my-3">
+                    <hr class="my-3">
 
-                <form method="post" action="{% url 'inventory:item_bulk_group' %}" id="formRemoveGroup">
-                    {% csrf_token %}
-                    <input type="hidden" name="action" value="remove">
-                    <input type="hidden" name="item_ids" class="bulk-item-ids" value="">
                     <label class="form-label small fw-semibold">Remove one group from selected items</label>
                     <select name="remove_group_id" id="removeGroupSelect" class="form-select form-select-sm mb-2">
                         <option value="">— Choose —</option>
@@ -307,24 +302,15 @@
                         <option value="{{ g.pk }}">{{ g.name }}</option>
                         {% endfor %}
                     </select>
-                    <button type="submit" class="btn btn-outline-warning btn-sm">Remove from selected</button>
-                </form>
+                    <button type="submit" name="action" value="remove" class="btn btn-outline-warning btn-sm group-action-btn">Remove from selected</button>
 
-                <hr class="my-3">
+                    <hr class="my-3">
 
-                <form method="post" action="{% url 'inventory:item_bulk_group' %}" id="formClearGroups" class="d-inline">
-                    {% csrf_token %}
-                    <input type="hidden" name="action" value="clear">
-                    <input type="hidden" name="item_ids" class="bulk-item-ids" value="">
                     <label class="form-label small fw-semibold d-block">Clear all groups from selected</label>
-                    <button type="submit" class="btn btn-outline-danger btn-sm">Clear all groups</button>
-                </form>
+                    <button type="submit" name="action" value="clear" class="btn btn-outline-danger btn-sm group-action-btn">Clear all groups</button>
 
-                <hr class="my-3">
+                    <hr class="my-3">
 
-                <form method="post" action="{% url 'inventory:item_bulk_group' %}" id="formRenameGroup">
-                    {% csrf_token %}
-                    <input type="hidden" name="action" value="rename">
                     <label class="form-label small fw-semibold">Rename a group (all items using it)</label>
                     <select name="rename_group_id" class="form-select form-select-sm mb-2">
                         <option value="">— Choose —</option>
@@ -333,7 +319,7 @@
                         {% endfor %}
                     </select>
                     <input type="text" name="rename_new_name" class="form-control form-control-sm mb-2" maxlength="200" placeholder="New name" autocomplete="off">
-                    <button type="submit" class="btn btn-outline-secondary btn-sm">Rename</button>
+                    <button type="submit" name="action" value="rename" class="btn btn-outline-secondary btn-sm group-action-btn">Rename</button>
                 </form>
             </div>
         </div>
@@ -347,80 +333,75 @@
 <script>
 (function () {
     var selectAll = document.getElementById('itemSelectAll');
-      var modal = document.getElementById('itemGroupModal');
-      var bulkCount = document.getElementById('bulkSelectedCount');
-      var formAdd = document.getElementById('formAddGroups');
-      var formRemove = document.getElementById('formRemoveGroup');
-      var formClear = document.getElementById('formClearGroups');
-      var formRename = document.getElementById('formRenameGroup');
+    var modal = document.getElementById('itemGroupModal');
+    var bulkCount = document.getElementById('bulkSelectedCount');
+    var groupForm = document.getElementById('itemGroupForm');
+    var bulkIds = document.getElementById('bulkItemIds');
 
     function syncBulkIds() {
-      var ids = Array.from(document.querySelectorAll('.item-check:checked')).map(function (cb) { return cb.value; });
-      var s = ids.join(',');
-      document.querySelectorAll('.bulk-item-ids').forEach(function (el) { el.value = s; });
-      if (bulkCount) bulkCount.textContent = String(ids.length);
+        var ids = Array.from(document.querySelectorAll('.item-check:checked')).map(function (cb) { return cb.value; });
+        if (bulkIds) bulkIds.value = ids.join(',');
+        if (bulkCount) bulkCount.textContent = String(ids.length);
     }
 
-      function needItems(e) {
-      var form = e.currentTarget;
-      var el = form.querySelector('.bulk-item-ids');
-      if (!el || !el.value.trim()) {
-        e.preventDefault();
-        alert('Select one or more items with the checkboxes.');
-        return false;
-      }
-      return true;
+    function needItems() {
+        if (!bulkIds || !bulkIds.value.trim()) {
+            alert('Select one or more items with the checkboxes.');
+            return false;
+        }
+        return true;
     }
 
     if (selectAll) {
         selectAll.addEventListener('change', function () {
             document.querySelectorAll('.item-check').forEach(function (cb) { cb.checked = selectAll.checked; });
+            syncBulkIds();
         });
     }
+    document.querySelectorAll('.item-check').forEach(function (cb) {
+        cb.addEventListener('change', syncBulkIds);
+    });
     if (modal) {
         modal.addEventListener('show.bs.modal', syncBulkIds);
     }
-    if (formAdd) {
-      formAdd.addEventListener('submit', function (e) {
-        if (!needItems(e)) return;
-        var ms = document.getElementById('addGroupSelect');
-        var newG = (document.getElementById('newGroupsInput') && document.getElementById('newGroupsInput').value.trim()) || '';
-        if (ms && ms.selectedOptions.length === 0 && !newG) {
-          e.preventDefault();
-          alert('Pick one or more existing groups (Ctrl/Cmd-click) and/or type new names.');
-        }
-      });
-    }
-    if (formRemove) {
-      formRemove.addEventListener('submit', function (e) {
-        if (!needItems(e)) return;
-        var sel = document.getElementById('removeGroupSelect');
-        if (!sel || !sel.value) {
-          e.preventDefault();
-          alert('Choose which group to remove.');
-        }
-      });
-    }
-    if (formClear) {
-      formClear.addEventListener('submit', function (e) {
-        if (!needItems(e)) return;
-        if (!window.confirm('Remove every group from the selected items?')) e.preventDefault();
-      });
-    }
-    if (formRename) {
-      formRename.addEventListener('submit', function (e) {
-        var sel = formRename.querySelector('[name="rename_group_id"]');
-        var inp = formRename.querySelector('[name="rename_new_name"]');
-        if (!sel || !sel.value) {
-          e.preventDefault();
-          alert('Choose a group to rename.');
-          return;
-        }
-        if (!inp || !inp.value.trim()) {
-          e.preventDefault();
-          alert('Enter the new name.');
-        }
-      });
+    if (groupForm) {
+        groupForm.addEventListener('submit', function (e) {
+            var submitter = e.submitter;
+            var action = submitter && submitter.value;
+            syncBulkIds();
+
+            if (action === 'add') {
+                if (!needItems()) { e.preventDefault(); return; }
+                var ms = document.getElementById('addGroupSelect');
+                var newG = (document.getElementById('newGroupsInput') && document.getElementById('newGroupsInput').value.trim()) || '';
+                if (ms && ms.selectedOptions.length === 0 && !newG) {
+                    e.preventDefault();
+                    alert('Pick one or more existing groups (Ctrl/Cmd-click) and/or type new names.');
+                }
+            } else if (action === 'remove') {
+                if (!needItems()) { e.preventDefault(); return; }
+                var sel = document.getElementById('removeGroupSelect');
+                if (!sel || !sel.value) {
+                    e.preventDefault();
+                    alert('Choose which group to remove.');
+                }
+            } else if (action === 'clear') {
+                if (!needItems()) { e.preventDefault(); return; }
+                if (!window.confirm('Remove every group from the selected items?')) e.preventDefault();
+            } else if (action === 'rename') {
+                var sel = groupForm.querySelector('[name="rename_group_id"]');
+                var inp = groupForm.querySelector('[name="rename_new_name"]');
+                if (!sel || !sel.value) {
+                    e.preventDefault();
+                    alert('Choose a group to rename.');
+                    return;
+                }
+                if (!inp || !inp.value.trim()) {
+                    e.preventDefault();
+                    alert('Enter the new name.');
+                }
+            }
+        });
     }
 })();
 </script>

@@ -8,6 +8,7 @@ from datetime import date, datetime as datetime_cls
 from decimal import Decimal, InvalidOperation
 from io import StringIO
 
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
@@ -26,13 +27,16 @@ from apps.core.mixins import CreatePermissionMixin, PermissionRequiredMixin, Upd
 from apps.core.utils import PermissionChecker
 from apps.hr.attendance_utils import (
     attendance_snapshot_today,
+    attendance_overlap_message,
     holiday_on_date_for_employee,
     is_uae_weekend,
     mark_all_present_today,
     month_absent_rate_pct,
     company_overtime_month,
+    open_attendance_session,
     recalculate_summary_for_employee_month,
 )
+from apps.projects.labour_utils import infer_project_for_technician
 from apps.hr.forms_extended import AttendanceMarkForm, AttendanceSettingsForm, HolidayForm
 from apps.hr.models import Employee
 from apps.hr.models_extended import AttendanceRecord, AttendanceSettings, AttendanceSummary, Holiday
@@ -203,6 +207,25 @@ class EmployeeAttendanceRecordsView(LoginRequiredMixin, ListView):
         return ctx
 
 
+@login_required
+@require_POST
+def attendance_record_delete(request, pk):
+    if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'hr', 'create')):
+        messages.error(request, 'Permission denied.')
+        return redirect('hr:attendance_list')
+    rec = get_object_or_404(AttendanceRecord, pk=pk, is_active=True)
+    emp = rec.employee
+    ad = rec.date
+    rec.is_active = False
+    rec.save(update_fields=['is_active', 'updated_at'])
+    recalculate_summary_for_employee_month(emp, ad.year, ad.month)
+    messages.success(
+        request,
+        f'Attendance deleted for {emp.employee_code} on {ad.strftime("%d/%m/%Y")}.',
+    )
+    return redirect(request.POST.get('next') or reverse('hr:attendance_list'))
+
+
 class AttendanceMarkView(CreatePermissionMixin, FormView):
     form_class = AttendanceMarkForm
     template_name = 'hr/attendance_mark.html'
@@ -222,10 +245,10 @@ class AttendanceMarkView(CreatePermissionMixin, FormView):
             except ValueError:
                 return kwargs
             emp = get_object_or_404(Employee, pk=int(emp_id), is_active=True)
-            try:
-                kwargs['instance'] = AttendanceRecord.objects.get(employee=emp, date=ad)
-            except AttendanceRecord.DoesNotExist:
-                kwargs['instance'] = AttendanceRecord(employee=emp, date=ad)
+            kwargs['instance'] = (
+                AttendanceRecord.objects.filter(employee=emp, date=ad).order_by('-pk').first()
+                or AttendanceRecord(employee=emp, date=ad)
+            )
         return kwargs
 
     def form_valid(self, form):
@@ -506,6 +529,17 @@ def attendance_summary_export_csv(request):
 
 
 @login_required
+def attendance_import_sample_csv(request):
+    """Download sample CSV for bulk attendance import."""
+    if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'hr', 'create')):
+        return HttpResponseForbidden('Permission denied.')
+    path = settings.BASE_DIR / 'import_templates' / 'attendance_import.csv'
+    response = HttpResponse(path.read_text(encoding='utf-8'), content_type='text/csv; charset=utf-8')
+    response['Content-Disposition'] = 'attachment; filename="attendance_import_sample.csv"'
+    return response
+
+
+@login_required
 def attendance_import_csv(request):
     """CSV import with preview (session) + skip weekends/holidays."""
     if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'hr', 'create')):
@@ -516,7 +550,10 @@ def attendance_import_csv(request):
         return render(
             request,
             'hr/attendance_import.html',
-            {'title': 'Import attendance CSV'},
+            {
+                'title': 'Import attendance CSV',
+                'sample_csv_url': reverse('hr:attendance_import_sample_csv'),
+            },
         )
 
     step = request.POST.get('step') or 'preview'
@@ -535,15 +572,16 @@ def attendance_import_csv(request):
             ad = date.fromisoformat(row['date'])
             ci = _parse_time_cell(row.get('check_in'))
             co = _parse_time_cell(row.get('check_out'))
-            AttendanceRecord.objects.update_or_create(
+            overlap = attendance_overlap_message(emp, ad, ci, co)
+            if overlap:
+                continue
+            AttendanceRecord.objects.create(
                 employee=emp,
                 date=ad,
-                defaults={
-                    'check_in': ci,
-                    'check_out': co,
-                    'status': row.get('status') or 'present',
-                    'source': 'import',
-                },
+                check_in=ci,
+                check_out=co,
+                status=row.get('status') or 'present',
+                source='import',
             )
             recalculate_summary_for_employee_month(emp, ad.year, ad.month)
             saved += 1
@@ -559,6 +597,7 @@ def attendance_import_csv(request):
     ready = []
     skipped = 0
     errors = []
+    batch_sessions: dict[tuple[int, date], list[tuple]] = {}
     for raw in reader:
         row = {(k or '').strip().lstrip('\ufeff'): (v or '').strip() for k, v in raw.items()}
         code = (row.get('employee_code') or '').strip()
@@ -591,6 +630,29 @@ def attendance_import_csv(request):
             ci = None
         if co == '':
             co = None
+        ci_parsed = _parse_time_cell(ci)
+        co_parsed = _parse_time_cell(co)
+        if (ci and not ci_parsed) or (co and not co_parsed):
+            errors.append({'employee_code': code, 'reason': 'Invalid check_in or check_out time'})
+            continue
+        if ci_parsed and co_parsed and co_parsed <= ci_parsed:
+            errors.append({'employee_code': code, 'reason': 'check_out must be after check_in'})
+            continue
+
+        batch_key = (emp.pk, ad)
+        overlap = attendance_overlap_message(
+            emp,
+            ad,
+            ci_parsed,
+            co_parsed,
+            extra_sessions=batch_sessions.get(batch_key, []),
+        )
+        if overlap:
+            errors.append({'employee_code': code, 'reason': overlap})
+            continue
+
+        if ci_parsed and co_parsed:
+            batch_sessions.setdefault(batch_key, []).append((ci_parsed, co_parsed))
 
         ready.append(
             {
@@ -669,16 +731,19 @@ def _resolve_technician_project_for_punch(employee: Employee, raw_project_id):
 
 
 def _punch_record_json(rec: AttendanceRecord, action: str):
+    open_sess = open_attendance_session(rec.employee, rec.date)
+    display = open_sess or rec
     msg = 'Clock in saved.' if action == 'check_in' else 'Clock out saved.'
     return {
         'ok': True,
         'message': msg,
         'employee_code': rec.employee.employee_code,
         'date': rec.date.isoformat(),
-        'check_in': rec.check_in.isoformat() if rec.check_in else None,
-        'check_out': rec.check_out.isoformat() if rec.check_out else None,
-        'check_in_coords': _fmt_coords(rec.check_in_latitude, rec.check_in_longitude),
-        'check_out_coords': _fmt_coords(rec.check_out_latitude, rec.check_out_longitude),
+        'check_in': display.check_in.isoformat() if display.check_in else None,
+        'check_out': display.check_out.isoformat() if display.check_out else None,
+        'check_in_coords': _fmt_coords(display.check_in_latitude, display.check_in_longitude),
+        'check_out_coords': _fmt_coords(display.check_out_latitude, display.check_out_longitude),
+        'open_session': open_sess is not None,
     }
 
 
@@ -690,47 +755,48 @@ def _perform_attendance_punch(*, employee: Employee, action: str, when, lat, lng
     t = when.time().replace(microsecond=0)
 
     if action == 'check_in':
-        rec, _created = AttendanceRecord.objects.get_or_create(
+        if open_attendance_session(employee, d):
+            return False, 'Already clocked in. Clock out first.'
+        overlap = attendance_overlap_message(employee, d, t, check_out=None)
+        if overlap:
+            return False, overlap
+        if project is None and employee.user_id:
+            project = infer_project_for_technician(employee.user)
+        status = 'present'
+        rec = AttendanceRecord(
             employee=employee,
             date=d,
-            defaults={'status': 'present', 'source': source},
+            status=status,
+            source=source,
+            check_in=t,
+            check_in_latitude=la,
+            check_in_longitude=lo,
+            project=project,
         )
-        if rec.check_in and not rec.check_out:
-            return False, 'Already clocked in for this date.'
-        if rec.check_in and rec.check_out:
-            return False, 'Attendance for this date is already complete.'
-        if (
-            not is_uae_weekend(d)
-            and not holiday_on_date_for_employee(d, employee)
-            and rec.status == 'absent'
-        ):
-            rec.status = 'present'
-        rec.check_in = t
-        rec.check_in_latitude = la
-        rec.check_in_longitude = lo
-        rec.source = source
-        if project is not None:
-            rec.project = project
         rec.save()
         recalculate_summary_for_employee_month(employee, d.year, d.month)
         return True, rec
 
-    try:
-        rec = AttendanceRecord.objects.get(employee=employee, date=d)
-    except AttendanceRecord.DoesNotExist:
+    open_sess = open_attendance_session(employee, d)
+    if not open_sess:
         return False, 'Clock in first.'
 
-    if not rec.check_in:
-        return False, 'Clock in first.'
-    if rec.check_out:
-        return False, 'Already clocked out for this date.'
+    overlap = attendance_overlap_message(
+        employee,
+        d,
+        open_sess.check_in,
+        t,
+        exclude_pk=open_sess.pk,
+    )
+    if overlap:
+        return False, overlap
 
-    rec.check_out = t
-    rec.check_out_latitude = la
-    rec.check_out_longitude = lo
-    rec.save()
+    open_sess.check_out = t
+    open_sess.check_out_latitude = la
+    open_sess.check_out_longitude = lo
+    open_sess.save()
     recalculate_summary_for_employee_month(employee, d.year, d.month)
-    return True, rec
+    return True, open_sess
 
 
 @require_GET
@@ -749,7 +815,7 @@ def attendance_technician_projects(request):
     rows = (
         Project.objects.filter(is_active=True, technicians__pk=emp.user_id)
         .distinct()
-        .order_by('project_code')
+        .order_by('-created_at', '-id')
         .values('id', 'project_code', 'name')
     )
     return JsonResponse({'ok': True, 'projects': list(rows)})

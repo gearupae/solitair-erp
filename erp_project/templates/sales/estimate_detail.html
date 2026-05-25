@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load static %}
 
 {% block extra_css %}
 <style>
@@ -18,29 +19,32 @@
     <nav aria-label="breadcrumb">
         <ol class="breadcrumb mb-2">
             <li class="breadcrumb-item"><a href="{% url 'sales:estimate_list' %}">Estimates</a></li>
-            <li class="breadcrumb-item active">{{ estimate.estimate_number }}</li>
+            <li class="breadcrumb-item active">{{ estimate.display_estimate_number }}</li>
         </ol>
     </nav>
     <div class="d-flex justify-content-between align-items-center">
         <div>
-            <h4 class="mb-1 fw-bold">{{ estimate.estimate_number }}</h4>
+            <h4 class="mb-1 fw-bold">{{ estimate.display_estimate_number }}</h4>
             <span class="text-muted">{{ estimate.customer.name }}</span>
+            {% if estimate.revision_label %}
+            <span class="badge bg-info text-dark ms-2">Revision {{ estimate.revision_label }}</span>
+            {% endif %}
         </div>
         <div class="d-flex flex-wrap gap-2 align-items-center">
             {% if estimate.edit_approval_status == 'pending' %}
             <span class="badge bg-warning text-dark"><i class="fas fa-clock me-1"></i>Edit pending approval</span>
             {% elif estimate.edit_approval_status == 'rejected' %}
-            <span class="badge bg-danger"><i class="fas fa-times-circle me-1"></i>Edit rejected — review needed</span>
+            <span class="badge bg-danger"><i class="fas fa-times-circle me-1"></i>Edit rejected — correct and save to resubmit (next revision: R{{ estimate.revision_count|add:1 }})</span>
             {% endif %}
             {% if can_approve_estimate_edit %}
             <form method="post" action="{% url 'sales:estimate_approve_edit' estimate.pk %}" class="d-inline" onsubmit="return confirm('Approve these estimate changes?');">
                 {% csrf_token %}
                 <button type="submit" class="btn btn-success btn-sm"><i class="fas fa-check me-1"></i>Approve edit</button>
             </form>
-            <form method="post" action="{% url 'sales:estimate_reject_edit' estimate.pk %}" class="d-inline" onsubmit="return confirm('Reject this edit review?');">
+            <form method="post" action="{% url 'sales:estimate_reject_edit' estimate.pk %}" class="d-inline">
                 {% csrf_token %}
-                <input type="text" name="comment" class="form-control form-control-sm d-inline-block" style="width:11rem;" placeholder="Comment (optional)">
-                <button type="submit" class="btn btn-outline-danger btn-sm"><i class="fas fa-times me-1"></i>Reject</button>
+                <textarea name="comment" class="form-control form-control-sm d-inline-block align-middle" style="width:14rem; vertical-align:middle;" rows="1" placeholder="Rejection reason (optional)"></textarea>
+                <button type="submit" class="btn btn-outline-danger btn-sm" onclick="return confirm('Reject this edit review?');"><i class="fas fa-times me-1"></i>Reject edit</button>
             </form>
             {% endif %}
             {% if can_edit %}
@@ -82,7 +86,10 @@
     <div class="col-lg-8">
         <!-- Estimate Info -->
         <div class="card mb-4">
-            <div class="card-body">
+            <div class="card-header bg-transparent py-3">
+                <h6 class="mb-0 fw-semibold"><i class="fas fa-address-card me-2 text-dark"></i>Estimate details</h6>
+            </div>
+            <div class="card-body pt-0">
                 <div class="row row-cols-1 row-cols-sm-2 row-cols-lg-3 g-4 align-items-start">
                     <div class="col">
                         <h6 class="text-muted mb-2 text-uppercase small fw-semibold">Customer</h6>
@@ -123,8 +130,8 @@
         
         <!-- Line Items -->
         <div class="card mb-4">
-            <div class="card-header">
-                <h6 class="mb-0 fw-semibold">Line Items</h6>
+            <div class="card-header bg-transparent py-3">
+                <h6 class="mb-0 fw-semibold"><i class="fas fa-list-ul me-2 text-dark"></i>Line Items</h6>
             </div>
             <div class="card-body p-0">
                 <div class="table-responsive">
@@ -141,14 +148,14 @@
                             </tr>
                         </thead>
                         <tbody>
-                            {% for item in estimate.items.all %}
-                            {% ifchanged item.group_name %}
-                            {% if item.group_name %}
+                            {% for group in item_groups %}
+                            {% if group.name and not estimate.show_group_totals_on_pdf %}
                             <tr class="table-secondary">
-                                <td colspan="7" class="fw-semibold small text-uppercase">{{ item.group_name }}</td>
+                                <td colspan="7" class="fw-semibold small text-uppercase">{{ group.name }}</td>
                             </tr>
                             {% endif %}
-                            {% endifchanged %}
+                            {% for row in group.items %}
+                            {% with item=row.item %}
                             <tr>
                                 <td>
                                     {{ item.description }}
@@ -163,41 +170,67 @@
                                 <td class="text-end">{{ item.total|floatformat:2 }}</td>
                                 <td class="text-end fw-medium">{{ item.total|add:item.vat_amount|floatformat:2 }}</td>
                             </tr>
+                            {% endwith %}
+                            {% endfor %}
+                            {% if group.name and estimate.show_group_totals_on_pdf %}
+                            <tr class="table-light">
+                                <td colspan="6" class="text-end fw-semibold small">{{ group.name }} total</td>
+                                <td class="text-end fw-semibold">AED {{ group.line_total|floatformat:2 }}</td>
+                            </tr>
+                            {% endif %}
                             {% empty %}
                             <tr>
                                 <td colspan="7" class="text-center text-muted py-4">No items</td>
                             </tr>
                             {% endfor %}
                         </tbody>
-                        <tfoot>
-                            <tr>
-                                <td colspan="6" class="text-end">Subtotal (excl. VAT):</td>
-                                <td class="text-end fw-medium">AED {{ estimate.subtotal|floatformat:2 }}</td>
-                            </tr>
-                            <tr>
-                                <td colspan="6" class="text-end">VAT:</td>
-                                <td class="text-end fw-medium">AED {{ estimate.vat_amount|floatformat:2 }}</td>
-                            </tr>
-                            {% if estimate.discount_applied and estimate.discount_applied > 0 %}
-                            <tr>
-                                <td colspan="6" class="text-end">Discount:</td>
-                                <td class="text-end text-danger">− AED {{ estimate.discount_applied|floatformat:2 }}</td>
-                            </tr>
-                            {% endif %}
-                            <tr>
-                                <td colspan="6" class="text-end fw-bold">Total:</td>
-                                <td class="text-end fw-bold">AED {{ estimate.total_amount|floatformat:2 }}</td>
-                            </tr>
-                        </tfoot>
                     </table>
                 </div>
             </div>
         </div>
+
+        {% if can_send_estimate_email %}
+        <div class="card mb-4">
+            <div class="card-header bg-transparent py-3">
+                <h6 class="mb-0 fw-semibold"><i class="fas fa-envelope me-2 text-dark"></i>Email this quotation</h6>
+            </div>
+            <div class="card-body pt-0">
+                {% if estimate_email_hint %}
+                <div class="alert alert-warning py-2 small mb-3">{{ estimate_email_hint }}</div>
+                {% endif %}
+                {% csrf_token %}
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label small fw-semibold" for="estimate-email-subject">Subject</label>
+                        <input type="text" class="form-control form-control-sm" id="estimate-email-subject" value="{{ estimate_email_default_subject }}">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small fw-semibold" for="estimate-email-to">To</label>
+                        <input type="text" class="form-control form-control-sm" id="estimate-email-to" value="{{ estimate_email_default_to }}" placeholder="email@example.com (comma-separated for multiple)">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small fw-semibold" for="estimate-email-cc">Cc</label>
+                        <input type="text" class="form-control form-control-sm" id="estimate-email-cc" placeholder="Optional, comma-separated">
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label small fw-semibold" for="estimate-email-body">Message</label>
+                        <textarea class="form-control form-control-sm" id="estimate-email-body" rows="5">{{ estimate_email_default_body }}</textarea>
+                    </div>
+                    <div class="col-12">
+                        <button type="button" class="btn btn-primary btn-sm" id="estimate-email-send-btn">
+                            <i class="fas fa-paper-plane me-1"></i>Send email with PDF
+                        </button>
+                        <span class="text-muted small ms-2" id="estimate-email-send-status"></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
         
         {% if estimate.authorized_signature or estimate.customer_signature %}
         <div class="card mb-4">
-            <div class="card-header">
-                <h6 class="mb-0 fw-semibold">Signatures</h6>
+            <div class="card-header bg-transparent py-3">
+                <h6 class="mb-0 fw-semibold"><i class="fas fa-signature me-2 text-dark"></i>Signatures</h6>
             </div>
             <div class="card-body">
                 <div class="row g-4">
@@ -224,8 +257,8 @@
         
         {% if estimate.notes %}
         <div class="card mb-4">
-            <div class="card-header">
-                <h6 class="mb-0 fw-semibold">Internal notes</h6>
+            <div class="card-header bg-transparent py-3">
+                <h6 class="mb-0 fw-semibold"><i class="fas fa-sticky-note me-2 text-dark"></i>Internal notes</h6>
             </div>
             <div class="card-body">
                 <p class="mb-0">{{ estimate.notes|linebreaks }}</p>
@@ -235,8 +268,8 @@
         
         {% if estimate.client_note %}
         <div class="card mb-4">
-            <div class="card-header">
-                <h6 class="mb-0 fw-semibold">Client note</h6>
+            <div class="card-header bg-transparent py-3">
+                <h6 class="mb-0 fw-semibold"><i class="fas fa-comment-dots me-2 text-dark"></i>Client note</h6>
             </div>
             <div class="card-body">
                 <p class="mb-0">{{ estimate.client_note|linebreaks }}</p>
@@ -245,9 +278,9 @@
         {% endif %}
         
         {% if estimate.terms_and_conditions %}
-        <div class="card">
-            <div class="card-header">
-                <h6 class="mb-0 fw-semibold">Terms & Conditions</h6>
+        <div class="card mb-4">
+            <div class="card-header bg-transparent py-3">
+                <h6 class="mb-0 fw-semibold"><i class="fas fa-file-contract me-2 text-dark"></i>Terms & Conditions</h6>
             </div>
             <div class="card-body">
                 <p class="mb-0">{{ estimate.terms_and_conditions|linebreaks }}</p>
@@ -259,8 +292,10 @@
     <div class="col-lg-4">
         <!-- Status -->
         <div class="card mb-4">
-            <div class="card-body">
-                <h6 class="text-muted mb-3">Status</h6>
+            <div class="card-header bg-transparent py-3">
+                <h6 class="mb-0 fw-semibold"><i class="fas fa-flag me-2 text-dark"></i>Status</h6>
+            </div>
+            <div class="card-body pt-0">
                 <div class="mb-3">
                     {% if estimate.status == 'draft' %}
                         <span class="badge bg-secondary fs-6">Draft</span>
@@ -278,83 +313,30 @@
                         <span class="badge bg-secondary fs-6">{{ estimate.get_status_display }}</span>
                     {% endif %}
                 </div>
+                {% if estimate.status == 'rejected' and estimate.rejection_reason %}
+                <div class="alert alert-warning py-2 px-3 mb-0 small">
+                    <strong>Rejection reason:</strong> {{ estimate.rejection_reason|linebreaksbr }}
+                </div>
+                {% endif %}
                 
-                {% if can_edit %}
+                {% if estimate_status_actions %}
                 <hr>
-                <h6 class="text-muted mb-3">Update Status</h6>
+                <h6 class="text-muted mb-3"><i class="fas fa-sync-alt me-2 text-dark"></i>Update Status</h6>
                 <div class="d-grid gap-2">
-                    {% if estimate.status == 'draft' %}
-                    <form method="post" action="{% url 'sales:estimate_status' estimate.pk 'sent' %}" class="d-grid">
+                    {% for action in estimate_status_actions %}
+                    {% if action.status == 'rejected' %}
+                    <button type="button" class="btn btn-sm {{ action.btn_class }}" data-bs-toggle="modal" data-bs-target="#rejectEstimateModal">
+                        <i class="fas {{ action.icon }} me-2"></i>{{ action.label }}
+                    </button>
+                    {% else %}
+                    <form method="post" action="{% url 'sales:estimate_status' estimate.pk action.status %}" class="d-grid">
                         {% csrf_token %}
-                        <button type="submit" class="btn btn-sm btn-outline-primary">
-                            <i class="fas fa-paper-plane me-2"></i>Mark as Sent
-                        </button>
-                    </form>
-                    <form method="post" action="{% url 'sales:estimate_status' estimate.pk 'approved' %}" class="d-grid">
-                        {% csrf_token %}
-                        <button type="submit" class="btn btn-sm btn-outline-success">
-                            <i class="fas fa-check me-2"></i>Approve
-                        </button>
-                    </form>
-                    {% elif estimate.status == 'sent' %}
-                    <form method="post" action="{% url 'sales:estimate_status' estimate.pk 'approved' %}" class="d-grid">
-                        {% csrf_token %}
-                        <button type="submit" class="btn btn-sm btn-outline-success">
-                            <i class="fas fa-check me-2"></i>Approve
-                        </button>
-                    </form>
-                    <form method="post" action="{% url 'sales:estimate_status' estimate.pk 'quotation_won' %}" class="d-grid">
-                        {% csrf_token %}
-                        <button type="submit" class="btn btn-sm btn-outline-success">
-                            <i class="fas fa-trophy me-2"></i>Mark estimate won
-                        </button>
-                    </form>
-                    <form method="post" action="{% url 'sales:estimate_status' estimate.pk 'quotation_lost' %}" class="d-grid">
-                        {% csrf_token %}
-                        <button type="submit" class="btn btn-sm btn-outline-secondary">
-                            <i class="fas fa-times-circle me-2"></i>Mark estimate lost
-                        </button>
-                    </form>
-                    <form method="post" action="{% url 'sales:estimate_status' estimate.pk 'rejected' %}" class="d-grid">
-                        {% csrf_token %}
-                        <button type="submit" class="btn btn-sm btn-outline-danger">
-                            <i class="fas fa-times me-2"></i>Reject
-                        </button>
-                    </form>
-                    {% elif estimate.status == 'approved' %}
-                    <form method="post" action="{% url 'sales:estimate_status' estimate.pk 'quotation_won' %}" class="d-grid">
-                        {% csrf_token %}
-                        <button type="submit" class="btn btn-sm btn-outline-success">
-                            <i class="fas fa-trophy me-2"></i>Mark estimate won
-                        </button>
-                    </form>
-                    <form method="post" action="{% url 'sales:estimate_status' estimate.pk 'quotation_lost' %}" class="d-grid">
-                        {% csrf_token %}
-                        <button type="submit" class="btn btn-sm btn-outline-secondary">
-                            <i class="fas fa-times-circle me-2"></i>Mark estimate lost
-                        </button>
-                    </form>
-                    <form method="post" action="{% url 'sales:estimate_status' estimate.pk 'draft' %}" class="d-grid">
-                        {% csrf_token %}
-                        <button type="submit" class="btn btn-sm btn-outline-secondary">
-                            <i class="fas fa-undo me-2"></i>Revert to Draft
-                        </button>
-                    </form>
-                    {% elif estimate.status == 'quotation_won' %}
-                    <form method="post" action="{% url 'sales:estimate_status' estimate.pk 'draft' %}" class="d-grid">
-                        {% csrf_token %}
-                        <button type="submit" class="btn btn-sm btn-outline-secondary">
-                            <i class="fas fa-undo me-2"></i>Revert to Draft
-                        </button>
-                    </form>
-                    {% elif estimate.status == 'rejected' or estimate.status == 'quotation_lost' %}
-                    <form method="post" action="{% url 'sales:estimate_status' estimate.pk 'draft' %}" class="d-grid">
-                        {% csrf_token %}
-                        <button type="submit" class="btn btn-sm btn-outline-secondary">
-                            <i class="fas fa-undo me-2"></i>Revert to Draft
+                        <button type="submit" class="btn btn-sm {{ action.btn_class }}">
+                            <i class="fas {{ action.icon }} me-2"></i>{{ action.label }}
                         </button>
                     </form>
                     {% endif %}
+                    {% endfor %}
                 </div>
                 {% endif %}
             </div>
@@ -362,8 +344,10 @@
         
         <!-- Summary -->
         <div class="card mb-4">
-            <div class="card-body">
-                <h6 class="text-muted mb-3">Summary</h6>
+            <div class="card-header bg-transparent py-3">
+                <h6 class="mb-0 fw-semibold"><i class="fas fa-calculator me-2 text-dark"></i>Summary</h6>
+            </div>
+            <div class="card-body pt-0">
                 <div class="d-flex justify-content-between mb-2">
                     <span>Subtotal (excl. VAT)</span>
                     <span>AED {{ estimate.subtotal|floatformat:2 }}</span>
@@ -386,44 +370,69 @@
             </div>
         </div>
 
-        {% if can_send_estimate_email %}
-        <div class="card mb-4 border-primary border-opacity-25">
-            <div class="card-header">
-                <h6 class="mb-0 fw-semibold"><i class="fas fa-envelope me-2 text-primary"></i>Email this quotation</h6>
-            </div>
-            <div class="card-body">
-                {% if estimate_email_hint %}
-                <div class="alert alert-warning py-2 small mb-3">{{ estimate_email_hint }}</div>
-                {% endif %}
-                {% csrf_token %}
-                <div class="mb-2">
-                    <label class="form-label small fw-semibold" for="estimate-email-subject">Subject</label>
-                    <input type="text" class="form-control form-control-sm" id="estimate-email-subject" value="{{ estimate_email_default_subject }}">
-                </div>
-                <div class="mb-2">
-                    <label class="form-label small fw-semibold" for="estimate-email-to">To</label>
-                    <input type="text" class="form-control form-control-sm" id="estimate-email-to" value="{{ estimate_email_default_to }}" placeholder="email@example.com (comma-separated for multiple)">
-                </div>
-                <div class="mb-2">
-                    <label class="form-label small fw-semibold" for="estimate-email-cc">Cc</label>
-                    <input type="text" class="form-control form-control-sm" id="estimate-email-cc" placeholder="Optional, comma-separated">
-                </div>
-                <div class="mb-3">
-                    <label class="form-label small fw-semibold" for="estimate-email-body">Message</label>
-                    <textarea class="form-control form-control-sm" id="estimate-email-body" rows="6">{{ estimate_email_default_body }}</textarea>
-                </div>
-                <button type="button" class="btn btn-primary btn-sm" id="estimate-email-send-btn">
-                    <i class="fas fa-paper-plane me-1"></i>Send email with PDF
+        {% if can_create_proforma %}
+        <div class="card mb-4" id="proforma-create">
+            <div class="card-header bg-transparent py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <h6 class="mb-0 fw-semibold"><i class="fas fa-file-invoice-dollar me-2 text-dark"></i>Proforma invoice</h6>
+                {% if not proforma_invoices %}
+                <button type="button" class="btn btn-sm btn-warning" data-bs-toggle="modal" data-bs-target="#proformaInvoiceModal"
+                    data-estimate-pk="{{ estimate.pk }}"
+                    data-estimate-number="{{ estimate.display_estimate_number }}"
+                    data-subtotal="{{ estimate.subtotal }}"
+                    data-vat="{{ estimate.vat_amount }}"
+                    data-vat-rate="{{ estimate.proforma_vat_rate_percent }}">
+                    <i class="fas fa-plus me-1"></i>Create proforma
                 </button>
-                <span class="text-muted small ms-2" id="estimate-email-send-status"></span>
+                {% endif %}
             </div>
+            {% if proforma_invoices %}
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Number</th>
+                                <th>Name</th>
+                                <th class="text-end">Total</th>
+                                <th class="text-end">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for pf in proforma_invoices %}
+                            <tr>
+                                <td class="fw-medium">{{ pf.proforma_number }}</td>
+                                <td>{{ pf.name }}</td>
+                                <td class="text-end">AED {{ pf.total_amount|floatformat:2 }}</td>
+                                <td class="text-end text-nowrap">
+                                    <a href="{% url 'sales:estimate_proforma_invoice_pdf' estimate.pk pf.pk %}" class="btn btn-sm btn-outline-warning" title="View PDF">
+                                        <i class="fas fa-file-pdf"></i>
+                                    </a>
+                                    {% if can_edit %}
+                                    <a href="{% url 'sales:estimate_proforma_edit' estimate.pk pf.pk %}" class="btn btn-sm btn-outline-primary" title="Edit">
+                                        <i class="fas fa-edit"></i>
+                                    </a>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            {% else %}
+            <div class="card-body text-muted small">
+                No proforma invoices yet. Use <strong>Create proforma</strong> to generate one — you will go straight to the PDF.
+            </div>
+            {% endif %}
         </div>
         {% endif %}
         
         <!-- Audit Info -->
-        <div class="card">
-            <div class="card-body">
-                <h6 class="text-muted mb-3">Audit Information</h6>
+        <div class="card mb-4">
+            <div class="card-header bg-transparent py-3">
+                <h6 class="mb-0 fw-semibold"><i class="fas fa-history me-2 text-dark"></i>Audit Information</h6>
+            </div>
+            <div class="card-body pt-0">
                 <div class="mb-2">
                     <small class="text-muted">Created</small>
                     <p class="mb-0 small">{{ estimate.created_at|date:"d/m/Y H:i" }}</p>
@@ -459,9 +468,37 @@
     </div>
 </div>
 {% endif %}
+{% if can_create_proforma %}
+{% include 'sales/includes/proforma_invoice_modal.html' %}
+{% endif %}
+
+{% if estimate.status == 'sent' %}
+<div class="modal fade" id="rejectEstimateModal" tabindex="-1" aria-labelledby="rejectEstimateModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" action="{% url 'sales:estimate_status' estimate.pk 'rejected' %}">
+                {% csrf_token %}
+                <div class="modal-header">
+                    <h5 class="modal-title" id="rejectEstimateModalLabel">Reject estimate</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <label class="form-label" for="id_estimate_rejection_reason">Reason <span class="text-danger">*</span></label>
+                    <textarea name="rejection_reason" id="id_estimate_rejection_reason" class="form-control" rows="3" required placeholder="Explain why this estimate is rejected"></textarea>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-danger">Reject estimate</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endif %}
 {% endblock %}
 
 {% block extra_js %}
+{{ block.super }}
 {% if can_send_estimate_email %}
 <script>
 (function() {
@@ -509,6 +546,9 @@
     });
 })();
 </script>
+{% endif %}
+{% if can_create_proforma %}
+<script src="{% static 'js/proforma_modal.js' %}?v=4"></script>
 {% endif %}
 {% endblock %}
 

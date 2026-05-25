@@ -1,7 +1,10 @@
 """
 Context processors for the ERP system.
 """
+from django.conf import settings
+
 from apps.core.utils import PermissionChecker
+from apps.crm.utils import crm_leads_restricted_to_assignee
 from apps.hr.models import Employee
 from apps.settings_app.models import Notification
 
@@ -13,6 +16,7 @@ def global_context(request):
     context = {
         'app_name': 'Gearup',
         'current_year': __import__('datetime').datetime.now().year,
+        'nav_hidden_modules': settings.NAV_HIDDEN_MODULES,
     }
     
     if request.user.is_authenticated:
@@ -22,15 +26,17 @@ def global_context(request):
             user=request.user, is_active=True
         ).first()
         context['header_notifications'] = list(
-            Notification.objects.filter(user=request.user).order_by('-created_at')[:15]
+            Notification.objects.filter(user=request.user, is_read=False).order_by('-created_at')[:15]
         )
         context['unread_notification_count'] = Notification.objects.filter(
             user=request.user, is_read=False
         ).count()
+        context['crm_sales_rep_only'] = crm_leads_restricted_to_assignee(request.user)
     else:
         context['header_notifications'] = []
         context['unread_notification_count'] = 0
         context['header_linked_employee'] = None
+        context['crm_sales_rep_only'] = False
 
     return context
 

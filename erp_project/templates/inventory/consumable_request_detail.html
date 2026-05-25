@@ -19,16 +19,36 @@
                 {% endif %}
             </span>
         </div>
-        <div>
-            {% if request_obj.status == 'pending' %}
-            <span class="badge bg-warning text-dark fs-6">Pending</span>
-            {% elif request_obj.status == 'approved' %}
-            <span class="badge bg-info fs-6">Approved</span>
-            {% elif request_obj.status == 'dispensed' %}
-            <span class="badge bg-success fs-6">Dispensed</span>
-            {% elif request_obj.status == 'rejected' %}
-            <span class="badge bg-danger fs-6">Rejected</span>
-            {% endif %}
+        <div class="d-flex flex-column align-items-end gap-2">
+            <div>
+                {% if request_obj.status == 'pending' %}
+                <span class="badge bg-warning text-dark fs-6">Pending</span>
+                {% elif request_obj.status == 'approved' %}
+                <span class="badge bg-info fs-6">Approved</span>
+                {% elif request_obj.status == 'dispensed' %}
+                <span class="badge bg-success fs-6">Dispensed</span>
+                {% elif request_obj.status == 'rejected' %}
+                <span class="badge bg-danger fs-6">Rejected</span>
+                {% endif %}
+            </div>
+            <div class="d-flex gap-2">
+                {% if can_edit_request %}
+                <a href="{% url 'inventory:consumable_request_edit' request_obj.pk %}" class="btn btn-primary btn-sm">
+                    <i class="fas fa-edit me-1"></i>Edit request
+                </a>
+                <form method="post" action="{% url 'inventory:consumable_request_delete' request_obj.pk %}" class="d-inline" onsubmit="return confirm('Delete request {{ request_obj.request_number }}? This cannot be undone.');">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-outline-danger btn-sm">
+                        <i class="fas fa-trash me-1"></i>Delete
+                    </button>
+                </form>
+                {% endif %}
+                {% if request_obj.project %}
+                <a href="{% url 'projects:project_detail' request_obj.project.pk %}" class="btn btn-light btn-sm">
+                    <i class="fas fa-project-diagram me-1"></i>Back to project
+                </a>
+                {% endif %}
+            </div>
         </div>
     </div>
 </div>
@@ -190,11 +210,17 @@
                     <small>No warehouse has sufficient stock for all items. Please add stock first.</small>
                 </div>
                 {% else %}
+                {% if requires_project_delivery %}
+                <div class="alert alert-info mb-3 py-2">
+                    <small><i class="fas fa-info-circle me-1"></i>
+                        Serial-tracked items on a project request are delivered to the project (model numbers assigned automatically), not dispensed as consumables.</small>
+                </div>
+                {% endif %}
                 <!-- Approve & Dispense Form -->
                 <form method="post" action="{% url 'inventory:consumable_request_dispense' request_obj.pk %}" class="mb-3">
                     {% csrf_token %}
                     <div class="mb-3">
-                        <label class="form-label">Dispense From <span class="text-danger">*</span></label>
+                        <label class="form-label">{% if requires_project_delivery %}Deliver from{% else %}Dispense From{% endif %} <span class="text-danger">*</span></label>
                         {{ approve_form.warehouse }}
                         {% if approve_form.stock_info %}
                         <small class="text-muted">Available stock:</small>
@@ -213,7 +239,7 @@
                         {{ approve_form.admin_notes }}
                     </div>
                     <button type="submit" class="btn btn-success w-100 mb-2">
-                        <i class="fas fa-check-double me-1"></i>Approve & Dispense
+                        <i class="fas fa-check-double me-1"></i>{% if requires_project_delivery %}Approve &amp; deliver to project{% else %}Approve &amp; Dispense{% endif %}
                     </button>
                 </form>
 

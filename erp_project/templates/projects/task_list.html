@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load project_tags %}
 
 {% block extra_css %}
 <style>
@@ -150,7 +151,7 @@
                 <select name="assigned_to" class="form-select form-select-sm">
                     <option value="">Anyone</option>
                     {% for u in assignable_users %}
-                    <option value="{{ u.pk }}" {% if request.GET.assigned_to == u.pk|stringformat:"s" %}selected{% endif %}>{{ u.get_full_name|default:u.username }}</option>
+                    <option value="{{ u.pk }}" {% if request.GET.assigned_to == u.pk|stringformat:"s" %}selected{% endif %}>{{ u|staff_label }}</option>
                     {% endfor %}
                 </select>
             </div>
@@ -252,7 +253,7 @@
                         </td>
                         <td>
                             {% if task.assigned_to %}
-                            {{ task.assigned_to.get_full_name|default:task.assigned_to.username }}
+                            {{ task.assigned_to|staff_label }}
                             {% else %}
                             <span class="text-muted">—</span>
                             {% endif %}

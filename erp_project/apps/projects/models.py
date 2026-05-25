@@ -50,7 +50,7 @@ class Project(BaseModel):
         max_length=20,
         choices=EDIT_APPROVAL_STATUS_CHOICES,
         default='none',
-        help_text='When approval is configured for projects, edits from non-approvers queue here.',
+        help_text='Pending completion approval when a user requests status Completed.',
     )
     edit_approval_submitted_at = models.DateTimeField(null=True, blank=True)
     edit_approval_submitted_by = models.ForeignKey(
@@ -249,6 +249,82 @@ class ProjectItemLine(models.Model):
     @property
     def line_total_incl_vat(self):
         return (self.line_net or Decimal('0')) + (self.vat_amount or Decimal('0'))
+
+
+class ProjectItemDelivery(models.Model):
+    """Log of non-serial qty deliveries from inventory to a project."""
+
+    project = models.ForeignKey(
+        Project,
+        on_delete=models.CASCADE,
+        related_name='item_deliveries',
+    )
+    item = models.ForeignKey(
+        'inventory.Item',
+        on_delete=models.PROTECT,
+        related_name='project_item_deliveries',
+    )
+    quantity = models.DecimalField(max_digits=15, decimal_places=2)
+    delivered_date = models.DateField()
+    delivered_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='project_item_deliveries',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-delivered_date', '-pk']
+        verbose_name = 'Project item delivery'
+        verbose_name_plural = 'Project item deliveries'
+
+    def __str__(self):
+        return f'{self.project.project_code}: {self.item.name} × {self.quantity}'
+
+
+class ProjectItemReturn(models.Model):
+    """Log of inventory returned from a project back to stock."""
+
+    project = models.ForeignKey(
+        Project,
+        on_delete=models.CASCADE,
+        related_name='item_returns',
+    )
+    item = models.ForeignKey(
+        'inventory.Item',
+        on_delete=models.PROTECT,
+        related_name='project_item_returns',
+    )
+    quantity = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('1'))
+    returned_date = models.DateField()
+    returned_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='project_item_returns',
+    )
+    serial_number = models.ForeignKey(
+        'inventory.ItemSerialNumber',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='project_returns',
+    )
+    notes = models.CharField(max_length=500, blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-returned_date', '-pk']
+        verbose_name = 'Project item return'
+        verbose_name_plural = 'Project item returns'
+
+    def __str__(self):
+        if self.serial_number_id:
+            return f'{self.project.project_code}: {self.serial_number.model_number} returned'
+        return f'{self.project.project_code}: {self.quantity} × {self.item.name} returned'
 
 
 class ProjectGatepass(BaseModel):

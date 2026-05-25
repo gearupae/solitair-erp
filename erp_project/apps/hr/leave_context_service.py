@@ -52,6 +52,19 @@ def location_matches_employee(emp: Employee, lt: LeaveType) -> bool:
     return ltl == 'both'
 
 
+def leave_types_queryset_for_employee(employee: Employee | None):
+    """Active leave types for dropdowns — scoped to employee jurisdiction (UAE/KSA)."""
+    qs = LeaveType.objects.filter(is_active=True).order_by('name')
+    if not employee:
+        return LeaveType.objects.none()
+    loc = (employee.location or '').lower()
+    if loc == 'uae':
+        return qs.filter(location__in=['uae', 'both'])
+    if loc == 'ksa':
+        return qs.filter(location__in=['ksa', 'both'])
+    return qs.filter(location='both')
+
+
 def gender_matches_leave_type(emp: Employee, lt: LeaveType) -> bool:
     gr = (lt.gender_restricted or '').strip().lower()
     if not gr:

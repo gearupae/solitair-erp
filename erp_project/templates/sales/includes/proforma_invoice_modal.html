@@ -1,0 +1,82 @@
+{% load static %}
+<div class="modal fade" id="proformaInvoiceModal" tabindex="-1" aria-labelledby="proformaInvoiceModalLabel" aria-hidden="true"
+     data-create-url-template="{% url 'sales:estimate_proforma_create' 0 %}">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <form method="post" id="proformaInvoiceForm" action="#" novalidate>
+                {% csrf_token %}
+                <div class="modal-header">
+                    <h5 class="modal-title" id="proformaInvoiceModalLabel">
+                        <i class="fas fa-file-invoice-dollar me-2"></i>Create proforma invoice
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted small mb-3">
+                        Quotation <strong id="proformaEstimateLabel">—</strong>
+                        · Subtotal (excl. VAT): <strong id="proformaEstSubtotal">AED 0.00</strong>
+                        · VAT rate: <strong id="proformaEstVatRate">0%</strong>
+                    </p>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label" for="proformaName">Name <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="proformaName" name="name" required maxlength="200" placeholder="e.g. Advance payment">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label" for="proformaDescription">Description</label>
+                            <textarea class="form-control" id="proformaDescription" name="description" rows="2" placeholder="Optional details for the proforma line"></textarea>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label d-block">Charge basis</label>
+                            <div class="btn-group w-100" role="group" aria-label="Charge type">
+                                <input type="radio" class="btn-check" name="charge_type" id="proformaTypePercent" value="percent" checked autocomplete="off">
+                                <label class="btn btn-outline-primary" for="proformaTypePercent">Percentage</label>
+                                <input type="radio" class="btn-check" name="charge_type" id="proformaTypeAmount" value="amount" autocomplete="off">
+                                <label class="btn btn-outline-primary" for="proformaTypeAmount">Amount</label>
+                            </div>
+                        </div>
+                        <div class="col-md-6" id="proformaValuePercentWrap">
+                            <label class="form-label" for="proformaValuePercent">Percentage of quotation subtotal <span class="text-danger">*</span></label>
+                            <div class="input-group">
+                                <input type="number" class="form-control proforma-value-input" id="proformaValuePercent" min="0.01" max="100" step="0.01" placeholder="e.g. 30">
+                                <span class="input-group-text">%</span>
+                            </div>
+                        </div>
+                        <div class="col-md-6 d-none" id="proformaValueAmountWrap">
+                            <label class="form-label" for="proformaValueAmount">Amount (excl. VAT) <span class="text-danger">*</span></label>
+                            <div class="input-group">
+                                <span class="input-group-text">AED</span>
+                                <input type="number" class="form-control proforma-value-input" id="proformaValueAmount" min="0.01" step="0.01" placeholder="e.g. 1000.00">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card mt-4 bg-light border-0">
+                        <div class="card-body py-3">
+                            <h6 class="text-muted mb-3">Proforma preview</h6>
+                            <div class="d-flex justify-content-between mb-2">
+                                <span>Line total (excl. VAT)</span>
+                                <strong id="proformaPreviewSubtotal">AED 0.00</strong>
+                            </div>
+                            <div class="d-flex justify-content-between mb-2">
+                                <span>VAT</span>
+                                <strong id="proformaPreviewVat">AED 0.00</strong>
+                            </div>
+                            <div class="d-flex justify-content-between border-top pt-2">
+                                <span class="fw-semibold">Proforma total (incl. VAT)</span>
+                                <strong class="text-primary fs-5" id="proformaPreviewTotal">AED 0.00</strong>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="proformaFormError" class="alert alert-danger mt-3 d-none mb-0" role="alert"></div>
+                    <div id="proformaFormSuccess" class="alert alert-success mt-3 d-none mb-0" role="alert"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-warning" id="proformaSubmitBtn">
+                        <i class="fas fa-file-pdf me-1"></i>Create &amp; view PDF
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>

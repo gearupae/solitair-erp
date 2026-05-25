@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load static %}
 
 {% block extra_css %}
 <style>
@@ -192,8 +193,9 @@
 <div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2">
     <div>
         <h4 class="mb-1 fw-bold">{{ title }}</h4>
-        <p class="text-muted mb-0">Manage your sales estimates</p>
+        <p class="text-muted mb-0">{% if is_approver_portal %}Review and approve sales estimates{% else %}Manage your sales estimates{% endif %}</p>
     </div>
+    {% if not is_approver_portal %}
     <div class="d-flex flex-wrap gap-2 align-items-center">
         <div class="btn-group" role="group" aria-label="View mode">
             <a href="{% url 'sales:estimate_list' %}{{ estimate_list_url_list }}" class="btn btn-sm {% if view_mode != 'kanban' %}btn-primary{% else %}btn-outline-primary{% endif %}"><i class="fas fa-list me-1"></i>List</a>
@@ -205,9 +207,61 @@
         </a>
         {% endif %}
     </div>
+    {% endif %}
 </div>
 
+{% if is_approver_portal %}
+<ul class="nav nav-tabs mb-4">
+    <li class="nav-item">
+        <a class="nav-link {% if approver_tab == 'pending' %}active fw-semibold{% endif %}" href="{% url 'sales:estimate_list' %}{{ approver_tab_url_pending }}">
+            Pending approval
+            {% if pending_count %}<span class="badge bg-warning text-dark ms-1">{{ pending_count }}</span>{% endif %}
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if approver_tab == 'approved' %}active fw-semibold{% endif %}" href="{% url 'sales:estimate_list' %}{{ approver_tab_url_approved }}">
+            Approved
+            {% if approved_tab_count %}<span class="badge bg-success ms-1">{{ approved_tab_count }}</span>{% endif %}
+        </a>
+    </li>
+</ul>
+{% endif %}
+
 <!-- Summary Cards -->
+{% if is_approver_portal %}
+<div class="row g-3 mb-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="bg-warning bg-opacity-10 rounded p-3 me-3">
+                        <i class="fas fa-clock text-warning"></i>
+                    </div>
+                    <div>
+                        <p class="text-muted mb-0 small">Awaiting your approval</p>
+                        <h5 class="mb-0 fw-bold">{{ pending_count }}</h5>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="bg-success bg-opacity-10 rounded p-3 me-3">
+                        <i class="fas fa-check-circle text-success"></i>
+                    </div>
+                    <div>
+                        <p class="text-muted mb-0 small">Approved estimates</p>
+                        <h5 class="mb-0 fw-bold">{{ approved_tab_count }}</h5>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% else %}
 <div class="row g-3 mb-4">
     <div class="col-md-3">
         <div class="card">
@@ -270,20 +324,26 @@
         </div>
     </div>
 </div>
+{% endif %}
 
 <!-- Filters -->
 <div class="card mb-4">
     <div class="card-body py-3">
         <form method="get" class="row g-3 align-items-end">
-            {% if view_mode == 'kanban' %}
+            {% if is_approver_portal %}
+            <input type="hidden" name="tab" value="{{ approver_tab }}">
+            {% elif view_mode == 'kanban' %}
             <input type="hidden" name="view" value="kanban">
             {% endif %}
+            {% if not is_approver_portal %}
             <input type="hidden" name="sort" value="{{ sort_field }}">
             <input type="hidden" name="order" value="{{ sort_order }}">
-            <div class="col-md-4">
+            {% endif %}
+            <div class="col-md-{% if is_approver_portal %}8{% else %}4{% endif %}">
                 <label class="form-label small text-muted mb-0">Search</label>
                 <input type="text" name="search" class="form-control form-control-sm" placeholder="Estimate #, Customer..." value="{{ request.GET.search }}">
             </div>
+            {% if not is_approver_portal %}
             <div class="col-md-3">
                 <label class="form-label small text-muted mb-0">Status</label>
                 <select name="status" class="form-select form-select-sm">
@@ -293,11 +353,12 @@
                     {% endfor %}
                 </select>
             </div>
-            <div class="col-md-5">
+            {% endif %}
+            <div class="col-md-{% if is_approver_portal %}4{% else %}5{% endif %}">
                 <button type="submit" class="btn btn-primary btn-sm me-2">
                     <i class="fas fa-filter me-1"></i>Filter
                 </button>
-                <a href="{% url 'sales:estimate_list' %}{% if view_mode == 'kanban' %}?view=kanban{% endif %}" class="btn btn-light btn-sm">Clear</a>
+                <a href="{% url 'sales:estimate_list' %}{% if is_approver_portal %}{% if approver_tab == 'approved' %}{{ approver_tab_url_approved }}{% else %}{{ approver_tab_url_pending }}{% endif %}{% elif view_mode == 'kanban' %}?view=kanban{% endif %}" class="btn btn-light btn-sm">Clear</a>
             </div>
         </form>
     </div>
@@ -408,7 +469,7 @@
                                 Amount{% if sort_field == 'amount' %}{% if sort_order == 'asc' %}<i class="fas fa-sort-up ms-1" aria-hidden="true"></i>{% else %}<i class="fas fa-sort-down ms-1" aria-hidden="true"></i>{% endif %}{% else %}<i class="fas fa-sort ms-1 text-muted opacity-50" aria-hidden="true"></i>{% endif %}
                             </a>
                         </th>
-                        <th class="text-center estimate-list-actions">Actions</th>
+                        <th class="text-center estimate-list-actions">{% if approver_tab_readonly %}View{% else %}Actions{% endif %}</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -416,7 +477,7 @@
                     <tr>
                         <td>
                             <a href="{% url 'sales:estimate_detail' estimate.pk %}" class="fw-medium text-decoration-none">
-                                {{ estimate.estimate_number }}
+                                {{ estimate.display_estimate_number }}
                             </a>
                         </td>
                         <td class="col-customer"><span class="text-truncate" title="{{ estimate.customer.name }}">{{ estimate.customer.name }}</span></td>
@@ -429,12 +490,23 @@
                             {% endif %}
                         </td>
                         <td>
-                            {% if can_edit %}
+                            {% if can_approve_status and estimate.allowed_status_choices|length > 1 %}
                             <form method="post" action="{% url 'sales:estimate_set_status' estimate.pk %}" class="estimate-status-inline">
                                 {% csrf_token %}
                                 <input type="hidden" name="next" value="{{ request.get_full_path }}">
-                                <select name="status" class="form-select form-select-sm estimate-status-select estimate-status-{{ estimate.status }}" aria-label="Status" onchange="this.form.submit()">
-                                    {% for value, label in status_choices %}
+                                <select name="status" class="form-select form-select-sm estimate-status-select estimate-status-{{ estimate.status }}" aria-label="Status" data-current-status="{{ estimate.status }}" onchange="window.estimateStatusSelectChange(this)">
+                                    {% for value, label in estimate.allowed_status_choices %}
+                                    <option value="{{ value }}" {% if estimate.status == value %}selected{% endif %}>{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                            </form>
+                            {% elif can_edit %}
+                            {% if estimate.allowed_status_choices|length > 1 %}
+                            <form method="post" action="{% url 'sales:estimate_set_status' estimate.pk %}" class="estimate-status-inline">
+                                {% csrf_token %}
+                                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                                <select name="status" class="form-select form-select-sm estimate-status-select estimate-status-{{ estimate.status }}" aria-label="Status" data-current-status="{{ estimate.status }}" onchange="window.estimateStatusSelectChange(this)">
+                                    {% for value, label in estimate.allowed_status_choices %}
                                     <option value="{{ value }}" {% if estimate.status == value %}selected{% endif %}>{{ label }}</option>
                                     {% endfor %}
                                 </select>
@@ -456,16 +528,46 @@
                                 <span class="badge bg-secondary">{{ estimate.get_status_display }}</span>
                             {% endif %}
                             {% endif %}
+                            {% else %}
+                            {% if estimate.status == 'draft' %}
+                                <span class="badge bg-secondary">Draft</span>
+                            {% elif estimate.status == 'sent' %}
+                                <span class="badge" style="background-color: #dbeafe; color: #1e40af;">Sent</span>
+                            {% elif estimate.status == 'approved' %}
+                                <span class="badge estimate-status-badge-approved">{{ estimate.get_status_display }}</span>
+                            {% elif estimate.status == 'rejected' %}
+                                <span class="badge estimate-status-badge-rejected">{{ estimate.get_status_display }}</span>
+                            {% elif estimate.status == 'quotation_won' %}
+                                <span class="badge bg-success">{{ estimate.get_status_display }}</span>
+                            {% elif estimate.status == 'quotation_lost' %}
+                                <span class="badge bg-danger">{{ estimate.get_status_display }}</span>
+                            {% else %}
+                                <span class="badge bg-secondary">{{ estimate.get_status_display }}</span>
+                            {% endif %}
+                            {% endif %}
                         </td>
                         <td class="text-end fw-medium text-nowrap">AED {{ estimate.total_amount|floatformat:2 }}</td>
                         <td class="text-center estimate-list-actions">
                             <div class="d-flex flex-wrap gap-1 justify-content-center align-items-center">
+                                {% if approver_tab_readonly %}
+                                <a href="{% url 'sales:estimate_detail' estimate.pk %}" class="btn btn-action btn-outline-primary" title="View">
+                                    <i class="fas fa-eye"></i>
+                                </a>
+                                <a href="{% url 'sales:estimate_pdf' estimate.pk %}" class="btn btn-action btn-outline-secondary" title="Quotation PDF" target="_blank" rel="noopener">
+                                    <i class="fas fa-file-pdf"></i>
+                                </a>
+                                {% else %}
                                 {% if can_edit %}
                                 {% if user.is_superuser or estimate.status != 'quotation_won' %}
                                 <a href="{% url 'sales:estimate_edit' estimate.pk %}" class="btn btn-action btn-outline-primary" title="Edit">
                                     <i class="fas fa-edit"></i>
                                 </a>
                                 {% endif %}
+                                {% endif %}
+                                {% if is_approver_portal and approver_tab == 'pending' %}
+                                <a href="{% url 'sales:estimate_detail' estimate.pk %}" class="btn btn-action btn-outline-primary" title="View">
+                                    <i class="fas fa-eye"></i>
+                                </a>
                                 {% endif %}
                                 {% if can_create and estimate.allows_follow_on_conversion %}
                                 <a href="{% url 'sales:estimate_convert' estimate.pk %}" class="btn btn-action btn-outline-success" title="Convert to Invoice" onclick="return confirm('Create invoice from this estimate?');">
@@ -485,12 +587,29 @@
                                     <i class="fas fa-trash"></i>
                                 </a>
                                 {% endif %}
-                                <a href="{% url 'sales:estimate_pdf' estimate.pk %}" class="btn btn-action btn-outline-secondary" title="Estimate PDF" target="_blank" rel="noopener">
+                                <a href="{% url 'sales:estimate_pdf' estimate.pk %}" class="btn btn-action btn-outline-secondary" title="Quotation PDF" target="_blank" rel="noopener">
                                     <i class="fas fa-file-pdf"></i>
                                 </a>
-                                <a href="{% url 'sales:estimate_proforma_pdf' estimate.pk %}" class="btn btn-action btn-outline-warning" title="Proforma invoice PDF" target="_blank" rel="noopener">
+                                {% if estimate.status == 'quotation_won' %}
+                                {% with latest=estimate.proforma_invoices.all|first %}
+                                {% if latest %}
+                                <a href="{% url 'sales:estimate_proforma_invoice_pdf' estimate.pk latest.pk %}" class="btn btn-action btn-outline-warning" title="View proforma PDF">
                                     <i class="fas fa-file-invoice-dollar"></i>
                                 </a>
+                                {% else %}
+                                <button type="button" class="btn btn-action btn-outline-warning" title="Create proforma invoice"
+                                    data-bs-toggle="modal" data-bs-target="#proformaInvoiceModal"
+                                    data-estimate-pk="{{ estimate.pk }}"
+                                    data-estimate-number="{{ estimate.display_estimate_number }}"
+                                    data-subtotal="{{ estimate.subtotal }}"
+                                    data-vat="{{ estimate.vat_amount }}"
+                                    data-vat-rate="{{ estimate.proforma_vat_rate_percent }}">
+                                    <i class="fas fa-file-invoice-dollar"></i>
+                                </button>
+                                {% endif %}
+                                {% endwith %}
+                                {% endif %}
+                                {% endif %}
                             </div>
                         </td>
                     </tr>
@@ -534,4 +653,78 @@
     </ul>
 </nav>
 {% endif %}
+{% include 'sales/includes/proforma_invoice_modal.html' %}
+
+<div class="modal fade" id="rejectEstimateListModal" tabindex="-1" aria-labelledby="rejectEstimateListModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" id="rejectEstimateListForm" action="">
+                {% csrf_token %}
+                <input type="hidden" name="status" value="rejected">
+                <input type="hidden" name="next" id="rejectEstimateListNext" value="">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="rejectEstimateListModalLabel">Reject estimate</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <label class="form-label" for="id_estimate_list_rejection_reason">Reason <span class="text-danger">*</span></label>
+                    <textarea name="rejection_reason" id="id_estimate_list_rejection_reason" class="form-control" rows="3" required placeholder="Explain why this estimate is rejected"></textarea>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-danger">Reject estimate</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{{ block.super }}
+<script src="{% static 'js/proforma_modal.js' %}?v=4"></script>
+<script>
+(function () {
+    var rejectModalEl = document.getElementById('rejectEstimateListModal');
+    var rejectForm = document.getElementById('rejectEstimateListForm');
+    var rejectNextInput = document.getElementById('rejectEstimateListNext');
+    var rejectReasonInput = document.getElementById('id_estimate_list_rejection_reason');
+    var pendingSelect = null;
+
+    window.estimateStatusSelectChange = function (select) {
+        var form = select.form;
+        var current = select.getAttribute('data-current-status') || select.value;
+        if (select.value === 'rejected') {
+            pendingSelect = select;
+            select.value = current;
+            if (rejectForm && form) {
+                rejectForm.action = form.action;
+                if (rejectNextInput) {
+                    var nextInput = form.querySelector('input[name="next"]');
+                    rejectNextInput.value = nextInput ? nextInput.value : '';
+                }
+                var csrfInput = form.querySelector('input[name="csrfmiddlewaretoken"]');
+                var rejectCsrf = rejectForm.querySelector('input[name="csrfmiddlewaretoken"]');
+                if (csrfInput && rejectCsrf) {
+                    rejectCsrf.value = csrfInput.value;
+                }
+            }
+            if (rejectReasonInput) {
+                rejectReasonInput.value = '';
+            }
+            if (rejectModalEl && window.bootstrap) {
+                bootstrap.Modal.getOrCreateInstance(rejectModalEl).show();
+            }
+            return;
+        }
+        form.submit();
+    };
+
+    if (rejectModalEl) {
+        rejectModalEl.addEventListener('hidden.bs.modal', function () {
+            pendingSelect = null;
+        });
+    }
+})();
+</script>
 {% endblock %}

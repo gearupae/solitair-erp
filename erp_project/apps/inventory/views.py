@@ -4,8 +4,9 @@ Inventory Views - Categories, Warehouses, Items, Stock
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
+from django.core.exceptions import ValidationError
 from django.views.generic import ListView, CreateView, UpdateView, DetailView
-from django.urls import reverse_lazy
+from django.urls import reverse, reverse_lazy
 from django.db.models import Q, Sum, F, Value, DecimalField, DateField, Count, Avg, Prefetch
 from django.db import models as db_models
 from django.db.models.functions import Coalesce, TruncDate
@@ -16,6 +17,8 @@ import json
 
 from django.http import HttpResponse, HttpResponseForbidden, JsonResponse
 from django.views.decorators.http import require_http_methods, require_POST
+from django.views.decorators.csrf import ensure_csrf_cookie
+from django.utils.decorators import method_decorator
 from decimal import Decimal
 
 from .models import (
@@ -24,6 +27,7 @@ from .models import (
     StorageLocation,
     Item,
     ItemGroup,
+    ItemSerialNumber,
     Stock,
     StockMovement,
     ConsumableRequest,
@@ -35,6 +39,7 @@ from .consumable_inventory_reports import REPORT_BUILDERS, build_report
 from .consumable_report_export import export_report_pdf, export_report_xlsx
 from apps.purchase.models import ItemPurchaseReceiptHistory
 from .consumable_project_lines import sync_consumable_request_to_project_item_lines
+from .serial_stock import annotate_item_available_stock, unregistered_on_hand_count, register_on_hand_model_numbers
 from .forms import (
     CategoryForm, WarehouseForm, ItemForm, StockAdjustmentForm,
     ConsumableRequestForm, ConsumableRequestItemFormSet,
@@ -213,6 +218,7 @@ def warehouse_delete(request, pk):
 
 # ============ ITEM VIEWS ============
 
+@method_decorator(ensure_csrf_cookie, name='dispatch')
 class ItemListView(PermissionRequiredMixin, ListView):
     model = Item
     template_name = 'inventory/item_list.html'
@@ -233,16 +239,9 @@ class ItemListView(PermissionRequiredMixin, ListView):
                 ).select_related('warehouse'),
                 to_attr='active_stock_records'
             )
-        ).annotate(
-            total_stock_calc=Coalesce(
-                Sum(
-                    'stock_records__quantity',
-                    filter=Q(stock_records__warehouse__is_active=True)
-                ),
-                Value(Decimal('0.00')),
-                output_field=DecimalField(max_digits=15, decimal_places=2)
-            )
         )
+        queryset = annotate_item_available_stock(queryset)
+        queryset = annotate_item_available_stock(queryset)
         
         search = self.request.GET.get('search')
         if search:
@@ -315,11 +314,15 @@ def item_export_csv(request):
             'unit',
             'purchase_price',
             'selling_price',
+            'minimum_selling_price',
+            'maximum_selling_price',
             'tax_code',
+            'vat_rate',
             'minimum_stock',
             'status',
             'barcode',
             'storage_location',
+            'condition_status',
         ]
     )
     qs = (
@@ -341,11 +344,15 @@ def item_export_csv(request):
                 item.unit,
                 item.purchase_price,
                 item.selling_price,
+                item.minimum_selling_price,
+                item.maximum_selling_price,
                 item.tax_code.code if item.tax_code_id else '',
+                item.vat_rate,
                 item.minimum_stock,
                 item.status,
                 item.barcode or '',
                 item.get_storage_shelf_label(),
+                item.condition_status,
             ]
         )
     return response
@@ -438,11 +445,17 @@ class ItemCreateView(CreatePermissionMixin, CreateView):
     template_name = 'inventory/item_form.html'
     success_url = reverse_lazy('inventory:item_list')
     module_name = 'inventory'
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs['user'] = self.request.user
+        return kwargs
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['title'] = 'Create Item'
         context['storage_locations'] = StorageLocation.objects.filter(is_active=True).order_by('name')
+        context['item_serial_numbers'] = []
         return context
     
     def form_valid(self, form):
@@ -456,11 +469,21 @@ class ItemUpdateView(UpdatePermissionMixin, UpdateView):
     template_name = 'inventory/item_form.html'
     success_url = reverse_lazy('inventory:item_list')
     module_name = 'inventory'
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs['user'] = self.request.user
+        return kwargs
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['title'] = f'Edit Item: {self.object.name}'
         context['storage_locations'] = StorageLocation.objects.filter(is_active=True).order_by('name')
+        context['item_serial_numbers'] = (
+            ItemSerialNumber.objects.filter(item=self.object, is_active=True)
+            .select_related('assigned_project', 'warehouse')
+            .order_by('-date_received', 'model_number')[:50]
+        )
         return context
     
     def form_valid(self, form):
@@ -476,16 +499,8 @@ class ItemDetailView(PermissionRequiredMixin, DetailView):
     permission_type = 'view'
     
     def get_queryset(self):
-        # Annotate total_stock at database level to ensure fresh data
-        return Item.objects.prefetch_related('item_groups').annotate(
-            total_stock_calc=Coalesce(
-                Sum(
-                    'stock_records__quantity',
-                    filter=Q(stock_records__warehouse__is_active=True)
-                ),
-                Value(Decimal('0.00')),
-                output_field=DecimalField(max_digits=15, decimal_places=2)
-            )
+        return annotate_item_available_stock(
+            Item.objects.prefetch_related('item_groups')
         )
     
     def get_context_data(self, **kwargs):
@@ -516,10 +531,45 @@ class ItemDetailView(PermissionRequiredMixin, DetailView):
             'condition_status': self.object.condition_status
         })
         context['can_edit'] = self.request.user.is_superuser or PermissionChecker.has_permission(self.request.user, 'inventory', 'edit')
+        context['item_serial_numbers'] = (
+            ItemSerialNumber.objects.filter(item=self.object, is_active=True)
+            .select_related('assigned_project', 'warehouse', 'delivered_by')
+            .order_by('-date_received', 'model_number')
+        )
+        context['unregistered_on_hand_count'] = unregistered_on_hand_count(self.object)
         # Transfer form
         context['transfer_form'] = StockTransferForm(initial={'item': self.object.pk})
         context['warehouses'] = Warehouse.objects.filter(is_active=True, status='active')
         return context
+
+
+@login_required
+@require_POST
+def item_register_on_hand_serials(request, pk):
+    """Register model numbers for units received before serial tracking was enabled."""
+    item = get_object_or_404(Item, pk=pk, is_active=True)
+    if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'inventory', 'edit')):
+        messages.error(request, 'Permission denied.')
+        return redirect('inventory:item_detail', pk=pk)
+
+    bulk = (request.POST.get('bulk_model_numbers') or '').strip()
+    if bulk:
+        model_numbers = [ln.strip() for ln in bulk.splitlines() if ln.strip()]
+    else:
+        model_numbers = request.POST.getlist('model_number')
+
+    try:
+        registered = register_on_hand_model_numbers(item, model_numbers, request.user)
+        messages.success(
+            request,
+            f'Registered {len(registered)} model number(s) for on-hand stock.',
+        )
+    except ValidationError as exc:
+        msgs = exc.messages if hasattr(exc, 'messages') else [str(exc)]
+        for msg in msgs:
+            messages.error(request, msg)
+
+    return redirect('inventory:item_detail', pk=pk)
 
 
 @login_required
@@ -1045,6 +1095,10 @@ class ConsumableRequestListView(PermissionRequiredMixin, ListView):
                 Q(project__project_code__icontains=search)
             ).distinct()
         
+        project_id = self.request.GET.get('project')
+        if project_id and str(project_id).isdigit():
+            queryset = queryset.filter(project_id=int(project_id))
+        
         return queryset.order_by('-created_at')
     
     def get_context_data(self, **kwargs):
@@ -1055,6 +1109,7 @@ class ConsumableRequestListView(PermissionRequiredMixin, ListView):
         context['title'] = 'Consumable Requests'
         context['status_choices'] = ConsumableRequest.STATUS_CHOICES
         context['is_admin'] = is_admin
+        context['filter_project_id'] = self.request.GET.get('project', '')
         
         # Stats (for admins)
         if is_admin:
@@ -1092,6 +1147,8 @@ def consumable_request_create(request):
                     uploaded_by=request.user
                 )
             messages.success(request, f'Request {consumable_request.request_number} submitted!')
+            if consumable_request.project_id:
+                return redirect('projects:project_detail', pk=consumable_request.project_id)
             return redirect('inventory:consumable_request_list')
     else:
         initial = {}
@@ -1111,6 +1168,86 @@ def consumable_request_create(request):
         'items_formset': items_formset,
         'today': date.today().isoformat(),
     })
+
+
+def _consumable_request_redirect(consumable_request):
+    if consumable_request.project_id:
+        return redirect('projects:project_detail', pk=consumable_request.project_id)
+    return redirect('inventory:consumable_request_detail', pk=consumable_request.pk)
+
+
+@login_required
+def consumable_request_edit(request, pk):
+    """Edit a pending consumable request (requester only)."""
+    consumable_request = get_object_or_404(
+        ConsumableRequest.objects.prefetch_related('items'),
+        pk=pk,
+        is_active=True,
+    )
+
+    if consumable_request.requested_by != request.user:
+        messages.error(request, 'Only the person who submitted this request can edit it.')
+        return _consumable_request_redirect(consumable_request)
+
+    if consumable_request.status != 'pending':
+        messages.warning(request, 'Only pending requests can be edited.')
+        return redirect('inventory:consumable_request_detail', pk=pk)
+
+    from datetime import date
+
+    if request.method == 'POST':
+        form = ConsumableRequestForm(request.POST, instance=consumable_request)
+        items_formset = ConsumableRequestItemFormSet(request.POST, instance=consumable_request)
+        if form.is_valid() and items_formset.is_valid():
+            form.save()
+            items_formset.save()
+            consumable_request.recalculate_total()
+            for f in request.FILES.getlist('attachments'):
+                ConsumableRequestAttachment.objects.create(
+                    consumable_request=consumable_request,
+                    file=f,
+                    filename=f.name,
+                    uploaded_by=request.user,
+                )
+            messages.success(request, f'Request {consumable_request.request_number} updated.')
+            return _consumable_request_redirect(consumable_request)
+    else:
+        form = ConsumableRequestForm(instance=consumable_request)
+        items_formset = ConsumableRequestItemFormSet(instance=consumable_request)
+
+    return render(request, 'inventory/consumable_request_form.html', {
+        'title': f'Edit request {consumable_request.request_number}',
+        'form': form,
+        'items_formset': items_formset,
+        'request_obj': consumable_request,
+        'is_edit': True,
+        'today': date.today().isoformat(),
+    })
+
+
+@login_required
+@require_POST
+def consumable_request_delete(request, pk):
+    """Soft-delete a pending consumable request (requester only)."""
+    consumable_request = get_object_or_404(ConsumableRequest, pk=pk, is_active=True)
+
+    if consumable_request.requested_by != request.user:
+        messages.error(request, 'Only the person who submitted this request can delete it.')
+        return _consumable_request_redirect(consumable_request)
+
+    if consumable_request.status != 'pending':
+        messages.warning(request, 'Only pending requests can be deleted.')
+        return redirect('inventory:consumable_request_detail', pk=pk)
+
+    request_number = consumable_request.request_number
+    project_id = consumable_request.project_id
+    consumable_request.is_active = False
+    consumable_request.save(update_fields=['is_active', 'updated_at'])
+    messages.success(request, f'Request {request_number} deleted.')
+
+    if project_id:
+        return redirect('projects:project_detail', pk=project_id)
+    return redirect('inventory:consumable_request_list')
 
 
 @login_required
@@ -1142,6 +1279,11 @@ def consumable_request_detail(request, pk):
         'title': f'Request: {consumable_request.request_number}',
         'request_obj': consumable_request,
         'is_admin': is_admin,
+        'can_edit_request': (
+            consumable_request.status == 'pending'
+            and consumable_request.requested_by == user
+        ),
+        'requires_project_delivery': consumable_request.has_project_serial_items(),
     }
     
     # For admin: show approve/dispense forms
@@ -1748,7 +1890,11 @@ def consumable_inventory_report_export_xlsx(request):
 @login_required
 @require_http_methods(['POST'])
 def storage_location_create(request):
-    if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'inventory', 'create')):
+    if not (
+        request.user.is_superuser
+        or PermissionChecker.has_permission(request.user, 'inventory', 'create')
+        or PermissionChecker.has_permission(request.user, 'inventory', 'edit')
+    ):
         return JsonResponse({'ok': False, 'error': 'Permission denied'}, status=403)
     try:
         body = json.loads(request.body.decode() or '{}')

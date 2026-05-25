@@ -38,7 +38,7 @@ class Command(BaseCommand):
         
         modules = [
             ('crm', 'CRM'),
-            ('sales', 'Sales'),
+            ('sales', 'Salesman'),
             ('purchase', 'Purchase'),
             ('inventory', 'Inventory'),
             ('finance', 'Finance'),
@@ -118,11 +118,25 @@ class Command(BaseCommand):
                 'permissions': ['finance', 'sales:view', 'purchase:view']
             },
             {
-                'name': 'Sales',
+                'name': 'Salesman',
                 'code': 'sales',
                 'description': 'Sales team access',
                 'is_system_role': False,
                 'permissions': ['crm', 'sales', 'inventory:view']
+            },
+            {
+                'name': 'Site Engineer',
+                'code': 'site_engineer',
+                'description': 'Field site engineer — projects, inventory, and reports access',
+                'is_system_role': False,
+                'permissions': ['projects:view', 'projects:edit', 'inventory:view', 'reports:view', 'hr:view']
+            },
+            {
+                'name': 'Operation Manager',
+                'code': 'operation_manager',
+                'description': 'Operations manager — projects, reports, and team oversight',
+                'is_system_role': False,
+                'permissions': ['projects', 'reports:view', 'inventory:view', 'crm:view', 'hr:view']
             },
             {
                 'name': 'Purchase',

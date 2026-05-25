@@ -25,20 +25,17 @@
 
         <div id="svc-clock-in-block">
             <button type="button" class="btn btn-success btn-lg w-100 w-sm-auto px-5" id="svc-btn-check-in"
-                {% if today_attendance.has_check_in %}disabled style="display:none"{% endif %}>
+                {% if today_attendance.open_session %}disabled style="display:none"{% endif %}>
                 <i class="fas fa-sign-in-alt me-2"></i>Clock in
             </button>
         </div>
 
-        <div id="svc-clock-out-block" class="mt-3 {% if not today_attendance.has_check_in %}d-none{% endif %}">
+        <div id="svc-clock-out-block" class="mt-3 {% if not today_attendance.open_session %}d-none{% endif %}">
             <p class="small text-muted mb-2">Clock in recorded{% if today_attendance.check_in_display %}: <strong>{{ today_attendance.check_in_display }}</strong>{% endif %}</p>
             <button type="button" class="btn btn-outline-primary btn-lg w-100 w-sm-auto px-5" id="svc-btn-check-out"
-                {% if today_attendance.has_check_out %}disabled{% endif %}>
+                {% if not today_attendance.open_session %}disabled{% endif %}>
                 <i class="fas fa-sign-out-alt me-2"></i>Clock out
             </button>
-            {% if today_attendance.has_check_out and today_attendance.check_out_display %}
-            <p class="small text-muted mt-2 mb-0">Out: <strong>{{ today_attendance.check_out_display }}</strong></p>
-            {% endif %}
         </div>
 
         <div id="svc-feedback" class="alert d-none mt-3 mb-0" role="alert"></div>
@@ -55,10 +52,10 @@
 (function () {
   const punchUrl = "{% url 'hr:attendance_self_punch' %}";
   const ta = {
-    hasIn: {{ today_attendance.has_check_in|yesno:"true,false" }},
-    hasOut: {{ today_attendance.has_check_out|yesno:"true,false" }},
+    openSession: {{ today_attendance.open_session|yesno:"true,false" }},
     inDisplay: "{{ today_attendance.check_in_display|escapejs }}",
-    outDisplay: "{{ today_attendance.check_out_display|escapejs }}"
+    lastInDisplay: "{{ today_attendance.last_check_in_display|escapejs }}",
+    lastOutDisplay: "{{ today_attendance.last_check_out_display|escapejs }}"
   };
   const btnIn = document.getElementById('svc-btn-check-in');
   const btnOut = document.getElementById('svc-btn-check-out');
@@ -82,25 +79,35 @@
   }
 
   function applyState(data) {
-    const hasIn = !!(data.check_in);
-    const hasOut = !!(data.check_out);
-    if (hasIn) {
+    const open = data.open_session !== undefined
+      ? data.open_session
+      : !!(data.check_in && !data.check_out);
+    if (open) {
       btnIn.style.display = 'none';
       btnIn.disabled = true;
+      btnOut.disabled = false;
+      btnOut.style.display = '';
       blockOut.classList.remove('d-none');
-    }
-    btnOut.disabled = hasOut;
-    if (hasIn && hasOut) {
-      completeMsg.textContent = 'You are clocked out for today. Times are saved in attendance.';
-      completeMsg.classList.remove('d-none');
-      btnOut.style.display = 'none';
+      completeMsg.classList.add('d-none');
+      var p = blockOut.querySelector('p.small');
+      if (p) p.innerHTML = 'Clock in recorded: <strong>' + (data.check_in || '') + '</strong>';
+    } else {
+      btnIn.style.display = '';
+      btnIn.disabled = false;
+      btnOut.disabled = true;
+      blockOut.classList.add('d-none');
+      if (data.check_out) {
+        completeMsg.textContent =
+          'Last session: ' + (data.check_in || '—') + ' – ' + (data.check_out || '—') + '. You can clock in again.';
+        completeMsg.classList.remove('d-none');
+      }
     }
   }
 
-  if (ta.hasIn && ta.hasOut) {
-    completeMsg.textContent = 'You are clocked out for today (' + ta.inDisplay + ' – ' + ta.outDisplay + ').';
+  if (!ta.openSession && ta.lastOutDisplay) {
+    completeMsg.textContent =
+      'Last session: ' + ta.lastInDisplay + ' – ' + ta.lastOutDisplay + '. You can clock in again.';
     completeMsg.classList.remove('d-none');
-    if (btnOut) btnOut.style.display = 'none';
   }
 
   function geoThenPunch(action) {
@@ -127,10 +134,6 @@
               true
             );
             applyState(data);
-            if (data.check_in && !data.check_out && blockOut) {
-              var p = blockOut.querySelector('p.small');
-              if (p) p.innerHTML = 'Clock in recorded: <strong>' + (data.check_in || '') + '</strong>';
-            }
             if (window.toastr) toastr.success(data.message || 'Saved');
           } else {
             var err = data.error || 'Something went wrong.';

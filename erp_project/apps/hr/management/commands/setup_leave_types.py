@@ -1,4 +1,4 @@
-"""Seed UAE/KSA leave types (idempotent — safe to re-run)."""
+"""Seed UAE leave types (idempotent — safe to re-run)."""
 from django.core.management.base import BaseCommand
 
 from apps.hr.models import LeaveType
@@ -10,7 +10,6 @@ def _common_defaults():
 
 # Shared with migration 0024 — keep in sync when adding types.
 LEAVE_TYPE_SEED_ROWS = [
-    # UAE
     dict(
         code='UAE_ANNUAL',
         name='Annual Leave (UAE)',
@@ -151,180 +150,22 @@ LEAVE_TYPE_SEED_ROWS = [
         probation_allowed=True,
         description='Reduced hours / nursing support; days policy-driven if tracked as leave.',
     ),
-    # KSA
-    dict(
-        code='KSA_ANNUAL',
-        name='Annual Leave (KSA)',
-        location='ksa',
-        pay_type='full',
-        days_allowed=21,
-        probation_allowed=True,
-        carry_forward_allowed=True,
-        description='21 days (<5 yrs service); escalates to 30 days via entitlement rules.',
-    ),
-    dict(
-        code='KSA_SICK',
-        name='Sick Leave (KSA)',
-        location='ksa',
-        pay_type='tiered',
-        days_allowed=120,
-        requires_medical_certificate=True,
-        probation_allowed=True,
-    ),
-    dict(
-        code='KSA_MATERNITY',
-        name='Maternity Leave (KSA)',
-        location='ksa',
-        pay_type='full',
-        days_allowed=70,
-        gender_restricted='female',
-        is_gender_specific=True,
-        gender_required='female',
-        probation_allowed=False,
-    ),
-    dict(
-        code='KSA_PATERNITY',
-        name='Paternity Leave (KSA)',
-        location='ksa',
-        pay_type='full',
-        days_allowed=3,
-        gender_restricted='male',
-        probation_allowed=False,
-    ),
-    dict(
-        code='KSA_BEREAVEMENT',
-        name='Bereavement Leave (KSA)',
-        location='ksa',
-        pay_type='full',
-        days_allowed=5,
-        probation_allowed=True,
-    ),
-    dict(
-        code='KSA_HAJJ',
-        name='Hajj Leave (KSA)',
-        location='ksa',
-        pay_type='full',
-        days_allowed=10,
-        once_in_service=True,
-        religion_restricted=True,
-        probation_allowed=False,
-    ),
-    dict(
-        code='KSA_IDDAH',
-        name='Iddah Leave (KSA)',
-        location='ksa',
-        pay_type='full',
-        days_allowed=130,
-        gender_restricted='female',
-        religion_restricted=True,
-        probation_allowed=False,
-    ),
-    dict(
-        code='KSA_STUDY',
-        name='Study / Exam Leave (KSA)',
-        location='ksa',
-        pay_type='full',
-        days_allowed=10,
-        probation_allowed=True,
-    ),
-    dict(
-        code='KSA_UNPAID',
-        name='Unpaid Leave (KSA)',
-        location='ksa',
-        pay_type='unpaid',
-        days_allowed=None,
-        probation_allowed=True,
-    ),
-    dict(
-        code='KSA_MARRIAGE',
-        name='Marriage Leave (KSA)',
-        location='ksa',
-        pay_type='full',
-        days_allowed=5,
-        once_in_service=True,
-        probation_allowed=True,
-        description='Typically first marriage (Saudi Labour Law Art. 113 style); verify with HR.',
-    ),
-    dict(
-        code='KSA_EMERGENCY',
-        name='Emergency Leave (KSA)',
-        location='ksa',
-        pay_type='full',
-        days_allowed=5,
-        probation_allowed=True,
-        description='Short-notice emergencies (policy cap).',
-    ),
-    dict(
-        code='KSA_UMRAH',
-        name='Umrah Leave (KSA)',
-        location='ksa',
-        pay_type='unpaid',
-        days_allowed=15,
-        religion_restricted=True,
-        probation_allowed=True,
-        description='Unpaid Umrah leave; paid variant can be added as a separate type if company policy allows.',
-    ),
-    dict(
-        code='KSA_FAMILY_CARE',
-        name='Family Care Leave (KSA)',
-        location='ksa',
-        pay_type='full',
-        days_allowed=7,
-        probation_allowed=True,
-        description='Care for ill or dependent family member.',
-    ),
-    dict(
-        code='KSA_SICK_CHILD',
-        name='Sick Child Leave (KSA)',
-        location='ksa',
-        pay_type='full',
-        days_allowed=3,
-        probation_allowed=True,
-        description='Paid leave to care for a sick child (annual cap per policy).',
-    ),
-    dict(
-        code='KSA_ADOPTION',
-        name='Adoption Leave (KSA)',
-        location='ksa',
-        pay_type='full',
-        days_allowed=14,
-        probation_allowed=False,
-        description='Leave for adoptive parents; align with internal policy.',
-    ),
-    dict(
-        code='KSA_ESCORT',
-        name='Escort / Companion Leave (KSA)',
-        location='ksa',
-        pay_type='full',
-        days_allowed=5,
-        probation_allowed=True,
-        description='Accompanying a patient for treatment (hospital escort).',
-    ),
-    dict(
-        code='KSA_WORK_INJURY',
-        name='Work Injury Leave (KSA)',
-        location='ksa',
-        pay_type='full',
-        days_allowed=None,
-        requires_medical_certificate=True,
-        probation_allowed=True,
-        description='Occupational injury / GOSI-related absence (days per medical advice).',
-    ),
 ]
 
 
 def seed_leave_types(LeaveTypeModel):
-    """Upsert all seed rows onto a LeaveType model (real or migration historical)."""
+    """Upsert UAE seed rows; remove non-UAE catalog entries."""
     base = _common_defaults()
     for row in LEAVE_TYPE_SEED_ROWS:
         r = dict(row)
         code = r.pop('code')
         LeaveTypeModel.objects.update_or_create(code=code, defaults={**base, **r})
+    LeaveTypeModel.objects.exclude(location='uae').delete()
 
 
 class Command(BaseCommand):
-    help = 'Create or update default UAE/KSA leave types (Federal Decree 33 / Saudi Labour Law baseline).'
+    help = 'Create or update default UAE leave types (Federal Decree 33 baseline).'
 
     def handle(self, *args, **options):
         seed_leave_types(LeaveType)
-        self.stdout.write(self.style.SUCCESS(f'Upserted {len(LEAVE_TYPE_SEED_ROWS)} leave types.'))
+        self.stdout.write(self.style.SUCCESS(f'Upserted {len(LEAVE_TYPE_SEED_ROWS)} UAE leave types.'))

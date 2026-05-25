@@ -6,6 +6,25 @@
     .select2-container--bootstrap-5 .select2-selection--multiple {
         min-height: 38px;
     }
+    /* Bootstrap switch — prevent full-width checkbox from generic form styles */
+    .form-check.form-switch .form-check-input {
+        width: 2.5em;
+        height: 1.25em;
+        margin-left: 0;
+        float: none;
+        flex-shrink: 0;
+    }
+    .form-check.form-switch {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        min-height: 1.5rem;
+        padding-left: 0;
+    }
+    .form-check.form-switch .form-check-label {
+        margin-bottom: 0;
+        cursor: pointer;
+    }
 </style>
 {% endblock %}
 
@@ -36,7 +55,7 @@
         <div class="card-header"><h6 class="mb-0 fw-semibold">Basic Information</h6></div>
         <div class="card-body">
             <div class="row g-3">
-                <div class="col-md-4">
+                <div class="col-md-6">
                     <label class="form-label">Item Name <span class="text-danger">*</span></label>
                     {{ form.name }}
                 </div>
@@ -45,16 +64,12 @@
                     {{ form.category }}
                 </div>
                 <div class="col-md-3">
-                    <label class="form-label">Groups</label>
-                    {{ form.item_groups }}
-                    <small class="text-muted d-block mt-1">Optional — search and select multiple groups.</small>
-                </div>
-                <div class="col-md-2">
                     <label class="form-label">Type</label>
                     {{ form.item_type }}
                 </div>
                 <div class="col-12">
-                    <small class="text-muted">Groups are optional shared labels used for filtering (same as the Items list).</small>
+                    <label class="form-label">Groups</label>
+                    {{ form.item_groups }}
                 </div>
                 <div class="col-12">
                     <label class="form-label">Description</label>
@@ -77,13 +92,29 @@
                     {{ form.selling_price }}
                 </div>
                 <div class="col-md-3">
-                    <label class="form-label">Unit</label>
-                    {{ form.unit }}
+                    <label class="form-label">Minimum Selling Price</label>
+                    {{ form.minimum_selling_price }}
+                    <small class="text-muted">Lowest allowed sale price</small>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Maximum Selling Price</label>
+                    {{ form.maximum_selling_price }}
+                    <small class="text-muted">Leave 0 for no cap</small>
                 </div>
                 <div class="col-md-3">
                     <label class="form-label">Tax Code</label>
                     {{ form.tax_code }}
-                    <small class="text-muted">VAT is derived from Tax Code</small>
+                    <small class="text-muted">Determines VAT on sales</small>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">VAT Rate</label>
+                    <input type="text" class="form-control bg-light" id="vat-rate-display" readonly
+                           value="{% if form.instance.pk %}{{ form.instance.vat_rate|floatformat:2 }}{% else %}0.00{% endif %}%">
+                    <small class="text-muted">Auto from tax code</small>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Unit</label>
+                    {{ form.unit }}
                 </div>
                 <div class="col-md-3">
                     <label class="form-label">Minimum Stock Level</label>
@@ -93,34 +124,86 @@
                     <label class="form-label">Status</label>
                     {{ form.status }}
                 </div>
+                <div class="col-md-3">
+                    <label class="form-label">Condition</label>
+                    {{ form.condition_status }}
+                </div>
+                <div class="col-md-9">
+                    <label class="form-label">Condition Notes</label>
+                    {{ form.condition_notes }}
+                </div>
+                <div class="col-12">
+                    <div class="form-check form-switch ps-0">
+                        {{ form.track_by_serial }}
+                        <label class="form-check-label" for="{{ form.track_by_serial.id_for_label }}">Track by model / serial number</label>
+                    </div>
+                    <small class="text-muted d-block mt-1">
+                        When enabled, enter one model number per unit on
+                        <strong>Purchase → Purchase Orders → Receive items</strong> when goods arrive.
+                        {% if form.instance.pk %}
+                        <a href="{% url 'inventory:item_detail' form.instance.pk %}">View registered serials on item detail</a>.
+                        {% endif %}
+                    </small>
+                    {% if form.track_by_serial.errors %}<div class="text-danger small mt-1">{{ form.track_by_serial.errors|join:", " }}</div>{% endif %}
+                </div>
             </div>
         </div>
     </div>
 
+    {% if form.instance.pk and form.instance.track_by_serial %}
+    <div id="serial-tracking-panel" class="card mb-4">
+        <div class="card-header">
+            <h6 class="mb-0 fw-semibold"><i class="fas fa-barcode me-2"></i>Serial / model numbers</h6>
+        </div>
+        <div class="card-body">
+            <div class="alert alert-info py-2 small mb-3 mb-md-0">
+                <i class="fas fa-info-circle me-1"></i>
+                Serial numbers are <strong>not entered here</strong>. Receive stock on a purchase order and enter model numbers on the
+                <strong>Receive goods</strong> screen (one per unit).
+            </div>
+            {% if item_serial_numbers %}
+            <div class="mt-3 border-top pt-3">
+                <h6 class="small fw-semibold text-muted mb-2">Already registered</h6>
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0 align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Model number</th>
+                                <th>Status</th>
+                                <th>Warehouse</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for sn in item_serial_numbers %}
+                            <tr>
+                                <td class="font-monospace fw-medium">{{ sn.model_number }}</td>
+                                <td>{{ sn.get_status_display }}</td>
+                                <td>{{ sn.warehouse.name|default:"—" }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
     <div class="card mb-4">
         <div class="card-header"><h6 class="mb-0 fw-semibold">Storage &amp; identification</h6></div>
         <div class="card-body">
-            <datalist id="storage-location-options">
-                {% for loc in storage_locations %}
-                <option value="{{ loc.name }}"></option>
-                {% endfor %}
-            </datalist>
             <div class="row g-3">
                 <div class="col-md-6">
                     <label class="form-label">Storage Location</label>
-                    {{ form.storage_location }}
+                    <div class="input-group">
+                        {{ form.storage_location_master }}
+                        <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#addLocationModal" title="Add location" aria-label="Add location">
+                            <i class="fas fa-plus"></i>
+                        </button>
+                    </div>
                 </div>
                 <div class="col-md-6">
-                    <label class="form-label">Preset from list</label>
-                    {{ form.storage_location_master }}
-                    <small class="text-muted d-block mt-1">Optional — narrows common shelves</small>
-                </div>
-                <div class="col-12">
-                    <a href="#" class="small text-decoration-none" data-bs-toggle="modal" data-bs-target="#addLocationModal">
-                        <i class="fas fa-plus-circle me-1"></i>Add Location
-                    </a>
-                </div>
-                <div class="col-md-8">
                     <label class="form-label">Barcode / Asset Code</label>
                     <div class="input-group">
                         {{ form.barcode }}
@@ -178,7 +261,7 @@
                     <label class="form-label">Description</label>
                     <textarea class="form-control" id="new-location-desc" rows="2" placeholder="Optional"></textarea>
                 </div>
-                <div class="alert alert-danger d-none mt-3 mb-0 py-2 small" id="new-location-error"></div>
+                <div class="alert alert-danger alert-permanent d-none mt-3 mb-0 py-2 small" id="new-location-error"></div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
@@ -214,7 +297,7 @@
                     <video id="barcode-video" class="w-100 rounded border" playsinline style="max-height:320px;background:#111;"></video>
                     <p class="text-muted small mt-2 mb-0">Point the camera at a barcode or QR code. Supported formats depend on your browser.</p>
                 </div>
-                <div class="alert alert-warning d-none mt-3 mb-0 small" id="barcode-scan-fallback"></div>
+                <div class="alert alert-warning alert-permanent d-none mt-3 mb-0 small" id="barcode-scan-fallback"></div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-light" data-bs-dismiss="modal">Close</button>
@@ -225,6 +308,20 @@
 {% endblock %}
 
 {% block extra_js %}
+<script>
+(function () {
+    function updateVatRateDisplay() {
+        const sel = document.getElementById('id_tax_code');
+        const out = document.getElementById('vat-rate-display');
+        if (!sel || !out) return;
+        const opt = sel.options[sel.selectedIndex];
+        const rate = opt && opt.dataset.rate ? opt.dataset.rate : '0.00';
+        out.value = parseFloat(rate).toFixed(2) + '%';
+    }
+    document.getElementById('id_tax_code')?.addEventListener('change', updateVatRateDisplay);
+    updateVatRateDisplay();
+})();
+</script>
 <script>
 $(function () {
     var $grp = $('.item-groups-multiselect');
@@ -260,13 +357,20 @@ $(function () {
     }
 
     document.getElementById('new-location-save')?.addEventListener('click', async function () {
-        const name = document.getElementById('new-location-name').value.trim();
-        const description = document.getElementById('new-location-desc').value.trim();
-        const err = document.getElementById('new-location-error');
-        err.classList.add('d-none');
+        const modal = document.getElementById('addLocationModal');
+        const nameEl = modal?.querySelector('#new-location-name');
+        const descEl = modal?.querySelector('#new-location-desc');
+        const err = modal?.querySelector('#new-location-error');
+        const name = nameEl?.value.trim() || '';
+        const description = descEl?.value.trim() || '';
+        if (err) err.classList.add('d-none');
         if (!name) {
-            err.textContent = 'Name is required.';
-            err.classList.remove('d-none');
+            if (err) {
+                err.textContent = 'Name is required.';
+                err.classList.remove('d-none');
+            } else {
+                alert('Name is required.');
+            }
             return;
         }
         try {
@@ -277,14 +381,14 @@ $(function () {
             });
             const data = await res.json();
             if (!data.ok) {
-                err.textContent = data.error || 'Could not save.';
-                err.classList.remove('d-none');
+                if (err) {
+                    err.textContent = data.error || 'Could not save.';
+                    err.classList.remove('d-none');
+                } else {
+                    alert(data.error || 'Could not save.');
+                }
                 return;
             }
-            const dl = document.getElementById('storage-location-options');
-            const opt = document.createElement('option');
-            opt.value = data.name;
-            dl.appendChild(opt);
             const sel = document.getElementById('id_storage_location_master');
             if (sel) {
                 const o = document.createElement('option');
@@ -293,13 +397,17 @@ $(function () {
                 sel.appendChild(o);
                 sel.value = String(data.id);
             }
-            document.getElementById('new-location-name').value = '';
-            document.getElementById('new-location-desc').value = '';
+            if (nameEl) nameEl.value = '';
+            if (descEl) descEl.value = '';
             hideBsModal('addLocationModal');
             if (window.toastr) toastr.success('Location added.');
         } catch (e) {
-            err.textContent = 'Network error.';
-            err.classList.remove('d-none');
+            if (err) {
+                err.textContent = 'Network error.';
+                err.classList.remove('d-none');
+            } else {
+                alert('Network error.');
+            }
         }
     });
 

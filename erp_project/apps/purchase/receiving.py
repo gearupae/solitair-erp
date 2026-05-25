@@ -6,7 +6,8 @@ from decimal import Decimal, InvalidOperation
 from django.core.exceptions import ValidationError
 from django.db import transaction
 
-from apps.inventory.models import StockMovement, Warehouse
+from apps.inventory.models import ItemSerialNumber, StockMovement, Warehouse
+from apps.inventory.serial_stock import sync_serial_stock_mirror, validate_model_numbers_for_receive
 
 from .models import (
     PurchaseOrder,
@@ -64,7 +65,9 @@ def sync_po_receive_status(po_id: int):
 @transaction.atomic
 def process_goods_receipt(po_id: int, warehouse_pk: int, received_on, notes: str, line_payloads: list, user):
     """
-    line_payloads: list of dicts with keys purchase_order_item_id (int), qty_raw, unit_price_raw
+    line_payloads: list of dicts with keys:
+      purchase_order_item_id (int), qty_raw, unit_price_raw,
+      model_numbers (optional list of str for serial-tracked lines)
 
     Raises ValidationError on business validation failures.
     """
@@ -87,9 +90,8 @@ def process_goods_receipt(po_id: int, warehouse_pk: int, received_on, notes: str
 
     lines_by_id = {
         ln.pk: ln
-        for ln in PurchaseOrderItem.objects.select_for_update()
+        for ln in PurchaseOrderItem.objects.select_for_update(of=('self',))
         .filter(purchase_order_id=po.pk)
-        .select_related('inventory_item')
     }
 
     validated = []
@@ -138,7 +140,25 @@ def process_goods_receipt(po_id: int, warehouse_pk: int, received_on, notes: str
             )
             continue
 
-        validated.append((po_line, qty_now, unit_price))
+        model_numbers = raw.get('model_numbers') or []
+        inv = po_line.inventory_item
+        if qty_now > 0 and inv and inv.track_by_serial:
+            if qty_now != qty_now.to_integral_value():
+                errors.append(
+                    f'Line "{po_line.description[:80]}": serial-tracked items require whole-number quantities.'
+                )
+                continue
+            try:
+                model_numbers = validate_model_numbers_for_receive(
+                    inv,
+                    model_numbers,
+                    qty_expected=int(qty_now),
+                )
+            except ValidationError as exc:
+                errors.extend(exc.messages if hasattr(exc, 'messages') else [str(exc)])
+                continue
+
+        validated.append((po_line, qty_now, unit_price, model_numbers))
 
     if errors:
         raise ValidationError(errors)
@@ -154,42 +174,67 @@ def process_goods_receipt(po_id: int, warehouse_pk: int, received_on, notes: str
         notes=(notes or '').strip(),
     )
 
-    for po_line, qty_now, unit_price in validated:
+    for po_line, qty_now, unit_price, model_numbers in validated:
         if qty_now <= 0:
             continue
 
-        movement = StockMovement(
-            item=po_line.inventory_item,
-            warehouse=wh,
-            movement_type='in',
-            source='purchase',
-            quantity=qty_now,
-            unit_cost=unit_price,
-            reference=po.po_number,
-            notes=f'Goods receipt #{receipt.pk} — {po.po_number}',
-            movement_date=received_on,
-        )
-        movement.save()
-        movement.execute(user=user)
-
-        PurchaseOrderReceiptLine.objects.create(
+        inv = po_line.inventory_item
+        receipt_line = PurchaseOrderReceiptLine.objects.create(
             receipt=receipt,
             purchase_order_item=po_line,
             quantity_received=qty_now,
             unit_price=unit_price,
         )
 
-        ItemPurchaseReceiptHistory.objects.create(
-            item=po_line.inventory_item,
-            vendor=po.vendor,
-            purchase_order=po,
-            purchase_order_item=po_line,
-            receipt=receipt,
-            quantity=qty_now,
-            unit_price=unit_price,
-            po_number=po.po_number,
-            stock_movement=movement,
-        )
+        if inv.track_by_serial:
+            for mn in model_numbers:
+                ItemSerialNumber.objects.create(
+                    item=inv,
+                    model_number=mn,
+                    receipt_line=receipt_line,
+                    warehouse=wh,
+                    date_received=received_on,
+                    status=ItemSerialNumber.STATUS_AVAILABLE,
+                    created_by=user,
+                )
+            sync_serial_stock_mirror(inv, wh)
+            ItemPurchaseReceiptHistory.objects.create(
+                item=inv,
+                vendor=po.vendor,
+                purchase_order=po,
+                purchase_order_item=po_line,
+                receipt=receipt,
+                quantity=qty_now,
+                unit_price=unit_price,
+                po_number=po.po_number,
+                stock_movement=None,
+            )
+        else:
+            movement = StockMovement(
+                item=inv,
+                warehouse=wh,
+                movement_type='in',
+                source='purchase',
+                quantity=qty_now,
+                unit_cost=unit_price,
+                reference=po.po_number,
+                notes=f'Goods receipt #{receipt.pk} — {po.po_number}',
+                movement_date=received_on,
+            )
+            movement.save()
+            movement.execute(user=user)
+
+            ItemPurchaseReceiptHistory.objects.create(
+                item=inv,
+                vendor=po.vendor,
+                purchase_order=po,
+                purchase_order_item=po_line,
+                receipt=receipt,
+                quantity=qty_now,
+                unit_price=unit_price,
+                po_number=po.po_number,
+                stock_movement=movement,
+            )
 
         po_line.quantity_received = (
             (po_line.quantity_received or Decimal('0')) + qty_now

@@ -87,6 +87,10 @@ class LeavePendingHRView(PermissionRequiredMixin, ListView):
     permission_type = 'approve'
 
     def get_queryset(self):
+        from apps.hr.leave_approval_rules import user_can_hr_approve
+
+        if not user_can_hr_approve(self.request.user):
+            return LeaveRequest.objects.none()
         return (
             LeaveRequest.objects.filter(is_active=True, status='pending_hr')
             .select_related('employee', 'leave_type', 'employee__department')
@@ -96,6 +100,9 @@ class LeavePendingHRView(PermissionRequiredMixin, ListView):
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
         ctx['title'] = 'Leave pending (HR)'
+        from apps.hr.leave_approval_rules import annotate_leave_approval_actions
+
+        annotate_leave_approval_actions(self.request.user, ctx['leave_requests'])
         return ctx
 
 

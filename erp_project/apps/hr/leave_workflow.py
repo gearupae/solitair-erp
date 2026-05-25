@@ -3,16 +3,9 @@ from __future__ import annotations
 
 from django.utils import timezone
 
-from apps.core.utils import PermissionChecker
 from apps.hr import hr_notifications
+from apps.hr.leave_approval_rules import user_can_hr_approve, user_can_manager_approve
 from apps.hr.leave_balance_service import sync_leave_balances_for_employee
-
-
-def _is_department_manager(user, employee) -> bool:
-    dept = getattr(employee, 'department', None)
-    if not dept or not dept.manager_id:
-        return False
-    return dept.manager_id == user.pk
 
 
 def approve_leave_request(request, leave) -> tuple[bool, str]:
@@ -21,7 +14,7 @@ def approve_leave_request(request, leave) -> tuple[bool, str]:
     emp = leave.employee
 
     if leave.status == 'pending_manager':
-        if not (_is_department_manager(user, emp) or user.is_superuser):
+        if not user_can_manager_approve(user, emp):
             return False, 'Only the department manager can approve at this step.'
         leave.status = 'pending_hr'
         leave.save(update_fields=['status', 'updated_at'])
@@ -30,7 +23,7 @@ def approve_leave_request(request, leave) -> tuple[bool, str]:
         return True, 'Forwarded to HR for final approval.'
 
     if leave.status == 'pending_hr':
-        if not (user.is_superuser or PermissionChecker.has_permission(user, 'hr', 'approve')):
+        if not user_can_hr_approve(user):
             return False, 'You do not have HR approval permission.'
         leave.status = 'approved'
         leave.approved_by = user
@@ -52,10 +45,10 @@ def reject_leave_request(request, leave, reason: str = '') -> tuple[bool, str]:
         return False, 'Only pending requests can be rejected.'
 
     if leave.status == 'pending_manager':
-        if not (_is_department_manager(user, emp) or user.is_superuser):
+        if not user_can_manager_approve(user, emp):
             return False, 'Only the department manager can reject at this step.'
     elif leave.status == 'pending_hr':
-        if not (user.is_superuser or PermissionChecker.has_permission(user, 'hr', 'approve')):
+        if not user_can_hr_approve(user):
             return False, 'HR approval permission required.'
 
     leave.status = 'rejected'

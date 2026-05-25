@@ -1,9 +1,11 @@
 """
-Shared helpers for optional per-edit approval (estimates, projects).
+Shared helpers for optional per-edit approval (sales estimates).
 
-When Approval Configuration exists for a module, non-approver saves set
+When Approval Configuration exists for the estimate module, non-approver saves set
 edit_approval_status to pending and notify the configured approver.
 Superusers and the configured approver clear pending on their own saves.
+
+Project edits apply immediately except status → Completed, which requires approver sign-off.
 """
 from django.utils import timezone
 
@@ -38,6 +40,9 @@ def apply_after_document_edit(request, *, module: str, obj, amount_accessor):
 
     Caller should refresh computed totals on obj before calling (e.g. calculate_totals()).
     """
+    if module == 'project':
+        return
+
     if not approval_config_active(module):
         return
 
@@ -48,6 +53,7 @@ def apply_after_document_edit(request, *, module: str, obj, amount_accessor):
         'edit_approval_submitted_by',
         'updated_at',
     ]
+    previous_status = obj.edit_approval_status
 
     if should_skip_pending_for_user(request.user, module, amount):
         obj.edit_approval_status = 'none'
@@ -59,5 +65,17 @@ def apply_after_document_edit(request, *, module: str, obj, amount_accessor):
     obj.edit_approval_status = 'pending'
     obj.edit_approval_submitted_at = timezone.now()
     obj.edit_approval_submitted_by = request.user
+
+    if module == 'estimate' and previous_status == 'rejected':
+        from apps.sales.estimate_revision import bump_revision_on_resubmit
+
+        if bump_revision_on_resubmit(obj, via_edit_resubmit=True):
+            fields.append('revision_count')
+
     obj.save(update_fields=fields)
-    ApprovalConfiguration.notify_approver(obj, module)
+    if module == 'estimate':
+        from apps.sales.estimate_approval_notifications import notify_approver_estimate_edit_pending
+
+        notify_approver_estimate_edit_pending(obj)
+    else:
+        ApprovalConfiguration.notify_approver(obj, module)

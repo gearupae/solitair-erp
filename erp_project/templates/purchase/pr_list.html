@@ -89,7 +89,7 @@
                                 <i class="fas fa-exchange-alt"></i>
                             </a>
                             {% endif %}
-                            {% if can_approve and pr.status == 'pending' %}
+                            {% if pr.show_approve_actions %}
                             <a href="{% url 'purchase:pr_approve' pr.pk %}" class="btn btn-action btn-outline-success" title="Approve" onclick="return confirm('Approve this PR?');">
                                 <i class="fas fa-check"></i>
                             </a>

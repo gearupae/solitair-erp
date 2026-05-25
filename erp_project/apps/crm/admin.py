@@ -28,6 +28,7 @@ class CustomerAdmin(admin.ModelAdmin):
         'email',
         'phone',
         'customer_type',
+        'assigned_salesperson',
         'business_segment',
         'status',
         'is_active',
@@ -46,6 +47,7 @@ class CustomerAdmin(admin.ModelAdmin):
                 'customer_type',
                 'business_segment',
                 'lead_kanban_stage',
+                'assigned_salesperson',
             )
         }),
         ('Contact Details', {
@@ -57,7 +59,6 @@ class CustomerAdmin(admin.ModelAdmin):
                 'trn_document',
                 'trade_license_document',
                 'website',
-                'scope',
                 'job_type',
                 'primary_project',
                 'payment_terms',

@@ -1,0 +1,147 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block content %}
+<div class="page-header mb-4">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb mb-2">
+            <li class="breadcrumb-item"><a href="{% url 'sales:estimate_list' %}">Estimates</a></li>
+            <li class="breadcrumb-item"><a href="{% url 'sales:estimate_detail' estimate.pk %}">{{ estimate.display_estimate_number }}</a></li>
+            <li class="breadcrumb-item active">Edit {{ proforma.proforma_number }}</li>
+        </ol>
+    </nav>
+    <h4 class="fw-bold mb-0">Edit proforma invoice</h4>
+    <p class="text-muted mb-0">{{ proforma.proforma_number }} · Quotation {{ estimate.display_estimate_number }}</p>
+</div>
+
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-body">
+                <p class="text-muted small mb-3">
+                    Quotation subtotal (excl. VAT): <strong>AED {{ estimate.subtotal|floatformat:2 }}</strong>
+                    · VAT rate: <strong>{{ estimate.proforma_vat_rate_percent|floatformat:2 }}%</strong>
+                </p>
+                <form method="post" id="proformaEditForm" novalidate>
+                    {% csrf_token %}
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label" for="proformaName">Name <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="proformaName" name="name" required maxlength="200" value="{{ proforma.name }}">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label" for="proformaDescription">Description</label>
+                            <textarea class="form-control" id="proformaDescription" name="description" rows="2">{{ proforma.description }}</textarea>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label d-block">Charge basis</label>
+                            <div class="btn-group w-100" role="group">
+                                <input type="radio" class="btn-check" name="charge_type" id="proformaTypePercent" value="percent" {% if proforma.charge_type == 'percent' %}checked{% endif %}>
+                                <label class="btn btn-outline-primary" for="proformaTypePercent">Percentage</label>
+                                <input type="radio" class="btn-check" name="charge_type" id="proformaTypeAmount" value="amount" {% if proforma.charge_type == 'amount' %}checked{% endif %}>
+                                <label class="btn btn-outline-primary" for="proformaTypeAmount">Amount</label>
+                            </div>
+                        </div>
+                        <div class="col-md-6" id="proformaValuePercentWrap">
+                            <label class="form-label" for="proformaValuePercent">Percentage of quotation subtotal</label>
+                            <div class="input-group">
+                                <input type="number" class="form-control proforma-value-input" id="proformaValuePercent" min="0.01" max="100" step="0.01"
+                                    value="{% if proforma.charge_type == 'percent' %}{{ proforma.charge_value }}{% endif %}">
+                                <span class="input-group-text">%</span>
+                            </div>
+                        </div>
+                        <div class="col-md-6" id="proformaValueAmountWrap">
+                            <label class="form-label" for="proformaValueAmount">Amount (excl. VAT)</label>
+                            <div class="input-group">
+                                <span class="input-group-text">AED</span>
+                                <input type="number" class="form-control proforma-value-input" id="proformaValueAmount" min="0.01" step="0.01"
+                                    value="{% if proforma.charge_type == 'amount' %}{{ proforma.charge_value }}{% endif %}">
+                            </div>
+                        </div>
+                    </div>
+                    <input type="hidden" name="charge_value" id="proformaChargeValueHidden" value="{{ proforma.charge_value }}">
+                    <div class="card mt-4 bg-light border-0">
+                        <div class="card-body py-3">
+                            <h6 class="text-muted mb-3">Preview</h6>
+                            <div class="d-flex justify-content-between mb-2">
+                                <span>Line total (excl. VAT)</span>
+                                <strong id="proformaPreviewSubtotal">AED {{ proforma.line_subtotal|floatformat:2 }}</strong>
+                            </div>
+                            <div class="d-flex justify-content-between mb-2">
+                                <span>VAT</span>
+                                <strong id="proformaPreviewVat">AED {{ proforma.vat_amount|floatformat:2 }}</strong>
+                            </div>
+                            <div class="d-flex justify-content-between border-top pt-2">
+                                <span class="fw-semibold">Total (incl. VAT)</span>
+                                <strong class="text-primary" id="proformaPreviewTotal">AED {{ proforma.total_amount|floatformat:2 }}</strong>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="d-flex flex-wrap gap-2 mt-4">
+                        <button type="submit" class="btn btn-warning">
+                            <i class="fas fa-save me-1"></i>Save &amp; view PDF
+                        </button>
+                        <a href="{% url 'sales:estimate_proforma_invoice_pdf' estimate.pk proforma.pk %}" class="btn btn-outline-secondary">Cancel</a>
+                        <a href="{% url 'sales:estimate_detail' estimate.pk %}" class="btn btn-outline-secondary">Back to estimate</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{{ block.super }}
+<script>
+(function () {
+    var estSubtotal = {{ estimate.subtotal|default:0 }};
+    var estVat = {{ estimate.vat_amount|default:0 }};
+    var estVatRate = {{ estimate.proforma_vat_rate_percent|default:0 }};
+    var form = document.getElementById('proformaEditForm');
+    if (!form) return;
+
+    function fmt(n) {
+        return 'AED ' + (isFinite(n) ? Number(n) : 0).toFixed(2);
+    }
+    function activeChargeType() {
+        var c = form.querySelector('input[name="charge_type"]:checked');
+        return c ? c.value : 'percent';
+    }
+    function activeValue() {
+        if (activeChargeType() === 'percent') {
+            return parseFloat(document.getElementById('proformaValuePercent').value) || 0;
+        }
+        return parseFloat(document.getElementById('proformaValueAmount').value) || 0;
+    }
+    function lineVatAmount(lineSub) {
+        if (estSubtotal > 0 && estVat > 0) return lineSub * estVat / estSubtotal;
+        if (estVatRate > 0) return lineSub * estVatRate / 100;
+        return 0;
+    }
+    function syncUi() {
+        var isPercent = activeChargeType() === 'percent';
+        document.getElementById('proformaValuePercentWrap').classList.toggle('d-none', !isPercent);
+        document.getElementById('proformaValueAmountWrap').classList.toggle('d-none', isPercent);
+        document.getElementById('proformaValuePercent').disabled = !isPercent;
+        document.getElementById('proformaValueAmount').disabled = isPercent;
+        var value = activeValue();
+        var lineSub = isPercent ? estSubtotal * value / 100 : value;
+        var lineVat = lineVatAmount(lineSub);
+        document.getElementById('proformaPreviewSubtotal').textContent = fmt(lineSub);
+        document.getElementById('proformaPreviewVat').textContent = fmt(lineVat);
+        document.getElementById('proformaPreviewTotal').textContent = fmt(lineSub + lineVat);
+    }
+    form.querySelectorAll('input[name="charge_type"]').forEach(function (el) {
+        el.addEventListener('change', syncUi);
+    });
+    form.querySelectorAll('.proforma-value-input').forEach(function (el) {
+        el.addEventListener('input', syncUi);
+    });
+    form.addEventListener('submit', function () {
+        document.getElementById('proformaChargeValueHidden').value = String(activeValue());
+    });
+    syncUi();
+})();
+</script>
+{% endblock %}

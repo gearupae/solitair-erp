@@ -54,6 +54,19 @@ class DepartmentForm(forms.ModelForm):
         for name, field in self.fields.items():
             field.widget.attrs['class'] = 'form-select' if name == 'manager' else 'form-control'
 
+
+class DesignationForm(forms.ModelForm):
+    class Meta:
+        model = Designation
+        fields = ['name', 'department']
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['department'].queryset = Department.objects.filter(is_active=True).order_by('name')
+        self.fields['department'].empty_label = '-- Select Department --'
+        for name, field in self.fields.items():
+            field.widget.attrs['class'] = 'form-select' if name == 'department' else 'form-control'
+
 class EmployeeForm(forms.ModelForm):
     class Meta:
         model = Employee
@@ -140,11 +153,12 @@ class EmployeeForm(forms.ModelForm):
         if not self.instance.pk or not self.instance.user_id:
             self.fields.pop('user', None)
             self.fields['portal_role'] = forms.ModelChoiceField(
-                label='ERP access role',
+                label='ERP access role (optional override)',
                 queryset=role_qs,
                 required=False,
-                empty_label='— Default (Employee role) —',
+                empty_label='— Auto from designation —',
                 widget=forms.Select(attrs={'class': 'form-select'}),
+                help_text='Leave blank to assign the ERP role from designation automatically.',
             )
 
         def _tpl_label(obj):
@@ -154,30 +168,24 @@ class EmployeeForm(forms.ModelForm):
         self.fields['salary_template'].label_from_instance = _tpl_label
         
         # Sync Roles from settings_app to Designations
-        # Fetch all active roles and create corresponding designations if they don't exist
-        roles = Role.objects.filter(is_active=True).order_by('name')
-        for role in roles:
-            # Create designation if it doesn't exist (using a default department or None)
-            # We'll use the first active department or create without department
-            default_dept = Department.objects.filter(is_active=True).first()
-            if default_dept:
-                Designation.objects.get_or_create(
-                    name=role.name,
-                    defaults={'department': default_dept}
-                )
-        
-        # Now fetch designations (which should include synced roles)
-        designation_queryset = Designation.objects.filter(is_active=True)
-        
-        # If editing, include the current designation even if inactive
-        if self.instance and self.instance.pk:
-            if self.instance.designation_id:
-                designation_queryset = Designation.objects.filter(
-                    Q(is_active=True) | Q(pk=self.instance.designation_id)
-                )
-        
-        self.fields['designation'].queryset = designation_queryset.order_by('name')
+        from .designation_utils import ensure_role_designations, designations_queryset
+
+        ensure_role_designations()
+
+        dept_id = None
+        if self.data.get('department'):
+            dept_id = self.data.get('department') or None
+        elif self.instance and self.instance.department_id:
+            dept_id = self.instance.department_id
+
+        include_desig = self.instance.designation_id if self.instance and self.instance.pk else None
+        designation_queryset = designations_queryset(dept_id, include_desig)
+        self.fields['designation'].queryset = designation_queryset
         self.fields['designation'].empty_label = '-- Select Designation --'
+        self.fields['designation'].label_from_instance = lambda obj: obj.name
+        self.fields['designation'].help_text = (
+            'Job title for HR/org chart. The matching ERP access role is assigned automatically when a login exists.'
+        )
 
         company_qs = Company.objects.filter(is_active=True)
         if self.instance and self.instance.pk and self.instance.company_id:
@@ -205,6 +213,17 @@ class EmployeeForm(forms.ModelForm):
                 field.input_formats = ['%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y']
             else:
                 field.widget.attrs['class'] = 'form-control'
+
+    def clean(self):
+        cleaned = super().clean()
+        dept = cleaned.get('department')
+        desig = cleaned.get('designation')
+        if dept and desig and desig.department_id != dept.pk:
+            self.add_error(
+                'designation',
+                'Select a designation that belongs to the chosen department.',
+            )
+        return cleaned
 
     def clean_employee_code(self):
         raw = (self.cleaned_data.get('employee_code') or '').strip()
@@ -348,8 +367,23 @@ class LeaveRequestForm(forms.ModelForm):
         self.is_admin = kwargs.pop('is_admin', False)
         super().__init__(*args, **kwargs)
 
-        self.fields['leave_type'].queryset = LeaveType.objects.filter(is_active=True).order_by('name')
-        self.fields['leave_type'].empty_label = '-- Select Leave Type --'
+        from apps.hr.leave_context_service import leave_types_queryset_for_employee
+
+        employee = None
+        if self.instance and self.instance.pk and self.instance.employee_id:
+            employee = self.instance.employee
+        elif self.user and not self.is_admin:
+            try:
+                employee = Employee.objects.get(user=self.user, is_active=True)
+            except Employee.DoesNotExist:
+                pass
+        elif self.is_admin and self.data.get('employee'):
+            employee = Employee.objects.filter(pk=self.data.get('employee'), is_active=True).first()
+
+        self.fields['leave_type'].queryset = leave_types_queryset_for_employee(employee)
+        self.fields['leave_type'].empty_label = (
+            '-- Select employee first --' if self.is_admin and not employee else '-- Select Leave Type --'
+        )
 
         self.fields['employee'].queryset = Employee.objects.filter(is_active=True).order_by('first_name', 'last_name')
         self.fields['employee'].empty_label = '-- Select Employee --'
@@ -461,7 +495,7 @@ class PublicLeaveApplicationForm(forms.Form):
         self.fields['employee_code'].widget.attrs.setdefault('class', 'form-control')
         self.fields['medical_certificate'].widget.attrs.setdefault('class', 'form-control')
         self.fields['leave_type'].empty_label = '— Select leave type —'
-        self.fields['leave_type'].queryset = LeaveType.objects.filter(is_active=True).order_by('name')
+        self.fields['leave_type'].queryset = LeaveType.objects.none()
         self.fields['leave_type'].widget.attrs.setdefault('class', 'form-select')
         self.fields['reliever'].queryset = Employee.objects.filter(is_active=True).order_by('first_name', 'last_name')
         self.fields['reliever'].widget.attrs.setdefault('class', 'form-select')

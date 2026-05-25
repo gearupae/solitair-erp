@@ -158,7 +158,7 @@
 <div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-3">
     <div>
         <h4 class="mb-1 fw-bold">{{ title }}</h4>
-        <p class="text-muted mb-0">Manage your customers and leads</p>
+        <p class="text-muted mb-0">{% if crm_sales_rep_only %}View and manage leads assigned to you{% else %}Manage your customers and leads{% endif %}</p>
     </div>
     <div class="d-flex flex-wrap gap-2 align-items-center">
         <a href="{% url 'crm:public_upload' %}" class="btn btn-light btn-sm" target="_blank" rel="noopener" title="Public page to upload photos and files to a lead or customer">
@@ -201,11 +201,27 @@
             </div>
             <div class="col-md-3">
                 <label class="form-label">Type <span class="text-danger">*</span></label>
+                {% if crm_sales_rep_only %}
+                <input type="hidden" name="customer_type" value="lead">
+                <input type="text" class="form-control" value="Lead" readonly>
+                {% else %}
                 <select name="customer_type" id="crmInlineCustomerType" class="form-select" required>
                     <option value="lead">Lead</option>
                     <option value="customer">Customer</option>
                 </select>
+                {% endif %}
             </div>
+            {% if show_assign_salesman %}
+            <div class="col-md-3" id="crmInlineAssignWrap">
+                <label class="form-label">Assigned salesman <span class="text-danger">*</span></label>
+                <select name="assigned_salesperson" id="crmInlineAssignedTo" class="form-select" required>
+                    <option value="">— Select salesman —</option>
+                    {% for item in salesman_choice_options %}
+                    <option value="{{ item.id }}">{{ item.label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endif %}
             <div class="col-md-3" id="crmBusinessSegmentWrap" style="display:none;">
                 <label class="form-label">Business type <span class="text-danger">*</span></label>
                 <select name="business_segment" id="crmInlineBusinessSegment" class="form-select">
@@ -246,16 +262,19 @@
             </div>
             <div class="col-md-3">
                 <label class="form-label">Job type</label>
-                <input type="text" name="job_type" class="form-control" placeholder="Job type">
+                <select name="job_type" class="form-select">
+                    <option value="">—</option>
+                    <option value="amc">AMC</option>
+                    <option value="project">Project</option>
+                    <option value="direct_sale">Direct Sale</option>
+                    <option value="maintenance">Maintenance</option>
+                </select>
             </div>
             <div class="col-md-3">
-                <label class="form-label">Project</label>
-                <select name="primary_project" class="form-select">
-                    <option value="">— Select project —</option>
-                    {% for p in project_choices %}
-                    <option value="{{ p.pk }}">{{ p.project_code }} — {{ p.name }}</option>
-                    {% endfor %}
-                </select>
+                <label class="form-label" for="{{ form.primary_project.id_for_label }}">{{ form.primary_project.label }}</label>
+                {{ form.primary_project }}
+                {% for err in form.primary_project.errors %}<div class="text-danger small">{{ err }}</div>{% endfor %}
+                <div class="form-text small mb-0" id="crmProjectSelectHint">{% if not project_choices %}No projects yet — add them under <a href="{% url 'projects:project_list' %}">Projects</a>.{% endif %}</div>
             </div>
             <div class="col-md-3" id="crmB2bTrnDocWrap" style="display:none;">
                 <label class="form-label">TRN certificate <span class="text-muted small">(optional)</span></label>
@@ -265,17 +284,6 @@
             <div class="col-md-3" id="crmB2bLicenseDocWrap" style="display:none;">
                 <label class="form-label">Trade license <span class="text-danger">*</span></label>
                 <input type="file" name="trade_license_document" class="form-control" accept=".pdf,.jpg,.jpeg,.png,.webp,.heic">
-            </div>
-            <div class="col-12">
-                <label class="form-label mb-2">Scope</label>
-                <div class="d-flex flex-wrap gap-3">
-                    {% for value, label in scope_choices %}
-                    <div class="form-check form-check-inline m-0">
-                        <input class="form-check-input" type="checkbox" name="scope" value="{{ value }}" id="add_scope_{{ value }}">
-                        <label class="form-check-label" for="add_scope_{{ value }}">{{ label }}</label>
-                    </div>
-                    {% endfor %}
-                </div>
             </div>
             <div class="col-12">
                 <label class="form-label">Notes</label>
@@ -338,6 +346,7 @@
                         </div>
                     </div>
                     {% endif %}
+                    {% if crm_show_customers_column %}
                     <div class="kanban-col kanban-col--customers">
                         <div class="kanban-col-header">Customers <span class="badge bg-secondary">{{ kanban_customers|length }}</span></div>
                         <div class="kanban-col-body" style="max-height:26rem; overflow-y:auto;" data-list-kind="customers">
@@ -355,6 +364,7 @@
                             <p class="text-muted small mb-0 pt-2">Not draggable — use Edit for status or type.</p>
                         </div>
                     </div>
+                    {% endif %}
                 </div>
             </div>
         </div>
@@ -434,6 +444,7 @@
                 <label class="form-label small text-muted">Search</label>
                 <input type="text" name="search" class="form-control" placeholder="Name, company, email, VAT, website, job type..." value="{{ request.GET.search }}">
             </div>
+            {% if not crm_sales_rep_only %}
             <div class="col-md-2">
                 <label class="form-label small text-muted">Type</label>
                 <select name="type" class="form-select">
@@ -442,6 +453,7 @@
                     <option value="customer" {% if request.GET.type == 'customer' %}selected{% endif %}>Customer</option>
                 </select>
             </div>
+            {% endif %}
             <div class="col-md-2">
                 <label class="form-label small text-muted">Status</label>
                 <select name="status" class="form-select">
@@ -474,6 +486,7 @@
                         <th class="col-email">Email</th>
                         <th>Phone</th>
                         <th>Type</th>
+                        {% if show_assign_salesman %}<th>Salesman</th>{% endif %}
                         <th>Status</th>
                         <th class="text-center col-actions">Actions</th>
                     </tr>
@@ -532,6 +545,15 @@
                             {% endif %}
                             {% endif %}
                         </td>
+                        {% if show_assign_salesman %}
+                        <td class="text-nowrap small">
+                            {% if customer.assigned_salesperson %}
+                            {{ customer.assigned_salesman_label }}
+                            {% else %}
+                            <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                        {% endif %}
                         <td>
                             {% if can_edit %}
                             <form method="post" action="{% url 'crm:customer_inline_update' customer.pk %}" class="crm-inline-field-form">
@@ -657,9 +679,13 @@
         var trnHint = document.getElementById('crmInlineTrnHint');
         var b2bTrn = document.getElementById('crmB2bTrnDocWrap');
         var b2bLic = document.getElementById('crmB2bLicenseDocWrap');
+        var assignWrap = document.getElementById('crmInlineAssignWrap');
+        var assignSel = document.getElementById('crmInlineAssignedTo');
         var isCustomer = typeSel && typeSel.value === 'customer';
         if (segWrap) segWrap.style.display = isCustomer ? '' : 'none';
         if (!isCustomer && seg) seg.value = '';
+        if (assignWrap) assignWrap.style.display = isCustomer ? 'none' : '';
+        if (assignSel) assignSel.required = !isCustomer;
         var isB2b = isCustomer && seg && seg.value === 'b2b';
         if (b2bTrn) b2bTrn.style.display = isB2b ? '' : 'none';
         if (b2bLic) b2bLic.style.display = isB2b ? '' : 'none';
@@ -672,6 +698,53 @@
         if (seg) seg.addEventListener('change', crmInlineToggleCustomerFields);
         crmInlineToggleCustomerFields();
     });
+})();
+</script>
+<script>
+(function () {
+    var projectOptionsUrl = '{% url "crm:project_options" %}';
+
+    function loadCrmProjectOptions() {
+        var sel = document.querySelector('#customerForm select[name="primary_project"]');
+        var hint = document.getElementById('crmProjectSelectHint');
+        if (!sel) return;
+        var current = sel.value;
+        fetch(projectOptionsUrl, { headers: { 'Accept': 'application/json' } })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                var projects = data.projects || [];
+                sel.innerHTML = '';
+                var empty = document.createElement('option');
+                empty.value = '';
+                empty.textContent = '— Select project —';
+                sel.appendChild(empty);
+                projects.forEach(function (p) {
+                    var opt = document.createElement('option');
+                    opt.value = String(p.id);
+                    opt.textContent = p.label;
+                    if (String(p.id) === String(current)) opt.selected = true;
+                    sel.appendChild(opt);
+                });
+                if (hint) {
+                    if (projects.length) {
+                        hint.classList.add('d-none');
+                    } else {
+                        hint.classList.remove('d-none');
+                    }
+                }
+            })
+            .catch(function () { /* keep server-rendered options */ });
+    }
+
+    document.addEventListener('DOMContentLoaded', loadCrmProjectOptions);
+
+    var origToggle = window.toggleInlineForm;
+    if (typeof origToggle === 'function') {
+        window.toggleInlineForm = function (formId) {
+            origToggle(formId);
+            if (formId === 'customerForm') loadCrmProjectOptions();
+        };
+    }
 })();
 </script>
 {% if can_edit %}

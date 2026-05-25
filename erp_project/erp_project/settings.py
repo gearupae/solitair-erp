@@ -15,6 +15,13 @@ SECRET_KEY = config('SECRET_KEY', default='django-insecure-change-this-in-produc
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = config('DEBUG', default=True, cast=bool)
 
+# Main menu modules to hide temporarily (permission module codes).
+# Override in .env, e.g. NAV_HIDDEN_MODULES=property or leave empty to show all.
+_nav_hidden_raw = config('NAV_HIDDEN_MODULES', default='property')
+NAV_HIDDEN_MODULES = frozenset(
+    code.strip() for code in _nav_hidden_raw.split(',') if code.strip()
+)
+
 ALLOWED_HOSTS = config(
     'ALLOWED_HOSTS',
     default='localhost,127.0.0.1,gear.telldb.com',
@@ -25,7 +32,7 @@ ALLOWED_HOSTS = config(
 # Override in .env if needed: CSRF_TRUSTED_ORIGINS=https://yourdomain.com
 CSRF_TRUSTED_ORIGINS = config(
     'CSRF_TRUSTED_ORIGINS',
-    default='http://gear.telldb.com,https://gear.telldb.com',
+    default='http://gear.telldb.com,https://gear.telldb.com,http://127.0.0.1:8001,http://localhost:8001',
     cast=Csv(),
 )
 
@@ -64,6 +71,7 @@ INSTALLED_APPS = [
     'apps.contracts',
     'apps.fleet',
     'apps.advances',
+    'apps.reports',
 ]
 
 MIDDLEWARE = [

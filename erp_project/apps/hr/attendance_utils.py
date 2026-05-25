@@ -42,6 +42,121 @@ def holiday_on_date_for_employee(d: date, emp: Employee) -> Holiday | None:
     return qs.filter(location='both').first()
 
 
+def open_attendance_session(employee: Employee, d: date) -> AttendanceRecord | None:
+    """Latest open punch (clocked in, not yet out) for this employee on this date."""
+    return (
+        AttendanceRecord.objects.filter(
+            employee=employee,
+            date=d,
+            is_active=True,
+            check_in__isnull=False,
+            check_out__isnull=True,
+        )
+        .order_by('-check_in', '-pk')
+        .first()
+    )
+
+
+def _session_datetimes(d: date, check_in, check_out):
+    """Return (start, end) datetimes for a closed session."""
+    if not check_in or not check_out:
+        return None
+    start = datetime.combine(d, check_in)
+    end = datetime.combine(d, check_out)
+    if end <= start:
+        end += timedelta(days=1)
+    return start, end
+
+
+def attendance_intervals_overlap(d: date, in_a, out_a, in_b, out_b) -> bool:
+    """True when two closed punch ranges on the same date overlap in time."""
+    range_a = _session_datetimes(d, in_a, out_a)
+    range_b = _session_datetimes(d, in_b, out_b)
+    if not range_a or not range_b:
+        return False
+    a0, a1 = range_a
+    b0, b1 = range_b
+    return a0 < b1 and b0 < a1
+
+
+def _format_session_range(check_in, check_out) -> str:
+    return f'{check_in.strftime("%H:%M")}–{check_out.strftime("%H:%M")}'
+
+
+def attendance_overlap_message(
+    employee: Employee,
+    d: date,
+    check_in,
+    check_out=None,
+    *,
+    exclude_pk=None,
+    extra_sessions=None,
+) -> str | None:
+    """
+    Return an error message if this punch overlaps another session the same day.
+    extra_sessions: optional list of (check_in, check_out) tuples from the same import batch.
+    """
+    if not check_in:
+        return None
+
+    def _conflicts_with(ci, co):
+        if not ci or not co:
+            return False
+        if check_out:
+            return attendance_intervals_overlap(d, check_in, check_out, ci, co)
+        start, end = _session_datetimes(d, ci, co)
+        if not start:
+            return False
+        t = datetime.combine(d, check_in)
+        return start <= t < end
+
+    qs = AttendanceRecord.objects.filter(
+        employee=employee,
+        date=d,
+        is_active=True,
+        check_in__isnull=False,
+        check_out__isnull=False,
+    )
+    if exclude_pk:
+        qs = qs.exclude(pk=exclude_pk)
+
+    for rec in qs:
+        if _conflicts_with(rec.check_in, rec.check_out):
+            return (
+                f'This time overlaps an existing session '
+                f'({_format_session_range(rec.check_in, rec.check_out)}).'
+            )
+
+    for ci, co in extra_sessions or []:
+        if _conflicts_with(ci, co):
+            return (
+                f'This time overlaps another row in the file '
+                f'({_format_session_range(ci, co)}).'
+            )
+
+    return None
+
+
+def hours_between_punches(d: date, check_in, check_out) -> Decimal | None:
+    """Duration in decimal hours between two punches on date d (handles overnight out)."""
+    if not check_in or not check_out:
+        return None
+    dt_start = datetime.combine(d, check_in)
+    dt_end = datetime.combine(d, check_out)
+    if dt_end < dt_start:
+        dt_end += timedelta(days=1)
+    delta = dt_end - dt_start
+    return Decimal(str(round(delta.total_seconds() / 3600.0, 2)))
+
+
+def record_working_hours(record: AttendanceRecord) -> Decimal:
+    """Effective hours for costing — uses stored WH or derives from punches."""
+    if record.working_hours is not None:
+        return record.working_hours
+    hrs = hours_between_punches(record.date, record.check_in, record.check_out)
+    return hrs if hrs is not None else Decimal('0.00')
+
+
 def apply_auto_calculations_to_record(record: AttendanceRecord) -> None:
     """Mutates record before save: weekend/holiday flags, hours, late, overtime."""
     settings = get_attendance_settings()
@@ -50,7 +165,7 @@ def apply_auto_calculations_to_record(record: AttendanceRecord) -> None:
 
     if is_uae_weekend(d):
         record.status = 'weekend'
-        record.working_hours = None
+        record.working_hours = hours_between_punches(d, record.check_in, record.check_out)
         record.late_minutes = 0
         record.overtime_hours = Decimal('0.00')
         record.overtime_type = 'normal'
@@ -61,12 +176,7 @@ def apply_auto_calculations_to_record(record: AttendanceRecord) -> None:
         record.status = 'holiday'
         record.late_minutes = 0
         if record.check_in and record.check_out:
-            dt_start = datetime.combine(d, record.check_in)
-            dt_end = datetime.combine(d, record.check_out)
-            if dt_end < dt_start:
-                dt_end += timedelta(days=1)
-            delta = dt_end - dt_start
-            hrs = Decimal(str(round(delta.total_seconds() / 3600.0, 2)))
+            hrs = hours_between_punches(d, record.check_in, record.check_out) or Decimal('0.00')
             record.working_hours = hrs
             record.overtime_hours = hrs.quantize(Decimal('0.01'))
             record.overtime_type = 'holiday'
@@ -84,12 +194,7 @@ def apply_auto_calculations_to_record(record: AttendanceRecord) -> None:
 
     status_lower = (record.status or '').lower()
     if record.check_in and record.check_out:
-        dt_start = datetime.combine(d, record.check_in)
-        dt_end = datetime.combine(d, record.check_out)
-        if dt_end < dt_start:
-            dt_end += timedelta(days=1)
-        delta = dt_end - dt_start
-        hrs = Decimal(str(round(delta.total_seconds() / 3600.0, 2)))
+        hrs = hours_between_punches(d, record.check_in, record.check_out) or Decimal('0.00')
         record.working_hours = hrs
         thr = settings.overtime_threshold_hours or Decimal('9')
         record.overtime_hours = max(Decimal('0'), hrs - thr).quantize(Decimal('0.01'))
@@ -145,8 +250,7 @@ def recalculate_summary_for_employee_month(
         is_active=True,
     )
     agg = qs.aggregate(
-        tp=Count('pk', filter=Q(status='present')),
-        ta=Count('pk', filter=Q(status='absent')),
+        ta=Count('pk', filter=Q(status='absent', check_in__isnull=True)),
         tl=Count('pk', filter=Q(status='late')),
         th=Count('pk', filter=Q(status='half_day')),
         thol=Count('pk', filter=Q(status='holiday')),
@@ -154,8 +258,8 @@ def recalculate_summary_for_employee_month(
         tot_lm=Sum('late_minutes'),
         tot_wh=Sum('working_hours'),
     )
-    tp = agg['tp'] or 0
-    ta = agg['ta'] or 0
+    tp = qs.filter(check_in__isnull=False).values('date').distinct().count()
+    ta = qs.filter(status='absent', check_in__isnull=True).values('date').distinct().count()
     tl = agg['tl'] or 0
     th = agg['th'] or 0
     thol = agg['thol'] or 0
@@ -196,18 +300,17 @@ def auto_mark_absent_for_date(target: date) -> int:
     for emp in emps:
         if holiday_on_date_for_employee(target, emp):
             continue
-        obj, was_created = AttendanceRecord.objects.get_or_create(
+        if AttendanceRecord.objects.filter(employee=emp, date=target).exists():
+            continue
+        AttendanceRecord.objects.create(
             employee=emp,
             date=target,
-            defaults={
-                'status': 'absent',
-                'source': 'manual',
-                'notes': 'Auto-marked absent',
-            },
+            status='absent',
+            source='manual',
+            notes='Auto-marked absent',
         )
-        if was_created:
-            created += 1
-            recalculate_summary_for_employee_month(emp, target.year, target.month)
+        created += 1
+        recalculate_summary_for_employee_month(emp, target.year, target.month)
     return created
 
 
@@ -222,14 +325,14 @@ def auto_mark_holidays_for_date(target: date) -> int:
         hol = holiday_on_date_for_employee(target, emp)
         if not hol:
             continue
-        obj, created = AttendanceRecord.objects.update_or_create(
+        if AttendanceRecord.objects.filter(employee=emp, date=target).exists():
+            continue
+        AttendanceRecord.objects.create(
             employee=emp,
             date=target,
-            defaults={
-                'status': 'holiday',
-                'source': 'manual',
-                'notes': f'Public Holiday: {hol.name}',
-            },
+            status='holiday',
+            source='manual',
+            notes=f'Public Holiday: {hol.name}',
         )
         touched += 1
         recalculate_summary_for_employee_month(emp, target.year, target.month)
@@ -253,20 +356,19 @@ def attendance_snapshot_today() -> dict:
             'unmarked_employees': [],
         }
 
-    records = {
-        r.employee_id: r
-        for r in AttendanceRecord.objects.filter(is_active=True, date=today, employee_id__in=active_ids).select_related(
-            'employee'
-        )
-    }
+    records_by_emp: dict[int, list] = {}
+    for r in AttendanceRecord.objects.filter(
+        is_active=True, date=today, employee_id__in=active_ids
+    ).select_related('employee').order_by('employee_id', '-pk'):
+        records_by_emp.setdefault(r.employee_id, []).append(r)
 
     present = absent = late = not_marked = 0
     late_emps = []
     unmarked = []
 
     for emp in employees:
-        r = records.get(emp.pk)
-        if not r:
+        sessions = records_by_emp.get(emp.pk, [])
+        if not sessions:
             if is_uae_weekend(today):
                 continue
             if holiday_on_date_for_employee(today, emp):
@@ -274,18 +376,23 @@ def attendance_snapshot_today() -> dict:
             not_marked += 1
             unmarked.append({'id': emp.pk, 'name': emp.full_name, 'code': emp.employee_code})
             continue
-        st = r.status
-        if st == 'present':
+        if any(s.check_in for s in sessions):
             present += 1
-        elif st == 'absent':
+            late_sess = next((s for s in sessions if s.status == 'late' and s.late_minutes), None)
+            if late_sess:
+                late += 1
+                late_emps.append({'name': emp.full_name, 'late_minutes': late_sess.late_minutes})
+            continue
+        st = sessions[0].status
+        if st == 'absent':
             absent += 1
         elif st == 'late':
             late += 1
-            late_emps.append({'name': r.employee.full_name, 'late_minutes': r.late_minutes})
-        elif st == 'half_day':
-            present += 1
+            late_emps.append({'name': emp.full_name, 'late_minutes': sessions[0].late_minutes})
         elif st in ('weekend', 'holiday'):
             pass
+        elif st == 'half_day':
+            present += 1
         else:
             present += 1
 

@@ -33,6 +33,7 @@ from apps.hr.attendance_utils import (
     attendance_snapshot_today,
     company_overtime_month,
     month_absent_rate_pct,
+    open_attendance_session,
 )
 from apps.hr.forms_extended import EmployeeAdvanceForm, PayrollSettingsForm, PayrollTemplateForm
 from apps.hr.models import Department, Employee, LeaveBalance, LeaveRequest, Payroll
@@ -107,8 +108,14 @@ class HRDashboardView(PermissionRequiredMixin, TemplateView):
         ctx['pending_leave'] = LeaveRequest.objects.filter(
             is_active=True, status__in=['pending_manager', 'pending_hr']
         ).select_related(
-            'employee', 'leave_type'
-        )[:20]
+            'employee', 'leave_type', 'employee__department'
+        ).order_by('created_at')[:20]
+        from apps.hr.leave_approval_rules import annotate_leave_approval_actions
+
+        ctx['pending_leave'] = [
+            lv for lv in annotate_leave_approval_actions(self.request.user, list(ctx['pending_leave']))
+            if lv.show_approve_actions
+        ]
 
         # Use Django's active timezone (settings.TIME_ZONE) so payroll "this month"
         # matches operators in Dubai and production servers running UTC.
@@ -920,23 +927,23 @@ class SelfServiceProfileView(LoginRequiredMixin, TemplateView):
         ctx['today_attendance'] = None
         if emp:
             today = timezone.localdate()
-            rec = AttendanceRecord.objects.filter(
-                employee=emp, date=today, is_active=True
-            ).first()
-            if rec:
-                ctx['today_attendance'] = {
-                    'has_check_in': bool(rec.check_in),
-                    'has_check_out': bool(rec.check_out),
-                    'check_in_display': rec.check_in.strftime('%H:%M') if rec.check_in else '',
-                    'check_out_display': rec.check_out.strftime('%H:%M') if rec.check_out else '',
-                }
-            else:
-                ctx['today_attendance'] = {
-                    'has_check_in': False,
-                    'has_check_out': False,
-                    'check_in_display': '',
-                    'check_out_display': '',
-                }
+            open_sess = open_attendance_session(emp, today)
+            last_sess = (
+                AttendanceRecord.objects.filter(
+                    employee=emp, date=today, is_active=True, check_in__isnull=False
+                )
+                .order_by('-check_out', '-check_in', '-pk')
+                .first()
+            )
+            ctx['today_attendance'] = {
+                'open_session': open_sess is not None,
+                'has_check_in': open_sess is not None,
+                'has_check_out': False,
+                'check_in_display': open_sess.check_in.strftime('%H:%M') if open_sess and open_sess.check_in else '',
+                'check_out_display': '',
+                'last_check_in_display': last_sess.check_in.strftime('%H:%M') if last_sess and last_sess.check_in else '',
+                'last_check_out_display': last_sess.check_out.strftime('%H:%M') if last_sess and last_sess.check_out else '',
+            }
         ctx['title'] = 'Clock in / out'
         ctx['can_link_help'] = self.request.user.is_superuser or PermissionChecker.has_permission(
             self.request.user, 'hr', 'edit'

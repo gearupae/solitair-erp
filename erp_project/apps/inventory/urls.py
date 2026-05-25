@@ -24,6 +24,7 @@ urlpatterns = [
     path('items/bulk-group/', views.item_bulk_group, name='item_bulk_group'),
     path('items/create/', views.ItemCreateView.as_view(), name='item_create'),
     path('items/<int:pk>/', views.ItemDetailView.as_view(), name='item_detail'),
+    path('items/<int:pk>/register-serials/', views.item_register_on_hand_serials, name='item_register_serials'),
     path('items/<int:pk>/edit/', views.ItemUpdateView.as_view(), name='item_edit'),
     path('items/<int:pk>/delete/', views.item_delete, name='item_delete'),
     
@@ -47,6 +48,8 @@ urlpatterns = [
     path('consumables/', views.ConsumableRequestListView.as_view(), name='consumable_request_list'),
     path('consumables/create/', views.consumable_request_create, name='consumable_request_create'),
     path('consumables/<int:pk>/', views.consumable_request_detail, name='consumable_request_detail'),
+    path('consumables/<int:pk>/edit/', views.consumable_request_edit, name='consumable_request_edit'),
+    path('consumables/<int:pk>/delete/', views.consumable_request_delete, name='consumable_request_delete'),
     path('consumables/<int:pk>/approve/', views.consumable_request_approve, name='consumable_request_approve'),
     path('consumables/<int:pk>/dispense/', views.consumable_request_dispense, name='consumable_request_dispense'),
     path('consumables/<int:pk>/reject/', views.consumable_request_reject, name='consumable_request_reject'),

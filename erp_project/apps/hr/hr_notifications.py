@@ -87,32 +87,43 @@ def on_payroll_paid(payroll, request=None):
 
 
 def notify_department_manager(leave_request):
-    dept = getattr(leave_request.employee, 'department', None)
-    mgr = getattr(dept, 'manager', None) if dept else None
-    to = (getattr(mgr, 'email', None) or '').strip() if mgr else ''
-    if not to:
-        notify_hr_leave_pending(leave_request)
+    from apps.hr.leave_approval_rules import manager_approver_for_employee
+    from apps.settings_app.models import Notification
+
+    mgr = manager_approver_for_employee(leave_request.employee)
+    ref = (leave_request.reference_number or str(leave_request.pk)).strip()
+    if mgr:
+        to = (getattr(mgr, 'email', None) or '').strip()
+        if to:
+            company = _company()
+            subject = f'Leave approval needed — {leave_request.employee.full_name}'
+            body = (
+                f'A leave request was submitted by {leave_request.employee.full_name} '
+                f'({leave_request.employee.employee_code}).\n'
+                f'Type: {leave_request.leave_type.name}\n'
+                f'Dates: {leave_request.start_date} → {leave_request.end_date}\n'
+                f'Please review in HR → Leave.\n'
+            )
+            try:
+                connection = get_smtp_connection_or_default(company)
+                EmailMessage(
+                    subject=f'{subject} — {company.company_name if company else "Gearup"}',
+                    body=body,
+                    from_email=company_outgoing_from_email(company),
+                    to=[to],
+                    connection=connection,
+                ).send(fail_silently=False)
+            except Exception as exc:
+                logger.warning('Manager leave email failed: %s', exc)
+        Notification.create(
+            user=mgr,
+            title='Leave approval required (manager)',
+            message=f'Leave request {ref} from {leave_request.employee.full_name} requires your approval.',
+            link=f'/hr/leave/{leave_request.pk}/',
+        )
         return
-    company = _company()
-    subject = f'Leave approval needed — {leave_request.employee.full_name}'
-    body = (
-        f'A leave request was submitted by {leave_request.employee.full_name} '
-        f'({leave_request.employee.employee_code}).\n'
-        f'Type: {leave_request.leave_type.name}\n'
-        f'Dates: {leave_request.start_date} → {leave_request.end_date}\n'
-        f'Please review in HR → Leave.\n'
-    )
-    try:
-        connection = get_smtp_connection_or_default(company)
-        EmailMessage(
-            subject=f'{subject} — {company.company_name if company else "Gearup"}',
-            body=body,
-            from_email=company_outgoing_from_email(company),
-            to=[to],
-            connection=connection,
-        ).send(fail_silently=False)
-    except Exception as exc:
-        logger.warning('Manager leave email failed: %s', exc)
+
+    notify_hr_leave_pending(leave_request)
 
 
 def notify_hr_public_leave_submitted(leave_request):
@@ -146,30 +157,40 @@ def notify_hr_public_leave_submitted(leave_request):
 
 
 def notify_hr_leave_pending(leave_request):
-    recipients = hr_recipient_list()
+    from apps.hr.leave_approval_rules import hr_approver_user
+    from apps.settings_app.models import ApprovalConfiguration
+
+    hr_user = hr_approver_user()
+    recipients = []
+    if hr_user and (hr_user.email or '').strip():
+        recipients = [hr_user.email.strip()]
+    if not recipients:
+        recipients = hr_recipient_list()
     if not recipients:
         logger.info('No HR email — skip HR leave notify.')
-        return
-    company = _company()
-    emp = leave_request.employee
-    subject = f'Leave awaiting HR — {emp.full_name}'
-    body = (
-        f'Employee: {emp.full_name} ({emp.employee_code})\n'
-        f'Type: {leave_request.leave_type.name}\n'
-        f'Dates: {leave_request.start_date} → {leave_request.end_date}\n'
-        f'Status: Pending HR final approval.\n'
-    )
-    try:
-        connection = get_smtp_connection_or_default(company)
-        EmailMessage(
-            subject=subject,
-            body=body,
-            from_email=company_outgoing_from_email(company),
-            to=recipients,
-            connection=connection,
-        ).send(fail_silently=False)
-    except Exception as exc:
-        logger.warning('HR leave email failed: %s', exc)
+    else:
+        company = _company()
+        emp = leave_request.employee
+        subject = f'Leave awaiting HR — {emp.full_name}'
+        body = (
+            f'Employee: {emp.full_name} ({emp.employee_code})\n'
+            f'Type: {leave_request.leave_type.name}\n'
+            f'Dates: {leave_request.start_date} → {leave_request.end_date}\n'
+            f'Status: Pending HR final approval.\n'
+        )
+        try:
+            connection = get_smtp_connection_or_default(company)
+            EmailMessage(
+                subject=subject,
+                body=body,
+                from_email=company_outgoing_from_email(company),
+                to=recipients,
+                connection=connection,
+            ).send(fail_silently=False)
+        except Exception as exc:
+            logger.warning('HR leave email failed: %s', exc)
+
+    ApprovalConfiguration.notify_approver(leave_request, 'leave')
 
 
 def send_leave_decision(leave_request, approved: bool):

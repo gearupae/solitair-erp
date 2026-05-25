@@ -88,6 +88,18 @@
                         <p class="fw-medium mb-0">{{ customer.lead_kanban_stage.name }}</p>
                     </div>
                     {% endif %}
+                    {% if customer.customer_type == 'lead' %}
+                    <div class="col-md-6">
+                        <label class="form-label text-muted small">Assigned salesman</label>
+                        <p class="fw-medium mb-0">
+                            {% if customer.assigned_salesperson %}
+                            {{ customer.assigned_salesman_label }}
+                            {% else %}
+                            <span class="text-muted">—</span>
+                            {% endif %}
+                        </p>
+                    </div>
+                    {% endif %}
                     <div class="col-md-6">
                         <label class="form-label text-muted small">VAT (TRN)</label>
                         <p class="fw-medium mb-0">{{ customer.trn|default:"-" }}</p>
@@ -105,20 +117,8 @@
                         </p>
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label text-muted small">Scope</label>
-                        <p class="mb-0">
-                            {% if customer.scope_display_labels %}
-                                {% for label in customer.scope_display_labels %}
-                                <span class="badge bg-secondary-subtle text-secondary me-1">{{ label }}</span>
-                                {% endfor %}
-                            {% else %}
-                            <span class="text-muted">-</span>
-                            {% endif %}
-                        </p>
-                    </div>
-                    <div class="col-md-6">
                         <label class="form-label text-muted small">Job type</label>
-                        <p class="fw-medium mb-0">{{ customer.job_type|default:"-" }}</p>
+                        <p class="fw-medium mb-0">{% if customer.job_type %}{{ customer.get_job_type_display }}{% else %}-{% endif %}</p>
                     </div>
                     <div class="col-md-6">
                         <label class="form-label text-muted small">Project</label>

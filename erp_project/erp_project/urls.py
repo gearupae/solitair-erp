@@ -33,6 +33,7 @@ urlpatterns = [
     path('service-request/', include('apps.service_request.urls')),
     path('fleet/', include('apps.fleet.urls')),
     path('advances/', include('apps.advances.urls')),
+    path('reports/', include('apps.reports.urls')),
 ]
 
 if settings.DEBUG:

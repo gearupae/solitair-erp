@@ -66,8 +66,24 @@
                         <p class="mb-0">AED {{ item.selling_price|floatformat:2 }}</p>
                     </div>
                     <div class="col-md-4">
+                        <h6 class="text-muted mb-2">Min / Max Selling Price</h6>
+                        <p class="mb-0">
+                            AED {{ item.minimum_selling_price|floatformat:2 }}
+                            —
+                            {% if item.maximum_selling_price > 0 %}AED {{ item.maximum_selling_price|floatformat:2 }}{% else %}No cap{% endif %}
+                        </p>
+                    </div>
+                    <div class="col-md-4">
+                        <h6 class="text-muted mb-2">Tax Code</h6>
+                        <p class="mb-0">{{ item.tax_code|default:"Out of Scope (0%)" }}</p>
+                    </div>
+                    <div class="col-md-4">
                         <h6 class="text-muted mb-2">VAT Rate</h6>
                         <p class="mb-0">{{ item.vat_rate }}%</p>
+                    </div>
+                    <div class="col-md-4">
+                        <h6 class="text-muted mb-2">Condition</h6>
+                        <p class="mb-0">{{ item.get_condition_status_display }}</p>
                     </div>
                     {% if item.description %}
                     <div class="col-12">
@@ -180,6 +196,59 @@
                 </div>
             </div>
         </div>
+
+        {% if item.track_by_serial %}
+        <div class="card mb-4">
+            <div class="card-header">
+                <h6 class="mb-0 fw-semibold">Model numbers</h6>
+            </div>
+            {% if can_edit and unregistered_on_hand_count > 0 %}
+            <div class="card-body border-bottom bg-light">
+                <p class="small mb-2 text-warning-emphasis">
+                    <i class="fas fa-exclamation-triangle me-1"></i>
+                    <strong>Backfill only:</strong> {{ unregistered_on_hand_count }} unit{{ unregistered_on_hand_count|pluralize }}
+                    in stock still need model numbers (e.g. received before serial tracking was enabled).
+                </p>
+                <form method="post" action="{% url 'inventory:item_register_serials' item.pk %}">
+                    {% csrf_token %}
+                    <label class="form-label small fw-semibold">Paste model numbers — one per line ({{ unregistered_on_hand_count }} required)</label>
+                    <textarea name="bulk_model_numbers" class="form-control form-control-sm mb-2" rows="{{ unregistered_on_hand_count|add:1 }}" placeholder="HP-PRO-001&#10;HP-PRO-002&#10;HP-PRO-003"></textarea>
+                    <button type="submit" class="btn btn-sm btn-primary"><i class="fas fa-barcode me-1"></i>Register on-hand units</button>
+                </form>
+            </div>
+            {% endif %}
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm mb-0 align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Model number</th>
+                                <th>Status</th>
+                                <th>Assigned project</th>
+                                <th>Delivered date</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for sn in item_serial_numbers %}
+                            <tr>
+                                <td class="fw-medium">{{ sn.model_number }}</td>
+                                <td>{{ sn.get_status_display }}</td>
+                                <td>
+                                    {% if sn.assigned_project %}
+                                    <a href="{% url 'projects:project_detail' sn.assigned_project.pk %}">{{ sn.assigned_project.name }}</a>
+                                    {% else %}—{% endif %}
+                                </td>
+                                <td>{{ sn.delivered_date|date:"d/m/Y"|default:"—" }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="4" class="text-center py-4 text-muted">No model numbers registered yet. Receive units from a purchase order.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
         
         {% if item.item_type == 'product' %}
         <!-- Stock by Warehouse -->

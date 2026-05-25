@@ -25,6 +25,17 @@ urlpatterns = [
     path('estimates/<int:pk>/set-status/', views.estimate_set_status, name='estimate_set_status'),
     path('estimates/<int:pk>/pdf/', views.estimate_pdf, name='estimate_pdf'),
     path('estimates/<int:pk>/pdf/proforma/', views.estimate_proforma_pdf, name='estimate_proforma_pdf'),
+    path('estimates/<int:pk>/proforma/create/', views.estimate_proforma_create, name='estimate_proforma_create'),
+    path(
+        'estimates/<int:pk>/proforma/<int:proforma_pk>/pdf/',
+        views.estimate_proforma_invoice_pdf,
+        name='estimate_proforma_invoice_pdf',
+    ),
+    path(
+        'estimates/<int:pk>/proforma/<int:proforma_pk>/edit/',
+        views.estimate_proforma_edit,
+        name='estimate_proforma_edit',
+    ),
     path('estimates/<int:pk>/send-email/', views.estimate_send_email, name='estimate_send_email'),
     path('api/inventory-item/<int:pk>/', views.inventory_item_json, name='inventory_item_json'),
 

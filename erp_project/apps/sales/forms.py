@@ -28,8 +28,8 @@ class EstimateForm(forms.ModelForm):
     class Meta:
         model = Estimate
         fields = [
-            'customer', 'assigned_to', 'prepared_by', 'project', 'date', 'valid_until', 'status',
-            'discount_type', 'discount_value', 'show_rates_on_pdf',
+            'customer', 'assigned_to', 'prepared_by', 'project', 'date', 'valid_until',
+            'discount_type', 'discount_value', 'show_rates_on_pdf', 'show_group_totals_on_pdf',
             'notes', 'client_note', 'terms_and_conditions',
             'authorized_signature', 'customer_signature',
         ]
@@ -52,6 +52,9 @@ class EstimateForm(forms.ModelForm):
             'show_rates_on_pdf': forms.CheckboxInput(
                 attrs={'class': 'form-check-input', 'role': 'switch'},
             ),
+            'show_group_totals_on_pdf': forms.CheckboxInput(
+                attrs={'class': 'form-check-input', 'role': 'switch'},
+            ),
         }
 
     def __init__(self, *args, **kwargs):
@@ -65,7 +68,6 @@ class EstimateForm(forms.ModelForm):
         self.fields['project'].queryset = Project.objects.filter(is_active=True).order_by('name')
         self.fields['project'].widget.attrs['class'] = 'form-select'
         self.fields['project'].required = False
-        self.fields['status'].widget.attrs['class'] = 'form-select'
         self.fields['valid_until'].required = False
         self.fields['discount_type'].widget.attrs['class'] = 'form-select'
         self.fields['notes'].required = False
@@ -75,6 +77,8 @@ class EstimateForm(forms.ModelForm):
         self.fields['scope'].label = 'Scope'
         self.fields['show_rates_on_pdf'].label = 'Show rates & line totals on PDF'
         self.fields['show_rates_on_pdf'].required = False
+        self.fields['show_group_totals_on_pdf'].label = 'Show group totals on PDF'
+        self.fields['show_group_totals_on_pdf'].required = False
 
         if self.instance.pk and self.instance.scope:
             scopes = list(self.instance.scope or [])
@@ -87,6 +91,8 @@ class EstimateForm(forms.ModelForm):
         instance = super().save(commit=False)
         val = self.cleaned_data.get('scope')
         instance.scope = [val] if val else []
+        if instance.pk:
+            instance.status = Estimate.objects.values_list('status', flat=True).get(pk=instance.pk)
         if commit:
             instance.save()
         return instance
@@ -113,7 +119,7 @@ class EstimateItemForm(forms.ModelForm):
             }),
             'sort_order': forms.HiddenInput(),
             'description': forms.TextInput(attrs={'class': 'form-control form-control-sm'}),
-            'quantity': forms.NumberInput(attrs={'class': 'form-control form-control-sm item-qty', 'step': '0.01', 'min': '0.01'}),
+            'quantity': forms.NumberInput(attrs={'class': 'form-control form-control-sm item-qty', 'step': '1', 'min': '1'}),
             'unit_price': forms.NumberInput(attrs={'class': 'form-control form-control-sm item-base-price', 'step': '0.01', 'min': '0'}),
             'profit_type': forms.Select(attrs={'class': 'form-select form-select-sm item-profit-type'}),
             'profit_value': forms.NumberInput(attrs={'class': 'form-control form-control-sm item-profit-value', 'step': '0.01', 'min': '0'}),

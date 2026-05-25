@@ -382,13 +382,19 @@ class ApprovalConfigurationView(PermissionRequiredMixin, TemplateView):
     
     def get_context_data(self, **kwargs):
         from django.contrib.auth import get_user_model
+        from apps.hr.user_provisioning import sync_pending_employees_to_users
+
         User = get_user_model()
-        
+        sync_pending_employees_to_users()
+
         context = super().get_context_data(**kwargs)
         context['title'] = 'Approval Configuration'
         context['module_choices'] = ApprovalConfiguration.MODULE_CHOICES
         context['approval_type_choices'] = ApprovalConfiguration.APPROVAL_TYPE_CHOICES
-        context['users'] = User.objects.filter(is_active=True).order_by('username')
+        context['users'] = (
+            User.objects.filter(is_active=True)
+            .order_by('first_name', 'last_name', 'username')
+        )
         
         config_list = []
         for module_code, module_name in ApprovalConfiguration.MODULE_CHOICES:
@@ -408,21 +414,29 @@ class ApprovalConfigurationView(PermissionRequiredMixin, TemplateView):
         module = request.POST.get('module')
         approval_type = request.POST.get('approval_type')
         default_approver_id = request.POST.get('default_approver') or None
+        manager_approver_id = request.POST.get('manager_approver') or None
         
         if module not in dict(ApprovalConfiguration.MODULE_CHOICES):
             messages.error(request, 'Invalid module selected.')
             return redirect('settings:approval_configuration')
+
+        if module == 'leave':
+            approval_type = 'multi'
         
+        defaults = {
+            'approval_type': approval_type or 'single',
+            'default_approver_id': default_approver_id if default_approver_id else None,
+        }
+        if module == 'leave':
+            defaults['manager_approver_id'] = manager_approver_id if manager_approver_id else None
+
         config, _ = ApprovalConfiguration.objects.update_or_create(
             module=module,
-            defaults={
-                'approval_type': approval_type or 'single',
-                'default_approver_id': default_approver_id if default_approver_id else None,
-            }
+            defaults=defaults,
         )
         
-        # Multi-level: save levels
-        if approval_type == 'multi':
+        # Multi-level: save levels (amount-based modules only; leave uses manager_approver + default_approver)
+        if approval_type == 'multi' and module != 'leave':
             # Remove existing levels
             config.levels.all().delete()
             

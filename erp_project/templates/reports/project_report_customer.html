@@ -1,0 +1,391 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block extra_css %}
+<style>
+.customer-report-section {
+    scroll-margin-top: 5rem;
+}
+.customer-report-section__title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: #153a5c;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.35rem;
+    border-bottom: 2px solid #e9ecef;
+}
+.customer-report-header {
+    background: linear-gradient(135deg, #153a5c 0%, #1e4976 100%);
+    color: #fff;
+    border-radius: 0.5rem;
+    padding: 1.25rem 1.5rem;
+    margin-bottom: 1.5rem;
+}
+.customer-report-meta {
+    background: #f8f9fb;
+    border: 1px solid #e9ecef;
+    border-radius: 0.5rem;
+    padding: 1rem 1.25rem;
+}
+.customer-report-kpi {
+    border-left: 3px solid var(--kpi-accent, #153a5c);
+}
+.customer-report-kpi--progress { --kpi-accent: #198754; }
+.customer-report-kpi--team { --kpi-accent: #0d6efd; }
+.customer-report-kpi--tech { --kpi-accent: #fd7e14; }
+.customer-report-kpi--tasks { --kpi-accent: #6f42c1; }
+
+@media print {
+    .no-print { display: none !important; }
+    .customer-report-section { break-inside: avoid-page; page-break-inside: avoid; }
+    .customer-report-header {
+        background: #153a5c !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+    .card { border: 1px solid #dee2e6 !important; box-shadow: none !important; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3 no-print">
+    <div>
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-1 small">
+                <li class="breadcrumb-item"><a href="{% url 'reports:index' %}">Reports</a></li>
+                <li class="breadcrumb-item active">Customer Progress Report</li>
+            </ol>
+        </nav>
+        <h4 class="mb-0 fw-bold">{{ title }}</h4>
+        <p class="text-muted mb-0 small">Customer-facing project progress — no costing details</p>
+    </div>
+    {% if report %}
+    <button type="button" class="btn btn-outline-secondary" onclick="window.print()">
+        <i class="fas fa-print me-2"></i>Print report
+    </button>
+    {% endif %}
+</div>
+
+<div class="card mb-4 no-print">
+    <div class="card-body">
+        <form method="get" class="row g-3 align-items-end">
+            <div class="col-md-8">
+                <label class="form-label fw-semibold">Project</label>
+                <select name="project" class="form-select" required>
+                    <option value="">— Select a project —</option>
+                    {% for p in project_choices %}
+                    <option value="{{ p.pk }}" {% if selected_project_id == p.pk %}selected{% endif %}>
+                        {{ p.project_code }} — {{ p.name }}{% if p.customer %} ({{ p.customer.name }}){% endif %}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-4">
+                <button type="submit" class="btn btn-primary w-100">
+                    <i class="fas fa-file-alt me-2"></i>Generate report
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% if not report %}
+<div class="card">
+    <div class="card-body text-center py-5 text-muted">
+        <i class="fas fa-users fa-3x mb-3 d-block opacity-50"></i>
+        <p class="mb-0">Select a project above to generate the customer project report.</p>
+    </div>
+</div>
+{% else %}
+
+<div class="customer-report-header">
+    <div class="row g-3 align-items-center">
+        <div class="col-md-8">
+            <div class="small opacity-75 mb-1">{{ report.company.company_name }}</div>
+            <h5 class="fw-bold mb-1">{{ report.project.name }}</h5>
+            <div class="small opacity-90">{{ report.project.project_code }}</div>
+        </div>
+        <div class="col-md-4 text-md-end">
+            <div class="small opacity-75">Report type</div>
+            <div class="fw-semibold">Customer Progress Report</div>
+        </div>
+    </div>
+</div>
+
+<div class="customer-report-meta mb-4">
+    <div class="row g-3">
+        <div class="col-md-6">
+            <h6 class="text-muted small text-uppercase mb-2">Customer</h6>
+            {% if report.customer %}
+            <div class="fw-semibold">{{ report.customer.name }}</div>
+            {% if report.customer.company %}<div class="text-muted small">{{ report.customer.company }}</div>{% endif %}
+            {% if report.customer.email or report.customer.phone %}
+            <div class="small text-muted mt-1">
+                {% if report.customer.email %}{{ report.customer.email }}{% endif %}
+                {% if report.customer.email and report.customer.phone %} · {% endif %}
+                {% if report.customer.phone %}{{ report.customer.phone }}{% endif %}
+            </div>
+            {% endif %}
+            {% if report.customer.address %}
+            <div class="small text-muted mt-1">{{ report.customer.address }}{% if report.customer.city %}, {{ report.customer.city }}{% endif %}</div>
+            {% endif %}
+            {% else %}
+            <div class="text-muted">—</div>
+            {% endif %}
+        </div>
+        <div class="col-md-6">
+            <h6 class="text-muted small text-uppercase mb-2">Project schedule</h6>
+            <div class="row g-2">
+                <div class="col-6">
+                    <div class="small text-muted">Start date</div>
+                    <div class="fw-semibold">{% if report.period_start %}{{ report.period_start|date:"M d, Y" }}{% else %}—{% endif %}</div>
+                </div>
+                <div class="col-6">
+                    <div class="small text-muted">End date</div>
+                    <div class="fw-semibold">{% if report.period_end %}{{ report.period_end|date:"M d, Y" }}{% else %}—{% endif %}</div>
+                </div>
+                <div class="col-12 mt-2">
+                    <div class="small text-muted">Status</div>
+                    <span class="badge {% if report.project.status == 'completed' %}bg-success{% elif report.project.status == 'in_progress' %}bg-primary{% else %}bg-secondary{% endif %}">
+                        {{ report.project.get_status_display }}
+                    </span>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% if report.project.description %}
+    <hr class="my-3">
+    <h6 class="text-muted small text-uppercase mb-2">Project description</h6>
+    <p class="mb-0 small">{{ report.project.description|linebreaksbr }}</p>
+    {% endif %}
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="card customer-report-kpi customer-report-kpi--progress h-100">
+            <div class="card-body py-3">
+                <div class="small text-muted">Task progress</div>
+                <div class="fw-bold fs-5">{{ report.completed_count }} / {{ report.total_tasks }} completed</div>
+                <div class="small text-muted">{{ report.task_progress_percent|floatformat:1 }}%</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card customer-report-kpi customer-report-kpi--team h-100">
+            <div class="card-body py-3">
+                <div class="small text-muted">Team members</div>
+                <div class="fw-bold fs-5">{{ report.team_member_count }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card customer-report-kpi customer-report-kpi--tech h-100">
+            <div class="card-body py-3">
+                <div class="small text-muted">Technicians</div>
+                <div class="fw-bold fs-5">{{ report.technician_count }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card customer-report-kpi customer-report-kpi--tasks h-100">
+            <div class="card-body py-3">
+                <div class="small text-muted">Open tasks</div>
+                <div class="fw-bold fs-5">{{ report.pending_count }}</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if report.total_tasks %}
+<div class="card mb-4">
+    <div class="card-body py-3">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <span class="small text-muted">Overall completion</span>
+            <span class="fw-semibold">{{ report.task_progress_percent|floatformat:1 }}%</span>
+        </div>
+        <div class="progress" style="height: 10px;">
+            <div class="progress-bar bg-success" role="progressbar"
+                 style="width: {{ report.task_progress_percent }}%;"
+                 aria-valuenow="{{ report.task_progress_percent }}" aria-valuemin="0" aria-valuemax="100"></div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Team members -->
+<div class="card mb-4 customer-report-section" id="section-team">
+    <div class="card-body">
+        <h6 class="customer-report-section__title"><i class="fas fa-users me-2"></i>Team members</h6>
+        {% if report.team_members %}
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Name</th>
+                        <th>Role</th>
+                        <th>Designation</th>
+                        <th>Department</th>
+                        <th>Employee code</th>
+                        <th>Email</th>
+                        <th>Phone</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for member in report.team_members %}
+                    <tr>
+                        <td class="fw-medium">{{ member.name }}</td>
+                        <td><span class="badge bg-light text-dark border">{{ member.role }}</span></td>
+                        <td>{{ member.designation }}</td>
+                        <td>{{ member.department }}</td>
+                        <td>{{ member.employee_code }}</td>
+                        <td class="small">{{ member.email }}</td>
+                        <td class="text-nowrap">{{ member.phone }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-muted mb-0">No team members assigned to this project.</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Technicians -->
+<div class="card mb-4 customer-report-section" id="section-technicians">
+    <div class="card-body">
+        <h6 class="customer-report-section__title"><i class="fas fa-hard-hat me-2"></i>Technicians</h6>
+        {% if report.technicians %}
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Name</th>
+                        <th>Role</th>
+                        <th>Designation</th>
+                        <th>Department</th>
+                        <th>Employee code</th>
+                        <th>Email</th>
+                        <th>Phone</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for member in report.technicians %}
+                    <tr>
+                        <td class="fw-medium">{{ member.name }}</td>
+                        <td><span class="badge bg-warning text-dark">{{ member.role }}</span></td>
+                        <td>{{ member.designation }}</td>
+                        <td>{{ member.department }}</td>
+                        <td>{{ member.employee_code }}</td>
+                        <td class="small">{{ member.email }}</td>
+                        <td class="text-nowrap">{{ member.phone }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-muted mb-0">No technicians assigned to this project.</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Completed tasks -->
+<div class="card mb-4 customer-report-section" id="section-completed">
+    <div class="card-body">
+        <h6 class="customer-report-section__title"><i class="fas fa-check-circle me-2 text-success"></i>Tasks completed</h6>
+        {% if report.completed_tasks %}
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Task</th>
+                        <th>Assigned to</th>
+                        <th>Start date</th>
+                        <th>End date</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for task in report.completed_tasks %}
+                    <tr>
+                        <td>
+                            <span class="fw-medium">{{ task.name }}</span>
+                            {% if task.description %}
+                            <span class="text-muted small d-block">{{ task.description|truncatechars:120 }}</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ task.assigned_to }}</td>
+                        <td class="text-nowrap">{% if task.start_date %}{{ task.start_date|date:"M d, Y" }}{% else %}—{% endif %}</td>
+                        <td class="text-nowrap">{% if task.end_date %}{{ task.end_date|date:"M d, Y" }}{% else %}—{% endif %}</td>
+                        <td><span class="badge bg-success">Completed</span></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-muted mb-0">No tasks have been marked completed yet.</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- All tasks -->
+<div class="card mb-4 customer-report-section" id="section-tasks">
+    <div class="card-body">
+        <h6 class="customer-report-section__title"><i class="fas fa-list-check me-2"></i>All project tasks</h6>
+        {% if report.tasks %}
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Task</th>
+                        <th>Assigned to</th>
+                        <th>Priority</th>
+                        <th>Start date</th>
+                        <th>End date</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for task in report.tasks %}
+                    <tr>
+                        <td>
+                            <span class="fw-medium">{{ task.name }}</span>
+                            {% if task.description %}
+                            <span class="text-muted small d-block">{{ task.description|truncatechars:120 }}</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ task.assigned_to }}</td>
+                        <td>{{ task.priority }}</td>
+                        <td class="text-nowrap">{% if task.start_date %}{{ task.start_date|date:"M d, Y" }}{% else %}—{% endif %}</td>
+                        <td class="text-nowrap">{% if task.end_date %}{{ task.end_date|date:"M d, Y" }}{% else %}—{% endif %}</td>
+                        <td>
+                            {% if task.is_completed %}
+                            <span class="badge bg-success">{{ task.status_display }}</span>
+                            {% elif task.status == 'in_progress' %}
+                            <span class="badge bg-primary">{{ task.status_display }}</span>
+                            {% else %}
+                            <span class="badge bg-secondary">{{ task.status_display }}</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-muted mb-0">No tasks recorded for this project.</p>
+        {% endif %}
+    </div>
+</div>
+
+<div class="text-muted small text-end mb-4">
+    {{ report.company.company_name }} · Generated {% now "M d, Y H:i" %}
+</div>
+
+{% endif %}
+{% endblock %}

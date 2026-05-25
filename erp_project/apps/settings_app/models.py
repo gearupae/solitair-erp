@@ -40,6 +40,7 @@ class Permission(models.Model):
         ('property', 'Property Management'),
         ('contracts', 'Contracts'),
         ('fleet', 'Fleet'),
+        ('reports', 'Reports'),
         ('settings', 'Settings'),
     ]
     
@@ -107,6 +108,7 @@ class ModulePermission(models.Model):
         ('service_request', 'Service Request'),
         ('contracts', 'Contracts'),
         ('fleet', 'Fleet'),
+        ('reports', 'Reports'),
         ('settings', 'Settings'),
     ]
     
@@ -381,6 +383,7 @@ class ApprovalConfiguration(BaseModel):
         ('service_request', 'Service Request'),
         ('estimate', 'Sales Estimate'),
         ('project', 'Project'),
+        ('leave', 'Leave Request'),
     ]
     
     module = models.CharField(max_length=50, choices=MODULE_CHOICES, unique=True)
@@ -393,6 +396,14 @@ class ApprovalConfiguration(BaseModel):
         null=True,
         blank=True,
         related_name='approval_configs_single'
+    )
+    # Leave only: first-level approver when employee department has no manager
+    manager_approver = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='approval_configs_leave_manager',
     )
     
     # If no config, use first superuser as fallback
@@ -430,7 +441,8 @@ class ApprovalConfiguration(BaseModel):
         approver = cls.get_approver_for_amount(module, amount)
         if approver:
             ref = (
-                getattr(request_obj, 'estimate_number', None)
+                getattr(request_obj, 'reference_number', None)
+                or getattr(request_obj, 'estimate_number', None)
                 or getattr(request_obj, 'project_code', None)
                 or getattr(request_obj, 'sr_number', None)
                 or getattr(request_obj, 'pr_number', None)
@@ -444,13 +456,16 @@ class ApprovalConfiguration(BaseModel):
                 'inventory_request': f'/inventory/consumables/{pk}/' if pk else '',
                 'estimate': f'/sales/estimates/{pk}/' if pk else '',
                 'project': f'/projects/{pk}/' if pk else '',
+                'leave': f'/hr/leave/{pk}/' if pk else '',
             }
             link = link_map.get(module, str(pk) if pk else '')
             title = f'Approval Required: {module.replace("_", " ").title()}'
             if module == 'estimate':
                 msg = f'{ref} was edited and needs your approval to clear the review queue.'
             elif module == 'project':
-                msg = f'{ref} was edited and needs your approval to clear the review queue.'
+                msg = f'{ref} completion was requested and needs your approval.'
+            elif module == 'leave':
+                msg = f'Leave request {ref} requires your approval.'
             else:
                 msg = f'{ref} requires your approval. Amount: AED {amount:,.2f}'
             Notification.create(

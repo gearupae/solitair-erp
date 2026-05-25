@@ -10,7 +10,7 @@
     <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
         <h4 class="mb-0 fw-bold">{{ title }}</h4>
         <div class="d-flex flex-wrap gap-2 align-items-center">
-            {% if leave.status == 'pending_manager' or leave.status == 'pending_hr' %}
+            {% if can_act_on_leave %}
             <form method="post" action="{% url 'hr:leave_approve' leave.pk %}" class="d-inline">
                 {% csrf_token %}
                 <button type="submit" class="btn btn-success btn-sm" onclick="return confirm('Approve this leave request?');"><i class="fas fa-check me-1"></i>Approve</button>
@@ -103,7 +103,7 @@
     </div>
 </div>
 
-{% if leave.status == 'pending_manager' or leave.status == 'pending_hr' %}
+{% if can_act_on_leave %}
 <div class="modal fade" id="rejectLeaveModalDetail" tabindex="-1" aria-labelledby="rejectLeaveModalDetailLabel" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -129,7 +129,7 @@
 {% endblock %}
 
 {% block extra_js %}
-{% if leave.status == 'pending_manager' or leave.status == 'pending_hr' %}
+{% if can_act_on_leave %}
 <script>
 (function () {
     var modal = document.getElementById('rejectLeaveModalDetail');

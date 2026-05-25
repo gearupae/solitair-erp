@@ -6,6 +6,7 @@ from decimal import Decimal
 from django import forms
 from django.core.exceptions import ValidationError
 
+from apps.hr.attendance_utils import attendance_overlap_message
 from apps.hr.models import Employee
 from apps.hr.models_extended import (
     AttendanceRecord,
@@ -215,6 +216,25 @@ class AttendanceMarkForm(forms.ModelForm):
                     'class',
                     'form-select' if name in ('employee', 'status', 'source', 'overtime_type', 'project') else 'form-control',
                 )
+
+    def clean(self):
+        cleaned = super().clean()
+        employee = cleaned.get('employee')
+        ad = cleaned.get('date')
+        check_in = cleaned.get('check_in')
+        check_out = cleaned.get('check_out')
+        if employee and ad and check_in:
+            exclude_pk = self.instance.pk if self.instance and self.instance.pk else None
+            overlap = attendance_overlap_message(
+                employee,
+                ad,
+                check_in,
+                check_out,
+                exclude_pk=exclude_pk,
+            )
+            if overlap:
+                raise forms.ValidationError(overlap)
+        return cleaned
 
 
 class UAEComplianceForm(forms.ModelForm):

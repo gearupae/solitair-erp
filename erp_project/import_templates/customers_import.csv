@@ -1,0 +1,3 @@
+﻿Customer Code,Customer Name,Email,Phone,Company,Address,City,Country,Website,TRN Number,Customer Type,Business Segment,Status,Job Type,Scope,Payment Terms,Credit Limit (AED),Primary Project Code,Assigned Sales Employee Code,Notes
+CUST-001,Marina Tower LLC,marina@example.com,+971501234567,Marina Tower LLC,"Dubai Marina, Dubai",Dubai,United Arab Emirates,https://marinatower.example.com,100123456700003,lead,,prospect,project,"ff,fa",Net 30,50000,,EMP-2026-0001,Sample lead row
+CUST-002,Al Noor Trading,accounts@alnoor.example.com,+97142223344,Al Noor Trading LLC,"Industrial Area, Sharjah",Sharjah,United Arab Emirates,,100987654300003,customer,b2b,active,amc,"em,mep",Net 45,100000,,,Sample B2B customer row

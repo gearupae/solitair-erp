@@ -63,6 +63,24 @@
     padding-left: 0.25rem;
     padding-right: 1.35rem;
 }
+#itemsTable .items-col-inventory .select2-container {
+    width: 100% !important;
+}
+#itemsTable .items-col-inventory .select2-selection--single {
+    min-height: 31px;
+    font-size: 0.8rem;
+}
+#itemsTable .items-col-inventory .select2-selection__rendered {
+    padding-left: 0.25rem;
+    line-height: 1.5;
+}
+.estimate-inventory-select2-dropdown {
+    min-width: 18rem !important;
+    z-index: 1060;
+}
+.estimate-inventory-select2-dropdown .select2-search__field {
+    width: 100% !important;
+}
 #itemsTable .items-col-desc {
     width: 17%;
 }
@@ -196,10 +214,6 @@
                     {{ form.valid_until }}
                 </div>
                 <div class="col-md-4">
-                    <label class="form-label">Status</label>
-                    {{ form.status }}
-                </div>
-                <div class="col-md-4">
                     <label class="form-label">Discount type</label>
                     {{ form.discount_type }}
                 </div>
@@ -215,6 +229,14 @@
                     </div>
                     <small class="text-muted d-block ms-1">When off, the printed PDF shows each line as description and quantity only; total VAT and grand total still appear at the bottom.</small>
                     {% if form.show_rates_on_pdf.errors %}<div class="text-danger small">{{ form.show_rates_on_pdf.errors|join:", " }}</div>{% endif %}
+                </div>
+                <div class="col-12 mt-1">
+                    <div class="form-check form-switch">
+                        {{ form.show_group_totals_on_pdf }}
+                        <label class="form-check-label" for="{{ form.show_group_totals_on_pdf.id_for_label }}">Show group totals on PDF</label>
+                    </div>
+                    <small class="text-muted d-block ms-1">When on, each named line group shows a subtotal after its items (no separate group heading).</small>
+                    {% if form.show_group_totals_on_pdf.errors %}<div class="text-danger small">{{ form.show_group_totals_on_pdf.errors|join:", " }}</div>{% endif %}
                 </div>
             </div>
         </div>
@@ -423,13 +445,99 @@ function getTaxOptions(selectedId) {
     return o;
 }
 
+function escapeHtml(text) {
+    return String(text || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/"/g, '&quot;');
+}
+
 function getInventoryOptions(selectedId) {
-    let o = '<option value="">-- Inventory --</option>';
+    const selected = selectedId != null && selectedId !== '' ? String(selectedId) : '';
+    let o = '<option value=""></option>';
+    if (!Array.isArray(inventoryItems) || !inventoryItems.length) {
+        return o;
+    }
     inventoryItems.forEach(it => {
-        const sel = selectedId && String(selectedId) === String(it.id) ? 'selected' : '';
-        o += `<option value="${it.id}" ${sel}>${it.item_code} — ${it.name}</option>`;
+        const sel = selected && selected === String(it.id) ? ' selected' : '';
+        const label = `${it.item_code || ''} — ${it.name || ''}`;
+        o += `<option value="${it.id}"${sel}>${escapeHtml(label)}</option>`;
     });
     return o;
+}
+
+function initInventorySelect2(selectEl) {
+    if (!selectEl || typeof $ === 'undefined' || !$.fn.select2) return;
+    if (!Array.isArray(inventoryItems) || !inventoryItems.length) return;
+    const $el = $(selectEl);
+    const current = selectEl.value || '';
+    if ($el.data('select2')) {
+        $el.select2('destroy');
+    }
+    selectEl.innerHTML = getInventoryOptions(current);
+    $el.select2({
+        theme: 'bootstrap-5',
+        width: '100%',
+        placeholder: 'Search by code or name…',
+        allowClear: true,
+        dropdownParent: $(document.body),
+        minimumResultsForSearch: 0,
+        dropdownAutoWidth: true,
+        dropdownCssClass: 'estimate-inventory-select2-dropdown',
+        language: {
+            noResults: function() { return 'No matching items — try item code or name'; },
+        },
+    });
+    if (current) {
+        $el.val(current).trigger('change.select2');
+    }
+}
+
+function initAllInventorySelect2() {
+    document.querySelectorAll('#itemsBody .item-inventory').forEach(initInventorySelect2);
+}
+
+let suppressInventoryChange = false;
+
+function syncInventorySelectUi(selectEl, invId) {
+    if (!selectEl) return;
+    const val = invId != null && invId !== '' ? String(invId) : (selectEl.value || '');
+    selectEl.innerHTML = getInventoryOptions(val);
+    if (typeof $ !== 'undefined' && $(selectEl).data('select2')) {
+        $(selectEl).val(val || null).trigger('change.select2');
+    } else {
+        selectEl.value = val;
+    }
+}
+
+function setInventorySelectValue(selectEl, invId, triggerChange) {
+    if (!selectEl) return;
+    const val = invId ? String(invId) : '';
+    suppressInventoryChange = true;
+    syncInventorySelectUi(selectEl, val);
+    suppressInventoryChange = false;
+    if (triggerChange !== false && typeof $ !== 'undefined' && $(selectEl).data('select2')) {
+        $(selectEl).trigger('change');
+    }
+}
+
+function bindQtyInputBehavior(input) {
+    if (!input || input.dataset.qtyStepBound) return;
+    input.dataset.qtyStepBound = '1';
+    input.step = '1';
+    input.min = '1';
+    const n = parseFloat(input.value);
+    if (input.value === '' || Number.isNaN(n) || n < 1) {
+        input.value = '1';
+    } else if (Number.isInteger(n)) {
+        input.value = String(n);
+    }
+    input.addEventListener('input', () => input.setCustomValidity(''));
+    input.addEventListener('change', () => input.setCustomValidity(''));
+}
+
+function initQtyFields(root) {
+    (root || document).querySelectorAll('.item-qty').forEach(bindQtyInputBehavior);
 }
 
 function getProfitTypeOptions(val) {
@@ -461,6 +569,7 @@ function getVatRatePercent(taxSel) {
 }
 
 function onInventoryChange(sel) {
+    if (suppressInventoryChange) return;
     const row = sel.closest('tr');
     const id = sel.value;
     if (!id) return;
@@ -487,7 +596,7 @@ function applyInventoryItemToRow(row, invId, groupName) {
     const g = row.querySelector('.item-group-name');
     if (g) g.value = groupName;
     const sel = row.querySelector('.item-inventory');
-    if (sel) sel.value = invId;
+    if (sel) syncInventorySelectUi(sel, invId);
     const desc = row.querySelector('input[name$="-description"]');
     if (desc) desc.value = meta.name;
     const bp = row.querySelector('.item-base-price');
@@ -556,7 +665,7 @@ function addItemRow() {
         </td>
         <td class="items-col-inventory"><select name="items-${formCount}-inventory_item" class="form-select form-select-sm item-inventory">${getInventoryOptions()}</select></td>
         <td class="items-col-desc"><input type="text" name="items-${formCount}-description" class="form-control form-control-sm"></td>
-        <td class="items-col-qty"><input type="number" name="items-${formCount}-quantity" value="1" step="0.01" min="0.01" class="form-control form-control-sm item-qty"></td>
+        <td class="items-col-qty"><input type="number" name="items-${formCount}-quantity" value="1" step="1" min="1" class="form-control form-control-sm item-qty"></td>
         <td class="items-col-base"><input type="number" name="items-${formCount}-unit_price" value="0" step="0.01" min="0" class="form-control form-control-sm item-base-price"></td>
         <td class="items-col-profit"><select name="items-${formCount}-profit_type" class="form-select form-select-sm item-profit-type">${getProfitTypeOptions('none')}</select></td>
         <td class="items-col-profit-num"><input type="number" name="items-${formCount}-profit_value" value="0" step="0.01" min="0" class="form-control form-control-sm item-profit-value"></td>
@@ -572,6 +681,8 @@ function addItemRow() {
     `;
     tbody.appendChild(tr);
     fillInventoryGroupBulkSelect(tr.querySelector('.estimate-add-from-group'));
+    initInventorySelect2(tr.querySelector('.item-inventory'));
+    bindQtyInputBehavior(tr.querySelector('.item-qty'));
     formCount++;
     document.getElementById('id_items-TOTAL_FORMS').value = formCount;
     calculateRowTotal(tr.querySelector('.item-qty'));
@@ -679,6 +790,7 @@ function setupEstimateItemsCsvLabel() {
 document.addEventListener('DOMContentLoaded', function() {
     bindLineItemsTableEvents();
     setupEstimateItemsCsvLabel();
+    initQtyFields(document.getElementById('itemsBody'));
     document.querySelectorAll('.estimate-add-from-group').forEach(fillInventoryGroupBulkSelect);
     document.querySelectorAll('#itemsBody .item-row').forEach(row => {
         const q = row.querySelector('.item-qty');
@@ -686,6 +798,10 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     document.querySelector('[name="discount_type"]')?.addEventListener('change', calculateTotals);
     document.querySelector('[name="discount_value"]')?.addEventListener('input', calculateTotals);
+});
+
+$(function() {
+    initAllInventorySelect2();
 });
 </script>
 {% endblock %}

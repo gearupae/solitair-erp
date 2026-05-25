@@ -1,0 +1,66 @@
+"""Post-save estimate edit workflow: re-approval and revision bumps."""
+from dataclasses import dataclass
+
+from apps.settings_app.document_edit_approval import apply_after_document_edit
+
+RESUBMIT_AFTER_EDIT_STATUSES = frozenset({'approved', 'rejected'})
+
+
+@dataclass
+class EstimateEditApplyResult:
+    changed: bool = True
+    resubmitted_for_approval: bool = False
+    revision_bumped: bool = False
+    edit_pending: bool = False
+
+
+def apply_after_estimate_save(request, estimate, *, pre_status: str) -> EstimateEditApplyResult:
+    """
+    After a successful estimate save with detected changes:
+    - approved/rejected → sent for approval + revision bump
+    - sent → optional edit-approval queue (Settings config)
+    - draft → no approval action
+    """
+    result = EstimateEditApplyResult(changed=True)
+
+    if pre_status in RESUBMIT_AFTER_EDIT_STATUSES:
+        estimate.revision_count = (estimate.revision_count or 0) + 1
+        estimate.status = 'sent'
+        estimate.approval_requested_by = request.user
+        estimate.awaiting_resubmit_revision = False
+        estimate.edit_approval_status = 'none'
+        estimate.edit_approval_submitted_at = None
+        estimate.edit_approval_submitted_by_id = None
+        estimate.save(
+            update_fields=[
+                'revision_count',
+                'status',
+                'approval_requested_by',
+                'awaiting_resubmit_revision',
+                'edit_approval_status',
+                'edit_approval_submitted_at',
+                'edit_approval_submitted_by',
+                'updated_at',
+            ]
+        )
+        from .estimate_approval_notifications import notify_approver_estimate_sent
+
+        notify_approver_estimate_sent(estimate, requested_by=request.user)
+        result.resubmitted_for_approval = True
+        result.revision_bumped = True
+        return result
+
+    if pre_status == 'sent':
+        rev_before = estimate.revision_count or 0
+        apply_after_document_edit(
+            request,
+            module='estimate',
+            obj=estimate,
+            amount_accessor=lambda o: o.total_amount,
+        )
+        estimate.refresh_from_db()
+        result.edit_pending = estimate.edit_approval_status == 'pending'
+        result.revision_bumped = (estimate.revision_count or 0) > rev_before
+        return result
+
+    return result

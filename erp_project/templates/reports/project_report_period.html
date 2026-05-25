@@ -1,0 +1,249 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block extra_css %}
+<style>
+.period-report-kpi { border-left: 3px solid var(--kpi-accent, #153a5c); }
+.period-report-kpi--total { --kpi-accent: #153a5c; }
+.period-report-kpi--active { --kpi-accent: #0d6efd; }
+.period-report-kpi--done { --kpi-accent: #198754; }
+.period-report-kpi--hold { --kpi-accent: #fd7e14; }
+
+.period-report-group {
+    border: 1px solid #e9ecef;
+    border-radius: 0.5rem;
+    overflow: hidden;
+    margin-bottom: 1.25rem;
+}
+.period-report-group__header {
+    background: #f8f9fb;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid #e9ecef;
+    font-weight: 600;
+}
+
+@media print {
+    .no-print { display: none !important; }
+    .period-report-group { break-inside: avoid-page; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+    <div>
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-1 small">
+                <li class="breadcrumb-item"><a href="{% url 'reports:index' %}">Reports</a></li>
+                <li class="breadcrumb-item active">Period Wise Report</li>
+            </ol>
+        </nav>
+        <h4 class="mb-0 fw-bold">{{ title }}</h4>
+        <p class="text-muted small mb-0">Projects {{ start_date|date:"d/m/Y" }} – {{ end_date|date:"d/m/Y" }}</p>
+    </div>
+    <button type="button" class="btn btn-outline-secondary btn-sm no-print" onclick="window.print()">
+        <i class="fas fa-print me-1"></i>Print
+    </button>
+</div>
+
+<div class="card mb-3 border-0 shadow-sm no-print">
+    <div class="card-body py-2 px-3">
+        <form method="get" class="row g-2 align-items-end">
+            <div class="col-sm-6 col-md-2">
+                <label class="form-label small mb-1">Start date</label>
+                <input type="date" name="start_date" class="form-control form-control-sm" value="{{ start_date|date:'Y-m-d' }}">
+            </div>
+            <div class="col-sm-6 col-md-2">
+                <label class="form-label small mb-1">End date</label>
+                <input type="date" name="end_date" class="form-control form-control-sm" value="{{ end_date|date:'Y-m-d' }}">
+            </div>
+            <div class="col-sm-6 col-md-2">
+                <label class="form-label small mb-1">Group by</label>
+                <select name="group_by" class="form-select form-select-sm">
+                    {% for value, label in group_by_choices %}
+                    <option value="{{ value }}" {% if group_by == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-sm-6 col-md-2">
+                <label class="form-label small mb-1">Status</label>
+                <select name="status" class="form-select form-select-sm">
+                    <option value="">All statuses</option>
+                    {% for v, l in status_choices %}
+                    <option value="{{ v }}" {% if status_filter == v %}selected{% endif %}>{{ l }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-sm-6 col-md-2">
+                <label class="form-label small mb-1">Salesman</label>
+                <select name="salesman" class="form-select form-select-sm">
+                    <option value="">All</option>
+                    <option value="none" {% if salesman_filter == 'none' %}selected{% endif %}>Unassigned</option>
+                    {% for option in salesman_options %}
+                    <option value="{{ option.pk }}" {% if salesman_filter == option.pk|stringformat:"s" %}selected{% endif %}>{{ option.label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-sm-6 col-md-2">
+                <label class="form-label small mb-1">Site engineer</label>
+                <select name="site_engineer" class="form-select form-select-sm">
+                    <option value="">All</option>
+                    <option value="none" {% if site_engineer_filter == 'none' %}selected{% endif %}>Unassigned</option>
+                    {% for option in site_engineer_options %}
+                    <option value="{{ option.pk }}" {% if site_engineer_filter == option.pk|stringformat:"s" %}selected{% endif %}>{{ option.label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-sm-6 col-md-2">
+                <label class="form-label small mb-1">Operation manager</label>
+                <select name="operation_manager" class="form-select form-select-sm">
+                    <option value="">All</option>
+                    <option value="none" {% if operation_manager_filter == 'none' %}selected{% endif %}>Unassigned</option>
+                    {% for option in operation_manager_options %}
+                    <option value="{{ option.pk }}" {% if operation_manager_filter == option.pk|stringformat:"s" %}selected{% endif %}>{{ option.label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-sm-6 col-md-2">
+                <button type="submit" class="btn btn-primary btn-sm w-100"><i class="fas fa-filter me-1"></i>Apply</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="card period-report-kpi period-report-kpi--total h-100">
+            <div class="card-body py-3">
+                <div class="small text-muted">Total projects</div>
+                <div class="fw-bold fs-5">{{ total_projects|intcomma }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card period-report-kpi period-report-kpi--active h-100">
+            <div class="card-body py-3">
+                <div class="small text-muted">In progress</div>
+                <div class="fw-bold fs-5">{{ in_progress_count|intcomma }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card period-report-kpi period-report-kpi--done h-100">
+            <div class="card-body py-3">
+                <div class="small text-muted">Completed</div>
+                <div class="fw-bold fs-5">{{ completed_count|intcomma }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card period-report-kpi period-report-kpi--hold h-100">
+            <div class="card-body py-3">
+                <div class="small text-muted">Planning / on hold</div>
+                <div class="fw-bold fs-5">{{ planning_count|add:on_hold_count|intcomma }}</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if groups %}
+    {% for group in groups %}
+    <div class="period-report-group">
+        <div class="period-report-group__header d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <span><i class="fas fa-folder-open me-2 text-primary"></i>{{ group.label }}</span>
+            <span class="badge bg-primary">{{ group.count }} project{{ group.count|pluralize }} · {{ group.completed_projects }} completed</span>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Code</th>
+                        <th>Project</th>
+                        <th>Customer</th>
+                        <th>Start</th>
+                        <th>End</th>
+                        <th>Salesman</th>
+                        <th>Site engineer</th>
+                        <th>Op. manager</th>
+                        <th>Tasks</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in group.rows %}
+                    <tr>
+                        <td><a href="{% url 'projects:project_detail' row.pk %}" class="text-decoration-none fw-medium">{{ row.project_code }}</a></td>
+                        <td>{{ row.name }}</td>
+                        <td>{{ row.customer_name }}</td>
+                        <td class="text-nowrap">{% if row.start_date %}{{ row.start_date|date:"d/m/Y" }}{% else %}—{% endif %}</td>
+                        <td class="text-nowrap">{% if row.end_date %}{{ row.end_date|date:"d/m/Y" }}{% else %}—{% endif %}</td>
+                        <td class="small">{{ row.salesman_label }}</td>
+                        <td class="small">{{ row.site_engineer_label }}</td>
+                        <td class="small">{{ row.operation_manager_label }}</td>
+                        <td class="text-nowrap">{{ row.completed_tasks }}/{{ row.total_tasks }} <span class="text-muted">({{ row.task_progress_percent }}%)</span></td>
+                        <td>
+                            {% if row.status == 'completed' %}<span class="badge bg-success">{{ row.status_display }}</span>
+                            {% elif row.status == 'in_progress' %}<span class="badge bg-primary">{{ row.status_display }}</span>
+                            {% elif row.status == 'on_hold' %}<span class="badge bg-warning text-dark">{{ row.status_display }}</span>
+                            {% else %}<span class="badge bg-secondary">{{ row.status_display }}</span>{% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endfor %}
+{% elif rows %}
+<div class="card">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Code</th>
+                        <th>Project</th>
+                        <th>Customer</th>
+                        <th>Start</th>
+                        <th>End</th>
+                        <th>Salesman</th>
+                        <th>Site engineer</th>
+                        <th>Op. manager</th>
+                        <th>Tasks</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in rows %}
+                    <tr>
+                        <td><a href="{% url 'projects:project_detail' row.pk %}" class="text-decoration-none fw-medium">{{ row.project_code }}</a></td>
+                        <td>{{ row.name }}</td>
+                        <td>{{ row.customer_name }}</td>
+                        <td class="text-nowrap">{% if row.start_date %}{{ row.start_date|date:"d/m/Y" }}{% else %}—{% endif %}</td>
+                        <td class="text-nowrap">{% if row.end_date %}{{ row.end_date|date:"d/m/Y" }}{% else %}—{% endif %}</td>
+                        <td class="small">{{ row.salesman_label }}</td>
+                        <td class="small">{{ row.site_engineer_label }}</td>
+                        <td class="small">{{ row.operation_manager_label }}</td>
+                        <td class="text-nowrap">{{ row.completed_tasks }}/{{ row.total_tasks }} <span class="text-muted">({{ row.task_progress_percent }}%)</span></td>
+                        <td>
+                            {% if row.status == 'completed' %}<span class="badge bg-success">{{ row.status_display }}</span>
+                            {% elif row.status == 'in_progress' %}<span class="badge bg-primary">{{ row.status_display }}</span>
+                            {% elif row.status == 'on_hold' %}<span class="badge bg-warning text-dark">{{ row.status_display }}</span>
+                            {% else %}<span class="badge bg-secondary">{{ row.status_display }}</span>{% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="card">
+    <div class="card-body text-center py-5 text-muted">
+        <i class="fas fa-folder-open fa-3x mb-3 d-block opacity-50"></i>
+        <p class="mb-0">No projects match the selected period and filters.</p>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

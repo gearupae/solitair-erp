@@ -15,6 +15,19 @@
     </div>
 </div>
 
+{% if is_project_completion_approver and pending_completion_count %}
+<div class="alert alert-warning d-flex align-items-center justify-content-between flex-wrap gap-2 mb-4" role="alert">
+    <div>
+        <i class="fas fa-clock me-2"></i>
+        <strong>{{ pending_completion_count }}</strong>
+        project{{ pending_completion_count|pluralize }} awaiting your completion approval.
+    </div>
+    {% if request.GET.status != 'completion_pending' %}
+    <a href="{% url 'projects:project_list' %}?status=completion_pending" class="btn btn-sm btn-outline-dark">View all pending</a>
+    {% endif %}
+</div>
+{% endif %}
+
 <!-- Summary Cards -->
 <div class="row g-3 mb-4">
     <div class="col-md-4">
@@ -73,7 +86,7 @@
             <div class="col-md-3">
                 <select name="status" class="form-select">
                     <option value="">All Status</option>
-                    {% for v, l in status_choices %}<option value="{{ v }}" {% if request.GET.status == v %}selected{% endif %}>{{ l }}</option>{% endfor %}
+                    {% for v, l in status_filter_choices %}<option value="{{ v }}" {% if request.GET.status == v %}selected{% endif %}>{{ l }}</option>{% endfor %}
                 </select>
             </div>
             <div class="col-md-5">
@@ -83,6 +96,51 @@
         </form>
     </div>
 </div>
+
+{% if pending_completion_projects and request.GET.status != 'completion_pending' %}
+<div class="card mb-4 border-warning">
+    <div class="card-header bg-warning bg-opacity-10 d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <h6 class="mb-0 fw-bold"><i class="fas fa-inbox me-2 text-warning"></i>Awaiting completion approval</h6>
+        <span class="badge bg-warning text-dark">{{ pending_completion_count }}</span>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>Code</th>
+                        <th>Name</th>
+                        <th>Customer</th>
+                        <th>Current status</th>
+                        <th>Requested by</th>
+                        <th>Requested</th>
+                        <th class="text-center" width="140">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for project in pending_completion_projects %}
+                    <tr>
+                        <td><a href="{% url 'projects:project_detail' project.pk %}" class="fw-medium text-decoration-none">{{ project.project_code }}</a></td>
+                        <td>{{ project.name }}</td>
+                        <td>{{ project.customer.name|default:"-" }}</td>
+                        <td><span class="badge bg-secondary">{{ project.get_status_display }}</span></td>
+                        <td>{% if project.edit_approval_submitted_by %}{{ project.edit_approval_submitted_by.get_full_name|default:project.edit_approval_submitted_by.username }}{% else %}—{% endif %}</td>
+                        <td class="text-nowrap">{% if project.edit_approval_submitted_at %}{{ project.edit_approval_submitted_at|date:"M d, Y H:i" }}{% else %}—{% endif %}</td>
+                        <td class="text-center text-nowrap">
+                            <a href="{% url 'projects:project_detail' project.pk %}" class="btn btn-action btn-outline-info" title="View"><i class="fas fa-eye"></i></a>
+                            <form method="post" action="{% url 'projects:project_approve_completion' project.pk %}" class="d-inline" onsubmit="return confirm('Approve marking {{ project.project_code }} as Completed?');">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-action btn-outline-success" title="Approve completion"><i class="fas fa-check"></i></button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
 
 <div class="card">
     <div class="card-body p-0">
@@ -101,6 +159,9 @@
                             {% elif project.status == 'in_progress' %}<span class="badge" style="background:#dbeafe;color:#1e40af;">In Progress</span>
                             {% elif project.status == 'on_hold' %}<span class="badge" style="background:#fef3c7;color:#92400e;">On Hold</span>
                             {% else %}<span class="badge bg-secondary">{{ project.get_status_display }}</span>{% endif %}
+                            {% if project.edit_approval_status == 'pending' %}
+                            <span class="badge bg-warning text-dark ms-1" title="Completion pending approval">Pending</span>
+                            {% endif %}
                         </td>
                         <td>{{ project.completed_tasks }}/{{ project.total_tasks }} tasks</td>
                         <td class="text-end text-nowrap">

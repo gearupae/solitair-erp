@@ -9,10 +9,14 @@ class EstimateItemInline(admin.TabularInline):
 
 @admin.register(Estimate)
 class EstimateAdmin(admin.ModelAdmin):
-    list_display = ['estimate_number', 'customer', 'date', 'status', 'total_amount', 'is_active']
+    list_display = ['display_estimate_number', 'customer', 'date', 'status', 'revision_count', 'total_amount', 'is_active']
     list_filter = ['status', 'is_active', 'date']
     search_fields = ['estimate_number', 'customer__name']
-    readonly_fields = ['estimate_number', 'subtotal', 'vat_amount', 'total_amount']
+    readonly_fields = ['estimate_number', 'revision_count', 'subtotal', 'vat_amount', 'total_amount']
+
+    @admin.display(description='Estimate #')
+    def display_estimate_number(self, obj):
+        return obj.display_estimate_number
     inlines = [EstimateItemInline]
 
 

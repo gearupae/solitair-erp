@@ -1,0 +1,111 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="page-header">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb mb-2">
+            <li class="breadcrumb-item active">Reports</li>
+        </ol>
+    </nav>
+    <h4 class="mb-1 fw-bold">Reports</h4>
+    <p class="text-muted mb-0">Business intelligence and period summaries</p>
+</div>
+
+<div class="row g-4">
+    <div class="col-md-6">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body d-flex flex-column">
+                <div class="mb-3">
+                    <span class="badge bg-primary-subtle text-primary mb-2">CRM</span>
+                    <h5 class="fw-bold mb-2">Lead Report</h5>
+                    <p class="text-muted mb-0">
+                        Period-wise pipeline: leads by stage (lost, won, negotiation, etc.),
+                        lead value, and conversions.
+                    </p>
+                </div>
+                <div class="mt-auto">
+                    <a href="{% url 'reports:lead_report' %}" class="btn btn-primary">
+                        <i class="fas fa-chart-bar me-2"></i>Open Lead Report
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body d-flex flex-column">
+                <div class="mb-3">
+                    <span class="badge bg-success-subtle text-success mb-2">Sales</span>
+                    <h5 class="fw-bold mb-2">Sales Report</h5>
+                    <p class="text-muted mb-0">
+                        Standard ERP sales summary: invoicing, collections, receivables,
+                        and quotation performance for the selected period.
+                    </p>
+                </div>
+                <div class="mt-auto">
+                    <a href="{% url 'reports:sales_report' %}" class="btn btn-success">
+                        <i class="fas fa-file-invoice-dollar me-2"></i>Open Sales Report
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body d-flex flex-column">
+                <div class="mb-3">
+                    <span class="badge bg-warning-subtle text-warning-emphasis mb-2">Projects</span>
+                    <h5 class="fw-bold mb-2">Project Profit and Loss Report</h5>
+                    <p class="text-muted mb-0">
+                        Estimate scope vs site utilization, returns, manpower, expenses,
+                        cost summary, and profit &amp; loss for a selected project.
+                    </p>
+                </div>
+                <div class="mt-auto">
+                    <a href="{% url 'reports:project_report_internal' %}" class="btn btn-warning text-dark">
+                        <i class="fas fa-hard-hat me-2"></i>Open Profit and Loss Report
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body d-flex flex-column">
+                <div class="mb-3">
+                    <span class="badge bg-info-subtle text-info-emphasis mb-2">Projects</span>
+                    <h5 class="fw-bold mb-2">Customer Progress Report</h5>
+                    <p class="text-muted mb-0">
+                        Customer-facing progress report: team members, technicians, project schedule,
+                        and completed tasks — no costing or financial details.
+                    </p>
+                </div>
+                <div class="mt-auto">
+                    <a href="{% url 'reports:project_report_customer' %}" class="btn btn-info text-white">
+                        <i class="fas fa-users me-2"></i>Open Customer Report
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body d-flex flex-column">
+                <div class="mb-3">
+                    <span class="badge bg-secondary-subtle text-secondary-emphasis mb-2">Projects</span>
+                    <h5 class="fw-bold mb-2">Period Wise Report</h5>
+                    <p class="text-muted mb-0">
+                        All projects in a date range, grouped or filtered by salesman,
+                        site engineer, or operation manager.
+                    </p>
+                </div>
+                <div class="mt-auto">
+                    <a href="{% url 'reports:project_report_period' %}" class="btn btn-secondary">
+                        <i class="fas fa-calendar-alt me-2"></i>Open Period Wise Report
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

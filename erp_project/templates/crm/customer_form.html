@@ -8,8 +8,10 @@ $(function () {
         var seg = document.querySelector('[name="business_segment"]');
         var busWrap = document.getElementById('crmEditBusinessWrap');
         var docs = document.getElementById('crmEditB2bDocs');
+        var assignWrap = document.getElementById('crmEditAssignWrap');
         var isCustomer = typeSel && typeSel.value === 'customer';
         if (busWrap) busWrap.style.display = isCustomer ? '' : 'none';
+        if (assignWrap) assignWrap.style.display = isCustomer ? 'none' : '';
         var isB2b = isCustomer && seg && seg.value === 'b2b';
         if (docs) docs.classList.toggle('d-none', !isB2b);
     }
@@ -18,16 +20,6 @@ $(function () {
     if (typeSel) typeSel.addEventListener('change', crmEditToggleCustomerFields);
     if (seg) seg.addEventListener('change', crmEditToggleCustomerFields);
     crmEditToggleCustomerFields();
-
-    if ($('.select2-crm-scope').length) {
-        $('.select2-crm-scope').select2({
-            theme: 'bootstrap-5',
-            width: '100%',
-            placeholder: 'Select scope…',
-            closeOnSelect: false,
-            allowClear: true,
-        });
-    }
 });
 </script>
 {% endblock %}
@@ -125,11 +117,11 @@ $(function () {
                 </div>
             </div>
             <div class="row g-3 mb-4">
-                <div class="col-md-6">
-                    <label class="form-label" for="{{ form.scope.id_for_label }}">{{ form.scope.label }}</label>
-                    {{ form.scope }}
-                    {% for err in form.scope.errors %}<div class="text-danger small">{{ err }}</div>{% endfor %}
-                    <div class="form-text">Search and select one or more disciplines.</div>
+                <div class="col-md-6" id="crmEditAssignWrap" style="{% if object.customer_type == 'customer' %}display:none;{% endif %}">
+                    <label class="form-label" for="{{ form.assigned_salesperson.id_for_label }}">{{ form.assigned_salesperson.label }} <span class="text-danger">*</span></label>
+                    {{ form.assigned_salesperson }}
+                    {% for err in form.assigned_salesperson.errors %}<div class="text-danger small">{{ err }}</div>{% endfor %}
+                    <div class="form-text">Required for leads. Assign to a salesman.</div>
                 </div>
                 <div class="col-md-6">
                     <label class="form-label">{{ form.primary_project.label }}</label>

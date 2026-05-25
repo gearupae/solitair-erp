@@ -13,6 +13,9 @@
             <input type="file" name="file" accept=".csv,text/csv" class="form-control" required />
         </div>
         <button type="submit" class="btn btn-primary">Preview import</button>
+        <a href="{{ sample_csv_url }}" class="btn btn-outline-secondary">
+            <i class="fas fa-download me-1"></i>Download sample CSV
+        </a>
         <a href="{% url 'hr:attendance_list' %}" class="btn btn-light">Back</a>
     </form>
 </div></div>

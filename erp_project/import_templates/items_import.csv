@@ -1,0 +1,3 @@
+item_code,name,description,category_code,groups,item_type,unit,purchase_price,selling_price,minimum_selling_price,maximum_selling_price,tax_code,vat_rate,minimum_stock,status,barcode,storage_location,brand,condition_status
+,Fire Extinguisher 6kg ABC,Portable dry powder extinguisher,FF,Fire Fighting | Consumables,product,pcs,85.00,120.00,100.00,150.00,SR5,5.00,10,active,6291100000001,Shelf A1,NAFFCO,in_store
+ITEM-2026-0100,Annual Maintenance Service,AMC site visit and inspection,SRV,Services,service,job,0,2500.00,2000.00,0,SR5,5.00,0,active,,,,in_store

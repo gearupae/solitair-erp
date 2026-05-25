@@ -33,6 +33,7 @@ from .forms import (
     ExpenseClaimForm, ExpenseClaimItemFormSet, ExpenseClaimPaymentForm,
     RecurringExpenseForm
 )
+from .pr_approval_rules import annotate_pr_approval_actions, user_can_act_on_purchase_request
 from apps.core.mixins import PermissionRequiredMixin, CreatePermissionMixin, UpdatePermissionMixin
 from apps.core.utils import PermissionChecker
 
@@ -205,9 +206,9 @@ class PurchaseRequestListView(PermissionRequiredMixin, ListView):
         context['can_create'] = self.request.user.is_superuser or PermissionChecker.has_permission(self.request.user, 'purchase', 'create')
         context['can_edit'] = self.request.user.is_superuser or PermissionChecker.has_permission(self.request.user, 'purchase', 'edit')
         context['can_delete'] = self.request.user.is_superuser or PermissionChecker.has_permission(self.request.user, 'purchase', 'delete')
-        context['can_approve'] = self.request.user.is_superuser or PermissionChecker.has_permission(self.request.user, 'purchase', 'approve')
         context['can_convert'] = self.request.user.is_superuser or PermissionChecker.has_permission(self.request.user, 'purchase', 'create')
         context['today'] = date.today().isoformat()
+        annotate_pr_approval_actions(self.request.user, context.get('purchase_requests', []))
         return context
 
 
@@ -342,12 +343,10 @@ class PurchaseRequestDetailView(PermissionRequiredMixin, DetailView):
                  (self.request.user.is_superuser and self.object.status == 'approved'))
         )
         context['can_submit'] = context['can_edit'] and self.object.status in ['draft', 'returned']
-        context['can_approve'] = (
-            self.request.user.is_superuser or
-            PermissionChecker.has_permission(self.request.user, 'purchase', 'approve')
-        ) and self.object.status == 'pending'
-        context['can_reject'] = context['can_approve']
-        context['can_return'] = context['can_approve']
+        can_act = user_can_act_on_purchase_request(self.request.user, self.object)
+        context['can_approve'] = can_act
+        context['can_reject'] = can_act
+        context['can_return'] = can_act
         context['can_convert'] = (
             self.request.user.is_superuser or
             PermissionChecker.has_permission(self.request.user, 'purchase', 'create')
@@ -480,36 +479,39 @@ def pr_submit(request, pk):
 @login_required
 def pr_approve(request, pk):
     pr = get_object_or_404(PurchaseRequest, pk=pk)
-    if request.user.is_superuser or PermissionChecker.has_permission(request.user, 'purchase', 'approve'):
-        pr.status = 'approved'
-        pr.rejection_reason = ''
-        pr.save()
-        from apps.settings_app.models import ApprovalAuditLog
-        ApprovalAuditLog.objects.create(
-            module='purchase_request',
-            reference=pr.pr_number,
-            approver=request.user,
-            action='approve',
-            comment=''
-        )
-        from apps.settings_app.models import Notification
-        Notification.create(
-            user=pr.requested_by,
-            title='Purchase Request Approved',
-            message=f'Purchase Request {pr.pr_number} has been approved.',
-            link=f'/purchase/requests/{pr.pk}/'
-        )
-        messages.success(request, f'PR {pr.pr_number} approved.')
-    else:
-        messages.error(request, 'Permission denied.')
+    if pr.status != 'pending':
+        messages.error(request, 'Only pending requests can be approved.')
+        return redirect('purchase:pr_detail', pk=pk)
+    if not user_can_act_on_purchase_request(request.user, pr):
+        messages.error(request, 'Only the configured approver can approve this request.')
+        return redirect('purchase:pr_detail', pk=pk)
+    pr.status = 'approved'
+    pr.rejection_reason = ''
+    pr.save()
+    from apps.settings_app.models import ApprovalAuditLog
+    ApprovalAuditLog.objects.create(
+        module='purchase_request',
+        reference=pr.pr_number,
+        approver=request.user,
+        action='approve',
+        comment=''
+    )
+    from apps.settings_app.models import Notification
+    Notification.create(
+        user=pr.requested_by,
+        title='Purchase Request Approved',
+        message=f'Purchase Request {pr.pr_number} has been approved.',
+        link=f'/purchase/requests/{pr.pk}/'
+    )
+    messages.success(request, f'PR {pr.pr_number} approved.')
     return redirect('purchase:pr_detail', pk=pk)
 
 
 @login_required
 def pr_reject(request, pk):
     pr = get_object_or_404(PurchaseRequest, pk=pk)
-    if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'purchase', 'approve')):
-        messages.error(request, 'Permission denied.')
+    if not user_can_act_on_purchase_request(request.user, pr):
+        messages.error(request, 'Only the configured approver can reject this request.')
         return redirect('purchase:pr_list')
     if pr.status != 'pending':
         messages.error(request, 'Only pending requests can be rejected.')
@@ -542,8 +544,8 @@ def pr_reject(request, pk):
 def pr_return(request, pk):
     """Return purchase request for revision with comment."""
     pr = get_object_or_404(PurchaseRequest, pk=pk)
-    if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'purchase', 'approve')):
-        messages.error(request, 'Permission denied.')
+    if not user_can_act_on_purchase_request(request.user, pr):
+        messages.error(request, 'Only the configured approver can reject this request.')
         return redirect('purchase:pr_list')
     if pr.status != 'pending':
         messages.error(request, 'Only pending requests can be returned.')
@@ -845,8 +847,76 @@ class PurchaseOrderDetailView(PermissionRequiredMixin, DetailView):
         context['can_receive_po'] = (
             context['can_edit'] and purchase_order_can_receive(self.object)
         )
+        context['can_confirm_po'] = (
+            context['can_edit']
+            and self.object.status == 'draft'
+            and self.object.items.exists()
+        )
         context['po_receive_url'] = reverse('purchase:po_receive', args=[self.object.pk])
         return context
+
+
+@login_required
+@require_POST
+def po_confirm(request, pk):
+    """Mark a draft PO as confirmed so goods can be received."""
+    po = get_object_or_404(PurchaseOrder.objects.filter(is_active=True), pk=pk)
+    if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'purchase', 'edit')):
+        messages.error(request, 'Permission denied.')
+        return redirect('purchase:po_detail', pk=pk)
+    if po.status != 'draft':
+        messages.warning(request, f'PO {po.po_number} is already {po.get_status_display().lower()}.')
+        return redirect('purchase:po_detail', pk=pk)
+    if not po.items.exists():
+        messages.error(request, 'Add at least one line item before confirming this PO.')
+        return redirect('purchase:po_edit', pk=pk)
+    po.status = 'confirmed'
+    po.save(update_fields=['status', 'updated_at'])
+    messages.success(
+        request,
+        f'PO {po.po_number} confirmed. You can now receive goods into inventory.',
+    )
+    return redirect('purchase:po_detail', pk=pk)
+
+
+def _po_receive_line_rows(po, post_data=None):
+    """Build template rows with optional reposted qty/price/model numbers."""
+    rows = []
+    for line in po.items.all():
+        if post_data is not None:
+            posted_qty = (post_data.get(f'qty_{line.pk}') or '0').strip()
+            posted_price = post_data.get(f'price_{line.pk}')
+            if posted_price is None or posted_price == '':
+                posted_price = f'{line.unit_price:.2f}'
+            posted_models = post_data.getlist(f'model_number_{line.pk}')
+        else:
+            posted_qty = '0'
+            posted_price = f'{line.unit_price:.2f}'
+            posted_models = []
+        rows.append({
+            'line': line,
+            'posted_qty': posted_qty,
+            'posted_price': posted_price,
+            'posted_model_numbers': posted_models,
+        })
+    return rows
+
+
+def _po_receive_context(po, warehouses, *, post_data=None, warehouse_pk=None, recv_date=None, notes=''):
+    if recv_date is None:
+        recv_date = timezone.now().date()
+    if warehouse_pk is None:
+        first_wh = warehouses.first()
+        warehouse_pk = first_wh.pk if first_wh else None
+    return {
+        'title': f'Receive — {po.po_number}',
+        'po': po,
+        'warehouses': warehouses,
+        'receive_lines': _po_receive_line_rows(po, post_data),
+        'posted_warehouse_pk': warehouse_pk,
+        'posted_received_on': recv_date.isoformat(),
+        'posted_notes': notes or '',
+    }
 
 
 @login_required
@@ -890,6 +960,7 @@ def po_receive(request, pk):
                     'purchase_order_item_id': line.pk,
                     'qty_raw': request.POST.get(f'qty_{line.pk}', ''),
                     'unit_price_raw': request.POST.get(f'price_{line.pk}', ''),
+                    'model_numbers': request.POST.getlist(f'model_number_{line.pk}'),
                 }
             )
 
@@ -912,31 +983,23 @@ def po_receive(request, pk):
             return render(
                 request,
                 'purchase/po_receive.html',
-                {
-                    'title': f'Receive — {po.po_number}',
-                    'po': po,
-                    'warehouses': warehouses,
-                    'posted_warehouse_pk': warehouse_pk,
-                    'posted_received_on': recv_date.isoformat(),
-                    'posted_notes': notes,
-                },
+                _po_receive_context(
+                    po,
+                    warehouses,
+                    post_data=request.POST,
+                    warehouse_pk=warehouse_pk,
+                    recv_date=recv_date,
+                    notes=notes,
+                ),
             )
 
         messages.success(request, f'Goods received for PO {po.po_number}. Inventory updated.')
         return redirect('purchase:po_detail', pk=po.pk)
 
-    first_wh = warehouses.first()
     return render(
         request,
         'purchase/po_receive.html',
-        {
-            'title': f'Receive — {po.po_number}',
-            'po': po,
-            'warehouses': warehouses,
-            'posted_warehouse_pk': first_wh.pk if first_wh else None,
-            'posted_received_on': timezone.now().date().isoformat(),
-            'posted_notes': '',
-        },
+        _po_receive_context(po, warehouses),
     )
 
 

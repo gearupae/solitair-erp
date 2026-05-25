@@ -12,13 +12,13 @@ from django.contrib import messages
 from django.views.generic import ListView, CreateView, UpdateView, DetailView
 from django.urls import reverse_lazy
 from django.db import transaction
-from django.db.models import Q, Sum
+from django.db.models import Count, Q, Sum
 from django.core.exceptions import ValidationError
 from datetime import date
 from apps.settings_app.models import Company
 
 from .models import Department, Designation, Employee, EmployeeAdvance, LeaveType, LeaveRequest, Payroll
-from .forms import DepartmentForm, EmployeeBankDetailForm, EmployeeForm, LeaveRequestForm, PayrollForm
+from .forms import DepartmentForm, DesignationForm, EmployeeBankDetailForm, EmployeeForm, LeaveRequestForm, PayrollForm
 from apps.core.mixins import PermissionRequiredMixin, CreatePermissionMixin, UpdatePermissionMixin
 from apps.core.utils import PermissionChecker
 
@@ -41,6 +41,12 @@ def _provision_employee_login_if_needed(request, form, employee):
         return
     _pr = form.cleaned_data.get('portal_role')
     roles = [_pr] if _pr else []
+    if not roles and employee.designation_id:
+        from .designation_utils import resolve_role_for_designation
+
+        mapped = resolve_role_for_designation(employee.designation)
+        if mapped:
+            roles = [mapped]
     from django.conf import settings as dj_settings
 
     from .user_provisioning import provision_user_for_employee
@@ -184,18 +190,24 @@ class EmployeeCreateView(CreatePermissionMixin, CreateView):
         context['departments'] = Department.objects.filter(is_active=True).order_by('name')
 
         # Fetch Roles from settings_app and sync to Designations
-        roles = Role.objects.filter(is_active=True).order_by('name')
-        # Sync roles to designations (create if they don't exist)
-        default_dept = Department.objects.filter(is_active=True).first()
-        for role in roles:
-            if default_dept:
-                Designation.objects.get_or_create(
-                    name=role.name,
-                    defaults={'department': default_dept}
-                )
+        from .designation_utils import ensure_role_designations, designations_queryset, designation_option_rows
 
-        # Now fetch designations (which includes synced roles)
-        context['designations'] = Designation.objects.filter(is_active=True).order_by('name')
+        ensure_role_designations()
+        roles = Role.objects.filter(is_active=True).order_by('name')
+
+        dept_id = None
+        form = kwargs.get('form')
+        if form is not None and getattr(form, 'data', None) and form.data.get('department'):
+            dept_id = form.data.get('department') or None
+
+        include_desig = None
+        if getattr(self, 'object', None) and self.object.designation_id:
+            include_desig = self.object.designation_id
+            if not dept_id and self.object.department_id:
+                dept_id = self.object.department_id
+
+        context['designations'] = designations_queryset(None, include_desig)
+        context['designation_options'] = designation_option_rows(context['designations'])
         # Also pass roles for reference
         context['roles'] = roles
         uae_form = kwargs.get('uae_form')
@@ -307,24 +319,21 @@ class EmployeeUpdateView(UpdatePermissionMixin, UpdateView):
         context['departments'] = departments.order_by('name')
 
         # Fetch Roles from settings_app and sync to Designations
-        roles = Role.objects.filter(is_active=True).order_by('name')
-        # Sync roles to designations (create if they don't exist)
-        default_dept = Department.objects.filter(is_active=True).first()
-        for role in roles:
-            if default_dept:
-                Designation.objects.get_or_create(
-                    name=role.name,
-                    defaults={'department': default_dept}
-                )
+        from .designation_utils import ensure_role_designations, designations_queryset, designation_option_rows
 
-        # Now fetch designations (which includes synced roles)
-        # Include current designation even if inactive
-        designations = Designation.objects.filter(is_active=True)
-        if self.object.designation_id:
-            designations = Designation.objects.filter(
-                Q(is_active=True) | Q(pk=self.object.designation_id)
-            )
-        context['designations'] = designations.order_by('name')
+        ensure_role_designations()
+        roles = Role.objects.filter(is_active=True).order_by('name')
+
+        dept_id = None
+        form = kwargs.get('form')
+        if form is not None and getattr(form, 'data', None) and form.data.get('department'):
+            dept_id = form.data.get('department') or None
+        elif self.object.department_id:
+            dept_id = self.object.department_id
+
+        include_desig = self.object.designation_id if self.object.designation_id else None
+        context['designations'] = designations_queryset(None, include_desig)
+        context['designation_options'] = designation_option_rows(context['designations'])
         # Also pass roles for reference
         context['roles'] = roles
         uae_form = kwargs.get('uae_form')
@@ -470,6 +479,52 @@ class DepartmentListView(PermissionRequiredMixin, ListView):
         return redirect('hr:department_list')
 
 
+class DesignationListView(PermissionRequiredMixin, ListView):
+    model = Designation
+    template_name = 'hr/designation_list.html'
+    context_object_name = 'designations'
+    module_name = 'hr'
+    permission_type = 'view'
+
+    def get_queryset(self):
+        from apps.settings_app.models import Role
+
+        self._role_names = {
+            n.lower()
+            for n in Role.objects.filter(is_active=True).values_list('name', flat=True)
+        }
+        return (
+            Designation.objects.filter(is_active=True)
+            .select_related('department')
+            .annotate(employee_count=Count('employees', filter=Q(employees__is_active=True)))
+            .order_by('department__name', 'name')
+        )
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['title'] = 'Designations'
+        context['form'] = DesignationForm()
+        context['can_create'] = self.request.user.is_superuser or PermissionChecker.has_permission(
+            self.request.user, 'hr', 'create'
+        )
+        role_names = getattr(self, '_role_names', set())
+        for desig in context['designations']:
+            desig.has_matching_role = (desig.name or '').lower() in role_names
+        return context
+
+    def post(self, request, *args, **kwargs):
+        if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'hr', 'create')):
+            messages.error(request, 'Permission denied.')
+            return redirect('hr:designation_list')
+        form = DesignationForm(request.POST)
+        if form.is_valid():
+            form.save()
+            messages.success(request, f'Designation “{form.instance.name}” created. Matching ERP role is ready under Settings → Roles.')
+        else:
+            messages.error(request, 'Could not save designation. Check department and name.')
+        return redirect('hr:designation_list')
+
+
 class LeaveRequestListView(PermissionRequiredMixin, ListView):
     model = LeaveRequest
     template_name = 'hr/leave_list.html'
@@ -483,7 +538,9 @@ class LeaveRequestListView(PermissionRequiredMixin, ListView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['title'] = 'Leave Requests'
-        context['can_approve'] = self.request.user.is_superuser or PermissionChecker.has_permission(self.request.user, 'hr', 'approve')
+        from apps.hr.leave_approval_rules import annotate_leave_approval_actions
+
+        annotate_leave_approval_actions(self.request.user, context['leave_requests'])
         context['can_create'] = self.request.user.is_superuser or PermissionChecker.has_permission(self.request.user, 'hr', 'create')
         context['can_edit'] = self.request.user.is_superuser or PermissionChecker.has_permission(self.request.user, 'hr', 'edit')
         # Check if user has employee profile (for self-application)
@@ -631,6 +688,9 @@ class LeaveRequestDetailView(PermissionRequiredMixin, DetailView):
         ctx['attachment_is_image'] = bool(mime and mime.startswith('image/'))
         ctx['attachment_is_pdf'] = mime == 'application/pdf'
         ctx['has_attachment'] = bool(leave.medical_certificate)
+        from apps.hr.leave_approval_rules import user_can_act_on_leave_request
+
+        ctx['can_act_on_leave'] = user_can_act_on_leave_request(self.request.user, leave)
         return ctx
 
 

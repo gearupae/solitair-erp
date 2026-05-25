@@ -87,6 +87,10 @@ def provision_user_for_employee(employee, roles):
     employee.user = user
     employee.save(update_fields=['user'])
 
+    from apps.crm.utils import sync_sales_crm_role_from_employee
+
+    sync_sales_crm_role_from_employee(employee)
+
     return user, raw_password
 
 

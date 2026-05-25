@@ -21,8 +21,8 @@ def render_estimate_quotation_pdf_bytes(request, estimate):
     context.update(
         {
             'document_heading': 'QUOTATION',
-            'document_number': estimate.estimate_number,
-            'page_title': f'Quotation — {estimate.estimate_number}',
+            'document_number': estimate.display_estimate_number,
+            'page_title': f'Quotation — {estimate.display_estimate_number}',
             'print_button_label': 'Print quotation',
             'show_pdf_status': True,
             'pdf_variant': 'quotation',

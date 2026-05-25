@@ -143,6 +143,18 @@ class Item(BaseModel):
     # Pricing
     purchase_price = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     selling_price = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    minimum_selling_price = models.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        help_text='Lowest allowed selling price for this item',
+    )
+    maximum_selling_price = models.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        help_text='Highest allowed selling price for this item (0 = no cap)',
+    )
     
     # Stock
     unit = models.CharField(max_length=20, default='pcs')  # pcs, kg, m, etc.
@@ -196,6 +208,11 @@ class Item(BaseModel):
     )
     qr_code = models.ImageField(upload_to='inventory/item_qr/', blank=True, null=True)
 
+    track_by_serial = models.BooleanField(
+        default=False,
+        help_text='When enabled, stock is tracked by individual model numbers received via PO.',
+    )
+
     # Warranty / batch (warranty report)
     brand = models.CharField(max_length=120, blank=True, default='')
     serial_batch_number = models.CharField(max_length=120, blank=True, default='')
@@ -216,23 +233,33 @@ class Item(BaseModel):
                 dup = dup.exclude(pk=self.pk)
             if dup.exists():
                 raise ValidationError({'name': 'An item with this name already exists. Use a unique name.'})
+        min_sp = self.minimum_selling_price or Decimal('0.00')
+        max_sp = self.maximum_selling_price or Decimal('0.00')
+        sp = self.selling_price or Decimal('0.00')
+        if min_sp > 0 and max_sp > 0 and min_sp > max_sp:
+            raise ValidationError({'maximum_selling_price': 'Maximum selling price must be greater than or equal to minimum.'})
+        if min_sp > 0 and sp > 0 and sp < min_sp:
+            raise ValidationError({'selling_price': 'Selling price is below the minimum selling price.'})
+        if max_sp > 0 and sp > 0 and sp > max_sp:
+            raise ValidationError({'selling_price': 'Selling price exceeds the maximum selling price.'})
     
     def __str__(self):
         return f"{self.item_code} - {self.name}"
     
     def save(self, *args, **kwargs):
+        if self.tax_code_id:
+            self.vat_rate = self.tax_code.rate
+        else:
+            self.vat_rate = Decimal('0.00')
         if not self.item_code:
             self.item_code = generate_number('ITEM', Item, 'item_code')
         super().save(*args, **kwargs)
 
     def get_storage_shelf_label(self):
-        """Combined preset + free-text storage label for QR and reports."""
-        parts = []
+        """Storage location label for QR, reports, and exports."""
         if self.storage_location_master_id:
-            parts.append(self.storage_location_master.name)
-        if self.storage_location:
-            parts.append(self.storage_location)
-        return ' — '.join(parts) if parts else ''
+            return self.storage_location_master.name
+        return self.storage_location or ''
     
     @property
     def total_stock(self):
@@ -318,6 +345,73 @@ class ConditionLog(models.Model):
     
     def __str__(self):
         return f"{self.item.name}: {self.get_from_status_display()} → {self.get_to_status_display()}"
+
+
+class ItemSerialNumber(BaseModel):
+    """Individual model/serial unit for items with track_by_serial enabled."""
+
+    STATUS_AVAILABLE = 'available'
+    STATUS_ASSIGNED = 'assigned'
+    STATUS_DELIVERED = 'delivered'
+    STATUS_CHOICES = [
+        (STATUS_AVAILABLE, 'Available'),
+        (STATUS_ASSIGNED, 'Assigned'),
+        (STATUS_DELIVERED, 'Delivered'),
+    ]
+
+    item = models.ForeignKey(
+        Item,
+        on_delete=models.CASCADE,
+        related_name='serial_numbers',
+    )
+    model_number = models.CharField(max_length=120)
+    receipt_line = models.ForeignKey(
+        'purchase.PurchaseOrderReceiptLine',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='serial_numbers',
+    )
+    warehouse = models.ForeignKey(
+        Warehouse,
+        on_delete=models.PROTECT,
+        related_name='item_serial_numbers',
+    )
+    date_received = models.DateField()
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_AVAILABLE)
+    assigned_project = models.ForeignKey(
+        'projects.Project',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='assigned_serial_numbers',
+    )
+    delivered_date = models.DateField(null=True, blank=True)
+    delivered_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='delivered_item_serials',
+    )
+
+    class Meta:
+        ordering = ['date_received', 'pk']
+        verbose_name = 'Item serial number'
+        verbose_name_plural = 'Item serial numbers'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['item', 'model_number'],
+                name='inventory_itemserialnumber_item_model_unique',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['item', 'status', 'date_received']),
+            models.Index(fields=['assigned_project', 'status']),
+        ]
+
+    def __str__(self):
+        return f'{self.model_number} ({self.item.item_code})'
 
 
 class Stock(BaseModel):
@@ -793,6 +887,12 @@ class ConsumableRequest(BaseModel):
         if self.item and self.quantity:
             return [(self.item, self.quantity)]
         return []
+
+    def has_serial_tracked_items(self) -> bool:
+        return any(item.track_by_serial for item, _ in self.get_items_for_dispense())
+
+    def has_project_serial_items(self) -> bool:
+        return bool(self.project_id) and self.has_serial_tracked_items()
     
     def __str__(self):
         if self.item_id and self.quantity is not None:
@@ -861,7 +961,20 @@ class ConsumableRequest(BaseModel):
         items_to_dispense = self.get_items_for_dispense()
         if not items_to_dispense:
             raise ValidationError("No items to dispense.")
-        
+
+        serial_items = [(item, qty) for item, qty in items_to_dispense if item.track_by_serial]
+        if serial_items and not self.project_id:
+            names = ', '.join({item.name for item, _ in serial_items})
+            raise ValidationError(
+                f'{names} is tracked by model number. '
+                'Link the request to a project, or deliver from the project page instead.'
+            )
+
+        if self.project_id:
+            from apps.inventory.consumable_project_lines import sync_consumable_request_to_project_item_lines
+
+            sync_consumable_request_to_project_item_lines(self)
+
         dispense_warehouse = warehouse or self.warehouse
         if not dispense_warehouse:
             # Try to find a warehouse with stock for first item
@@ -879,6 +992,19 @@ class ConsumableRequest(BaseModel):
         movements = []
         line_items = list(self.items.all()) if self.items.exists() else []
         for idx, (item, qty) in enumerate(items_to_dispense):
+            if item.track_by_serial:
+                from apps.projects.item_delivery import deliver_items_to_project
+
+                deliver_items_to_project(
+                    self.project,
+                    item,
+                    qty,
+                    date.today(),
+                    user,
+                    warehouse=dispense_warehouse,
+                )
+                continue
+
             if idx < len(line_items):
                 unit_cost = line_items[idx].unit_cost
             else:

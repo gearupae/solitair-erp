@@ -29,6 +29,23 @@ class LocaleDecimalField(forms.DecimalField):
         return super().to_python(s)
 
 
+class TaxCodeSelect(forms.Select):
+    """Tax code dropdown with data-rate on each option for VAT preview."""
+
+    def create_option(self, name, value, label, selected, index, subindex=None, attrs=None):
+        option = super().create_option(name, value, label, selected, index, subindex=subindex, attrs=attrs)
+        pk = getattr(value, 'value', value)
+        if pk not in ('', None):
+            from apps.finance.models import TaxCode
+            try:
+                tc = TaxCode.objects.get(pk=pk)
+                option.setdefault('attrs', {})
+                option['attrs']['data-rate'] = str(tc.rate)
+            except (TaxCode.DoesNotExist, TypeError, ValueError):
+                pass
+        return option
+
+
 class CategoryForm(forms.ModelForm):
     class Meta:
         model = Category
@@ -71,14 +88,17 @@ class ItemForm(forms.ModelForm):
     """
     purchase_price = LocaleDecimalField(max_digits=15, decimal_places=2, required=False, min_value=0)
     selling_price = LocaleDecimalField(max_digits=15, decimal_places=2, required=False, min_value=0)
+    minimum_selling_price = LocaleDecimalField(max_digits=15, decimal_places=2, required=False, min_value=0)
+    maximum_selling_price = LocaleDecimalField(max_digits=15, decimal_places=2, required=False, min_value=0)
     
     class Meta:
         model = Item
         fields = [
             'name', 'description', 'category', 'item_groups', 'item_type', 'status',
-            'purchase_price', 'selling_price', 'unit', 'minimum_stock', 'tax_code',
-            'condition_status', 'condition_notes',
-            'storage_location', 'storage_location_master', 'barcode',
+            'purchase_price', 'selling_price', 'minimum_selling_price', 'maximum_selling_price',
+            'unit', 'minimum_stock', 'tax_code',
+            'condition_status', 'condition_notes', 'track_by_serial',
+            'storage_location_master', 'barcode',
             'brand', 'serial_batch_number', 'purchase_date', 'warranty_expiry',
         ]
         widgets = {
@@ -91,29 +111,37 @@ class ItemForm(forms.ModelForm):
             'description': forms.Textarea(attrs={'rows': 2}),
             'purchase_price': forms.NumberInput(attrs={'step': 'any', 'min': '0', 'placeholder': '0.00'}),
             'selling_price': forms.NumberInput(attrs={'step': 'any', 'min': '0', 'placeholder': '0.00'}),
+            'minimum_selling_price': forms.NumberInput(attrs={'step': 'any', 'min': '0', 'placeholder': '0.00'}),
+            'maximum_selling_price': forms.NumberInput(attrs={'step': 'any', 'min': '0', 'placeholder': '0.00'}),
             'minimum_stock': forms.NumberInput(attrs={'step': 'any', 'min': '0', 'placeholder': '0.00'}),
-            'storage_location': forms.TextInput(
-                attrs={'placeholder': 'e.g., Shelf A3, Rack 2, Storeroom B', 'list': 'storage-location-options', 'autocomplete': 'off'}
-            ),
+            'tax_code': TaxCodeSelect(attrs={'class': 'form-select', 'id': 'id_tax_code'}),
             'barcode': forms.TextInput(attrs={'id': 'id_barcode', 'autocomplete': 'off'}),
             'purchase_date': forms.DateInput(attrs={'type': 'date'}),
             'warranty_expiry': forms.DateInput(attrs={'type': 'date'}),
+            'track_by_serial': forms.CheckboxInput(attrs={'class': 'form-check-input', 'role': 'switch'}),
         }
     
     def __init__(self, *args, **kwargs):
         from apps.finance.models import TaxCode
+        self._user = kwargs.pop('user', None)
         super().__init__(*args, **kwargs)
         for field_name, field in self.fields.items():
             if field_name in ['category', 'item_type', 'status', 'tax_code', 'condition_status', 'storage_location_master', 'item_groups']:
                 if field_name == 'item_groups':
                     # Select2 multi-select — initialized in item_form.html extra_js (not generic .select2)
                     field.widget.attrs['class'] = 'form-select item-groups-multiselect'
+                elif field_name == 'tax_code':
+                    field.widget.attrs.setdefault('class', 'form-select')
+                    field.widget.attrs['id'] = 'id_tax_code'
                 else:
                     field.widget.attrs['class'] = 'form-select'
             elif field_name == 'condition_notes':
                 field.widget = forms.Textarea(attrs={'class': 'form-control', 'rows': 2, 'placeholder': 'e.g., Assigned to John, Bay 3 / Sent for repair on...'})
             elif field_name in ('purchase_date', 'warranty_expiry'):
                 field.widget.attrs['class'] = 'form-control'
+            elif field_name == 'track_by_serial':
+                field.widget.attrs['class'] = 'form-check-input'
+                field.widget.attrs['role'] = 'switch'
             else:
                 field.widget.attrs['class'] = 'form-control'
         self.fields['category'].queryset = Category.objects.filter(is_active=True)
@@ -121,9 +149,9 @@ class ItemForm(forms.ModelForm):
         self.fields['item_groups'].required = False
         self.fields['storage_location_master'].queryset = StorageLocation.objects.filter(is_active=True)
         self.fields['storage_location_master'].required = False
-        self.fields['storage_location_master'].empty_label = '— Preset location (optional) —'
+        self.fields['storage_location_master'].label = 'Storage Location'
+        self.fields['storage_location_master'].empty_label = '— Select location —'
         self.fields['barcode'].required = False
-        self.fields['storage_location'].required = False
         self.fields['brand'].required = False
         self.fields['serial_batch_number'].required = False
         self.fields['purchase_date'].required = False
@@ -136,6 +164,8 @@ class ItemForm(forms.ModelForm):
         
         # Optional fields with model defaults
         self.fields['minimum_stock'].required = False
+        self.fields['minimum_selling_price'].required = False
+        self.fields['maximum_selling_price'].required = False
         self.fields['condition_status'].required = False
         self.fields['description'].required = False
         self.fields['condition_notes'].required = False
@@ -155,6 +185,16 @@ class ItemForm(forms.ModelForm):
         val = self.cleaned_data.get('selling_price')
         from decimal import Decimal
         return val if val is not None else Decimal('0.00')
+
+    def clean_minimum_selling_price(self):
+        val = self.cleaned_data.get('minimum_selling_price')
+        from decimal import Decimal
+        return val if val is not None else Decimal('0.00')
+
+    def clean_maximum_selling_price(self):
+        val = self.cleaned_data.get('maximum_selling_price')
+        from decimal import Decimal
+        return val if val is not None else Decimal('0.00')
     
     def clean_minimum_stock(self):
         val = self.cleaned_data.get('minimum_stock')
@@ -164,6 +204,42 @@ class ItemForm(forms.ModelForm):
     def clean_condition_status(self):
         val = self.cleaned_data.get('condition_status')
         return val if val else 'in_store'
+
+    def clean(self):
+        from decimal import Decimal
+        cleaned = super().clean()
+        track = cleaned.get('track_by_serial')
+        item_type = cleaned.get('item_type')
+        if track and item_type == 'service':
+            self.add_error('track_by_serial', 'Services cannot be tracked by model number.')
+        instance = self.instance
+        if instance.pk:
+            from .models import ItemSerialNumber
+            if not track and instance.track_by_serial and instance.serial_numbers.filter(is_active=True).exists():
+                self.add_error(
+                    'track_by_serial',
+                    'Cannot disable while model numbers are registered for this item.',
+                )
+
+        min_sp = cleaned.get('minimum_selling_price') or Decimal('0.00')
+        max_sp = cleaned.get('maximum_selling_price') or Decimal('0.00')
+        sp = cleaned.get('selling_price') or Decimal('0.00')
+        if min_sp > 0 and max_sp > 0 and min_sp > max_sp:
+            self.add_error('maximum_selling_price', 'Maximum must be greater than or equal to minimum.')
+        if min_sp > 0 and sp > 0 and sp < min_sp:
+            self.add_error('selling_price', 'Selling price is below the minimum selling price.')
+        if max_sp > 0 and sp > 0 and sp > max_sp:
+            self.add_error('selling_price', 'Selling price exceeds the maximum selling price.')
+        return cleaned
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        if instance.storage_location_master_id:
+            instance.storage_location = ''
+        if commit:
+            instance.save()
+            self.save_m2m()
+        return instance
 
 
 class StockAdjustmentForm(forms.Form):
@@ -213,6 +289,12 @@ class StockAdjustmentForm(forms.Form):
 
     def clean(self):
         cleaned = super().clean()
+        item = cleaned.get('item')
+        if item and item.track_by_serial:
+            raise ValidationError(
+                'This item is tracked by model number. Receive stock via Purchase Order '
+                'and deliver to projects from the project page.'
+            )
         mt = cleaned.get('movement_type', '')
         reason = cleaned.get('adjustment_reason', '')
         if mt in ('adjustment_plus', 'adjustment_minus') and not reason:
@@ -305,15 +387,23 @@ class ConsumableRequestApproveForm(forms.Form):
             items_to_check = [(item, quantity)]
         
         if items_to_check:
+            from apps.inventory.serial_stock import item_available_qty
+
             # Find warehouses that have stock for ALL items
             warehouse_ids = None
             for itm, qty in items_to_check:
-                wh_ids = set(Stock.objects.filter(
-                    item=itm,
-                    quantity__gte=qty,
-                    warehouse__status='active',
-                    warehouse__is_active=True
-                ).values_list('warehouse_id', flat=True))
+                if itm.track_by_serial:
+                    wh_ids = set()
+                    for wh in Warehouse.objects.filter(is_active=True, status='active'):
+                        if item_available_qty(itm, warehouse=wh) >= qty:
+                            wh_ids.add(wh.pk)
+                else:
+                    wh_ids = set(Stock.objects.filter(
+                        item=itm,
+                        quantity__gte=qty,
+                        warehouse__status='active',
+                        warehouse__is_active=True
+                    ).values_list('warehouse_id', flat=True))
                 warehouse_ids = wh_ids if warehouse_ids is None else warehouse_ids & wh_ids
             
             if warehouse_ids:

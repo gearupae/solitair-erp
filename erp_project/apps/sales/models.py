@@ -93,6 +93,26 @@ class Estimate(BaseModel):
         blank=True,
         related_name='estimate_edit_approval_submissions',
     )
+    revision_count = models.PositiveIntegerField(
+        default=0,
+        help_text='Increments when resubmitted for approval after an edit rejection (R1, R2, … on PDF).',
+    )
+    approval_requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='estimate_status_approval_requests',
+        help_text='User who last sent the estimate for status approval (Sent).',
+    )
+    awaiting_resubmit_revision = models.BooleanField(
+        default=False,
+        help_text='Set when status is rejected; next Mark as Sent bumps revision (R1, R2, …).',
+    )
+    rejection_reason = models.TextField(
+        blank=True,
+        help_text='Reason given when the approver rejected this estimate.',
+    )
     notes = models.TextField(blank=True, help_text='Internal notes (optional)')
     client_note = models.TextField(blank=True, help_text='Note for the client (shown on estimate)')
     terms_and_conditions = models.TextField(blank=True)
@@ -114,6 +134,10 @@ class Estimate(BaseModel):
         default=True,
         help_text='If off, PDF shows description and quantity only; totals still show VAT and amount.',
     )
+    show_group_totals_on_pdf = models.BooleanField(
+        default=False,
+        help_text='If on, PDF shows a subtotal after each named line-item group.',
+    )
 
     # Calculated fields
     subtotal = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
@@ -128,7 +152,31 @@ class Estimate(BaseModel):
         ordering = ['-created_at']
     
     def __str__(self):
-        return f"{self.estimate_number} - {self.customer.name}"
+        return f"{self.display_estimate_number} - {self.customer.name}"
+
+    @property
+    def revision_label(self):
+        """Revision suffix after resubmit post-rejection, e.g. R1."""
+        if self.revision_count and self.revision_count > 0:
+            return f'R{self.revision_count}'
+        return ''
+
+    @property
+    def display_estimate_number(self):
+        """Quotation / PDF number including revision suffix when applicable."""
+        base = self.estimate_number
+        label = self.revision_label
+        return f'{base}-{label}' if label else base
+
+    @property
+    def display_proforma_number(self):
+        return f'PI-{self.display_estimate_number}'
+
+    @property
+    def proforma_vat_rate_percent(self):
+        from apps.sales.proforma_calculation import resolve_proforma_vat_rate_percent
+
+        return resolve_proforma_vat_rate_percent(self)
     
     def save(self, *args, **kwargs):
         if not self.estimate_number:
@@ -189,6 +237,48 @@ class Estimate(BaseModel):
         from apps.sales.approval_rules import user_can_edit_estimate
 
         return user_can_edit_estimate(user, self)
+
+
+class EstimateProformaInvoice(models.Model):
+    """Partial proforma invoice generated from a won quotation (advance / milestone billing)."""
+
+    CHARGE_TYPE_CHOICES = [
+        ('percent', 'Percentage of quotation subtotal'),
+        ('amount', 'Fixed amount (excl. VAT)'),
+    ]
+
+    estimate = models.ForeignKey(
+        Estimate,
+        on_delete=models.CASCADE,
+        related_name='proforma_invoices',
+    )
+    proforma_number = models.CharField(max_length=80, unique=True)
+    name = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+    charge_type = models.CharField(max_length=20, choices=CHARGE_TYPE_CHOICES)
+    charge_value = models.DecimalField(max_digits=15, decimal_places=2)
+    line_subtotal = models.DecimalField(max_digits=15, decimal_places=2)
+    vat_amount = models.DecimalField(max_digits=15, decimal_places=2)
+    total_amount = models.DecimalField(max_digits=15, decimal_places=2)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='estimate_proforma_invoices_created',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return self.proforma_number
+
+    @classmethod
+    def allocate_number(cls, estimate) -> str:
+        seq = cls.objects.filter(estimate=estimate).count() + 1
+        return f'PI-{estimate.display_estimate_number}-{seq:02d}'
 
 
 class EstimateItem(models.Model):

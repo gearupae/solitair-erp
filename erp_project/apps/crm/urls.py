@@ -8,6 +8,7 @@ app_name = 'crm'
 
 urlpatterns = [
     path('public-upload/', views.public_customer_upload, name='public_upload'),
+    path('customers/project-options/', views.crm_project_options, name='project_options'),
     path('customers/', views.CustomerListView.as_view(), name='customer_list'),
     path('customers/kanban/move/', views.crm_kanban_move, name='kanban_move'),
     path('customers/<int:pk>/', views.CustomerDetailView.as_view(), name='customer_detail'),

@@ -1,0 +1,587 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block extra_css %}
+<style>
+.internal-report-kpi {
+    border-left: 3px solid var(--kpi-accent, #dee2e6);
+}
+.internal-report-kpi--cost { --kpi-accent: #dc3545; }
+.internal-report-kpi--revenue { --kpi-accent: #0d6efd; }
+.internal-report-kpi--profit { --kpi-accent: #198754; }
+.internal-report-kpi--loss { --kpi-accent: #dc3545; }
+.internal-report-kpi--hours { --kpi-accent: #6f42c1; }
+
+.internal-report-section {
+    scroll-margin-top: 5rem;
+}
+.internal-report-section__title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: #153a5c;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.35rem;
+    border-bottom: 2px solid #e9ecef;
+}
+.internal-report-meta {
+    background: #f8f9fb;
+    border: 1px solid #e9ecef;
+    border-radius: 0.5rem;
+    padding: 1rem 1.25rem;
+}
+.internal-report-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+    gap: 0.75rem;
+}
+.internal-report-summary-item {
+    border: 1px solid #e9ecef;
+    border-radius: 0.45rem;
+    padding: 0.65rem 0.85rem;
+    background: #fff;
+}
+.internal-report-summary-item__label {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    color: #6c757d;
+    margin-bottom: 0.15rem;
+}
+.internal-report-summary-item__value {
+    font-size: 1.05rem;
+    font-weight: 700;
+}
+.internal-report-pl {
+    border: 2px solid #153a5c;
+    border-radius: 0.5rem;
+    overflow: hidden;
+}
+.internal-report-pl__header {
+    background: #153a5c;
+    color: #fff;
+    padding: 0.75rem 1rem;
+    font-weight: 700;
+}
+.internal-report-pl__body {
+    padding: 1rem;
+    background: #fff;
+}
+
+@media print {
+    .no-print { display: none !important; }
+    .internal-report-section { break-inside: avoid-page; page-break-inside: avoid; }
+    .card { border: 1px solid #dee2e6 !important; box-shadow: none !important; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3 no-print">
+    <div>
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-1 small">
+                <li class="breadcrumb-item"><a href="{% url 'reports:index' %}">Reports</a></li>
+                <li class="breadcrumb-item active">Project Profit and Loss Report</li>
+            </ol>
+        </nav>
+        <h4 class="mb-0 fw-bold">{{ title }}</h4>
+        <p class="text-muted mb-0 small">Internal project cost, utilization, and profit &amp; loss summary</p>
+    </div>
+    {% if report %}
+    <button type="button" class="btn btn-outline-secondary" onclick="window.print()">
+        <i class="fas fa-print me-2"></i>Print report
+    </button>
+    {% endif %}
+</div>
+
+<div class="card mb-4 no-print">
+    <div class="card-body">
+        <form method="get" class="row g-3 align-items-end">
+            <div class="col-md-8">
+                <label class="form-label fw-semibold">Project</label>
+                <select name="project" class="form-select" required>
+                    <option value="">— Select a project —</option>
+                    {% for p in project_choices %}
+                    <option value="{{ p.pk }}" {% if selected_project_id == p.pk %}selected{% endif %}>
+                        {{ p.project_code }} — {{ p.name }}{% if p.customer %} ({{ p.customer.name }}){% endif %}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-4">
+                <button type="submit" class="btn btn-primary w-100">
+                    <i class="fas fa-file-alt me-2"></i>Generate report
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% if not report %}
+<div class="card">
+    <div class="card-body text-center py-5 text-muted">
+        <i class="fas fa-project-diagram fa-3x mb-3 d-block opacity-50"></i>
+        <p class="mb-0">Select a project above to generate the internal project report.</p>
+    </div>
+</div>
+{% else %}
+
+<div class="internal-report-meta mb-4">
+    <div class="row g-3">
+        <div class="col-md-8">
+            <h5 class="fw-bold mb-1">{{ report.project.name }}</h5>
+            <div class="text-muted small">
+                <span class="me-3"><strong>Code:</strong> {{ report.project.project_code }}</span>
+                {% if report.project.customer %}
+                <span class="me-3"><strong>Customer:</strong> {{ report.project.customer.name }}</span>
+                {% endif %}
+                {% if report.project.manager %}
+                <span class="me-3"><strong>Manager:</strong> {{ report.project.manager.get_full_name|default:report.project.manager.username }}</span>
+                {% endif %}
+            </div>
+            {% if report.estimate %}
+            <div class="small text-muted mt-1">
+                <strong>Source estimate:</strong> {{ report.estimate.estimate_number }} ({{ report.estimate.date|date:"M d, Y" }})
+            </div>
+            {% endif %}
+        </div>
+        <div class="col-md-4 text-md-end">
+            <div class="small text-muted">Project period</div>
+            <div class="fw-semibold">
+                {% if report.period_start %}{{ report.period_start|date:"M d, Y" }}{% else %}—{% endif %}
+                –
+                {% if report.period_end %}{{ report.period_end|date:"M d, Y" }}{% else %}Present{% endif %}
+            </div>
+            <div class="mt-2">
+                <span class="badge bg-secondary">{{ report.project.get_status_display }}</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="card internal-report-kpi internal-report-kpi--cost h-100">
+            <div class="card-body py-3">
+                <div class="small text-muted">Total project cost</div>
+                <div class="fw-bold fs-5">AED {{ report.cost_summary.total|floatformat:2|intcomma }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card internal-report-kpi internal-report-kpi--revenue h-100">
+            <div class="card-body py-3">
+                <div class="small text-muted">{{ report.revenue_label }}</div>
+                <div class="fw-bold fs-5">AED {{ report.revenue|floatformat:2|intcomma }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card internal-report-kpi {% if report.is_profitable %}internal-report-kpi--profit{% else %}internal-report-kpi--loss{% endif %} h-100">
+            <div class="card-body py-3">
+                <div class="small text-muted">Gross profit / (loss)</div>
+                <div class="fw-bold fs-5 {% if report.is_profitable %}text-success{% else %}text-danger{% endif %}">
+                    AED {{ report.gross_profit|floatformat:2|intcomma }}
+                </div>
+                {% if report.profit_margin_pct is not None %}
+                <div class="small text-muted">{{ report.profit_margin_pct }}% margin</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card internal-report-kpi internal-report-kpi--hours h-100">
+            <div class="card-body py-3">
+                <div class="small text-muted">Manpower hours</div>
+                <div class="fw-bold fs-5">{{ report.labour_total_hours|floatformat:1|intcomma }}</div>
+                <div class="small text-muted">AED {{ report.labour_total_cost|floatformat:2|intcomma }} labour cost</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 1. Estimate items -->
+<div class="card mb-4 internal-report-section" id="section-estimate">
+    <div class="card-body">
+        <h6 class="internal-report-section__title"><i class="fas fa-list-ul me-2"></i>1. Items originally included in the estimate</h6>
+        {% if report.estimate_groups %}
+        {% for group_name, lines in report.estimate_groups.items %}
+        <h6 class="fw-semibold text-muted small text-uppercase mt-3 mb-2">{{ group_name }}</h6>
+        <div class="table-responsive mb-3">
+            <table class="table table-sm table-bordered align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Description</th>
+                        <th>Item</th>
+                        <th class="text-end">Qty</th>
+                        <th class="text-end">Rate</th>
+                        <th class="text-end">Net</th>
+                        <th class="text-end">VAT</th>
+                        <th class="text-end">Total</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for line in lines %}
+                    <tr>
+                        <td>{{ line.description }}</td>
+                        <td>{% if line.inventory_item %}{{ line.inventory_item.name }}{% else %}—{% endif %}</td>
+                        <td class="text-end">{{ line.quantity|floatformat:2 }}</td>
+                        <td class="text-end">{{ line.rate|floatformat:2 }}</td>
+                        <td class="text-end">{{ line.line_net|floatformat:2 }}</td>
+                        <td class="text-end">{{ line.vat_amount|floatformat:2 }}</td>
+                        <td class="text-end">{{ line.line_total_incl_vat|floatformat:2 }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endfor %}
+        <div class="d-flex justify-content-end">
+            <table class="table table-sm w-auto mb-0">
+                <tr><td class="text-muted pe-3">Estimate net</td><td class="text-end fw-semibold">AED {{ report.estimate_net_total|floatformat:2|intcomma }}</td></tr>
+                <tr><td class="text-muted pe-3">VAT</td><td class="text-end">AED {{ report.estimate_vat_total|floatformat:2|intcomma }}</td></tr>
+                <tr><td class="text-muted pe-3">Estimate total</td><td class="text-end fw-bold">AED {{ report.estimate_grand_total|floatformat:2|intcomma }}</td></tr>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-muted mb-0">No estimate scope lines recorded for this project.</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Estimate vs actual comparison -->
+{% if report.compare_rows %}
+<div class="card mb-4 internal-report-section">
+    <div class="card-body">
+        <h6 class="internal-report-section__title text-muted" style="font-size:0.85rem;">Estimate vs site utilization (summary)</h6>
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Item</th>
+                        <th class="text-end">Est. qty</th>
+                        <th class="text-end">Delivered</th>
+                        <th class="text-end">Returned</th>
+                        <th class="text-end">On site</th>
+                        <th class="text-end">Variance</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in report.compare_rows %}
+                    <tr>
+                        <td>
+                            <span class="fw-medium">{{ row.item_name }}</span>
+                            <span class="text-muted small d-block">{{ row.item_code }}</span>
+                        </td>
+                        <td class="text-end">{% if row.estimated_qty is not None %}{{ row.estimated_qty|floatformat:2 }}{% else %}—{% endif %}</td>
+                        <td class="text-end">{{ row.delivered_qty|floatformat:2 }}</td>
+                        <td class="text-end">{{ row.returned_qty|floatformat:2 }}</td>
+                        <td class="text-end">{{ row.on_site_qty|floatformat:2 }}</td>
+                        <td class="text-end">
+                            {% if row.variance_qty is not None %}
+                            <span class="{% if row.variance_qty < 0 %}text-danger{% elif row.variance_qty > 0 %}text-success{% endif %}">
+                                {{ row.variance_qty|floatformat:2 }}
+                            </span>
+                            {% else %}—{% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- 2. Utilized at site -->
+<div class="card mb-4 internal-report-section" id="section-utilized">
+    <div class="card-body">
+        <h6 class="internal-report-section__title"><i class="fas fa-truck-loading me-2"></i>2. Items that were actually utilized at the site</h6>
+        {% if report.utilization_rows %}
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Item</th>
+                        <th>Serial / Qty</th>
+                        <th class="text-end">Qty</th>
+                        <th>Delivered date</th>
+                        <th>Delivered by</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in report.utilization_rows %}
+                    <tr>
+                        <td>
+                            <span class="fw-medium">{{ row.item_name }}</span>
+                            <span class="text-muted small d-block">{{ row.item_code }}</span>
+                        </td>
+                        <td>{{ row.detail }}</td>
+                        <td class="text-end">{{ row.quantity|floatformat:2 }}</td>
+                        <td>{{ row.delivered_date|date:"M d, Y"|default:"—" }}</td>
+                        <td>{{ row.delivered_by }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-muted mb-0">No items have been delivered to this project site yet.</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- 3. Returns -->
+<div class="card mb-4 internal-report-section" id="section-returns">
+    <div class="card-body">
+        <h6 class="internal-report-section__title"><i class="fas fa-undo me-2"></i>3. Items that were returned</h6>
+        {% if report.return_rows %}
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Item</th>
+                        <th>Serial / Qty</th>
+                        <th class="text-end">Qty</th>
+                        <th>Returned date</th>
+                        <th>Returned by</th>
+                        <th>Notes</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in report.return_rows %}
+                    <tr>
+                        <td>
+                            <span class="fw-medium">{{ row.item_name }}</span>
+                            <span class="text-muted small d-block">{{ row.item_code }}</span>
+                        </td>
+                        <td>{{ row.detail }}</td>
+                        <td class="text-end">{{ row.quantity|floatformat:2 }}</td>
+                        <td>{{ row.returned_date|date:"M d, Y" }}</td>
+                        <td>{{ row.returned_by }}</td>
+                        <td class="small text-muted">{{ row.notes|default:"—" }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-muted mb-0">No items have been returned from this project.</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- 4. Manpower -->
+<div class="card mb-4 internal-report-section" id="section-manpower">
+    <div class="card-body">
+        <h6 class="internal-report-section__title"><i class="fas fa-hard-hat me-2"></i>4. Total manpower utilized</h6>
+        {% if report.labour_rows %}
+        <div class="table-responsive mb-3">
+            <table class="table table-sm table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Technician</th>
+                        <th class="text-end">Hours</th>
+                        <th class="text-end">Hourly rate</th>
+                        <th class="text-end">Labour cost</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in report.labour_rows %}
+                    <tr>
+                        <td>{{ row.display_name }}</td>
+                        <td class="text-end">{{ row.hours|floatformat:2 }}</td>
+                        <td class="text-end">AED {{ row.hourly_rate|floatformat:2 }}</td>
+                        <td class="text-end">AED {{ row.labour_cost|floatformat:2|intcomma }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot class="table-light">
+                    <tr class="fw-bold">
+                        <td>Total</td>
+                        <td class="text-end">{{ report.labour_total_hours|floatformat:2 }}</td>
+                        <td></td>
+                        <td class="text-end">AED {{ report.labour_total_cost|floatformat:2|intcomma }}</td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+        <p class="small text-muted mb-0">Based on attendance clocked to this project for assigned technicians.</p>
+        {% else %}
+        <p class="text-muted mb-0">No manpower hours recorded for this project.</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- 5. Other expenses -->
+<div class="card mb-4 internal-report-section" id="section-expenses">
+    <div class="card-body">
+        <h6 class="internal-report-section__title"><i class="fas fa-receipt me-2"></i>5. Total other expenses</h6>
+
+        {% if report.expenses.category_rows %}
+        <h6 class="small fw-semibold text-muted text-uppercase mb-2">Manual expenses by category</h6>
+        <div class="table-responsive mb-3">
+            <table class="table table-sm table-bordered align-middle mb-0">
+                <thead class="table-light">
+                    <tr><th>Category</th><th class="text-end">Count</th><th class="text-end">Total (AED)</th></tr>
+                </thead>
+                <tbody>
+                    {% for row in report.expenses.category_rows %}
+                    <tr>
+                        <td>{{ row.label }}</td>
+                        <td class="text-end">{{ row.count }}</td>
+                        <td class="text-end">{{ row.total|floatformat:2|intcomma }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot class="table-light">
+                    <tr class="fw-semibold">
+                        <td colspan="2">Manual expenses subtotal</td>
+                        <td class="text-end">AED {{ report.expenses.manual_total|floatformat:2|intcomma }}</td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+        {% endif %}
+
+        {% if report.expenses.vendor_bills %}
+        <h6 class="small fw-semibold text-muted text-uppercase mb-2">Vendor bills</h6>
+        <div class="table-responsive mb-3">
+            <table class="table table-sm table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Bill #</th>
+                        <th>Vendor</th>
+                        <th>Date</th>
+                        <th>Status</th>
+                        <th class="text-end">Amount (AED)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for bill in report.expenses.vendor_bills %}
+                    <tr>
+                        <td>{{ bill.bill_number }}</td>
+                        <td>{{ bill.vendor.name|default:"—" }}</td>
+                        <td>{{ bill.bill_date|date:"M d, Y" }}</td>
+                        <td>{{ bill.get_status_display }}</td>
+                        <td class="text-end">{{ bill.total_amount|floatformat:2|intcomma }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot class="table-light">
+                    <tr class="fw-semibold">
+                        <td colspan="4">Vendor bills subtotal</td>
+                        <td class="text-end">AED {{ report.expenses.vendor_bills_total|floatformat:2|intcomma }}</td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+        {% endif %}
+
+        {% if report.expenses.other_expenses_total > 0 %}
+        <div class="alert alert-light border mb-0">
+            <strong>Total other expenses:</strong> AED {{ report.expenses.other_expenses_total|floatformat:2|intcomma }}
+            <span class="text-muted small">(manual expenses + vendor bills; inventory value shown separately in cost summary)</span>
+        </div>
+        {% elif not report.expenses.category_rows and not report.expenses.vendor_bills %}
+        <p class="text-muted mb-0">No manual expenses or vendor bills recorded for this project.</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- 6. Cost summary -->
+<div class="card mb-4 internal-report-section" id="section-cost">
+    <div class="card-body">
+        <h6 class="internal-report-section__title"><i class="fas fa-calculator me-2"></i>6. Overall project cost summary</h6>
+        <div class="internal-report-summary-grid">
+            <div class="internal-report-summary-item">
+                <div class="internal-report-summary-item__label">Materials &amp; inventory on site</div>
+                <div class="internal-report-summary-item__value">AED {{ report.cost_summary.materials_inventory|floatformat:2|intcomma }}</div>
+            </div>
+            <div class="internal-report-summary-item">
+                <div class="internal-report-summary-item__label">Manpower / labour</div>
+                <div class="internal-report-summary-item__value">AED {{ report.cost_summary.labour|floatformat:2|intcomma }}</div>
+            </div>
+            <div class="internal-report-summary-item">
+                <div class="internal-report-summary-item__label">Manual expenses</div>
+                <div class="internal-report-summary-item__value">AED {{ report.cost_summary.manual_expenses|floatformat:2|intcomma }}</div>
+            </div>
+            <div class="internal-report-summary-item">
+                <div class="internal-report-summary-item__label">Vendor bills</div>
+                <div class="internal-report-summary-item__value">AED {{ report.cost_summary.vendor_bills|floatformat:2|intcomma }}</div>
+            </div>
+            <div class="internal-report-summary-item border-primary">
+                <div class="internal-report-summary-item__label text-primary">Total project cost</div>
+                <div class="internal-report-summary-item__value text-primary">AED {{ report.cost_summary.total|floatformat:2|intcomma }}</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 7. P&L -->
+<div class="internal-report-pl internal-report-section mb-4" id="section-pnl">
+    <div class="internal-report-pl__header">
+        <i class="fas fa-chart-line me-2"></i>7. Final profit &amp; loss — entire project period
+    </div>
+    <div class="internal-report-pl__body">
+        <div class="row g-4">
+            <div class="col-md-6">
+                <table class="table table-sm mb-0">
+                    <tbody>
+                        <tr>
+                            <td class="text-muted">{{ report.revenue_label }}</td>
+                            <td class="text-end fw-semibold">AED {{ report.revenue|floatformat:2|intcomma }}</td>
+                        </tr>
+                        {% if report.contract_value > 0 and report.budget > 0 %}
+                        <tr>
+                            <td class="text-muted">Cost budget (baseline)</td>
+                            <td class="text-end">AED {{ report.budget|floatformat:2|intcomma }}</td>
+                        </tr>
+                        {% endif %}
+                        <tr>
+                            <td class="text-muted">Total project cost</td>
+                            <td class="text-end text-danger">(AED {{ report.cost_summary.total|floatformat:2|intcomma }})</td>
+                        </tr>
+                        <tr class="border-top">
+                            <td class="fw-bold">Gross profit / (loss)</td>
+                            <td class="text-end fw-bold fs-5 {% if report.is_profitable %}text-success{% else %}text-danger{% endif %}">
+                                AED {{ report.gross_profit|floatformat:2|intcomma }}
+                            </td>
+                        </tr>
+                        {% if report.profit_margin_pct is not None %}
+                        <tr>
+                            <td class="text-muted">Profit margin</td>
+                            <td class="text-end {% if report.is_profitable %}text-success{% else %}text-danger{% endif %}">
+                                {{ report.profit_margin_pct }}%
+                            </td>
+                        </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="col-md-6">
+                <div class="p-3 rounded {% if report.is_profitable %}bg-success bg-opacity-10{% else %}bg-danger bg-opacity-10{% endif %}">
+                    <div class="fw-bold mb-1">
+                        {% if report.is_profitable %}
+                        <i class="fas fa-check-circle text-success me-1"></i> Project is profitable
+                        {% else %}
+                        <i class="fas fa-exclamation-triangle text-danger me-1"></i> Project is over budget / loss
+                        {% endif %}
+                    </div>
+                    <p class="small text-muted mb-0">
+                        P&amp;L compares {{ report.revenue_label|lower }} against total recorded costs
+                        (inventory on site, labour, manual expenses, and vendor bills) for the full project lifecycle.
+                    </p>
+                </div>
+                <div class="mt-3 small text-muted">
+                    <div><strong>Company:</strong> {{ report.company.company_name }}</div>
+                    <div><strong>Report generated:</strong> {% now "M d, Y H:i" %}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endif %}
+{% endblock %}

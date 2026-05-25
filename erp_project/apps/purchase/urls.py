@@ -40,6 +40,7 @@ urlpatterns = [
     path('orders/create/', views.PurchaseOrderCreateView.as_view(), name='po_create'),
     path('orders/<int:pk>/', views.PurchaseOrderDetailView.as_view(), name='po_detail'),
     path('orders/<int:pk>/receive/', views.po_receive, name='po_receive'),
+    path('orders/<int:pk>/confirm/', views.po_confirm, name='po_confirm'),
     path('orders/<int:pk>/pdf/', views.po_pdf, name='po_pdf'),
     path('orders/<int:pk>/send-email/', views.po_send_email, name='po_send_email'),
     path('orders/<int:pk>/edit/', views.PurchaseOrderUpdateView.as_view(), name='po_edit'),

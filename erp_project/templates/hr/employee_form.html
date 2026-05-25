@@ -52,6 +52,7 @@
                 <div class="col-md-3">
                     <label class="form-label" for="{{ form.portal_role.id_for_label }}">{{ form.portal_role.label }}</label>
                     {{ form.portal_role }}
+                    {% if form.portal_role.help_text %}<small class="text-muted d-block mt-1">{{ form.portal_role.help_text }}</small>{% endif %}
                     {% if form.portal_role.errors %}<div class="text-danger small mt-1">{{ form.portal_role.errors|join:", " }}</div>{% endif %}
                 </div>
                 {% else %}
@@ -99,10 +100,9 @@
                     <label class="form-label">Designation</label>
                     <select name="designation" id="id_designation" class="form-select">
                         <option value="">-- Select Designation --</option>
-                        {% for desg in designations %}
-                        <option value="{{ desg.pk }}" {% if form.designation.value == desg.pk %}selected{% endif %}>{{ desg.name }}</option>
-                        {% endfor %}
                     </select>
+                    <small class="text-muted d-block mt-1">Designations are listed for the selected department only. ERP role auto-assigns when the role name matches (e.g. HR Manager → HR Manager role). Tune access under Settings → Roles.</small>
+                    {{ designation_options|json_script:"designation-options-data" }}
                     {% if form.designation.errors %}<div class="text-danger small mt-1">{{ form.designation.errors|join:", " }}</div>{% endif %}
                 </div>
                 <div class="col-md-3"><label class="form-label">Date of Joining</label>{{ form.date_of_joining }}</div>
@@ -277,10 +277,47 @@
             .catch(function () { hideBreakdown(); });
     }
 
+    var initialDesignation = '{{ form.designation.value|default:""|escapejs }}';
+
+    function filterDesignations() {
+        var deptEl = document.getElementById('id_department');
+        var desigEl = document.getElementById('id_designation');
+        var dataEl = document.getElementById('designation-options-data');
+        if (!deptEl || !desigEl || !dataEl) return;
+
+        var allOptions = JSON.parse(dataEl.textContent || '[]');
+        var deptId = deptEl.value || '';
+        var selected = desigEl.value || initialDesignation;
+        var placeholder = '-- Select Designation --';
+
+        desigEl.innerHTML = '';
+        var blank = document.createElement('option');
+        blank.value = '';
+        blank.textContent = placeholder;
+        desigEl.appendChild(blank);
+
+        allOptions.forEach(function (row) {
+            if (deptId && String(row.department_id) !== String(deptId)) {
+                return;
+            }
+            var opt = document.createElement('option');
+            opt.value = String(row.id);
+            opt.textContent = row.name;
+            if (selected && String(selected) === String(row.id)) {
+                opt.selected = true;
+            }
+            desigEl.appendChild(opt);
+        });
+    }
+
     document.addEventListener('DOMContentLoaded', function () {
         var loc = document.getElementById('id_location');
         toggleHrSections();
         if (loc) loc.addEventListener('change', toggleHrSections);
+
+        var deptEl = document.getElementById('id_department');
+        filterDesignations();
+        if (deptEl) deptEl.addEventListener('change', filterDesignations);
 
         var tplSel = document.getElementById('id_salary_template');
         var basicEl = document.getElementById('id_basic_salary');

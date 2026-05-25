@@ -12,10 +12,18 @@ from django.views.decorators.http import require_http_methods, require_POST
 from django.db.models import Q, Count
 import json
 
-from apps.projects.models import Project
-
 from .models import Customer, CustomerPublicUpload, CrmLeadKanbanStage
 from .forms import CustomerForm
+from .utils import (
+    crm_leads_restricted_to_assignee,
+    filter_customers_for_user,
+    get_crm_project_queryset,
+    get_sales_employee_queryset,
+    project_choice_label,
+    get_sales_employee_for_user,
+    salesperson_display_name,
+    user_can_access_customer,
+)
 from apps.core.mixins import PermissionRequiredMixin, CreatePermissionMixin, UpdatePermissionMixin, DeletePermissionMixin
 from apps.core.utils import PermissionChecker
 from apps.settings_app.models import AuditLog
@@ -53,7 +61,10 @@ class CustomerListView(PermissionRequiredMixin, ListView):
     paginate_by = 25
     
     def get_queryset(self):
-        queryset = Customer.objects.all()
+        queryset = filter_customers_for_user(
+            Customer.objects.select_related('assigned_salesperson', 'lead_kanban_stage'),
+            self.request.user,
+        )
         
         # Search
         search = self.request.GET.get('search')
@@ -83,10 +94,20 @@ class CustomerListView(PermissionRequiredMixin, ListView):
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['title'] = 'Customers'
+        user = self.request.user
+        sales_rep_only = crm_leads_restricted_to_assignee(user)
+        context['crm_sales_rep_only'] = sales_rep_only
+        context['title'] = 'My Leads' if sales_rep_only else 'Customers'
         context['form'] = CustomerForm(
-            projects_queryset=Project.objects.filter(is_active=True).order_by('name'),
+            projects_queryset=get_crm_project_queryset(),
+            user=user,
         )
+        context['salesman_choices'] = get_sales_employee_queryset()
+        context['salesman_choice_options'] = [
+            {'id': e.pk, 'label': salesperson_display_name(e)}
+            for e in context['salesman_choices']
+        ]
+        context['show_assign_salesman'] = not sales_rep_only
         context['can_create'] = self.request.user.is_superuser or PermissionChecker.has_permission(
             self.request.user, 'crm', 'create'
         )
@@ -97,14 +118,13 @@ class CustomerListView(PermissionRequiredMixin, ListView):
             self.request.user, 'crm', 'delete'
         )
         
-        # Summary stats
-        customers = Customer.objects.all()
+        # Summary stats (scoped for sales reps)
+        customers = filter_customers_for_user(Customer.objects.all(), user)
         context['total_customers'] = customers.count()
         context['active_customers'] = customers.filter(status='active').count()
         context['total_leads'] = customers.filter(customer_type='lead').count()
         context['prospects'] = customers.filter(status='prospect').count()
-        context['project_choices'] = Project.objects.filter(is_active=True).order_by('name')
-        context['scope_choices'] = Customer.SCOPE_CHOICES
+        context['project_choices'] = get_crm_project_queryset()
         context['crm_customer_type_choices'] = Customer.CUSTOMER_TYPE_CHOICES
         context['crm_status_choices'] = Customer.STATUS_CHOICES
 
@@ -122,11 +142,11 @@ class CustomerListView(PermissionRequiredMixin, ListView):
                 converts_to_customer=True,
             ).first()
         )
-        board_leads = (
+        board_leads = filter_customers_for_user(
             Customer.objects.filter(customer_type='lead', is_active=True)
-            .select_related('lead_kanban_stage')
-            .order_by('customer_number')
-        )
+            .select_related('lead_kanban_stage', 'assigned_salesperson'),
+            user,
+        ).order_by('customer_number')
         leads_by_stage = {s.id: [] for s in board_stages}
         unassigned = []
         for lead in board_leads:
@@ -139,9 +159,12 @@ class CustomerListView(PermissionRequiredMixin, ListView):
             {'stage': s, 'leads': leads_by_stage[s.id]} for s in board_stages
         ]
         context['kanban_leads_unassigned'] = unassigned
+        context['crm_show_customers_column'] = not sales_rep_only
         context['kanban_customers'] = (
-            Customer.objects.filter(customer_type='customer', is_active=True)
-            .order_by('name', 'customer_number')[:400]
+            [] if sales_rep_only else list(
+                Customer.objects.filter(customer_type='customer', is_active=True)
+                .order_by('name', 'customer_number')[:400]
+            )
         )
         context['can_configure_kanban'] = (
             self.request.user.is_superuser
@@ -159,10 +182,14 @@ class CustomerListView(PermissionRequiredMixin, ListView):
         form = CustomerForm(
             request.POST,
             request.FILES,
-            projects_queryset=Project.objects.filter(is_active=True).order_by('name'),
+            projects_queryset=get_crm_project_queryset(),
+            user=request.user,
         )
         if form.is_valid():
-            customer = form.save()
+            customer = form.save(commit=False)
+            if crm_leads_restricted_to_assignee(request.user):
+                customer.assigned_salesperson = get_sales_employee_for_user(request.user)
+            customer.save()
             log_action(request.user, 'create', 'Customer', customer.id, {
                 'name': customer.name,
                 'customer_number': customer.customer_number
@@ -174,6 +201,22 @@ class CustomerListView(PermissionRequiredMixin, ListView):
                     messages.error(request, f'{field}: {error}')
 
         return redirect('crm:customer_list')
+
+
+@login_required
+def crm_project_options(request):
+    """JSON list of projects for CRM customer form dropdowns."""
+    if not (
+        request.user.is_superuser
+        or PermissionChecker.has_permission(request.user, 'crm', 'view')
+    ):
+        return JsonResponse({'error': 'Permission denied.'}, status=403)
+
+    projects = [
+        {'id': p.pk, 'label': project_choice_label(p), 'name': p.name}
+        for p in get_crm_project_queryset()
+    ]
+    return JsonResponse({'projects': projects})
 
 
 @login_required
@@ -218,7 +261,7 @@ def crm_kanban_move(request):
             customer_type='lead',
             is_active=True,
         ).first()
-        if not cust:
+        if not cust or not user_can_access_customer(request.user, cust):
             return JsonResponse({'error': 'Lead not found.'}, status=404)
         cust.customer_type = 'customer'
         cust.lead_kanban_stage = None
@@ -233,7 +276,7 @@ def crm_kanban_move(request):
         return JsonResponse({'ok': True, 'converted': True})
 
     cust = Customer.objects.filter(pk=pk, is_active=True).first()
-    if not cust or cust.customer_type != 'lead':
+    if not cust or cust.customer_type != 'lead' or not user_can_access_customer(request.user, cust):
         return JsonResponse(
             {'error': 'Only active leads can be moved on the pipeline.'},
             status=400,
@@ -373,6 +416,9 @@ def customer_inline_update(request, pk):
         return HttpResponseNotAllowed(['POST'])
 
     customer = get_object_or_404(Customer, pk=pk)
+    if not user_can_access_customer(request.user, customer):
+        messages.error(request, 'You do not have access to this lead.')
+        return redirect('crm:customer_list')
 
     if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'crm', 'edit')):
         messages.error(request, 'Permission denied.')
@@ -414,8 +460,11 @@ class CustomerDetailView(PermissionRequiredMixin, DetailView):
     permission_type = 'view'
 
     def get_queryset(self):
-        return Customer.objects.select_related('primary_project', 'lead_kanban_stage').prefetch_related(
-            'projects', 'public_uploads'
+        return filter_customers_for_user(
+            Customer.objects.select_related(
+                'primary_project', 'lead_kanban_stage', 'assigned_salesperson',
+            ).prefetch_related('projects', 'public_uploads'),
+            self.request.user,
         )
     
     def get_context_data(self, **kwargs):
@@ -450,15 +499,22 @@ class CustomerUpdateView(UpdatePermissionMixin, UpdateView):
     success_url = reverse_lazy('crm:customer_list')
     module_name = 'crm'
 
+    def get_queryset(self):
+        return filter_customers_for_user(
+            Customer.objects.select_related('assigned_salesperson', 'primary_project'),
+            self.request.user,
+        )
+
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
-        kwargs['projects_queryset'] = Project.objects.filter(is_active=True).order_by('name')
+        kwargs['projects_queryset'] = get_crm_project_queryset()
+        kwargs['user'] = self.request.user
         return kwargs
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['title'] = f'Edit Customer: {self.object.name}'
-        context['project_choices'] = Project.objects.filter(is_active=True).order_by('name')
+        context['project_choices'] = get_crm_project_queryset()
         return context
     
     def form_valid(self, form):
@@ -483,6 +539,9 @@ class CustomerDeleteView(DeletePermissionMixin, DeleteView):
     model = Customer
     success_url = reverse_lazy('crm:customer_list')
     module_name = 'crm'
+
+    def get_queryset(self):
+        return filter_customers_for_user(Customer.objects.all(), self.request.user)
     
     def delete(self, request, *args, **kwargs):
         self.object = self.get_object()
@@ -502,6 +561,9 @@ class CustomerDeleteView(DeletePermissionMixin, DeleteView):
 def convert_to_customer(request, pk):
     """Convert a lead to a customer."""
     customer = get_object_or_404(Customer, pk=pk)
+    if not user_can_access_customer(request.user, customer):
+        messages.error(request, 'You do not have access to this lead.')
+        return redirect('crm:customer_list')
     
     if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'crm', 'edit')):
         messages.error(request, 'You do not have permission to convert leads.')

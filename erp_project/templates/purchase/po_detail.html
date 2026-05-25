@@ -24,6 +24,13 @@
             <a href="{% url 'purchase:po_receive' po.pk %}" class="btn btn-success">
                 <i class="fas fa-dolly me-2"></i>Receive items
             </a>
+            {% elif can_confirm_po %}
+            <form method="post" action="{% url 'purchase:po_confirm' po.pk %}" class="d-inline" onsubmit="return confirm('Confirm this purchase order so goods can be received?');">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-success">
+                    <i class="fas fa-check-circle me-2"></i>Confirm PO
+                </button>
+            </form>
             {% endif %}
             {% if can_edit %}
             <a href="{% url 'purchase:po_edit' po.pk %}" class="btn btn-primary">
@@ -36,6 +43,15 @@
 
 <div class="row g-4">
     <div class="col-lg-8">
+        {% if po.status == 'draft' %}
+        <div class="alert alert-info d-flex align-items-start gap-2 mb-4">
+            <i class="fas fa-info-circle mt-1"></i>
+            <div>
+                <strong>Draft purchase order.</strong>
+                Confirm the PO first — then the green <strong>Receive items</strong> button will appear so you can register stock (and model numbers for serial-tracked items).
+            </div>
+        </div>
+        {% endif %}
         <div class="card mb-4">
             <div class="card-body">
                 <div class="row g-4">
@@ -86,7 +102,17 @@
                         <tbody>
                             {% for item in po.items.all %}
                             <tr>
-                                <td>{{ item.description }}</td>
+                                <td>
+                                    {{ item.description }}
+                                    {% if item.inventory_item %}
+                                    <div class="small text-muted">{{ item.inventory_item.item_code }}</div>
+                                    {% if item.inventory_item.track_by_serial %}
+                                    <span class="badge bg-info text-dark mt-1">Serial tracked</span>
+                                    {% elif item.inventory_item.item_type == 'product' %}
+                                    <span class="badge bg-light text-muted border mt-1">Serial tracking off</span>
+                                    {% endif %}
+                                    {% endif %}
+                                </td>
                                 <td class="text-center">{{ item.quantity|floatformat:2 }}</td>
                                 <td class="text-center">{{ item.quantity_received|floatformat:2 }}</td>
                                 <td class="text-center {% if item.quantity_remaining > 0 %}fw-medium{% endif %}">{{ item.quantity_remaining|floatformat:2 }}</td>

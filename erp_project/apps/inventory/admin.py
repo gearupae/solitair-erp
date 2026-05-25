@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Category, Warehouse, StorageLocation, Item, ItemGroup, Stock, StockMovement
+from .models import Category, Warehouse, StorageLocation, Item, ItemGroup, ItemSerialNumber, Stock, StockMovement
 
 
 @admin.register(Category)
@@ -49,6 +49,14 @@ class ItemAdmin(admin.ModelAdmin):
     item_groups_display.short_description = 'Groups'
     search_fields = ['item_code', 'name']
     readonly_fields = ['item_code']
+
+
+@admin.register(ItemSerialNumber)
+class ItemSerialNumberAdmin(admin.ModelAdmin):
+    list_display = ['model_number', 'item', 'status', 'warehouse', 'date_received', 'assigned_project']
+    list_filter = ['status', 'warehouse']
+    search_fields = ['model_number', 'item__item_code', 'item__name']
+    raw_id_fields = ['item', 'receipt_line', 'warehouse', 'assigned_project', 'delivered_by']
 
 
 @admin.register(Stock)

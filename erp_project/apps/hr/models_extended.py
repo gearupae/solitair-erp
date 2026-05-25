@@ -208,8 +208,7 @@ class AttendanceRecord(BaseModel):
     )
 
     class Meta:
-        ordering = ['-date', 'employee_id']
-        unique_together = [['employee', 'date']]
+        ordering = ['-date', '-check_in', '-pk']
 
     def __str__(self):
         return f'{self.employee.employee_code} {self.date}'

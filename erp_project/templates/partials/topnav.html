@@ -22,6 +22,51 @@
         background-color: rgba(255, 255, 255, 0.15);
         color: #fff;
     }
+    /* Notification bell dropdown — full text, no bleed-through from page buttons */
+    .navbar {
+        overflow: visible;
+    }
+    .navbar .navbar-collapse {
+        overflow: visible;
+    }
+    .navbar .notification-dropdown-menu {
+        --bs-dropdown-min-width: 22rem;
+        width: min(22rem, calc(100vw - 1.5rem));
+        max-width: min(22rem, calc(100vw - 1.5rem));
+        max-height: min(70vh, 28rem);
+        overflow-x: hidden;
+        overflow-y: auto;
+        z-index: 1060 !important;
+        padding: 0.35rem 0.5rem 0.5rem;
+        box-shadow: 0 0.75rem 1.5rem rgba(0, 0, 0, 0.45);
+    }
+    .navbar .notification-dropdown-menu .notification-item {
+        white-space: normal;
+        word-wrap: break-word;
+        overflow-wrap: anywhere;
+        padding: 0.65rem 0.75rem;
+        line-height: 1.4;
+    }
+    .navbar .notification-dropdown-menu .notification-item__title {
+        color: #fff;
+        font-size: 0.8125rem;
+        font-weight: 600;
+        margin-bottom: 0.25rem;
+    }
+    .navbar .notification-dropdown-menu .notification-item__message {
+        color: rgba(255, 255, 255, 0.75);
+        font-size: 0.8125rem;
+        margin-bottom: 0.3rem;
+    }
+    .navbar .notification-dropdown-menu .notification-item__time {
+        color: rgba(255, 255, 255, 0.45);
+        font-size: 0.7rem;
+    }
+    .navbar .notification-dropdown-menu .notification-item.is-unread {
+        background: rgba(255, 255, 255, 0.06);
+        border-left: 3px solid rgba(13, 110, 253, 0.85);
+        padding-left: calc(0.75rem - 3px);
+    }
 </style>
 <nav class="navbar navbar-expand-lg navbar-dark bg-dark sticky-top">
     <div class="container-fluid px-2">
@@ -42,13 +87,13 @@
                 {% if is_superuser or 'crm' in user_permissions %}
                 <li class="nav-item">
                     <a class="nav-link {% if 'crm' in request.path %}active{% endif %}" href="{% url 'crm:customer_list' %}">
-                        <i class="fas fa-users me-1"></i>CRM
+                        <i class="fas fa-users me-1"></i>{% if crm_sales_rep_only %}My Leads{% else %}CRM{% endif %}
                     </a>
                 </li>
                 {% endif %}
                 
                 <!-- Sales -->
-                {% if is_superuser or 'sales' in user_permissions %}
+                {% if not crm_sales_rep_only %}{% if is_superuser or 'sales' in user_permissions %}
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle {% if 'sales' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
                         <i class="fas fa-shopping-cart me-1"></i>Sales
@@ -66,10 +111,52 @@
                         </li>
                     </ul>
                 </li>
-                {% endif %}
+                {% endif %}{% endif %}
+                
+                <!-- Reports -->
+                {% if not crm_sales_rep_only %}{% if is_superuser or 'reports' in user_permissions %}
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle {% if 'reports' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
+                        <i class="fas fa-chart-line me-1"></i>Reports
+                    </a>
+                    <ul class="dropdown-menu dropdown-menu-dark">
+                        <li>
+                            <a class="dropdown-item" href="{% url 'reports:index' %}">
+                                <i class="fas fa-th-large me-2"></i>All Reports
+                            </a>
+                        </li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'reports:lead_report' %}">
+                                <i class="fas fa-user-plus me-2"></i>Lead Report
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'reports:sales_report' %}">
+                                <i class="fas fa-file-invoice-dollar me-2"></i>Sales Report
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'reports:project_report_internal' %}">
+                                <i class="fas fa-hard-hat me-2"></i>Project Profit and Loss Report
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'reports:project_report_customer' %}">
+                                <i class="fas fa-users me-2"></i>Customer Progress Report
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'reports:project_report_period' %}">
+                                <i class="fas fa-calendar-alt me-2"></i>Period Wise Report
+                            </a>
+                        </li>
+                    </ul>
+                </li>
+                {% endif %}{% endif %}
                 
                 <!-- Purchase (includes Service Requests) -->
-                {% if is_superuser or 'purchase' in user_permissions or 'service_request' in user_permissions %}
+                {% if not crm_sales_rep_only %}{% if is_superuser or 'purchase' in user_permissions or 'service_request' in user_permissions %}
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle {% if 'purchase' in request.path or 'service-request' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
                         <i class="fas fa-truck me-1"></i>Purchase
@@ -114,10 +201,10 @@
                         </li>
                     </ul>
                 </li>
-                {% endif %}
+                {% endif %}{% endif %}
                 
                 <!-- Inventory -->
-                {% if is_superuser or 'inventory' in user_permissions %}
+                {% if not crm_sales_rep_only %}{% if is_superuser or 'inventory' in user_permissions %}
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle {% if 'inventory' in request.path or 'stock-take' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
                         <i class="fas fa-boxes me-1"></i>Inventory
@@ -177,10 +264,10 @@
                         </li>
                     </ul>
                 </li>
-                {% endif %}
+                {% endif %}{% endif %}
                 
                 <!-- Fixed Assets (+ Fleet) -->
-                {% if is_superuser or 'assets' in user_permissions or 'finance' in user_permissions or 'fleet' in user_permissions %}
+                {% if 'assets' not in nav_hidden_modules %}{% if not crm_sales_rep_only %}{% if is_superuser or 'assets' in user_permissions or 'finance' in user_permissions or 'fleet' in user_permissions %}
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle {% if 'assets' in request.path or '/fleet/' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
                         <i class="fas fa-building me-1"></i>Assets
@@ -227,10 +314,10 @@
                         {% endif %}
                     </ul>
                 </li>
-                {% endif %}
+                {% endif %}{% endif %}{% endif %}
                 
                 <!-- Property Management -->
-                {% if is_superuser or 'property' in user_permissions %}
+                {% if 'property' not in nav_hidden_modules %}{% if not crm_sales_rep_only %}{% if is_superuser or 'property' in user_permissions %}
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle {% if 'property' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
                         <i class="fas fa-home me-1"></i>Property
@@ -282,10 +369,10 @@
                         </li>
                     </ul>
                 </li>
-                {% endif %}
+                {% endif %}{% endif %}{% endif %}
                 
                 <!-- Finance (with nested Reports submenu) -->
-                {% if is_superuser or 'finance' in user_permissions %}
+                {% if 'finance' not in nav_hidden_modules %}{% if not crm_sales_rep_only %}{% if is_superuser or 'finance' in user_permissions %}
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle {% if 'finance' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
                         <i class="fas fa-coins me-1"></i>Finance
@@ -400,10 +487,10 @@
                         </li>
                     </ul>
                 </li>
-                {% endif %}
+                {% endif %}{% endif %}{% endif %}
                 
                 <!-- Projects -->
-                {% if is_superuser or 'projects' in user_permissions %}
+                {% if 'projects' not in nav_hidden_modules %}{% if not crm_sales_rep_only %}{% if is_superuser or 'projects' in user_permissions %}
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle {% if 'projects' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
                         <i class="fas fa-project-diagram me-1"></i>Projects
@@ -427,10 +514,10 @@
                         </li>
                     </ul>
                 </li>
-                {% endif %}
+                {% endif %}{% endif %}{% endif %}
                 
                 <!-- HR -->
-                {% if is_superuser or 'hr' in user_permissions %}
+                {% if 'hr' not in nav_hidden_modules %}{% if not crm_sales_rep_only %}{% if is_superuser or 'hr' in user_permissions %}
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle {% if '/hr/' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
                         <i class="fas fa-user-friends me-1"></i>HR
@@ -450,6 +537,11 @@
                         <li>
                             <a class="dropdown-item" href="{% url 'hr:department_list' %}">
                                 <i class="fas fa-sitemap me-2"></i>Departments
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'hr:designation_list' %}">
+                                <i class="fas fa-user-tag me-2"></i>Designations
                             </a>
                         </li>
                         <li><hr class="dropdown-divider"></li>
@@ -508,10 +600,10 @@
                         </li>
                     </ul>
                 </li>
-                {% endif %}
+                {% endif %}{% endif %}{% endif %}
                 
                 <!-- Documents (includes Contracts as submenu) -->
-                {% if is_superuser or 'documents' in user_permissions or 'contracts' in user_permissions %}
+                {% if 'documents' not in nav_hidden_modules %}{% if not crm_sales_rep_only %}{% if is_superuser or 'documents' in user_permissions or 'contracts' in user_permissions %}
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle {% if 'documents' in request.path or '/contracts/' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
                         <i class="fas fa-folder-open me-1"></i>Documents
@@ -541,13 +633,13 @@
                         {% endif %}
                     </ul>
                 </li>
-                {% endif %}
+                {% endif %}{% endif %}{% endif %}
             </ul>
             
             <!-- Right Side -->
             <ul class="navbar-nav">
                 <!-- Settings Dropdown (Icon only to save space) -->
-                {% if is_superuser or 'settings' in user_permissions %}
+                {% if not crm_sales_rep_only %}{% if is_superuser or 'settings' in user_permissions %}
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle {% if 'settings' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown" title="Settings">
                         <i class="fas fa-cog"></i>
@@ -592,7 +684,7 @@
                         </li>
                     </ul>
                 </li>
-                {% endif %}
+                {% endif %}{% endif %}
                 
                 <!-- Notifications (in-app; see apps.settings_app.Notification) -->
                 {% if user.is_authenticated %}
@@ -605,25 +697,25 @@
                         </span>
                         {% endif %}
                     </a>
-                    <ul class="dropdown-menu dropdown-menu-dark dropdown-menu-end" style="width: 320px; max-height: 70vh; overflow-y: auto;">
-                        <li><h6 class="dropdown-header mb-0">Notifications</h6></li>
+                    <ul class="dropdown-menu dropdown-menu-dark dropdown-menu-end notification-dropdown-menu">
+                        <li><h6 class="dropdown-header mb-0 px-2">Notifications</h6></li>
                         {% for n in header_notifications %}
                         <li>
-                            <a class="dropdown-item py-2 {% if not n.is_read %}fw-semibold{% endif %}" href="{% url 'notification_open' n.pk %}">
-                                <div class="small text-white">{{ n.title }}</div>
+                            <a class="dropdown-item notification-item {% if not n.is_read %}is-unread{% endif %}" href="{% url 'notification_open' n.pk %}">
+                                <div class="notification-item__title">{{ n.title }}</div>
                                 {% if n.message %}
-                                <div class="text-muted" style="font-size: 0.8rem;">{{ n.message|truncatechars:120 }}</div>
+                                <div class="notification-item__message">{{ n.message }}</div>
                                 {% endif %}
-                                <div class="text-muted" style="font-size: 0.7rem;">{{ n.created_at|naturaltime }}</div>
+                                <div class="notification-item__time">{{ n.created_at|naturaltime }}</div>
                             </a>
                         </li>
                         {% empty %}
-                        <li><span class="dropdown-item-text text-muted small py-2">No notifications yet.</span></li>
+                        <li><span class="dropdown-item-text text-muted small py-2 px-2">No unread notifications.</span></li>
                         {% endfor %}
                         {% if unread_notification_count %}
                         <li><hr class="dropdown-divider my-1"></li>
-                        <li>
-                            <form method="post" action="{% url 'notifications_mark_all_read' %}" class="px-2 pb-1">
+                        <li class="px-2 pb-1">
+                            <form method="post" action="{% url 'notifications_mark_all_read' %}">
                                 {% csrf_token %}
                                 <input type="hidden" name="next" value="{{ request.get_full_path }}">
                                 <button type="submit" class="btn btn-sm btn-outline-light w-100">Mark all read</button>
@@ -658,9 +750,12 @@
                         </li>
                         <li><hr class="dropdown-divider"></li>
                         <li>
-                            <a class="dropdown-item text-danger" href="{% url 'logout' %}">
-                                <i class="fas fa-sign-out-alt me-2"></i>Logout
-                            </a>
+                            <form method="post" action="{% url 'logout' %}" class="m-0">
+                                {% csrf_token %}
+                                <button type="submit" class="dropdown-item text-danger border-0 bg-transparent w-100 text-start">
+                                    <i class="fas fa-sign-out-alt me-2"></i>Logout
+                                </button>
+                            </form>
                         </li>
                     </ul>
                 </li>

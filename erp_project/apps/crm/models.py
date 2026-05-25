@@ -2,6 +2,7 @@
 CRM Models - Customer/Lead Management
 """
 from decimal import Decimal
+from django.conf import settings
 from django.db import models
 from django.utils.text import slugify
 from apps.core.models import BaseModel
@@ -67,6 +68,14 @@ class Customer(BaseModel):
         ('fls', 'FLS'),
         ('mep', 'MEP'),
     ]
+
+    JOB_TYPE_CHOICES = [
+        ('', '—'),
+        ('amc', 'AMC'),
+        ('project', 'Project'),
+        ('direct_sale', 'Direct Sale'),
+        ('maintenance', 'Maintenance'),
+    ]
     
     customer_number = models.CharField(max_length=50, unique=True, editable=False)
     name = models.CharField(max_length=200)
@@ -84,7 +93,13 @@ class Customer(BaseModel):
     )
     website = models.URLField(blank=True, max_length=500)
     scope = models.JSONField(default=list, blank=True, help_text='Disciplines: FF, FA, EM, FLS, MEP')
-    job_type = models.CharField(max_length=120, blank=True)
+    job_type = models.CharField(
+        max_length=20,
+        blank=True,
+        default='',
+        choices=JOB_TYPE_CHOICES,
+        verbose_name='Job type',
+    )
     primary_project = models.ForeignKey(
         'projects.Project',
         on_delete=models.SET_NULL,
@@ -105,6 +120,15 @@ class Customer(BaseModel):
         related_name='leads',
         limit_choices_to={'converts_to_customer': False},
         help_text='Pipeline column for leads (customers do not use this).',
+    )
+    assigned_salesperson = models.ForeignKey(
+        'hr.Employee',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='assigned_crm_leads',
+        verbose_name='Assigned salesman',
+        help_text='Sales employee responsible for this lead (from HR → Employees).',
     )
     business_segment = models.CharField(
         max_length=10,
@@ -169,6 +193,13 @@ class Customer(BaseModel):
             return []
         labels = dict(self.SCOPE_CHOICES)
         return [labels.get(code, code) for code in self.scope]
+
+    @property
+    def assigned_salesman_label(self):
+        if not self.assigned_salesperson_id:
+            return ''
+        from apps.crm.utils import salesperson_display_name
+        return salesperson_display_name(self.assigned_salesperson)
 
 
 class CustomerPublicUpload(BaseModel):
