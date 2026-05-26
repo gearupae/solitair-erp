@@ -65,6 +65,36 @@ class Employee(BaseModel):
     )
     LOCATION_CHOICES = [('uae', 'UAE'), ('ksa', 'KSA'), ('other', 'Other')]
     location = models.CharField(max_length=10, choices=LOCATION_CHOICES, default='uae')
+
+    CONTRACT_TYPE_CHOICES = [
+        ('limited', 'Limited (fixed-term)'),
+        ('unlimited', 'Unlimited'),
+    ]
+    contract_type = models.CharField(
+        max_length=20,
+        choices=CONTRACT_TYPE_CHOICES,
+        default='limited',
+        blank=True,
+        help_text='Used for legacy pre-2022 unlimited-contract resignation rules.',
+    )
+    TERMINATION_TYPE_CHOICES = [
+        ('', 'Not applicable'),
+        ('resigned', 'Resigned'),
+        ('terminated', 'Terminated'),
+        ('redundancy', 'Redundancy'),
+        ('contract_end', 'Contract end'),
+    ]
+    termination_type = models.CharField(
+        max_length=20,
+        choices=TERMINATION_TYPE_CHOICES,
+        blank=True,
+        default='',
+        help_text='Set when employment ends; used for EOSG resignation adjustments.',
+    )
+    is_uae_national = models.BooleanField(
+        default=False,
+        help_text='UAE nationals are covered under GPSSA; end-of-service gratuity does not apply.',
+    )
     
     # UAE Specific
     emirates_id = models.CharField(max_length=50, blank=True)
@@ -489,6 +519,7 @@ from apps.hr.models_extended import (  # noqa: E402
     EmployeeHRProfile,
     GOSIRecord,
     GratuityRecord,
+    GratuitySnapshot,
     KSACompliance,
     PayrollAllowanceLine,
     PayrollDeductionLine,

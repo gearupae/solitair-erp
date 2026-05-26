@@ -14,6 +14,7 @@ from .models import (
     EmployeeHRProfile,
     GOSIRecord,
     GratuityRecord,
+    GratuitySnapshot,
     KSACompliance,
     LeaveBalance,
     LeaveRequest,
@@ -182,6 +183,12 @@ class KSAComplianceAdmin(admin.ModelAdmin):
 @admin.register(GratuityRecord)
 class GratuityRecordAdmin(admin.ModelAdmin):
     list_display = ['employee', 'payroll', 'as_of_date', 'provision_amount']
+
+
+@admin.register(GratuitySnapshot)
+class GratuitySnapshotAdmin(admin.ModelAdmin):
+    list_display = ['employee', 'snapshot_date', 'years_of_service', 'final_gratuity']
+    raw_id_fields = ['employee']
 
 
 @admin.register(GOSIRecord)

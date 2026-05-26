@@ -81,31 +81,33 @@
         </div>
         {% endif %}
 
-        {% if employee.location == 'ksa' %}
-        <div class="card mb-4" id="ksa-compliance">
-            <div class="card-header"><h6 class="mb-0 fw-semibold">KSA compliance</h6></div>
+        {% if employee.location == 'uae' %}
+        <div class="card mb-4 border-warning border-opacity-25" id="gratuity-summary">
+            <div class="card-header bg-warning bg-opacity-10 d-flex justify-content-between align-items-center">
+                <h6 class="mb-0 fw-semibold">Gratuity summary (UAE EOSG)</h6>
+                {% if gratuity_eligible %}
+                <button type="button" class="btn btn-sm btn-outline-dark" data-bs-toggle="modal" data-bs-target="#gratuityCalculatorModal">
+                    <i class="fas fa-calculator me-1"></i>Calculator
+                </button>
+                {% endif %}
+            </div>
             <div class="card-body">
+                {% if gratuity_national_message %}
+                <p class="mb-0 text-muted">{{ gratuity_national_message }}</p>
+                {% elif gratuity_eligible %}
                 <div class="row g-3">
-                    <div class="col-md-6"><small class="text-muted d-block">Iqama</small>{{ ksa_compliance.iqama_number|default:"-" }} · {{ ksa_compliance.iqama_expiry|date:"d/m/Y"|default:"-" }}
-                        {% if ksa_compliance.iqama_expiry %}<span class="badge ms-1 {% if ksa_compliance.iqama_expiry_status == 'red' %}bg-danger{% elif ksa_compliance.iqama_expiry_status == 'amber' %}bg-warning text-dark{% elif ksa_compliance.iqama_expiry_status == 'green' %}bg-success{% else %}bg-secondary{% endif %}">{{ ksa_compliance.iqama_expiry_status }}</span>{% endif %}
-                        <div class="small text-muted mt-1">Profession on Iqama: {{ ksa_compliance.iqama_profession|default:"-" }}</div>
+                    <div class="col-md-4"><small class="text-muted d-block">Date of joining</small><span class="fw-medium">{{ employee.date_of_joining|date:"d/m/Y"|default:"—" }}</span></div>
+                    <div class="col-md-4"><small class="text-muted d-block">Years of service (today)</small><span class="fw-medium">{{ gratuity_terminated.years_of_service_display }}</span></div>
+                    <div class="col-md-4"><small class="text-muted d-block">Daily rate</small><span class="fw-medium">AED {{ gratuity_terminated.daily_rate|floatformat:2 }}</span></div>
+                    <div class="col-md-4"><small class="text-muted d-block">If resigned today</small><span class="fw-medium">AED {{ gratuity_resigned.final_gratuity|floatformat:2 }}</span></div>
+                    <div class="col-md-4"><small class="text-muted d-block">If terminated today</small><span class="fw-medium">AED {{ gratuity_terminated.final_gratuity|floatformat:2 }}</span></div>
+                    <div class="col-md-4"><small class="text-muted d-block">Cap applied (2× annual basic)</small>
+                        {% if gratuity_terminated.cap_applied %}<span class="badge bg-warning text-dark">Yes</span>{% else %}<span class="badge bg-light text-dark">No</span>{% endif %}
                     </div>
-                    <div class="col-md-6"><small class="text-muted d-block">Work permit</small>{{ ksa_compliance.work_permit_number|default:"-" }} · {{ ksa_compliance.work_permit_expiry|date:"d/m/Y"|default:"-" }}
-                        {% if ksa_compliance.work_permit_expiry %}<span class="badge ms-1 {% if ksa_compliance.work_permit_expiry_status == 'red' %}bg-danger{% elif ksa_compliance.work_permit_expiry_status == 'amber' %}bg-warning text-dark{% elif ksa_compliance.work_permit_expiry_status == 'green' %}bg-success{% else %}bg-secondary{% endif %}">{{ ksa_compliance.work_permit_expiry_status }}</span>{% endif %}
-                        {% if ksa_compliance.work_permit_classification %}<div class="small">{{ ksa_compliance.get_work_permit_classification_display }}</div>{% endif %}
-                    </div>
-                    <div class="col-md-6"><small class="text-muted d-block">Passport</small>{{ ksa_compliance.passport_number|default:"-" }} · {{ ksa_compliance.passport_expiry|date:"d/m/Y"|default:"-" }}
-                        {% if ksa_compliance.passport_expiry %}<span class="badge ms-1 {% if ksa_compliance.passport_expiry_status == 'red' %}bg-danger{% elif ksa_compliance.passport_expiry_status == 'amber' %}bg-warning text-dark{% elif ksa_compliance.passport_expiry_status == 'green' %}bg-success{% else %}bg-secondary{% endif %}">{{ ksa_compliance.passport_expiry_status }}</span>{% endif %}
-                    </div>
-                    <div class="col-md-6"><small class="text-muted d-block">Medical insurance</small>{{ ksa_compliance.medical_insurance_provider|default:"-" }}
-                        <br/>Expires {{ ksa_compliance.medical_insurance_expiry|date:"d/m/Y"|default:"-" }}
-                        {% if ksa_compliance.medical_insurance_expiry %}<span class="badge ms-1 {% if ksa_compliance.medical_insurance_expiry_status == 'red' %}bg-danger{% elif ksa_compliance.medical_insurance_expiry_status == 'amber' %}bg-warning text-dark{% elif ksa_compliance.medical_insurance_expiry_status == 'green' %}bg-success{% else %}bg-secondary{% endif %}">{{ ksa_compliance.medical_insurance_expiry_status }}</span>{% endif %}
-                    </div>
-                    <div class="col-md-6"><small class="text-muted d-block">Muqeem / Absher</small>{{ ksa_compliance.muqeem_number|default:"-" }} / {{ ksa_compliance.absher_id|default:"-" }}</div>
-                    <div class="col-md-6"><small class="text-muted d-block">Nationality / GOSI</small>{{ ksa_compliance.get_nationality_display }} · {{ ksa_compliance.gosi_number|default:"-" }} · GOSI payroll: {% if ksa_compliance.gosi_applicable %}Yes{% else %}No{% endif %}</div>
-                    <div class="col-md-6"><small class="text-muted d-block">Nitaqat</small>{{ ksa_compliance.get_nitaqat_category_display|default:"-" }}</div>
-                    <div class="col-md-6"><small class="text-muted d-block">QIWA / Mudad</small>QIWA registered: {% if ksa_compliance.qiwa_contract_registered %}Yes{% else %}No{% endif %} · Mudad WPS: {% if ksa_compliance.mudad_wps_enrolled %}Yes{% else %}No{% endif %}</div>
                 </div>
+                {% else %}
+                <p class="text-muted mb-0">Gratuity applies to UAE employees only.</p>
+                {% endif %}
             </div>
         </div>
         {% endif %}
@@ -171,4 +173,92 @@
         </div>
     </div>
 </div>
+
+{% if gratuity_eligible %}
+<div class="modal fade" id="gratuityCalculatorModal" tabindex="-1" aria-labelledby="gratuityCalculatorLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="gratuityCalculatorLabel">Gratuity calculator — {{ employee.full_name }}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p class="small text-muted">Hypothetical UAE EOSG — nothing is saved.</p>
+                <div class="row g-3 mb-3">
+                    <div class="col-md-6">
+                        <label class="form-label" for="gratuityCalcDate">Termination date</label>
+                        <input type="date" class="form-control" id="gratuityCalcDate" value="{% now 'Y-m-d' %}">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label" for="gratuityCalcType">Termination type</label>
+                        <select class="form-select" id="gratuityCalcType">
+                            <option value="resigned">Resigned</option>
+                            <option value="terminated" selected>Terminated</option>
+                            <option value="redundancy">Redundancy</option>
+                            <option value="contract_end">Contract end</option>
+                        </select>
+                    </div>
+                </div>
+                <button type="button" class="btn btn-primary btn-sm" id="gratuityCalcRun"><i class="fas fa-sync me-1"></i>Calculate</button>
+                <div id="gratuityCalcResult" class="mt-4 d-none">
+                    <div class="table-responsive">
+                        <table class="table table-sm table-bordered mb-0">
+                            <tbody>
+                                <tr><td class="text-muted">Years of service</td><td id="gcYears">—</td></tr>
+                                <tr><td class="text-muted">Daily rate</td><td id="gcDaily">—</td></tr>
+                                <tr><td class="text-muted">Raw gratuity (after cap)</td><td id="gcRaw">—</td></tr>
+                                <tr><td class="text-muted">Adjustment factor</td><td id="gcFactor">—</td></tr>
+                                <tr class="table-warning"><td class="fw-semibold">Final gratuity</td><td class="fw-bold" id="gcFinal">—</td></tr>
+                                <tr><td class="text-muted">Cap applied</td><td id="gcCap">—</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div id="gratuityCalcError" class="alert alert-danger mt-3 d-none mb-0"></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+{% if gratuity_eligible %}
+<script>
+(function () {
+    var apiUrl = "{% url 'hr:employee_gratuity_calculator' employee.pk %}";
+    var btn = document.getElementById('gratuityCalcRun');
+    if (!btn) return;
+    btn.addEventListener('click', function () {
+        var termDate = document.getElementById('gratuityCalcDate').value;
+        var termType = document.getElementById('gratuityCalcType').value;
+        var errBox = document.getElementById('gratuityCalcError');
+        var resBox = document.getElementById('gratuityCalcResult');
+        errBox.classList.add('d-none');
+        var qs = new URLSearchParams({ termination_date: termDate, termination_type: termType });
+        fetch(apiUrl + '?' + qs.toString(), { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (!data.ok) {
+                    errBox.textContent = data.error || 'Could not calculate gratuity.';
+                    errBox.classList.remove('d-none');
+                    resBox.classList.add('d-none');
+                    return;
+                }
+                document.getElementById('gcYears').textContent = data.years_of_service_display + ' (' + data.years_of_service + ' yrs)';
+                document.getElementById('gcDaily').textContent = 'AED ' + data.daily_rate;
+                document.getElementById('gcRaw').textContent = 'AED ' + data.raw_gratuity;
+                document.getElementById('gcFactor').textContent = data.adjustment_factor;
+                document.getElementById('gcFinal').textContent = 'AED ' + data.final_gratuity;
+                document.getElementById('gcCap').textContent = data.cap_applied ? 'Yes' : 'No';
+                resBox.classList.remove('d-none');
+            })
+            .catch(function () {
+                errBox.textContent = 'Network error.';
+                errBox.classList.remove('d-none');
+            });
+    });
+})();
+</script>
+{% endif %}
 {% endblock %}

@@ -81,13 +81,15 @@ class EmployeeForm(forms.ModelForm):
             'department',
             'designation',
             'company',
-            'location',
             'date_of_birth',
             'date_of_joining',
             'probation_period_days',
             'status',
             'basic_salary',
             'salary_template',
+            'contract_type',
+            'termination_type',
+            'is_uae_national',
             'emirates_id',
             'visa_number',
             'visa_expiry',
@@ -187,11 +189,13 @@ class EmployeeForm(forms.ModelForm):
             'Job title for HR/org chart. The matching ERP access role is assigned automatically when a login exists.'
         )
 
-        company_qs = Company.objects.filter(is_active=True)
+        company_qs = Company.objects.filter(is_active=True).filter(
+            Q(country='uae') | Q(country='')
+        )
         if self.instance and self.instance.pk and self.instance.company_id:
             company_qs = Company.objects.filter(
                 Q(is_active=True) | Q(pk=self.instance.company_id)
-            )
+            ).filter(Q(country='uae') | Q(country='') | Q(pk=self.instance.company_id))
         self.fields['company'].queryset = company_qs.order_by('name')
         self.fields['company'].empty_label = '-- Select Company --'
 
@@ -204,11 +208,14 @@ class EmployeeForm(forms.ModelForm):
                 'status',
                 'gender',
                 'company',
-                'location',
                 'user',
                 'portal_role',
+                'contract_type',
+                'termination_type',
             ]:
                 field.widget.attrs['class'] = 'form-select'
+            elif name == 'is_uae_national':
+                field.widget.attrs['class'] = 'form-check-input'
             elif name in ('date_of_birth', 'date_of_joining', 'visa_expiry'):
                 field.input_formats = ['%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y']
             else:
@@ -257,6 +264,13 @@ class EmployeeForm(forms.ModelForm):
 
         validate_emirates_id_format(value)
         return value
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        instance.location = 'uae'
+        if commit:
+            instance.save()
+        return instance
 
 
 class EmployeeBankDetailForm(forms.ModelForm):

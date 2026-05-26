@@ -10,7 +10,11 @@ from calendar import monthrange
 from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 
-from dateutil.relativedelta import relativedelta
+from apps.hr.uae_gratuity import (
+    TERMINATION_TERMINATED,
+    calculate_monthly_gratuity_provision,
+    calculate_uae_gratuity,
+)
 from django.db import transaction
 from django.db.models import Sum
 
@@ -74,26 +78,23 @@ def _month_first(d: date) -> date:
 
 
 def _years_of_service(join: date | None, as_of: date) -> Decimal:
-    if not join:
-        return Decimal('0')
-    if join > as_of:
-        return Decimal('0')
-    delta = relativedelta(as_of, join)
-    years = delta.years + delta.months / Decimal('12') + delta.days / Decimal('365.25')
-    return Decimal(str(round(float(years), 4)))
+    from apps.hr.uae_gratuity import years_of_service_decimal
+
+    return years_of_service_decimal(join, as_of)
 
 
 def calculate_gratuity_uae(basic_monthly: Decimal, years_of_service: Decimal) -> Decimal:
-    """UAE-style provision (informational)."""
+    """Legacy helper — full accrued gratuity from basic and years (no cap/resignation)."""
+    daily = (basic_monthly / Decimal('30')).quantize(Decimal('0.0001'), rounding=ROUND_HALF_UP)
     if years_of_service < 1:
         return Decimal('0').quantize(Decimal('0.01'))
-    daily = (basic_monthly / Decimal('30')).quantize(Decimal('0.0001'), rounding=ROUND_HALF_UP)
     if years_of_service <= 5:
         prov = daily * Decimal('21') * years_of_service
     else:
         y = years_of_service
         prov = daily * Decimal('21') * Decimal('5') + daily * Decimal('30') * (y - Decimal('5'))
-    return prov.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    cap = (basic_monthly * Decimal('24')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    return min(prov.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP), cap)
 
 
 @transaction.atomic
@@ -338,16 +339,20 @@ def apply_payroll_computations(payroll: Payroll) -> None:
 
     as_of_day = monthrange(payroll.month.year, payroll.month.month)[1]
     as_of_date = date(payroll.month.year, payroll.month.month, as_of_day)
-    if entity == 'uae' and (uc is None or uc.gratuity_applicable):
+    if entity == 'uae' and (uc is None or uc.gratuity_applicable) and not getattr(emp, 'is_uae_national', False):
         yrs = _years_of_service(emp.date_of_joining, as_of_date)
-        grat = calculate_gratuity_uae(basic, yrs)
+        monthly_prov = calculate_monthly_gratuity_provision(emp, as_of_date)
+        eosg = calculate_uae_gratuity(emp, as_of_date=as_of_date, termination_type=TERMINATION_TERMINATED)
         GratuityRecord.objects.create(
             employee=emp,
             payroll=payroll,
             as_of_date=as_of_date,
             years_of_service=yrs,
-            provision_amount=grat,
-            notes='Provision per UAE-style rules (informational).',
+            provision_amount=monthly_prov,
+            notes=(
+                f'Monthly employer provision (UAE EOSG). '
+                f'Full accrued if terminated today: AED {eosg["final_gratuity"]}.'
+            ),
         )
 
 

@@ -4,7 +4,7 @@ import mimetypes
 import os
 from decimal import Decimal
 
-from django.http import FileResponse, Http404
+from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.views.decorators.http import require_POST
@@ -176,9 +176,9 @@ class EmployeeCreateView(CreatePermissionMixin, CreateView):
     module_name = 'hr'
 
     def _compliance_forms(self):
-        from apps.hr.forms_extended import KSAComplianceForm, UAEComplianceForm
+        from apps.hr.forms_extended import UAEComplianceForm
 
-        return UAEComplianceForm(prefix='uae'), KSAComplianceForm(prefix='ksa')
+        return UAEComplianceForm(prefix='uae')
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -211,11 +211,9 @@ class EmployeeCreateView(CreatePermissionMixin, CreateView):
         # Also pass roles for reference
         context['roles'] = roles
         uae_form = kwargs.get('uae_form')
-        ksa_form = kwargs.get('ksa_form')
-        if uae_form is None or ksa_form is None:
-            uae_form, ksa_form = self._compliance_forms()
+        if uae_form is None:
+            uae_form = self._compliance_forms()
         context['uae_form'] = uae_form
-        context['ksa_form'] = ksa_form
         emp = getattr(self, 'object', None)
         employee_for_bank = emp if (emp and emp.pk) else None
         context['bank_form'] = kwargs.get('bank_form') or _employee_bank_form(
@@ -229,39 +227,26 @@ class EmployeeCreateView(CreatePermissionMixin, CreateView):
         form = self.get_form()
         if not form.is_valid():
             ctx = self.get_context_data(form=form)
-            from apps.hr.forms_extended import KSAComplianceForm, UAEComplianceForm
+            from apps.hr.forms_extended import UAEComplianceForm
 
             ctx['uae_form'] = UAEComplianceForm(request.POST, prefix='uae')
-            ctx['ksa_form'] = KSAComplianceForm(request.POST, prefix='ksa')
             return self.render_to_response(ctx)
 
-        from apps.hr.forms_extended import KSAComplianceForm, UAEComplianceForm
-        from apps.hr.models_extended import KSACompliance, UAECompliance
+        from apps.hr.forms_extended import UAEComplianceForm
+        from apps.hr.models_extended import UAECompliance
 
         try:
             with transaction.atomic():
                 employee = form.save()
                 _provision_employee_login_if_needed(request, form, employee)
                 uc, _ = UAECompliance.objects.get_or_create(employee=employee)
-                kc, _ = KSACompliance.objects.get_or_create(employee=employee)
-                if employee.location == 'uae':
-                    uf = UAEComplianceForm(request.POST, instance=uc, prefix='uae')
-                    if not uf.is_valid():
-                        transaction.set_rollback(True)
-                        ctx = self.get_context_data(form=form)
-                        ctx['uae_form'] = uf
-                        ctx['ksa_form'] = KSAComplianceForm(prefix='ksa')
-                        return self.render_to_response(ctx)
-                    uf.save()
-                elif employee.location == 'ksa':
-                    kf = KSAComplianceForm(request.POST, instance=kc, prefix='ksa')
-                    if not kf.is_valid():
-                        transaction.set_rollback(True)
-                        ctx = self.get_context_data(form=form)
-                        ctx['uae_form'] = UAEComplianceForm(prefix='uae')
-                        ctx['ksa_form'] = kf
-                        return self.render_to_response(ctx)
-                    kf.save()
+                uf = UAEComplianceForm(request.POST, instance=uc, prefix='uae')
+                if not uf.is_valid():
+                    transaction.set_rollback(True)
+                    ctx = self.get_context_data(form=form)
+                    ctx['uae_form'] = uf
+                    return self.render_to_response(ctx)
+                uf.save()
                 bf = EmployeeBankDetailForm(
                     request.POST, instance=getattr(employee, 'bank_detail', None)
                 )
@@ -269,15 +254,7 @@ class EmployeeCreateView(CreatePermissionMixin, CreateView):
                     transaction.set_rollback(True)
                     ctx = self.get_context_data(form=form)
                     ctx['bank_form'] = bf
-                    if employee.location == 'uae':
-                        ctx['uae_form'] = UAEComplianceForm(request.POST, instance=uc, prefix='uae')
-                        ctx['ksa_form'] = KSAComplianceForm(prefix='ksa')
-                    elif employee.location == 'ksa':
-                        ctx['uae_form'] = UAEComplianceForm(prefix='uae')
-                        ctx['ksa_form'] = KSAComplianceForm(request.POST, instance=kc, prefix='ksa')
-                    else:
-                        ctx['uae_form'] = UAEComplianceForm(prefix='uae')
-                        ctx['ksa_form'] = KSAComplianceForm(prefix='ksa')
+                    ctx['uae_form'] = UAEComplianceForm(request.POST, instance=uc, prefix='uae')
                     return self.render_to_response(ctx)
                 bf.save_for_employee(employee)
                 _sync_employee_hr_profile(employee)
@@ -296,12 +273,11 @@ class EmployeeUpdateView(UpdatePermissionMixin, UpdateView):
     module_name = 'hr'
 
     def _compliance_forms(self):
-        from apps.hr.forms_extended import KSAComplianceForm, UAEComplianceForm
-        from apps.hr.models_extended import KSACompliance, UAECompliance
+        from apps.hr.forms_extended import UAEComplianceForm
+        from apps.hr.models_extended import UAECompliance
 
         uc, _ = UAECompliance.objects.get_or_create(employee=self.object)
-        kc, _ = KSACompliance.objects.get_or_create(employee=self.object)
-        return UAEComplianceForm(instance=uc, prefix='uae'), KSAComplianceForm(instance=kc, prefix='ksa')
+        return UAEComplianceForm(instance=uc, prefix='uae')
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -337,11 +313,9 @@ class EmployeeUpdateView(UpdatePermissionMixin, UpdateView):
         # Also pass roles for reference
         context['roles'] = roles
         uae_form = kwargs.get('uae_form')
-        ksa_form = kwargs.get('ksa_form')
-        if uae_form is None or ksa_form is None:
-            uae_form, ksa_form = self._compliance_forms()
+        if uae_form is None:
+            uae_form = self._compliance_forms()
         context['uae_form'] = uae_form
-        context['ksa_form'] = ksa_form
         context['bank_form'] = kwargs.get('bank_form') or _employee_bank_form(
             self.request, self.object
         )
@@ -352,42 +326,28 @@ class EmployeeUpdateView(UpdatePermissionMixin, UpdateView):
         form = self.get_form()
         if not form.is_valid():
             ctx = self.get_context_data(form=form)
-            from apps.hr.forms_extended import KSAComplianceForm, UAEComplianceForm
-            from apps.hr.models_extended import KSACompliance, UAECompliance
+            from apps.hr.forms_extended import UAEComplianceForm
+            from apps.hr.models_extended import UAECompliance
 
             uc, _ = UAECompliance.objects.get_or_create(employee=self.object)
-            kc, _ = KSACompliance.objects.get_or_create(employee=self.object)
             ctx['uae_form'] = UAEComplianceForm(request.POST, instance=uc, prefix='uae')
-            ctx['ksa_form'] = KSAComplianceForm(request.POST, instance=kc, prefix='ksa')
             return self.render_to_response(ctx)
 
-        from apps.hr.forms_extended import KSAComplianceForm, UAEComplianceForm
-        from apps.hr.models_extended import KSACompliance, UAECompliance
+        from apps.hr.forms_extended import UAEComplianceForm
+        from apps.hr.models_extended import UAECompliance
 
         try:
             with transaction.atomic():
                 employee = form.save()
                 _provision_employee_login_if_needed(request, form, employee)
                 uc, _ = UAECompliance.objects.get_or_create(employee=employee)
-                kc, _ = KSACompliance.objects.get_or_create(employee=employee)
-                if employee.location == 'uae':
-                    uf = UAEComplianceForm(request.POST, instance=uc, prefix='uae')
-                    if not uf.is_valid():
-                        transaction.set_rollback(True)
-                        ctx = self.get_context_data(form=form)
-                        ctx['uae_form'] = uf
-                        ctx['ksa_form'] = KSAComplianceForm(instance=kc, prefix='ksa')
-                        return self.render_to_response(ctx)
-                    uf.save()
-                elif employee.location == 'ksa':
-                    kf = KSAComplianceForm(request.POST, instance=kc, prefix='ksa')
-                    if not kf.is_valid():
-                        transaction.set_rollback(True)
-                        ctx = self.get_context_data(form=form)
-                        ctx['uae_form'] = UAEComplianceForm(instance=uc, prefix='uae')
-                        ctx['ksa_form'] = kf
-                        return self.render_to_response(ctx)
-                    kf.save()
+                uf = UAEComplianceForm(request.POST, instance=uc, prefix='uae')
+                if not uf.is_valid():
+                    transaction.set_rollback(True)
+                    ctx = self.get_context_data(form=form)
+                    ctx['uae_form'] = uf
+                    return self.render_to_response(ctx)
+                uf.save()
                 bf = EmployeeBankDetailForm(
                     request.POST, instance=getattr(employee, 'bank_detail', None)
                 )
@@ -395,15 +355,7 @@ class EmployeeUpdateView(UpdatePermissionMixin, UpdateView):
                     transaction.set_rollback(True)
                     ctx = self.get_context_data(form=form)
                     ctx['bank_form'] = bf
-                    if employee.location == 'uae':
-                        ctx['uae_form'] = UAEComplianceForm(request.POST, instance=uc, prefix='uae')
-                        ctx['ksa_form'] = KSAComplianceForm(instance=kc, prefix='ksa')
-                    elif employee.location == 'ksa':
-                        ctx['uae_form'] = UAEComplianceForm(instance=uc, prefix='uae')
-                        ctx['ksa_form'] = KSAComplianceForm(request.POST, instance=kc, prefix='ksa')
-                    else:
-                        ctx['uae_form'] = UAEComplianceForm(instance=uc, prefix='uae')
-                        ctx['ksa_form'] = KSAComplianceForm(instance=kc, prefix='ksa')
+                    ctx['uae_form'] = UAEComplianceForm(request.POST, instance=uc, prefix='uae')
                     return self.render_to_response(ctx)
                 bf.save_for_employee(employee)
                 _sync_employee_hr_profile(employee)
@@ -427,16 +379,21 @@ class EmployeeDetailView(PermissionRequiredMixin, DetailView):
         )
 
     def get_context_data(self, **kwargs):
-        from apps.hr.models_extended import KSACompliance, UAECompliance
+        from datetime import date as date_cls
+
+        from apps.hr.models import LeaveBalance
+        from apps.hr.models_extended import UAECompliance
+        from apps.hr.uae_gratuity import (
+            TERMINATION_RESIGNED,
+            TERMINATION_TERMINATED,
+            calculate_uae_gratuity,
+            employee_gratuity_eligible,
+        )
 
         context = super().get_context_data(**kwargs)
         context['title'] = f'Employee: {self.object.full_name}'
         context['leave_requests'] = self.object.leave_requests.all()[:10]
         context['payrolls'] = self.object.payrolls.all()[:12]
-
-        from datetime import date as date_cls
-
-        from apps.hr.models import LeaveBalance
 
         context['leave_balances'] = (
             LeaveBalance.objects.filter(employee=self.object, year=date_cls.today().year)
@@ -445,13 +402,67 @@ class EmployeeDetailView(PermissionRequiredMixin, DetailView):
         )
 
         uc, _ = UAECompliance.objects.get_or_create(employee=self.object)
-        kc, _ = KSACompliance.objects.get_or_create(employee=self.object)
         context['uae_compliance'] = uc
-        context['ksa_compliance'] = kc
         context['can_edit'] = self.request.user.is_superuser or PermissionChecker.has_permission(
             self.request.user, 'hr', 'edit'
         )
+
+        context['gratuity_eligible'] = employee_gratuity_eligible(self.object)
+        today = date_cls.today()
+        if context['gratuity_eligible']:
+            context['gratuity_resigned'] = calculate_uae_gratuity(
+                self.object, as_of_date=today, termination_type=TERMINATION_RESIGNED
+            )
+            context['gratuity_terminated'] = calculate_uae_gratuity(
+                self.object, as_of_date=today, termination_type=TERMINATION_TERMINATED
+            )
+        elif getattr(self.object, 'is_uae_national', False):
+            context['gratuity_national_message'] = (
+                'UAE National — covered under GPSSA pension scheme. No gratuity applies.'
+            )
+        else:
+            context['gratuity_national_message'] = ''
+
         return context
+
+
+@login_required
+def employee_gratuity_calculator(request, pk):
+    """JSON API — hypothetical UAE EOSG (no DB write)."""
+    from datetime import datetime
+
+    from apps.hr.uae_gratuity import calculate_uae_gratuity, employee_gratuity_eligible
+
+    if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'hr', 'view')):
+        return JsonResponse({'ok': False, 'error': 'Permission denied.'}, status=403)
+
+    employee = get_object_or_404(Employee, pk=pk, is_active=True)
+    if not employee_gratuity_eligible(employee):
+        msg = 'Gratuity does not apply for this employee.'
+        if getattr(employee, 'is_uae_national', False):
+            msg = 'UAE National — covered under GPSSA pension scheme. No gratuity applies.'
+        return JsonResponse({'ok': False, 'error': msg})
+
+    raw_date = (request.GET.get('termination_date') or '').strip()
+    term_type = (request.GET.get('termination_type') or 'terminated').strip().lower()
+    as_of = date.today()
+    if raw_date:
+        try:
+            as_of = datetime.strptime(raw_date, '%Y-%m-%d').date()
+        except ValueError:
+            return JsonResponse({'ok': False, 'error': 'Invalid termination date.'})
+
+    result = calculate_uae_gratuity(employee, as_of_date=as_of, termination_type=term_type)
+    return JsonResponse({
+        'ok': True,
+        'years_of_service': str(result['years_of_service']),
+        'years_of_service_display': result['years_of_service_display'],
+        'daily_rate': f'{result["daily_rate"]:.2f}',
+        'raw_gratuity': f'{result["raw_gratuity"]:.2f}',
+        'adjustment_factor': str(result['adjustment_factor']),
+        'final_gratuity': f'{result["final_gratuity"]:.2f}',
+        'cap_applied': result['cap_applied'],
+    })
 
 
 class DepartmentListView(PermissionRequiredMixin, ListView):
@@ -918,6 +929,13 @@ class PayrollDetailView(PermissionRequiredMixin, DetailView):
         context['allowance_lines'] = list(self.object.allowance_lines.all().order_by('pk'))
         context['employer_contributions'] = list(self.object.employer_contributions.all())
         context['gratuity_snapshot'] = GratuityRecord.objects.filter(payroll=self.object).first()
+        from apps.hr.uae_gratuity import calculate_monthly_gratuity_provision, employee_gratuity_eligible
+
+        if employee_gratuity_eligible(emp):
+            as_of = date(self.object.month.year, self.object.month.month, 1)
+            context['monthly_gratuity_provision'] = calculate_monthly_gratuity_provision(emp, as_of)
+        else:
+            context['monthly_gratuity_provision'] = None
 
         context['employee_active_advances'] = (
             EmployeeAdvance.objects.filter(

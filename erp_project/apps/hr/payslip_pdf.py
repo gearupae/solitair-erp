@@ -513,7 +513,7 @@ def build_payslip_pdf(payroll) -> bytes:
             )
         grat = GratuityRecord.objects.filter(payroll=payroll).first()
         if grat:
-            extras.append(f'Gratuity (info): {currency} {grat.provision_amount:,.2f}')
+            extras.append(f'Gratuity provision (employer): {currency} {grat.provision_amount:,.2f}')
         wps = getattr(payroll, 'wps_record', None)
         if wps:
             st = wps.get_status_display() if hasattr(wps, 'get_status_display') else wps.status
@@ -550,7 +550,7 @@ def build_payslip_pdf(payroll) -> bytes:
     if grat and loc != 'uae':
         supplementary.append(
             Paragraph(
-                f'<b>Gratuity (informational):</b> {currency} {grat.provision_amount:,.2f}',
+                f'<b>Gratuity provision (employer):</b> {currency} {grat.provision_amount:,.2f}',
                 _styles['cell_p2'],
             )
         )

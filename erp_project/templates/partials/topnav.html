@@ -248,11 +248,6 @@
                             </a>
                         </li>
                         <li>
-                            <a class="dropdown-item" href="{% url 'inventory:consumable_dashboard' %}">
-                                <i class="fas fa-chart-line me-2"></i>Consumables Dashboard
-                            </a>
-                        </li>
-                        <li>
                             <a class="dropdown-item" href="{% url 'inventory:consumable_inventory_reports' %}">
                                 <i class="fas fa-file-alt me-2"></i>Inventory Reports
                             </a>
@@ -266,52 +261,18 @@
                 </li>
                 {% endif %}{% endif %}
                 
-                <!-- Fixed Assets (+ Fleet) -->
-                {% if 'assets' not in nav_hidden_modules %}{% if not crm_sales_rep_only %}{% if is_superuser or 'assets' in user_permissions or 'finance' in user_permissions or 'fleet' in user_permissions %}
+                <!-- Assets (Fleet only) -->
+                {% if 'assets' not in nav_hidden_modules %}{% if not crm_sales_rep_only %}{% if is_superuser or 'fleet' in user_permissions %}
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle {% if 'assets' in request.path or '/fleet/' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
                         <i class="fas fa-building me-1"></i>Assets
                     </a>
                     <ul class="dropdown-menu dropdown-menu-dark">
-                        {% if is_superuser or 'assets' in user_permissions or 'finance' in user_permissions %}
-                        <li>
-                            <a class="dropdown-item" href="{% url 'assets:asset_list' %}">
-                                <i class="fas fa-building me-2"></i>Fixed Assets
-                            </a>
-                        </li>
-                        <li>
-                            <a class="dropdown-item" href="{% url 'assets:category_list' %}">
-                                <i class="fas fa-tags me-2"></i>Categories
-                            </a>
-                        </li>
-                        <li><hr class="dropdown-divider"></li>
-                        <li>
-                            <a class="dropdown-item" href="{% url 'assets:run_depreciation' %}">
-                                <i class="fas fa-calculator me-2"></i>Run Depreciation
-                            </a>
-                        </li>
-                        <li><hr class="dropdown-divider"></li>
-                        <li>
-                            <a class="dropdown-item" href="{% url 'assets:register_report' %}">
-                                <i class="fas fa-list me-2"></i>Asset Register
-                            </a>
-                        </li>
-                        <li>
-                            <a class="dropdown-item" href="{% url 'assets:depreciation_report' %}">
-                                <i class="fas fa-chart-line me-2"></i>Depreciation Report
-                            </a>
-                        </li>
-                        {% endif %}
-                        {% if is_superuser or 'fleet' in user_permissions %}
-                        {% if is_superuser or 'assets' in user_permissions or 'finance' in user_permissions %}
-                        <li><hr class="dropdown-divider"></li>
-                        {% endif %}
                         <li>
                             <a class="dropdown-item" href="{% url 'fleet:vehicle_list' %}">
                                 <i class="fas fa-truck me-2"></i>Fleet
                             </a>
                         </li>
-                        {% endif %}
                     </ul>
                 </li>
                 {% endif %}{% endif %}{% endif %}

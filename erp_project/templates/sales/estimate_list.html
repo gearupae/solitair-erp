@@ -96,16 +96,7 @@
     font-size: 0.75rem;
 }
 
-/* Kanban — same structure/classes as tasks (projects/task_list) */
-.kanban-board {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 1rem;
-    align-items: start;
-}
-@media (max-width: 991.98px) {
-    .kanban-board { grid-template-columns: 1fr; }
-}
+/* Kanban — shared column/card styles */
 .kanban-col {
     background: #f8fafc;
     border: 1px solid #e2e8f0;
@@ -148,44 +139,35 @@
 .kanban-card-title { font-weight: 600; font-size: 0.9rem; margin-bottom: 0.35rem; line-height: 1.3; }
 .kanban-card-meta { font-size: 0.75rem; color: #64748b; }
 .kanban-col-body.kanban-drop-hover { outline: 2px dashed #94a3b8; outline-offset: 2px; }
-/* Estimates Kanban — horizontal scroll (six columns), vertical scroll inside each column */
-.estimate-kanban-scroll {
-    width: 100%;
+/* Estimate board — match CRM customer kanban: equal columns, min width, horizontal scroll */
+.estimate-kanban-board-row {
+    --estimate-kanban-col-min: 16rem;
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 1rem;
+    align-items: stretch;
     overflow-x: auto;
-    overflow-y: visible;
-    padding-bottom: 0.5rem;
+    overflow-y: hidden;
+    padding-bottom: 0.35rem;
     margin-bottom: 1rem;
     -webkit-overflow-scrolling: touch;
-    scrollbar-gutter: stable;
 }
-.estimate-kanban-scroll .estimate-kanban-board.kanban-board {
-    display: grid;
-    grid-template-columns: repeat(6, minmax(12.5rem, 16rem));
-    width: max-content;
-    gap: 0.75rem;
-    align-items: stretch;
+.estimate-kanban-board-row .kanban-col {
+    flex: 1 1 0;
+    min-width: var(--estimate-kanban-col-min);
+    max-width: none;
 }
-.estimate-kanban-scroll .estimate-kanban-board .kanban-col {
-    min-height: 200px;
-    height: min(70vh, 44rem);
-    overflow: hidden;
-}
-.estimate-kanban-scroll .estimate-kanban-board .kanban-col-body {
-    flex: 1 1 auto;
-    min-height: 0;
+.estimate-kanban-board-row .kanban-col-body {
+    max-height: 26rem;
     overflow-y: auto;
     overflow-x: hidden;
 }
-.estimate-kanban-board .kanban-col-header {
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-}
-.estimate-kanban-board .estimate-k-col--draft .kanban-col-header { background: #f3f4f6; color: #374151; }
-.estimate-kanban-board .estimate-k-col--sent .kanban-col-header { background: #dbeafe; color: #1e40af; }
-.estimate-kanban-board .estimate-k-col--approved .kanban-col-header { background: #e0e7ff; color: #3730a3; }
-.estimate-kanban-board .estimate-k-col--lost .kanban-col-header { background: #ffedd5; color: #9a3412; }
-.estimate-kanban-board .estimate-k-col--quot-won .kanban-col-header { background: #dcfce7; color: #166534; }
-.estimate-kanban-board .estimate-k-col--quot-lost .kanban-col-header { background: #fee2e2; color: #991b1b; }
+.estimate-kanban-board-row .estimate-k-col--draft .kanban-col-header { background: #f3f4f6; color: #374151; }
+.estimate-kanban-board-row .estimate-k-col--sent .kanban-col-header { background: #dbeafe; color: #1e40af; }
+.estimate-kanban-board-row .estimate-k-col--approved .kanban-col-header { background: #e0e7ff; color: #3730a3; }
+.estimate-kanban-board-row .estimate-k-col--lost .kanban-col-header { background: #ffedd5; color: #9a3412; }
+.estimate-kanban-board-row .estimate-k-col--quot-won .kanban-col-header { background: #dcfce7; color: #166534; }
+.estimate-kanban-board-row .estimate-k-col--quot-lost .kanban-col-header { background: #fee2e2; color: #991b1b; }
 </style>
 {% endblock %}
 
@@ -365,8 +347,7 @@
 </div>
 
 {% if view_mode == 'kanban' %}
-<div class="estimate-kanban-scroll" id="estimateKanbanScroll">
-<div class="kanban-board estimate-kanban-board" id="estimateKanbanBoard">
+<div class="estimate-kanban-board-row" id="estimateKanbanBoard">
     <div class="kanban-col estimate-k-col--draft kanban-col--pending" data-status="draft">
         <div class="kanban-col-header">draft <span class="badge bg-secondary">{{ estimates_board_draft|length }}</span></div>
         <div class="kanban-col-body">
@@ -427,7 +408,6 @@
             {% endfor %}
         </div>
     </div>
-</div>
 </div>
 {% endif %}
 

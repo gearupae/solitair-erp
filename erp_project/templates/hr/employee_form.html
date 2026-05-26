@@ -29,9 +29,6 @@
     {% if uae_form.errors %}
     <div class="alert alert-warning"><strong>UAE compliance:</strong> please review highlighted fields.</div>
     {% endif %}
-    {% if ksa_form.errors %}
-    <div class="alert alert-warning"><strong>KSA compliance:</strong> please review highlighted fields.</div>
-    {% endif %}
     {% if bank_form.errors %}
     <div class="alert alert-warning"><strong>Bank details:</strong> please review highlighted fields.</div>
     {% endif %}
@@ -83,10 +80,6 @@
                     {% if form.company.errors %}<div class="text-danger small">{{ form.company.errors|join:", " }}</div>{% endif %}
                 </div>
                 <div class="col-md-3">
-                    <label class="form-label">Location</label>{{ form.location }}
-                    <small class="text-muted d-block mt-1">Controls which compliance section applies.</small>
-                </div>
-                <div class="col-md-3">
                     <label class="form-label">Department</label>
                     <select name="department" id="id_department" class="form-select">
                         <option value="">-- Select Department --</option>
@@ -117,6 +110,21 @@
                     {{ form.salary_template }}
                     {% if form.salary_template.errors %}<div class="text-danger small mt-1">{{ form.salary_template.errors|join:", " }}</div>{% endif %}
                     <small class="text-muted d-block mt-1">Optional. Allowances from template.</small>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label" for="{{ form.contract_type.id_for_label }}">Contract type</label>
+                    {{ form.contract_type }}
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label" for="{{ form.termination_type.id_for_label }}">Termination type</label>
+                    {{ form.termination_type }}
+                    <small class="text-muted d-block mt-1">For EOSG if employment has ended.</small>
+                </div>
+                <div class="col-md-3 d-flex align-items-end">
+                    <div class="form-check mb-2">
+                        {{ form.is_uae_national }}
+                        <label class="form-check-label" for="{{ form.is_uae_national.id_for_label }}">UAE national (GPSSA — no gratuity)</label>
+                    </div>
                 </div>
             </div>
             <div class="row g-3 mt-1">
@@ -165,7 +173,7 @@
         </div>
     </div>
 
-    <div class="card mb-4 border-primary border-opacity-25" id="hr-section-uae" style="display:none;">
+    <div class="card mb-4 border-primary border-opacity-25" id="hr-section-uae">
         <div class="card-header bg-primary bg-opacity-10"><h6 class="mb-0 fw-semibold">UAE — employee record &amp; documents</h6></div>
         <div class="card-body">
             <p class="small text-muted">Emirates ID and visa number/expiry are stored on the employee record (shown below). Additional UAE fields are stored on the compliance profile.</p>
@@ -187,25 +195,6 @@
         </div>
     </div>
 
-    <div class="card mb-4 border-success border-opacity-25" id="hr-section-ksa" style="display:none;">
-        <div class="card-header bg-success bg-opacity-10"><h6 class="mb-0 fw-semibold">KSA compliance</h6></div>
-        <div class="card-body">
-            <div class="row g-3">
-                {% for field in ksa_form %}
-                <div class="col-md-3">
-                    <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
-                    {{ field.errors }}
-                    {{ field }}
-                </div>
-                {% endfor %}
-            </div>
-            <p class="small text-muted mb-0 mt-2">
-                <strong>GOSI on payroll:</strong> Saudi employees — 10% employee + 12% employer on basic salary when payroll is processed.
-                Non-Saudi — 0% employee + 2% employer (hazard). Requires <strong>GOSI applicable</strong> checked and nationality set.
-            </p>
-        </div>
-    </div>
-
     <button type="submit" class="btn btn-primary"><i class="fas fa-save me-2"></i>Save</button>
     <a href="{% url 'hr:employee_list' %}" class="btn btn-light">Cancel</a>
 </form>
@@ -214,18 +203,6 @@
 {% block extra_js %}
 <script>
 (function () {
-    function locValue() {
-        var el = document.getElementById('id_location');
-        return el ? el.value : 'other';
-    }
-    function toggleHrSections() {
-        var v = locValue();
-        var uae = document.getElementById('hr-section-uae');
-        var ksa = document.getElementById('hr-section-ksa');
-        if (uae) uae.style.display = (v === 'uae') ? 'block' : 'none';
-        if (ksa) ksa.style.display = (v === 'ksa') ? 'block' : 'none';
-    }
-
     var tplUrlPattern = "{% url 'hr:payroll_template_json' pk=987654321 %}";
 
     function parseBasic() {
@@ -311,10 +288,6 @@
     }
 
     document.addEventListener('DOMContentLoaded', function () {
-        var loc = document.getElementById('id_location');
-        toggleHrSections();
-        if (loc) loc.addEventListener('change', toggleHrSections);
-
         var deptEl = document.getElementById('id_department');
         filterDesignations();
         if (deptEl) deptEl.addEventListener('change', filterDesignations);

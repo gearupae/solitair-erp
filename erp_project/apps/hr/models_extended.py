@@ -633,6 +633,27 @@ class GratuityRecord(BaseModel):
         return f'Gratuity {self.employee_id} {self.as_of_date}'
 
 
+class GratuitySnapshot(BaseModel):
+    """Optional audit trail for UAE end-of-service gratuity calculations."""
+
+    employee = models.ForeignKey('hr.Employee', on_delete=models.CASCADE, related_name='gratuity_eos_snapshots')
+    snapshot_date = models.DateField()
+    years_of_service = models.DecimalField(max_digits=8, decimal_places=2)
+    daily_rate = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    calculated_gratuity = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    adjustment_factor = models.DecimalField(max_digits=8, decimal_places=4, default=Decimal('1.0000'))
+    final_gratuity = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-snapshot_date', '-pk']
+        verbose_name = 'Gratuity snapshot'
+        verbose_name_plural = 'Gratuity snapshots'
+
+    def __str__(self):
+        return f'EOSG snapshot {self.employee_id} {self.snapshot_date}'
+
+
 class GOSIRecord(BaseModel):
     payroll = models.ForeignKey('hr.Payroll', on_delete=models.CASCADE, related_name='gosi_records')
     employee = models.ForeignKey(

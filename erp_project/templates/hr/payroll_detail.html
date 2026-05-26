@@ -187,8 +187,10 @@
                     </tr>
                     {% endif %}
                     {% endif %}
-                    {% if gratuity_snapshot %}
-                    <tr class="small"><td class="text-muted">Gratuity provision (info)</td><td class="text-end">AED {{ gratuity_snapshot.provision_amount|floatformat:2|intcomma }}</td></tr>
+                    {% if monthly_gratuity_provision %}
+                    <tr class="small"><td class="text-muted">Gratuity provision (employer)</td><td class="text-end">AED {{ monthly_gratuity_provision|floatformat:2|intcomma }} <span class="text-muted">(informational)</span></td></tr>
+                    {% elif gratuity_snapshot %}
+                    <tr class="small"><td class="text-muted">Gratuity provision (employer)</td><td class="text-end">AED {{ gratuity_snapshot.provision_amount|floatformat:2|intcomma }} <span class="text-muted">(informational)</span></td></tr>
                     {% endif %}
                     <tr class="border-top table-success">
                         <td class="fw-bold fs-5">Net Salary</td>
