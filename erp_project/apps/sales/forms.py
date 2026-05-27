@@ -12,6 +12,7 @@ from .models import Estimate, EstimateItem, Invoice, InvoiceItem
 from apps.crm.models import Customer
 from apps.finance.models import TaxCode
 from apps.projects.models import Project
+from .estimate_csv import get_default_estimate_csv_tax_code
 
 User = get_user_model()
 
@@ -69,6 +70,8 @@ class EstimateForm(forms.ModelForm):
         self.fields['project'].widget.attrs['class'] = 'form-select'
         self.fields['project'].required = False
         self.fields['valid_until'].required = False
+        self.fields['date'].input_formats = ['%Y-%m-%d']
+        self.fields['valid_until'].input_formats = ['%Y-%m-%d']
         self.fields['discount_type'].widget.attrs['class'] = 'form-select'
         self.fields['notes'].required = False
         self.fields['client_note'].required = False
@@ -162,13 +165,36 @@ class EstimateItemForm(forms.ModelForm):
         self.fields['group_name'].help_text = 'Shown when this estimate is printed / on the PDF; does not update inventory.'
 
         if not self.instance.pk:
-            default_tax_code = TaxCode.objects.filter(is_active=True, is_default=True).first()
+            default_tax_code = get_default_estimate_csv_tax_code()
             if default_tax_code:
-                self.fields['tax_code'].initial = default_tax_code
+                self.fields['tax_code'].initial = default_tax_code.pk
+
+    def clean(self):
+        cleaned = super().clean()
+        inv = cleaned.get('inventory_item')
+        unit_price = cleaned.get('unit_price')
+        if inv and unit_price is not None:
+            err = inv.selling_price_bounds_error(unit_price)
+            if err:
+                self.add_error('unit_price', err)
+        return cleaned
 
 
 class EstimateItemInlineFormSet(BaseInlineFormSet):
     """Hide the default DELETE checkbox; removal is done via the row ✕ (still posts DELETE)."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        default_tax_code = get_default_estimate_csv_tax_code()
+        if not default_tax_code:
+            return
+        for form in self.forms:
+            if form.instance.pk:
+                continue
+            if form.initial.get('tax_code'):
+                continue
+            form.initial['tax_code'] = default_tax_code.pk
+            form.fields['tax_code'].initial = default_tax_code.pk
 
     def add_fields(self, form, index):
         super().add_fields(form, index)
@@ -243,9 +269,9 @@ class InvoiceItemForm(forms.ModelForm):
         self.fields['tax_code'].empty_label = "-- No Tax (Out of Scope) --"
         
         if not self.instance.pk:
-            default_tax_code = TaxCode.objects.filter(is_active=True, is_default=True).first()
+            default_tax_code = get_default_estimate_csv_tax_code()
             if default_tax_code:
-                self.fields['tax_code'].initial = default_tax_code
+                self.fields['tax_code'].initial = default_tax_code.pk
 
     def clean(self):
         cleaned_data = super().clean()

@@ -597,7 +597,7 @@
                 </tr>
                 {% else %}
                 {% for group in pdf_item_groups %}
-                {% if group.name and not estimate.show_group_totals_on_pdf %}
+                {% if group.name %}
                 <tr class="group-row">
                     <td colspan="5">{{ group.name }}</td>
                 </tr>
@@ -648,7 +648,7 @@
                 </tr>
                 {% else %}
                 {% for group in pdf_item_groups %}
-                {% if group.name and not estimate.show_group_totals_on_pdf %}
+                {% if group.name %}
                 <tr class="group-row">
                     <td colspan="3">{{ group.name }}</td>
                 </tr>

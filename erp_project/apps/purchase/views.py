@@ -192,7 +192,12 @@ class PurchaseRequestListView(PermissionRequiredMixin, ListView):
     paginate_by = 25
     
     def get_queryset(self):
-        queryset = PurchaseRequest.objects.filter(is_active=True).select_related('requested_by')
+        queryset = PurchaseRequest.objects.filter(is_active=True).select_related(
+            'requested_by', 'created_by'
+        )
+        from apps.core.visibility import filter_purchase_requests_for_user
+
+        queryset = filter_purchase_requests_for_user(queryset, self.request.user)
         search = self.request.GET.get('search')
         if search:
             queryset = queryset.filter(pr_number__icontains=search)
@@ -331,11 +336,14 @@ class PurchaseRequestDetailView(PermissionRequiredMixin, DetailView):
     permission_type = 'view'
 
     def get_queryset(self):
-        return (
+        qs = (
             PurchaseRequest.objects.filter(is_active=True)
-            .select_related('requested_by', 'department')
+            .select_related('requested_by', 'department', 'created_by')
             .prefetch_related('items', 'attachments')
         )
+        from apps.core.visibility import filter_purchase_requests_for_user
+
+        return filter_purchase_requests_for_user(qs, self.request.user)
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -652,7 +660,12 @@ class PurchaseOrderListView(PermissionRequiredMixin, ListView):
     paginate_by = 25
     
     def get_queryset(self):
-        queryset = PurchaseOrder.objects.filter(is_active=True).select_related('vendor')
+        queryset = PurchaseOrder.objects.filter(is_active=True).select_related(
+            'vendor', 'created_by', 'purchase_request', 'purchase_request__requested_by'
+        )
+        from apps.core.visibility import filter_purchase_orders_for_user
+
+        queryset = filter_purchase_orders_for_user(queryset, self.request.user)
         search = self.request.GET.get('search')
         if search:
             queryset = queryset.filter(
@@ -813,14 +826,17 @@ class PurchaseOrderDetailView(PermissionRequiredMixin, DetailView):
             )
             .order_by('created_at')
         )
-        return (
+        qs = (
             PurchaseOrder.objects.filter(is_active=True)
-            .select_related('vendor', 'purchase_request', 'service_request')
+            .select_related('vendor', 'purchase_request', 'service_request', 'created_by')
             .prefetch_related(
                 Prefetch('goods_receipts', queryset=rcpt_qs),
                 'items__inventory_item',
             )
         )
+        from apps.core.visibility import filter_purchase_orders_for_user
+
+        return filter_purchase_orders_for_user(qs, self.request.user)
 
     def get_context_data(self, **kwargs):
         from apps.settings_app.models import CompanySettings

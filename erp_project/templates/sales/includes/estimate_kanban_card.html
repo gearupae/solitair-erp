@@ -1,15 +1,27 @@
+{% load humanize %}
 <div class="kanban-card kanban-card--readonly" draggable="false">
-    <div class="kanban-card-title">
-        <a href="{% url 'sales:estimate_detail' estimate.pk %}" class="text-decoration-none text-dark">{{ estimate.display_estimate_number }}</a>
+    <div class="kanban-card-title text-truncate">
+        <a href="{% url 'sales:estimate_detail' estimate.pk %}" class="text-decoration-none text-dark" title="{{ estimate.display_estimate_number }}">{{ estimate.display_estimate_number }}</a>
     </div>
-    <div class="kanban-card-meta text-truncate fw-medium" title="{{ estimate.customer.name }}">{{ estimate.customer.name }}</div>
-    <div class="kanban-card-meta text-nowrap">AED {{ estimate.total_amount|default:0|floatformat:2 }}</div>
-    <div class="kanban-card-meta d-flex gap-2 align-items-start small">
-        <span class="text-muted text-nowrap">Assigned</span>
-        {% if estimate.assigned_to %}
-        <span class="text-truncate" title="{{ estimate.assigned_to.get_full_name|default:estimate.assigned_to.username }}">{{ estimate.assigned_to.get_full_name|default:estimate.assigned_to.username }}</span>
-        {% else %}
-        <span class="text-muted">—</span>
-        {% endif %}
+    <div class="kanban-card-meta text-truncate fw-medium" title="{{ estimate.customer.name }}">
+        <i class="fas fa-user fa-xs me-1 text-muted"></i>{{ estimate.customer.name|default:"—" }}
+    </div>
+    {% if estimate.customer.company %}
+    <div class="kanban-card-meta text-truncate" title="{{ estimate.customer.company }}">
+        <i class="fas fa-building fa-xs me-1 text-muted"></i>{{ estimate.customer.company }}
+    </div>
+    {% endif %}
+    {% if estimate.customer.phone %}
+    <div class="kanban-card-meta text-truncate" title="{{ estimate.customer.phone }}">
+        <i class="fas fa-phone fa-xs me-1 text-muted"></i>{{ estimate.customer.phone }}
+    </div>
+    {% endif %}
+    {% if estimate.scope_display_labels %}
+    <div class="kanban-card-scope text-truncate" title="{{ estimate.scope_display_labels|join:', ' }}">
+        <i class="fas fa-tags fa-xs me-1 text-muted"></i>{{ estimate.scope_display_labels|join:", " }}
+    </div>
+    {% endif %}
+    <div class="kanban-card-amount text-nowrap">
+        <i class="fas fa-file-invoice-dollar fa-xs me-1 text-muted"></i>AED {{ estimate.total_amount|default:0|floatformat:2|intcomma }}
     </div>
 </div>

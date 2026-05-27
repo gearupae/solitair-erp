@@ -93,7 +93,7 @@
                 {% endif %}
                 
                 <!-- Sales -->
-                {% if not crm_sales_rep_only %}{% if is_superuser or 'sales' in user_permissions %}
+                {% if is_superuser or 'sales' in user_permissions %}
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle {% if 'sales' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
                         <i class="fas fa-shopping-cart me-1"></i>Sales
@@ -111,10 +111,10 @@
                         </li>
                     </ul>
                 </li>
-                {% endif %}{% endif %}
+                {% endif %}
                 
                 <!-- Reports -->
-                {% if not crm_sales_rep_only %}{% if is_superuser or 'reports' in user_permissions %}
+                {% if is_superuser or 'reports' in user_permissions %}
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle {% if 'reports' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
                         <i class="fas fa-chart-line me-1"></i>Reports
@@ -153,10 +153,10 @@
                         </li>
                     </ul>
                 </li>
-                {% endif %}{% endif %}
+                {% endif %}
                 
                 <!-- Purchase (includes Service Requests) -->
-                {% if not crm_sales_rep_only %}{% if is_superuser or 'purchase' in user_permissions or 'service_request' in user_permissions %}
+                {% if is_superuser or 'purchase' in user_permissions or 'service_request' in user_permissions %}
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle {% if 'purchase' in request.path or 'service-request' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
                         <i class="fas fa-truck me-1"></i>Purchase
@@ -201,10 +201,10 @@
                         </li>
                     </ul>
                 </li>
-                {% endif %}{% endif %}
+                {% endif %}
                 
                 <!-- Inventory -->
-                {% if not crm_sales_rep_only %}{% if is_superuser or 'inventory' in user_permissions %}
+                {% if is_superuser or 'inventory' in user_permissions %}
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle {% if 'inventory' in request.path or 'stock-take' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
                         <i class="fas fa-boxes me-1"></i>Inventory
@@ -259,10 +259,10 @@
                         </li>
                     </ul>
                 </li>
-                {% endif %}{% endif %}
+                {% endif %}
                 
                 <!-- Assets (Fleet only) -->
-                {% if 'assets' not in nav_hidden_modules %}{% if not crm_sales_rep_only %}{% if is_superuser or 'fleet' in user_permissions %}
+                {% if 'assets' not in nav_hidden_modules %}{% if is_superuser or 'fleet' in user_permissions %}
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle {% if 'assets' in request.path or '/fleet/' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
                         <i class="fas fa-building me-1"></i>Assets
@@ -275,10 +275,10 @@
                         </li>
                     </ul>
                 </li>
-                {% endif %}{% endif %}{% endif %}
+                {% endif %}{% endif %}
                 
                 <!-- Property Management -->
-                {% if 'property' not in nav_hidden_modules %}{% if not crm_sales_rep_only %}{% if is_superuser or 'property' in user_permissions %}
+                {% if 'property' not in nav_hidden_modules %}{% if is_superuser or 'property' in user_permissions %}
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle {% if 'property' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
                         <i class="fas fa-home me-1"></i>Property
@@ -330,10 +330,10 @@
                         </li>
                     </ul>
                 </li>
-                {% endif %}{% endif %}{% endif %}
+                {% endif %}{% endif %}
                 
                 <!-- Finance (with nested Reports submenu) -->
-                {% if 'finance' not in nav_hidden_modules %}{% if not crm_sales_rep_only %}{% if is_superuser or 'finance' in user_permissions %}
+                {% if 'finance' not in nav_hidden_modules %}{% if is_superuser or 'finance' in user_permissions %}
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle {% if 'finance' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
                         <i class="fas fa-coins me-1"></i>Finance
@@ -448,10 +448,10 @@
                         </li>
                     </ul>
                 </li>
-                {% endif %}{% endif %}{% endif %}
+                {% endif %}{% endif %}
                 
                 <!-- Projects -->
-                {% if 'projects' not in nav_hidden_modules %}{% if not crm_sales_rep_only %}{% if is_superuser or 'projects' in user_permissions %}
+                {% if 'projects' not in nav_hidden_modules %}{% if is_superuser or 'projects' in user_permissions %}
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle {% if 'projects' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
                         <i class="fas fa-project-diagram me-1"></i>Projects
@@ -475,10 +475,10 @@
                         </li>
                     </ul>
                 </li>
-                {% endif %}{% endif %}{% endif %}
+                {% endif %}{% endif %}
                 
                 <!-- HR -->
-                {% if 'hr' not in nav_hidden_modules %}{% if not crm_sales_rep_only %}{% if is_superuser or 'hr' in user_permissions %}
+                {% if 'hr' not in nav_hidden_modules %}{% if is_superuser or 'hr' in user_permissions %}
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle {% if '/hr/' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
                         <i class="fas fa-user-friends me-1"></i>HR
@@ -561,10 +561,10 @@
                         </li>
                     </ul>
                 </li>
-                {% endif %}{% endif %}{% endif %}
+                {% endif %}{% endif %}
                 
                 <!-- Documents (includes Contracts as submenu) -->
-                {% if 'documents' not in nav_hidden_modules %}{% if not crm_sales_rep_only %}{% if is_superuser or 'documents' in user_permissions or 'contracts' in user_permissions %}
+                {% if 'documents' not in nav_hidden_modules %}{% if is_superuser or 'documents' in user_permissions or 'contracts' in user_permissions %}
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle {% if 'documents' in request.path or '/contracts/' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
                         <i class="fas fa-folder-open me-1"></i>Documents
@@ -594,13 +594,13 @@
                         {% endif %}
                     </ul>
                 </li>
-                {% endif %}{% endif %}{% endif %}
+                {% endif %}{% endif %}
             </ul>
             
             <!-- Right Side -->
             <ul class="navbar-nav">
                 <!-- Settings Dropdown (Icon only to save space) -->
-                {% if not crm_sales_rep_only %}{% if is_superuser or 'settings' in user_permissions %}
+                {% if is_superuser or 'settings' in user_permissions %}
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle {% if 'settings' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown" title="Settings">
                         <i class="fas fa-cog"></i>
@@ -645,7 +645,7 @@
                         </li>
                     </ul>
                 </li>
-                {% endif %}{% endif %}
+                {% endif %}
                 
                 <!-- Notifications (in-app; see apps.settings_app.Notification) -->
                 {% if user.is_authenticated %}

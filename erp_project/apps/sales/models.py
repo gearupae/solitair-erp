@@ -136,7 +136,7 @@ class Estimate(BaseModel):
     )
     show_group_totals_on_pdf = models.BooleanField(
         default=False,
-        help_text='If on, PDF shows a subtotal after each named line-item group.',
+        help_text='If on, PDF shows each group heading and a subtotal after its line items.',
     )
 
     # Calculated fields

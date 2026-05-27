@@ -1,0 +1,29 @@
+{% load humanize %}
+<div class="kanban-card-title text-truncate">
+    {% if link_detail %}
+    <a href="{% url 'crm:customer_detail' record.pk %}" class="text-decoration-none">{{ record.name }}</a>
+    {% else %}
+    <a href="{% url 'crm:customer_detail' record.pk %}" class="text-decoration-none text-dark">{{ record.name }}</a>
+    {% endif %}
+</div>
+{% if record.company %}
+<div class="kanban-card-meta text-truncate" title="{{ record.company }}">
+    <i class="fas fa-building fa-xs me-1 text-muted"></i>{{ record.company }}
+</div>
+{% endif %}
+{% if record.email %}
+<div class="kanban-card-meta text-truncate" title="{{ record.email }}">
+    <i class="fas fa-envelope fa-xs me-1 text-muted"></i>{{ record.email }}
+</div>
+{% endif %}
+{% if record.phone %}
+<div class="kanban-card-meta text-truncate" title="{{ record.phone }}">
+    <i class="fas fa-phone fa-xs me-1 text-muted"></i>{{ record.phone }}
+</div>
+{% endif %}
+{% if record.latest_estimate_value and record.latest_estimate_value > 0 %}
+<div class="kanban-card-estimate mt-1">
+    <i class="fas fa-file-invoice-dollar fa-xs me-1"></i>Est. AED {{ record.latest_estimate_value|floatformat:2|intcomma }}
+</div>
+{% endif %}
+<div class="kanban-card-meta text-muted mt-1">{{ record.customer_number }}</div>

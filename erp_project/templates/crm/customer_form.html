@@ -8,11 +8,12 @@ $(function () {
         var seg = document.querySelector('[name="business_segment"]');
         var busWrap = document.getElementById('crmEditBusinessWrap');
         var docs = document.getElementById('crmEditB2bDocs');
-        var assignWrap = document.getElementById('crmEditAssignWrap');
-        var isCustomer = typeSel && typeSel.value === 'customer';
-        if (busWrap) busWrap.style.display = isCustomer ? '' : 'none';
-        if (assignWrap) assignWrap.style.display = isCustomer ? 'none' : '';
-        var isB2b = isCustomer && seg && seg.value === 'b2b';
+        var trnWrap = document.getElementById('crmEditTrnWrap');
+        var trnInput = document.querySelector('[name="trn"]');
+        var isB2b = seg && seg.value === 'b2b';
+        if (busWrap) busWrap.style.display = '';
+        if (trnWrap) trnWrap.style.display = isB2b ? '' : 'none';
+        if (trnInput && !isB2b) trnInput.value = '';
         if (docs) docs.classList.toggle('d-none', !isB2b);
     }
     var typeSel = document.getElementById('crmEditCustomerType');
@@ -62,11 +63,11 @@ $(function () {
                         <option value="customer" {% if object.customer_type == 'customer' %}selected{% endif %}>Customer</option>
                     </select>
                 </div>
-                <div class="col-md-6" id="crmEditBusinessWrap" style="display:none;">
+                <div class="col-md-6" id="crmEditBusinessWrap">
                     <label class="form-label" for="{{ form.business_segment.id_for_label }}">{{ form.business_segment.label }} <span class="text-danger">*</span></label>
                     {{ form.business_segment }}
                     {% for err in form.business_segment.errors %}<div class="text-danger small">{{ err }}</div>{% endfor %}
-                    <div class="form-text">Required when type is Customer.</div>
+                    <div class="form-text">Select B2B or B2C.</div>
                 </div>
                 <div class="col-md-6">
                     <label class="form-label">Status</label>
@@ -85,7 +86,7 @@ $(function () {
             </h6>
             <div class="row g-3 mb-3 d-none" id="crmEditB2bDocs">
                 <div class="col-12">
-                    <p class="small text-muted mb-0">B2B customers must provide a VAT (TRN) number and upload a trade license (TRN certificate upload is optional).</p>
+                    <p class="small text-muted mb-0">B2B accounts must upload a trade license (TRN certificate upload is optional).</p>
                 </div>
                 <div class="col-md-6">
                     <label class="form-label" for="{{ form.trn_document.id_for_label }}">{{ form.trn_document.label }} <span class="text-muted small">(optional)</span></label>
@@ -105,7 +106,7 @@ $(function () {
                 </div>
             </div>
             <div class="row g-3 mb-3">
-                <div class="col-md-6">
+                <div class="col-md-6" id="crmEditTrnWrap" style="display:none;">
                     <label class="form-label">{{ form.trn.label }}</label>
                     {{ form.trn }}
                     {% for err in form.trn.errors %}<div class="text-danger small">{{ err }}</div>{% endfor %}
@@ -117,11 +118,11 @@ $(function () {
                 </div>
             </div>
             <div class="row g-3 mb-4">
-                <div class="col-md-6" id="crmEditAssignWrap" style="{% if object.customer_type == 'customer' %}display:none;{% endif %}">
+                <div class="col-md-6" id="crmEditAssignWrap">
                     <label class="form-label" for="{{ form.assigned_salesperson.id_for_label }}">{{ form.assigned_salesperson.label }} <span class="text-danger">*</span></label>
                     {{ form.assigned_salesperson }}
                     {% for err in form.assigned_salesperson.errors %}<div class="text-danger small">{{ err }}</div>{% endfor %}
-                    <div class="form-text">Required for leads. Assign to a salesman.</div>
+                    <div class="form-text">Defaults to you when creating; change if assigning to someone else.</div>
                 </div>
                 <div class="col-md-6">
                     <label class="form-label">{{ form.primary_project.label }}</label>

@@ -4,7 +4,7 @@ Context processors for the ERP system.
 from django.conf import settings
 
 from apps.core.utils import PermissionChecker
-from apps.crm.utils import crm_leads_restricted_to_assignee
+from apps.core.visibility import crm_show_my_leads_label
 from apps.hr.models import Employee
 from apps.settings_app.models import Notification
 
@@ -31,7 +31,7 @@ def global_context(request):
         context['unread_notification_count'] = Notification.objects.filter(
             user=request.user, is_read=False
         ).count()
-        context['crm_sales_rep_only'] = crm_leads_restricted_to_assignee(request.user)
+        context['crm_sales_rep_only'] = crm_show_my_leads_label(request.user)
     else:
         context['header_notifications'] = []
         context['unread_notification_count'] = 0

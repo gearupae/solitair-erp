@@ -4,7 +4,6 @@ CRM Forms
 from django import forms
 from .models import Customer
 from .utils import (
-    crm_leads_restricted_to_assignee,
     get_crm_project_queryset,
     get_sales_employee_for_user,
     get_sales_employee_queryset,
@@ -39,8 +38,6 @@ class CustomerForm(forms.ModelForm):
 
     def __init__(self, *args, projects_queryset=None, user=None, **kwargs):
         super().__init__(*args, **kwargs)
-        self._request_user = user
-        self._sales_rep_only = crm_leads_restricted_to_assignee(user)
 
         qs = projects_queryset if projects_queryset is not None else get_crm_project_queryset()
         self.fields['primary_project'].queryset = qs
@@ -50,25 +47,23 @@ class CustomerForm(forms.ModelForm):
         self.fields['primary_project'].widget.attrs['class'] = 'form-select'
         self.fields['primary_project'].label = 'Project'
         self.fields['scope'].label = 'Scope'
-        self.fields['business_segment'].required = False
+        self.fields['business_segment'].required = True
         self.fields['business_segment'].widget.attrs['class'] = 'form-select'
         self.fields['business_segment'].label = 'Business type'
         self.fields['trn_document'].required = False
         self.fields['trade_license_document'].required = False
 
         self.fields['assigned_salesperson'].queryset = get_sales_employee_queryset()
-        self.fields['assigned_salesperson'].required = False
+        self.fields['assigned_salesperson'].required = True
         self.fields['assigned_salesperson'].empty_label = '— Select salesman —'
         self.fields['assigned_salesperson'].label_from_instance = salesperson_display_name
         self.fields['assigned_salesperson'].widget.attrs['class'] = 'form-select'
         self.fields['assigned_salesperson'].label = 'Assigned salesman'
 
-        if self._sales_rep_only:
-            self.fields['assigned_salesperson'].widget = forms.HiddenInput()
-            if user:
-                emp = get_sales_employee_for_user(user)
-                if emp:
-                    self.fields['assigned_salesperson'].initial = emp.pk
+        if user and not self.instance.pk:
+            emp = get_sales_employee_for_user(user)
+            if emp and 'assigned_salesperson' not in self.initial:
+                self.initial['assigned_salesperson'] = emp.pk
 
         if self.instance.pk:
             self.initial['scope'] = list(self.instance.scope or [])
@@ -108,35 +103,29 @@ class CustomerForm(forms.ModelForm):
         ctype = cleaned.get('customer_type')
         seg = (cleaned.get('business_segment') or '').strip()
 
-        if ctype == 'lead':
-            cleaned['business_segment'] = ''
-            if self._sales_rep_only and self._request_user:
-                cleaned['assigned_salesperson'] = get_sales_employee_for_user(self._request_user)
-            elif not cleaned.get('assigned_salesperson'):
-                self.add_error(
-                    'assigned_salesperson',
-                    'Select a salesman to assign this lead.',
-                )
-        else:
-            cleaned['assigned_salesperson'] = None
+        if seg not in ('b2b', 'b2c'):
+            self.add_error(
+                'business_segment',
+                'Select B2B or B2C.',
+            )
 
-        if ctype == 'customer':
-            if seg not in ('b2b', 'b2c'):
+        if not cleaned.get('assigned_salesperson'):
+            self.add_error(
+                'assigned_salesperson',
+                'Select a salesman to assign this account.',
+            )
+
+        if seg == 'b2c':
+            cleaned['trn'] = ''
+        elif seg == 'b2b':
+            lic_f = cleaned.get('trade_license_document')
+            has_lic = bool(lic_f) or (
+                self.instance.pk and bool(self.instance.trade_license_document)
+            )
+            if not has_lic:
                 self.add_error(
-                    'business_segment',
-                    'Select B2B or B2C when type is Customer.',
+                    'trade_license_document',
+                    'Trade license upload is required for B2B accounts.',
                 )
-            if seg == 'b2b':
-                if not (cleaned.get('trn') or '').strip():
-                    self.add_error('trn', 'VAT (TRN) number is required for B2B customers.')
-                lic_f = cleaned.get('trade_license_document')
-                has_lic = bool(lic_f) or (
-                    self.instance.pk and bool(self.instance.trade_license_document)
-                )
-                if not has_lic:
-                    self.add_error(
-                        'trade_license_document',
-                        'Trade license upload is required for B2B customers.',
-                    )
 
         return cleaned

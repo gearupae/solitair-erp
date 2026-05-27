@@ -14,9 +14,14 @@ import json
 
 from .models import Customer, CustomerPublicUpload, CrmLeadKanbanStage
 from .forms import CustomerForm
+from apps.core.visibility import crm_show_my_leads_label, filter_customers_for_user
 from .utils import (
-    crm_leads_restricted_to_assignee,
-    filter_customers_for_user,
+    annotate_latest_estimate_value,
+    CRM_KANBAN_UNASSIGNED_THEME,
+    CRM_KANBAN_WON_THEME,
+    CRM_KANBAN_CUSTOMERS_THEME,
+    CRM_KANBAN_STAGE_THEMES,
+    kanban_theme_style,
     get_crm_project_queryset,
     get_sales_employee_queryset,
     project_choice_label,
@@ -24,6 +29,7 @@ from .utils import (
     salesperson_display_name,
     user_can_access_customer,
 )
+from .activity import get_customer_activity_feed
 from apps.core.mixins import PermissionRequiredMixin, CreatePermissionMixin, UpdatePermissionMixin, DeletePermissionMixin
 from apps.core.utils import PermissionChecker
 from apps.settings_app.models import AuditLog
@@ -95,11 +101,11 @@ class CustomerListView(PermissionRequiredMixin, ListView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         user = self.request.user
-        sales_rep_only = crm_leads_restricted_to_assignee(user)
+        sales_rep_only = crm_show_my_leads_label(user)
         context['crm_sales_rep_only'] = sales_rep_only
-        context['title'] = 'My Leads' if sales_rep_only else 'Customers'
+        context['title'] = 'My Leads & Customers' if sales_rep_only else 'Customers'
         context['form'] = CustomerForm(
-            projects_queryset=get_crm_project_queryset(),
+            projects_queryset=get_crm_project_queryset(self.request.user),
             user=user,
         )
         context['salesman_choices'] = get_sales_employee_queryset()
@@ -107,7 +113,9 @@ class CustomerListView(PermissionRequiredMixin, ListView):
             {'id': e.pk, 'label': salesperson_display_name(e)}
             for e in context['salesman_choices']
         ]
-        context['show_assign_salesman'] = not sales_rep_only
+        default_emp = get_sales_employee_for_user(user)
+        context['default_assigned_salesperson_id'] = default_emp.pk if default_emp else None
+        context['show_assign_salesman'] = True
         context['can_create'] = self.request.user.is_superuser or PermissionChecker.has_permission(
             self.request.user, 'crm', 'create'
         )
@@ -124,7 +132,7 @@ class CustomerListView(PermissionRequiredMixin, ListView):
         context['active_customers'] = customers.filter(status='active').count()
         context['total_leads'] = customers.filter(customer_type='lead').count()
         context['prospects'] = customers.filter(status='prospect').count()
-        context['project_choices'] = get_crm_project_queryset()
+        context['project_choices'] = get_crm_project_queryset(self.request.user)
         context['crm_customer_type_choices'] = Customer.CUSTOMER_TYPE_CHOICES
         context['crm_status_choices'] = Customer.STATUS_CHOICES
 
@@ -142,10 +150,12 @@ class CustomerListView(PermissionRequiredMixin, ListView):
                 converts_to_customer=True,
             ).first()
         )
-        board_leads = filter_customers_for_user(
-            Customer.objects.filter(customer_type='lead', is_active=True)
-            .select_related('lead_kanban_stage', 'assigned_salesperson'),
-            user,
+        board_leads = annotate_latest_estimate_value(
+            filter_customers_for_user(
+                Customer.objects.filter(customer_type='lead', is_active=True)
+                .select_related('lead_kanban_stage', 'assigned_salesperson'),
+                user,
+            )
         ).order_by('customer_number')
         leads_by_stage = {s.id: [] for s in board_stages}
         unassigned = []
@@ -156,15 +166,28 @@ class CustomerListView(PermissionRequiredMixin, ListView):
             else:
                 unassigned.append(lead)
         context['kanban_lead_columns'] = [
-            {'stage': s, 'leads': leads_by_stage[s.id]} for s in board_stages
+            {
+                'stage': s,
+                'leads': leads_by_stage[s.id],
+                'theme_style': kanban_theme_style(
+                    CRM_KANBAN_STAGE_THEMES[i % len(CRM_KANBAN_STAGE_THEMES)]
+                ),
+            }
+            for i, s in enumerate(board_stages)
         ]
         context['kanban_leads_unassigned'] = unassigned
-        context['crm_show_customers_column'] = not sales_rep_only
-        context['kanban_customers'] = (
-            [] if sales_rep_only else list(
-                Customer.objects.filter(customer_type='customer', is_active=True)
-                .order_by('name', 'customer_number')[:400]
-            )
+        context['kanban_unassigned_style'] = kanban_theme_style(CRM_KANBAN_UNASSIGNED_THEME)
+        context['kanban_won_style'] = kanban_theme_style(CRM_KANBAN_WON_THEME)
+        context['kanban_customers_style'] = kanban_theme_style(CRM_KANBAN_CUSTOMERS_THEME)
+        context['crm_show_customers_column'] = True
+        context['kanban_customers'] = list(
+            annotate_latest_estimate_value(
+                filter_customers_for_user(
+                    Customer.objects.filter(customer_type='customer', is_active=True)
+                    .select_related('assigned_salesperson'),
+                    user,
+                )
+            ).order_by('name', 'customer_number')[:400]
         )
         context['can_configure_kanban'] = (
             self.request.user.is_superuser
@@ -182,13 +205,11 @@ class CustomerListView(PermissionRequiredMixin, ListView):
         form = CustomerForm(
             request.POST,
             request.FILES,
-            projects_queryset=get_crm_project_queryset(),
+            projects_queryset=get_crm_project_queryset(self.request.user),
             user=request.user,
         )
         if form.is_valid():
             customer = form.save(commit=False)
-            if crm_leads_restricted_to_assignee(request.user):
-                customer.assigned_salesperson = get_sales_employee_for_user(request.user)
             customer.save()
             log_action(request.user, 'create', 'Customer', customer.id, {
                 'name': customer.name,
@@ -214,7 +235,7 @@ def crm_project_options(request):
 
     projects = [
         {'id': p.pk, 'label': project_choice_label(p), 'name': p.name}
-        for p in get_crm_project_queryset()
+        for p in get_crm_project_queryset(self.request.user)
     ]
     return JsonResponse({'projects': projects})
 
@@ -488,6 +509,7 @@ class CustomerDetailView(PermissionRequiredMixin, DetailView):
         context['public_uploads'] = (
             self.object.public_uploads.filter(is_active=True).order_by('-created_at')
         )
+        context['customer_activity'] = get_customer_activity_feed(self.object)
         return context
 
 
@@ -507,14 +529,14 @@ class CustomerUpdateView(UpdatePermissionMixin, UpdateView):
 
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
-        kwargs['projects_queryset'] = get_crm_project_queryset()
+        kwargs['projects_queryset'] = get_crm_project_queryset(self.request.user)
         kwargs['user'] = self.request.user
         return kwargs
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['title'] = f'Edit Customer: {self.object.name}'
-        context['project_choices'] = get_crm_project_queryset()
+        context['project_choices'] = get_crm_project_queryset(self.request.user)
         return context
     
     def form_valid(self, form):

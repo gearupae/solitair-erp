@@ -58,21 +58,38 @@
 #itemsTable .items-col-inventory {
     width: 12%;
 }
-#itemsTable .items-col-inventory .form-select {
-    font-size: 0.8rem;
-    padding-left: 0.25rem;
-    padding-right: 1.35rem;
+#itemsTable .items-col-desc .form-control {
+    font-size: 0.875rem;
+    line-height: 1.5;
+    min-height: calc(1.5em + 0.5rem + 2px);
+    max-height: calc(1.5em + 0.5rem + 2px);
 }
 #itemsTable .items-col-inventory .select2-container {
     width: 100% !important;
 }
-#itemsTable .items-col-inventory .select2-selection--single {
-    min-height: 31px;
-    font-size: 0.8rem;
+#itemsTable .items-col-inventory .select2-container--bootstrap-5 .select2-selection,
+#itemsTable .items-col-inventory .select2-container--bootstrap-5 .select2-selection--single {
+    min-height: calc(1.5em + 0.5rem + 2px) !important;
+    height: calc(1.5em + 0.5rem + 2px) !important;
+    max-height: calc(1.5em + 0.5rem + 2px) !important;
+    padding: 0 !important;
+    border-radius: var(--bs-border-radius-sm) !important;
+    box-sizing: border-box;
+    display: flex !important;
+    align-items: center !important;
 }
-#itemsTable .items-col-inventory .select2-selection__rendered {
-    padding-left: 0.25rem;
-    line-height: 1.5;
+#itemsTable .items-col-inventory .select2-container--bootstrap-5 .select2-selection--single .select2-selection__rendered {
+    padding: 0 1.75rem 0 0.3rem !important;
+    line-height: 1.5 !important;
+    font-size: 0.875rem !important;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1 1 auto;
+}
+#itemsTable .items-col-inventory .select2-container--bootstrap-5 .select2-selection--single .select2-selection__arrow {
+    height: 100% !important;
+    top: 0 !important;
 }
 .estimate-inventory-select2-dropdown {
     min-width: 18rem !important;
@@ -235,7 +252,7 @@
                         {{ form.show_group_totals_on_pdf }}
                         <label class="form-check-label" for="{{ form.show_group_totals_on_pdf.id_for_label }}">Show group totals on PDF</label>
                     </div>
-                    <small class="text-muted d-block ms-1">When on, each named line group shows a subtotal after its items (no separate group heading).</small>
+                    <small class="text-muted d-block ms-1">When on, each named line group shows its section heading and a subtotal after its items on the PDF.</small>
                     {% if form.show_group_totals_on_pdf.errors %}<div class="text-danger small">{{ form.show_group_totals_on_pdf.errors|join:", " }}</div>{% endif %}
                 </div>
             </div>
@@ -466,6 +483,78 @@ function getInventoryOptions(selectedId) {
     return o;
 }
 
+function getInventoryMeta(invId) {
+    if (!invId) return null;
+    return inventoryItems.find(x => String(x.id) === String(invId)) || null;
+}
+
+function getBasePriceBoundsMessage(meta, price) {
+    if (!meta) return '';
+    const min = parseFloat(meta.minimum_selling_price) || 0;
+    const max = parseFloat(meta.maximum_selling_price) || 0;
+    const name = meta.name || 'item';
+    if (min > 0 && price > 0 && price < min) {
+        return `Amount is low for ${name}.`;
+    }
+    if (max > 0 && price > max) {
+        return `Amount is high for ${name}.`;
+    }
+    return '';
+}
+
+function validateRowBasePrice(row, showToast) {
+    const invSel = row.querySelector('.item-inventory');
+    const bp = row.querySelector('.item-base-price');
+    if (!invSel || !bp || row.style.display === 'none') return true;
+    const invId = invSel.value;
+    if (!invId) {
+        bp.setCustomValidity('');
+        bp.classList.remove('is-invalid');
+        return true;
+    }
+    const price = parseFloat(bp.value);
+    if (Number.isNaN(price)) {
+        bp.setCustomValidity('');
+        bp.classList.remove('is-invalid');
+        return true;
+    }
+    const meta = getInventoryMeta(invId);
+    const msg = getBasePriceBoundsMessage(meta, price);
+    if (msg) {
+        bp.setCustomValidity(msg);
+        bp.classList.add('is-invalid');
+        if (showToast !== false && window.toastr) toastr.error(msg);
+        return false;
+    }
+    bp.setCustomValidity('');
+    bp.classList.remove('is-invalid');
+    return true;
+}
+
+function validateAllBasePrices(showToast) {
+    let ok = true;
+    document.querySelectorAll('#itemsBody .item-row').forEach(row => {
+        if (!validateRowBasePrice(row, showToast)) ok = false;
+    });
+    return ok;
+}
+
+function syncInventoryFieldHeight(row) {
+    if (!row) return;
+    const desc = row.querySelector('.items-col-desc .form-control');
+    const selection = row.querySelector('.items-col-inventory .select2-selection--single');
+    if (!desc || !selection) return;
+    const h = Math.round(desc.getBoundingClientRect().height);
+    if (h <= 0) return;
+    selection.style.setProperty('height', `${h}px`, 'important');
+    selection.style.setProperty('min-height', `${h}px`, 'important');
+    selection.style.setProperty('max-height', `${h}px`, 'important');
+}
+
+function syncAllInventoryFieldHeights() {
+    document.querySelectorAll('#itemsBody .item-row').forEach(syncInventoryFieldHeight);
+}
+
 function initInventorySelect2(selectEl) {
     if (!selectEl || typeof $ === 'undefined' || !$.fn.select2) return;
     if (!Array.isArray(inventoryItems) || !inventoryItems.length) return;
@@ -491,10 +580,16 @@ function initInventorySelect2(selectEl) {
     if (current) {
         $el.val(current).trigger('change.select2');
     }
+    $el.off('change.estimateInv select2:select.estimateInv select2:clear.estimateInv');
+    $el.on('change.estimateInv select2:select.estimateInv select2:clear.estimateInv', function() {
+        onInventoryChange(this);
+    });
+    syncInventoryFieldHeight(selectEl.closest('tr'));
 }
 
 function initAllInventorySelect2() {
     document.querySelectorAll('#itemsBody .item-inventory').forEach(initInventorySelect2);
+    syncAllInventoryFieldHeights();
 }
 
 let suppressInventoryChange = false;
@@ -568,43 +663,40 @@ function getVatRatePercent(taxSel) {
     return tc ? parseFloat(tc.rate) || 0 : 0;
 }
 
+function populateRowFromInventory(row, invId, groupName) {
+    const meta = getInventoryMeta(invId);
+    if (!meta || !row) return;
+    if (groupName != null && groupName !== undefined) {
+        const g = row.querySelector('.item-group-name');
+        if (g) g.value = groupName;
+    }
+    const desc = row.querySelector('input[name$="-description"]');
+    if (desc) desc.value = meta.name || '';
+    const bp = row.querySelector('.item-base-price');
+    if (bp) bp.value = parseFloat(meta.selling_price || 0).toFixed(2);
+    const tc = row.querySelector('.item-tax-code');
+    if (tc) tc.value = meta.tax_code_id || defaultTaxCodeId || '';
+    computeRate(row);
+    calculateRowTotal(row.querySelector('.item-qty'));
+    validateRowBasePrice(row, true);
+}
+
 function onInventoryChange(sel) {
     if (suppressInventoryChange) return;
     const row = sel.closest('tr');
     const id = sel.value;
-    if (!id) return;
-    fetch(`/sales/api/inventory-item/${id}/`, {headers: {'X-Requested-With': 'XMLHttpRequest'}})
-        .then(r => r.json())
-        .then(data => {
-            row.querySelector('input[name$="-description"]')?.setAttribute('value', data.name);
-            const desc = row.querySelector('input[name$="-description"]');
-            if (desc) desc.value = data.name;
-            const bp = row.querySelector('.item-base-price');
-            if (bp) bp.value = parseFloat(data.selling_price).toFixed(2);
-            const tc = row.querySelector('.item-tax-code');
-            if (tc && data.tax_code_id) {
-                tc.value = data.tax_code_id;
-            }
-            computeRate(row);
-            calculateRowTotal(row.querySelector('.item-qty'));
-        });
+    if (!id || !row) return;
+    populateRowFromInventory(row, id);
 }
 
 function applyInventoryItemToRow(row, invId, groupName) {
-    const meta = inventoryItems.find(x => String(x.id) === String(invId));
-    if (!meta) return;
-    const g = row.querySelector('.item-group-name');
-    if (g) g.value = groupName;
     const sel = row.querySelector('.item-inventory');
-    if (sel) syncInventorySelectUi(sel, invId);
-    const desc = row.querySelector('input[name$="-description"]');
-    if (desc) desc.value = meta.name;
-    const bp = row.querySelector('.item-base-price');
-    if (bp) bp.value = parseFloat(meta.selling_price).toFixed(2);
-    const tc = row.querySelector('.item-tax-code');
-    if (tc && meta.tax_code_id) tc.value = meta.tax_code_id;
-    computeRate(row);
-    calculateRowTotal(row.querySelector('.item-qty'));
+    if (sel) {
+        suppressInventoryChange = true;
+        syncInventorySelectUi(sel, invId);
+        suppressInventoryChange = false;
+    }
+    populateRowFromInventory(row, invId, groupName);
 }
 
 function fillInventoryGroupBulkSelect(sel) {
@@ -682,6 +774,7 @@ function addItemRow() {
     tbody.appendChild(tr);
     fillInventoryGroupBulkSelect(tr.querySelector('.estimate-add-from-group'));
     initInventorySelect2(tr.querySelector('.item-inventory'));
+    syncInventoryFieldHeight(tr);
     bindQtyInputBehavior(tr.querySelector('.item-qty'));
     formCount++;
     document.getElementById('id_items-TOTAL_FORMS').value = formCount;
@@ -757,6 +850,9 @@ function bindLineItemsTableEvents() {
         if (!row) return;
         const q = row.querySelector('.item-qty');
         if (q) calculateRowTotal(q);
+        if (t.matches('.item-base-price')) {
+            validateRowBasePrice(row, true);
+        }
     });
 
     tbody.addEventListener('change', function(e) {
@@ -765,8 +861,9 @@ function bindLineItemsTableEvents() {
             addLinesFromInventoryGroupSelect(t);
             return;
         }
-        if (t.matches('.item-inventory')) {
-            onInventoryChange(t);
+        if (t.matches('.item-base-price')) {
+            const row = t.closest('tr.item-row');
+            if (row) validateRowBasePrice(row, true);
             return;
         }
         if (!t.matches('.item-qty, .item-profit-type, .item-tax-code')) return;
@@ -787,9 +884,17 @@ function setupEstimateItemsCsvLabel() {
     });
 }
 
+function applyDefaultTaxToRows() {
+    if (!defaultTaxCodeId) return;
+    document.querySelectorAll('#itemsBody .item-tax-code').forEach(sel => {
+        if (!sel.value) sel.value = String(defaultTaxCodeId);
+    });
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     bindLineItemsTableEvents();
     setupEstimateItemsCsvLabel();
+    applyDefaultTaxToRows();
     initQtyFields(document.getElementById('itemsBody'));
     document.querySelectorAll('.estimate-add-from-group').forEach(fillInventoryGroupBulkSelect);
     document.querySelectorAll('#itemsBody .item-row').forEach(row => {
@@ -798,10 +903,19 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     document.querySelector('[name="discount_type"]')?.addEventListener('change', calculateTotals);
     document.querySelector('[name="discount_value"]')?.addEventListener('input', calculateTotals);
+    document.getElementById('estimateForm')?.addEventListener('submit', function(e) {
+        if (!validateAllBasePrices(true)) {
+            e.preventDefault();
+            const firstInvalid = document.querySelector('#itemsBody .item-base-price.is-invalid');
+            firstInvalid?.focus();
+            firstInvalid?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+    });
 });
 
 $(function() {
     initAllInventorySelect2();
+    window.addEventListener('resize', syncAllInventoryFieldHeights);
 });
 </script>
 {% endblock %}

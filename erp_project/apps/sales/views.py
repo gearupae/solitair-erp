@@ -20,6 +20,7 @@ import json
 
 from .models import Estimate, EstimateItem, EstimateProformaInvoice, Invoice, InvoiceItem
 from .forms import EstimateForm, EstimateItemFormSet, InvoiceForm, InvoiceItemFormSet
+from .estimate_csv import get_default_estimate_csv_tax_code
 from apps.crm.models import Customer
 from apps.core.mixins import PermissionRequiredMixin, CreatePermissionMixin, UpdatePermissionMixin
 from apps.core.notification_utils import notify_if_new_assignee
@@ -60,7 +61,10 @@ def _estimate_form_inventory_groups_context():
     item_qs = (
         Item.objects.filter(is_active=True, status='active')
         .order_by('item_code', 'pk')
-        .only('id', 'item_code', 'name', 'selling_price', 'tax_code_id')
+        .only(
+            'id', 'item_code', 'name', 'selling_price',
+            'minimum_selling_price', 'maximum_selling_price', 'tax_code_id',
+        )
     )
     groups = []
     for g in ItemGroup.objects.prefetch_related(
@@ -74,6 +78,8 @@ def _estimate_form_inventory_groups_context():
                     'item_code': i.item_code,
                     'name': i.name,
                     'selling_price': i.selling_price,
+                    'minimum_selling_price': i.minimum_selling_price,
+                    'maximum_selling_price': i.maximum_selling_price,
                     'tax_code_id': i.tax_code_id,
                 }
                 for i in g.items.all()
@@ -141,6 +147,20 @@ def _estimate_list_sort_querystring(request_get, field):
     return params.urlencode()
 
 
+def _scope_estimate_form_fields(form, user):
+    from apps.core.visibility import filter_customers_for_user, filter_projects_for_user
+    from apps.crm.models import Customer
+    from apps.projects.models import Project
+
+    form.fields['customer'].queryset = filter_customers_for_user(
+        Customer.objects.filter(is_active=True), user
+    )
+    form.fields['project'].queryset = filter_projects_for_user(
+        Project.objects.filter(is_active=True), user
+    )
+    return form
+
+
 # ============ ESTIMATE VIEWS ============
 
 class EstimateListView(PermissionRequiredMixin, ListView):
@@ -178,12 +198,17 @@ class EstimateListView(PermissionRequiredMixin, ListView):
         queryset = Estimate.objects.filter(is_active=True).select_related(
             'customer',
             'assigned_to',
+            'created_by',
         ).prefetch_related(
             Prefetch(
                 'proforma_invoices',
                 queryset=EstimateProformaInvoice.objects.order_by('-created_at'),
             ),
         )
+
+        from apps.core.visibility import filter_estimates_for_user
+
+        queryset = filter_estimates_for_user(queryset, self.request.user)
 
         is_portal = user_is_estimate_approver_portal(self.request.user)
         if is_portal:
@@ -352,6 +377,7 @@ class EstimateCreateView(CreatePermissionMixin, CreateView):
     def get_initial(self):
         from apps.settings_app.models import CompanySettings
         initial = super().get_initial()
+        initial['date'] = date.today()
         cs = CompanySettings.get_settings()
         initial['assigned_to'] = self.request.user.pk
         u = self.request.user
@@ -361,6 +387,9 @@ class EstimateCreateView(CreatePermissionMixin, CreateView):
         if cs.estimate_default_terms:
             initial['terms_and_conditions'] = cs.estimate_default_terms
         return initial
+
+    def get_form(self, form_class=None):
+        return _scope_estimate_form_fields(super().get_form(form_class), self.request.user)
     
     def get_context_data(self, **kwargs):
         from apps.finance.models import TaxCode
@@ -371,10 +400,13 @@ class EstimateCreateView(CreatePermissionMixin, CreateView):
         context['scope_choices'] = Estimate.SCOPE_CHOICES
         # Tax Codes for VAT selection (SAP/Oracle Standard)
         context['tax_codes'] = TaxCode.objects.filter(is_active=True).order_by('code')
-        context['default_tax_code'] = TaxCode.objects.filter(is_active=True, is_default=True).first()
+        context['default_tax_code'] = get_default_estimate_csv_tax_code()
         rows = list(
             Item.objects.filter(is_active=True, status='active')
-            .values('id', 'item_code', 'name', 'selling_price', 'tax_code_id')[:2000]
+            .values(
+                'id', 'item_code', 'name', 'selling_price',
+                'minimum_selling_price', 'maximum_selling_price', 'tax_code_id',
+            )[:2000]
         )
         context['inventory_items_json'] = json.dumps(rows, cls=DjangoJSONEncoder)
         context['estimate_items_sample_csv_url'] = reverse('sales:estimate_items_sample_csv')
@@ -460,7 +492,14 @@ class EstimateUpdateView(UpdatePermissionMixin, UpdateView):
     module_name = 'sales'
 
     def dispatch(self, request, *args, **kwargs):
-        est = get_object_or_404(Estimate, pk=kwargs['pk'], is_active=True)
+        from apps.core.visibility import filter_estimates_for_user
+
+        est = get_object_or_404(
+            filter_estimates_for_user(
+                Estimate.objects.filter(pk=kwargs['pk'], is_active=True),
+                request.user,
+            )
+        )
         if not est.allows_edit_by(request.user):
             messages.error(
                 request,
@@ -468,6 +507,9 @@ class EstimateUpdateView(UpdatePermissionMixin, UpdateView):
             )
             return redirect('sales:estimate_detail', pk=kwargs['pk'])
         return super().dispatch(request, *args, **kwargs)
+
+    def get_form(self, form_class=None):
+        return _scope_estimate_form_fields(super().get_form(form_class), self.request.user)
 
     def get_context_data(self, **kwargs):
         from apps.finance.models import TaxCode
@@ -477,10 +519,13 @@ class EstimateUpdateView(UpdatePermissionMixin, UpdateView):
         context['today'] = date.today().isoformat()
         context['scope_choices'] = Estimate.SCOPE_CHOICES
         context['tax_codes'] = TaxCode.objects.filter(is_active=True).order_by('code')
-        context['default_tax_code'] = TaxCode.objects.filter(is_active=True, is_default=True).first()
+        context['default_tax_code'] = get_default_estimate_csv_tax_code()
         rows = list(
             Item.objects.filter(is_active=True, status='active')
-            .values('id', 'item_code', 'name', 'selling_price', 'tax_code_id')[:2000]
+            .values(
+                'id', 'item_code', 'name', 'selling_price',
+                'minimum_selling_price', 'maximum_selling_price', 'tax_code_id',
+            )[:2000]
         )
         context['inventory_items_json'] = json.dumps(rows, cls=DjangoJSONEncoder)
         context['estimate_items_sample_csv_url'] = reverse('sales:estimate_items_sample_csv')
@@ -629,12 +674,26 @@ class EstimateDetailView(PermissionRequiredMixin, DetailView):
 
     def get_queryset(self):
         items_qs = EstimateItem.objects.select_related('inventory_item', 'tax_code').order_by('sort_order', 'id')
-        return Estimate.objects.select_related(
+        qs = Estimate.objects.filter(is_active=True).select_related(
             'customer', 'assigned_to', 'project', 'created_by', 'updated_by',
         ).prefetch_related(
             Prefetch('items', queryset=items_qs),
             Prefetch('proforma_invoices', queryset=EstimateProformaInvoice.objects.select_related('created_by')),
         )
+        from apps.core.visibility import filter_estimates_for_user
+
+        return filter_estimates_for_user(qs, self.request.user)
+
+    def dispatch(self, request, *args, **kwargs):
+        pk = kwargs.get('pk')
+        est = Estimate.objects.filter(pk=pk, is_active=True).first()
+        if est:
+            from apps.core.visibility import user_can_access_estimate
+
+            if not user_can_access_estimate(request.user, est):
+                messages.error(request, 'You do not have permission to view this estimate.')
+                return redirect('sales:estimate_list')
+        return super().dispatch(request, *args, **kwargs)
     
     def get_context_data(self, **kwargs):
         from apps.purchase.email_outbound import outgoing_mail_hint
@@ -644,11 +703,11 @@ class EstimateDetailView(PermissionRequiredMixin, DetailView):
         from .approval_rules import (
             get_estimate_status_actions,
             user_can_approve_estimate_edit,
-            user_is_configured_estimate_approver,
+            user_can_approve_estimate_status,
         )
 
         context['can_edit'] = self.object.allows_edit_by(self.request.user)
-        context['can_approve_estimate_status'] = user_is_configured_estimate_approver(
+        context['can_approve_estimate_status'] = user_can_approve_estimate_status(
             self.request.user, self.object
         )
         context['estimate_status_actions'] = get_estimate_status_actions(
@@ -874,9 +933,9 @@ def estimate_update_status(request, pk, status):
         return redirect('sales:estimate_detail', pk=pk)
 
     if status in ('approved', 'rejected'):
-        from .approval_rules import user_is_configured_estimate_approver
+        from .approval_rules import user_can_approve_estimate_status
 
-        if not user_is_configured_estimate_approver(request.user, estimate):
+        if not user_can_approve_estimate_status(request.user, estimate):
             messages.error(request, 'Only the configured estimate approver can approve or reject this estimate.')
             return redirect('sales:estimate_detail', pk=pk)
 
@@ -1404,13 +1463,13 @@ def estimate_set_status(request, pk):
         messages.error(request, 'Invalid status.')
         return redirect('sales:estimate_list')
 
-    from .approval_rules import user_is_configured_estimate_approver
+    from .approval_rules import user_can_approve_estimate_status
 
     can_change_status = (
         request.user.is_superuser
         or PermissionChecker.has_permission(request.user, 'sales', 'edit')
     )
-    if status in ('approved', 'rejected') and user_is_configured_estimate_approver(request.user, estimate):
+    if status in ('approved', 'rejected') and user_can_approve_estimate_status(request.user, estimate):
         can_change_status = True
 
     if not can_change_status:
@@ -1418,7 +1477,7 @@ def estimate_set_status(request, pk):
         return redirect('sales:estimate_list')
 
     if status in ('approved', 'rejected'):
-        if not user_is_configured_estimate_approver(request.user, estimate):
+        if not user_can_approve_estimate_status(request.user, estimate):
             messages.error(request, 'Only the configured estimate approver can approve or reject this estimate.')
             next_url = request.POST.get('next', '').strip()
             if next_url and next_url.startswith('/') and not next_url.startswith('//'):
@@ -1510,6 +1569,8 @@ def inventory_item_json(request, pk):
         'name': item.name,
         'description': item.description or '',
         'selling_price': str(item.selling_price),
+        'minimum_selling_price': str(item.minimum_selling_price),
+        'maximum_selling_price': str(item.maximum_selling_price),
         'tax_code_id': item.tax_code_id,
     })
 
@@ -1581,7 +1642,7 @@ class InvoiceCreateView(CreatePermissionMixin, CreateView):
         context['today'] = date.today().isoformat()
         # Tax Codes for VAT selection (SAP/Oracle Standard)
         context['tax_codes'] = TaxCode.objects.filter(is_active=True).order_by('code')
-        context['default_tax_code'] = TaxCode.objects.filter(is_active=True, is_default=True).first()
+        context['default_tax_code'] = get_default_estimate_csv_tax_code()
         if 'items_formset' not in kwargs:
             if self.request.POST:
                 context['items_formset'] = InvoiceItemFormSet(self.request.POST)
@@ -1654,7 +1715,7 @@ class InvoiceUpdateView(UpdatePermissionMixin, UpdateView):
         context['today'] = date.today().isoformat()
         # Tax Codes for VAT selection (SAP/Oracle Standard)
         context['tax_codes'] = TaxCode.objects.filter(is_active=True).order_by('code')
-        context['default_tax_code'] = TaxCode.objects.filter(is_active=True, is_default=True).first()
+        context['default_tax_code'] = get_default_estimate_csv_tax_code()
         if 'items_formset' not in kwargs:
             if self.request.POST:
                 context['items_formset'] = InvoiceItemFormSet(self.request.POST, instance=self.object)

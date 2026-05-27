@@ -149,7 +149,7 @@
                         </thead>
                         <tbody>
                             {% for group in item_groups %}
-                            {% if group.name and not estimate.show_group_totals_on_pdf %}
+                            {% if group.name %}
                             <tr class="table-secondary">
                                 <td colspan="7" class="fw-semibold small text-uppercase">{{ group.name }}</td>
                             </tr>
@@ -189,44 +189,6 @@
             </div>
         </div>
 
-        {% if can_send_estimate_email %}
-        <div class="card mb-4">
-            <div class="card-header bg-transparent py-3">
-                <h6 class="mb-0 fw-semibold"><i class="fas fa-envelope me-2 text-dark"></i>Email this quotation</h6>
-            </div>
-            <div class="card-body pt-0">
-                {% if estimate_email_hint %}
-                <div class="alert alert-warning py-2 small mb-3">{{ estimate_email_hint }}</div>
-                {% endif %}
-                {% csrf_token %}
-                <div class="row g-3">
-                    <div class="col-md-6">
-                        <label class="form-label small fw-semibold" for="estimate-email-subject">Subject</label>
-                        <input type="text" class="form-control form-control-sm" id="estimate-email-subject" value="{{ estimate_email_default_subject }}">
-                    </div>
-                    <div class="col-md-6">
-                        <label class="form-label small fw-semibold" for="estimate-email-to">To</label>
-                        <input type="text" class="form-control form-control-sm" id="estimate-email-to" value="{{ estimate_email_default_to }}" placeholder="email@example.com (comma-separated for multiple)">
-                    </div>
-                    <div class="col-md-6">
-                        <label class="form-label small fw-semibold" for="estimate-email-cc">Cc</label>
-                        <input type="text" class="form-control form-control-sm" id="estimate-email-cc" placeholder="Optional, comma-separated">
-                    </div>
-                    <div class="col-12">
-                        <label class="form-label small fw-semibold" for="estimate-email-body">Message</label>
-                        <textarea class="form-control form-control-sm" id="estimate-email-body" rows="5">{{ estimate_email_default_body }}</textarea>
-                    </div>
-                    <div class="col-12">
-                        <button type="button" class="btn btn-primary btn-sm" id="estimate-email-send-btn">
-                            <i class="fas fa-paper-plane me-1"></i>Send email with PDF
-                        </button>
-                        <span class="text-muted small ms-2" id="estimate-email-send-status"></span>
-                    </div>
-                </div>
-            </div>
-        </div>
-        {% endif %}
-        
         {% if estimate.authorized_signature or estimate.customer_signature %}
         <div class="card mb-4">
             <div class="card-header bg-transparent py-3">
@@ -443,6 +405,44 @@
                 </div>
             </div>
         </div>
+
+        {% if can_send_estimate_email %}
+        <div class="card mb-4">
+            <div class="card-header bg-transparent py-3">
+                <h6 class="mb-0 fw-semibold"><i class="fas fa-envelope me-2 text-dark"></i>Email this quotation</h6>
+            </div>
+            <div class="card-body pt-0">
+                {% if estimate_email_hint %}
+                <div class="alert alert-warning py-2 small mb-3">{{ estimate_email_hint }}</div>
+                {% endif %}
+                {% csrf_token %}
+                <div class="row g-3">
+                    <div class="col-12">
+                        <label class="form-label small fw-semibold" for="estimate-email-subject">Subject</label>
+                        <input type="text" class="form-control form-control-sm" id="estimate-email-subject" value="{{ estimate_email_default_subject }}">
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label small fw-semibold" for="estimate-email-to">To</label>
+                        <input type="text" class="form-control form-control-sm" id="estimate-email-to" value="{{ estimate_email_default_to }}" placeholder="email@example.com (comma-separated for multiple)">
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label small fw-semibold" for="estimate-email-cc">Cc</label>
+                        <input type="text" class="form-control form-control-sm" id="estimate-email-cc" placeholder="Optional, comma-separated">
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label small fw-semibold" for="estimate-email-body">Message</label>
+                        <textarea class="form-control form-control-sm" id="estimate-email-body" rows="5">{{ estimate_email_default_body }}</textarea>
+                    </div>
+                    <div class="col-12">
+                        <button type="button" class="btn btn-primary btn-sm w-100" id="estimate-email-send-btn">
+                            <i class="fas fa-paper-plane me-1"></i>Send email with PDF
+                        </button>
+                        <span class="text-muted small d-block mt-2 text-center" id="estimate-email-send-status"></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
     </div>
 </div>
 

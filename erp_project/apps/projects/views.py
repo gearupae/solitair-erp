@@ -50,7 +50,10 @@ class ProjectListView(PermissionRequiredMixin, ListView):
     permission_type = 'view'
     
     def get_queryset(self):
-        queryset = Project.objects.filter(is_active=True).select_related('customer', 'manager')
+        queryset = Project.objects.filter(is_active=True).select_related('customer', 'manager', 'created_by')
+        from apps.core.visibility import filter_projects_for_user
+
+        queryset = filter_projects_for_user(queryset, self.request.user)
         search = self.request.GET.get('search')
         if search:
             queryset = queryset.filter(Q(name__icontains=search) | Q(project_code__icontains=search))
@@ -106,8 +109,12 @@ class ProjectListView(PermissionRequiredMixin, ListView):
             ('completion_pending', 'Pending completion approval'),
         ]
         
-        # Calculate metrics
-        all_projects = Project.objects.filter(is_active=True)
+        # Calculate metrics (respect visibility scope for non-elevated users)
+        from apps.core.visibility import filter_projects_for_user
+
+        all_projects = filter_projects_for_user(
+            Project.objects.filter(is_active=True), self.request.user
+        )
         context['total_projects'] = all_projects.count()
         context['in_progress_projects'] = all_projects.filter(status='in_progress').count()
         context['completed_projects'] = all_projects.filter(status='completed').count()
@@ -307,6 +314,11 @@ class ProjectUpdateView(UpdatePermissionMixin, UpdateView):
     success_url = reverse_lazy('projects:project_list')
     module_name = 'projects'
 
+    def get_queryset(self):
+        from apps.core.visibility import filter_projects_for_user
+
+        return filter_projects_for_user(Project.objects.filter(is_active=True), self.request.user)
+
     def form_valid(self, form):
         # form.is_valid() already mutates self.object.status from POST data — read DB for original
         prior = Project.objects.filter(pk=self.object.pk).values(
@@ -450,7 +462,7 @@ class ProjectDetailView(PermissionRequiredMixin, DetailView):
         item_line_qs = ProjectItemLine.objects.select_related('inventory_item').order_by(
             'sort_order', 'id'
         )
-        return Project.objects.select_related('customer', 'manager').prefetch_related(
+        qs = Project.objects.select_related('customer', 'manager', 'created_by').prefetch_related(
             Prefetch(
                 'members',
                 queryset=User.objects.select_related(
@@ -471,6 +483,9 @@ class ProjectDetailView(PermissionRequiredMixin, DetailView):
             'public_uploads',
             Prefetch('item_lines', queryset=item_line_qs),
         )
+        from apps.core.visibility import filter_projects_for_user
+
+        return filter_projects_for_user(qs, self.request.user)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)

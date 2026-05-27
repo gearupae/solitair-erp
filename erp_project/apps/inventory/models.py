@@ -245,6 +245,17 @@ class Item(BaseModel):
     
     def __str__(self):
         return f"{self.item_code} - {self.name}"
+
+    def selling_price_bounds_error(self, price):
+        """Return a user-facing message if price is outside min/max bounds, else None."""
+        p = price if isinstance(price, Decimal) else Decimal(str(price or '0'))
+        min_sp = self.minimum_selling_price or Decimal('0.00')
+        max_sp = self.maximum_selling_price or Decimal('0.00')
+        if min_sp > 0 and p > 0 and p < min_sp:
+            return f'Amount is low for {self.name}.'
+        if max_sp > 0 and p > max_sp:
+            return f'Amount is high for {self.name}.'
+        return None
     
     def save(self, *args, **kwargs):
         if self.tax_code_id:

@@ -128,7 +128,7 @@ class Customer(BaseModel):
         blank=True,
         related_name='assigned_crm_leads',
         verbose_name='Assigned salesman',
-        help_text='Sales employee responsible for this lead (from HR → Employees).',
+        help_text='Sales employee responsible for this lead or customer.',
     )
     business_segment = models.CharField(
         max_length=10,

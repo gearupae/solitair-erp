@@ -103,8 +103,21 @@ def user_is_configured_estimate_approver(user, estimate) -> bool:
     return ap is not None and ap.pk == user.pk
 
 
+def user_can_approve_estimate_status(user, estimate) -> bool:
+    """Superuser or configured estimate approver may approve/reject sent estimates."""
+    if not user or not user.is_authenticated:
+        return False
+    if user.is_superuser:
+        return True
+    return user_is_configured_estimate_approver(user, estimate)
+
+
 def user_can_approve_estimate_edit(user, estimate) -> bool:
-    """Configured estimate approver may approve/reject pending edit review."""
+    """Superuser or configured estimate approver may approve/reject pending edit review."""
+    if not user or not user.is_authenticated:
+        return False
+    if user.is_superuser:
+        return True
     return user_is_configured_estimate_approver(user, estimate)
 
 
@@ -134,7 +147,7 @@ def estimate_status_change_allowed(current_status, new_status, *, user=None, est
             current_status == 'sent'
             and user is not None
             and estimate is not None
-            and user_is_configured_estimate_approver(user, estimate)
+            and user_can_approve_estimate_status(user, estimate)
         )
 
     if new_status == 'sent':
@@ -163,12 +176,13 @@ def get_estimate_status_actions(estimate, user):
         return []
 
     can_edit = user_can_edit_estimate(user, estimate)
-    is_approver = user_is_configured_estimate_approver(user, estimate)
+    can_approve_status = user_can_approve_estimate_status(user, estimate)
+    is_configured_approver = user_is_configured_estimate_approver(user, estimate)
     can_mark_won_lost = user_can_mark_estimate_won_lost(user, estimate)
     current = estimate.status
     actions = []
 
-    if is_approver and current == 'sent':
+    if can_approve_status and current == 'sent':
         actions.extend([
             {
                 'status': 'approved',
@@ -183,7 +197,8 @@ def get_estimate_status_actions(estimate, user):
                 'icon': 'fa-times',
             },
         ])
-        return actions
+        if is_configured_approver and not user.is_superuser:
+            return actions
 
     if can_edit:
         if current == 'draft':
