@@ -148,7 +148,7 @@ class EmployeeForm(forms.ModelForm):
         self.fields['user'].empty_label = '— None —'
         self.fields['user'].widget.attrs['class'] = 'form-select'
         self.fields['user'].help_text = (
-            'Link this person’s Gearup login for clock in/out, self-service, and payslips.'
+            'Link this person’s ERP login for clock in/out, self-service, and payslips.'
         )
 
         role_qs = Role.objects.filter(is_active=True).order_by('name')

@@ -30,7 +30,7 @@ def resolve_roles(selected) -> list:
 
 
 def _default_login_password() -> str:
-    return getattr(settings, 'HR_EMPLOYEE_DEFAULT_PASSWORD', 'GearupEmployee123!')
+    return getattr(settings, 'HR_EMPLOYEE_DEFAULT_PASSWORD', 'AlNajahEmployee123!')
 
 
 def _unique_username(email: str, employee_code: str) -> str:

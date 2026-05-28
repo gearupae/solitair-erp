@@ -58,7 +58,7 @@ class Command(BaseCommand):
                 f"Sum of half-day counts: {agg['th'] or 0}\n"
             )
             hr_notifications.send_monthly_attendance_digest(
-                subject=f'[Gearup HR] Attendance summary {mf:%Y-%m}',
+                subject=f'[Al Najah HR] Attendance summary {mf:%Y-%m}',
                 body=body,
             )
             self.stdout.write(self.style.SUCCESS('HR digest email queued (if SMTP/recipients configured).'))

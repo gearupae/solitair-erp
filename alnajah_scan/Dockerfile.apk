@@ -1,0 +1,15 @@
+# Build APK without local Flutter. From repository root:
+#
+#   docker build -f alnajah_scan/Dockerfile.apk -t alnajah-scan-apk .
+#   id=$(docker create alnajah-scan-apk)
+#   docker cp "$id:/src/alnajah_scan/example/build/app/outputs/flutter-apk/app-release.apk" ./alnajah-scan.apk
+#   docker rm "$id"
+#
+FROM ghcr.io/cirruslabs/flutter:stable
+WORKDIR /src
+COPY alnajah_scan /src/alnajah_scan
+WORKDIR /src/alnajah_scan/example
+RUN flutter create . --project-name alnajah_scan_example --org com.alnajah
+RUN flutter pub get
+RUN sed -i 's/<application/<application android:usesCleartextTraffic="true" /' android/app/src/main/AndroidManifest.xml
+RUN flutter build apk --release

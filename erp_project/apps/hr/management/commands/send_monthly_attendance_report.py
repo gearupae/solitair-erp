@@ -70,7 +70,7 @@ class Command(BaseCommand):
                 ]
             )
         csv_bytes = buf.getvalue().encode('utf-8')
-        subject = f'[Gearup HR] Attendance summary CSV {mf:%Y-%m}'
+        subject = f'[Al Najah HR] Attendance summary CSV {mf:%Y-%m}'
         body = (
             f'Monthly attendance summary export for {mf:%B %Y}.\n'
             f'Rows: {row_count}.\n'

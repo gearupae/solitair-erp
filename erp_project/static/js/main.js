@@ -1,4 +1,4 @@
-/* Gearup ERP - Main JavaScript */
+/* Al Najah ERP - Main JavaScript */
 
 // Global AJAX Setup
 $.ajaxSetup({

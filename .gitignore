@@ -11,10 +11,10 @@ downloads/
 eggs/
 .eggs/
 lib/
-!gearup_scan/lib/
-!gearup_scan/lib/**
-!gearup_scan/example/lib/
-!gearup_scan/example/lib/**
+!alnajah_scan/lib/
+!alnajah_scan/lib/**
+!alnajah_scan/example/lib/
+!alnajah_scan/example/lib/**
 lib64/
 parts/
 sdist/
@@ -104,20 +104,20 @@ celerybeat.pid
 # mypy
 .mypy_cache/
 
-# Flutter — scan package + example (regenerate example Android with: cd gearup_scan/example && flutter create .)
-gearup_scan/.dart_tool/
-gearup_scan/.flutter-plugins-dependencies
+# Flutter — scan package + example (regenerate example Android with: cd alnajah_scan/example && flutter create .)
+alnajah_scan/.dart_tool/
+alnajah_scan/.flutter-plugins-dependencies
 # Track example/android (Kotlin ML Kit + CameraX); ignore Gradle cache + local SDK path
-gearup_scan/example/android/.gradle/
-gearup_scan/example/android/**/build/
-gearup_scan/example/android/local.properties
-gearup_scan/example/ios/
-gearup_scan/example/linux/
-gearup_scan/example/macos/
-gearup_scan/example/windows/
-gearup_scan/example/web/
-gearup_scan/example/.dart_tool/
-gearup_scan/example/build/
-gearup_scan/example/*.iml
-gearup_scan/example/.flutter-plugins-dependencies
+alnajah_scan/example/android/.gradle/
+alnajah_scan/example/android/**/build/
+alnajah_scan/example/android/local.properties
+alnajah_scan/example/ios/
+alnajah_scan/example/linux/
+alnajah_scan/example/macos/
+alnajah_scan/example/windows/
+alnajah_scan/example/web/
+alnajah_scan/example/.dart_tool/
+alnajah_scan/example/build/
+alnajah_scan/example/*.iml
+alnajah_scan/example/.flutter-plugins-dependencies
 

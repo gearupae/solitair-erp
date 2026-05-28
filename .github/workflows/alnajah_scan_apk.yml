@@ -1,0 +1,41 @@
+# Builds the Flutter example app (alnajah_scan/example) as a release APK.
+# Run manually: Actions → "Build Al Najah Scan APK" → Run workflow.
+# Download the "alnajah-scan-apk" artifact and install on your phone.
+name: Build Al Najah Scan APK
+
+on:
+  workflow_dispatch:
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: alnajah_scan/example
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Generate Android project
+        run: flutter create . --project-name alnajah_scan_example --org com.alnajah
+
+      - name: Dependencies
+        run: flutter pub get
+
+      - name: Allow HTTP to dev ERP (test installs only)
+        run: |
+          MAN=android/app/src/main/AndroidManifest.xml
+          if grep -q 'usesCleartextTraffic' "$MAN"; then exit 0; fi
+          sed -i 's/<application/<application android:usesCleartextTraffic="true" /' "$MAN"
+
+      - name: Build APK
+        run: flutter build apk --release
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: alnajah-scan-apk
+          path: alnajah_scan/example/build/app/outputs/flutter-apk/app-release.apk

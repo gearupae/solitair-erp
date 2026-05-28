@@ -1,4 +1,4 @@
-# Gearup ERP System
+# Al Najah Fire ERP System
 
 A minimal, modular ERP system built with Django 5.x, Bootstrap 5, and PostgreSQL.
 
@@ -29,7 +29,7 @@ A minimal, modular ERP system built with Django 5.x, Bootstrap 5, and PostgreSQL
 
 1. **Clone the repository**
    ```bash
-   cd /path/to/Gearup\ ERP
+   cd /path/to/alnajahfireerp
    ```
 
 2. **Create virtual environment**
@@ -170,7 +170,7 @@ Example: `INV-2025-0001`
 
 ## License
 
-Proprietary - Gearup ERP
+Proprietary - Al Najah Fire ERP
 
 ## Support
 

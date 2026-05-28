@@ -1,4 +1,4 @@
-# Gearup ERP - Finance Module Technical Documentation
+# Al Najah Fire ERP - Finance Module Technical Documentation
 
 **Document Type:** Complete System Documentation (Based on Actual Implementation)  
 **Version:** 2.0  
