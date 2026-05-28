@@ -19,14 +19,14 @@
                     {% if crm_leads %}
                     <optgroup label="Leads">
                         {% for c in crm_leads %}
-                        <option value="{{ c.pk }}" {% if selected_customer_id == c.pk %}selected{% endif %}>{{ c.customer_number }} — {{ c.display_name }}</option>
+                        <option value="{{ c.pk }}" {% if selected_customer_id == c.pk %}selected{% endif %}>{{ c.public_upload_option_label }}</option>
                         {% endfor %}
                     </optgroup>
                     {% endif %}
                     {% if crm_customers %}
                     <optgroup label="Customers">
                         {% for c in crm_customers %}
-                        <option value="{{ c.pk }}" {% if selected_customer_id == c.pk %}selected{% endif %}>{{ c.customer_number }} — {{ c.display_name }}</option>
+                        <option value="{{ c.pk }}" {% if selected_customer_id == c.pk %}selected{% endif %}>{{ c.public_upload_option_label }}</option>
                         {% endfor %}
                     </optgroup>
                     {% endif %}

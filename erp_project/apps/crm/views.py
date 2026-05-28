@@ -472,7 +472,7 @@ def public_customer_upload(request):
         type_label = 'Lead' if cust.customer_type == 'lead' else 'Customer'
         messages.success(
             request,
-            f'Thank you. {created} file(s) were uploaded to {type_label} {cust.customer_number} — {cust.display_name}.',
+            f'Thank you. {created} file(s) were uploaded to {type_label} {cust.public_upload_option_label}.',
         )
         return redirect('crm:public_upload')
 
