@@ -383,6 +383,16 @@ class ConsumableRequestApproveForm(forms.Form):
         items_to_check = []
         if consumable_request:
             items_to_check = consumable_request.get_items_for_dispense()
+            if consumable_request.project_id:
+                self.fields['warehouse'].required = False
+                self.fields['warehouse'].label = 'Preferred warehouse (optional)'
+                self.fields['warehouse'].queryset = Warehouse.objects.filter(
+                    is_active=True, status='active'
+                )
+                self.fields['warehouse'].help_text = (
+                    'Stock is delivered from the linked project Items page after approval.'
+                )
+                return
         elif item and quantity:
             items_to_check = [(item, quantity)]
         

@@ -213,14 +213,16 @@
                 {% if requires_project_delivery %}
                 <div class="alert alert-info mb-3 py-2">
                     <small><i class="fas fa-info-circle me-1"></i>
-                        Serial-tracked items on a project request are delivered to the project (model numbers assigned automatically), not dispensed as consumables.</small>
+                        This request is linked to a project. Approve to add items to the project <strong>Items</strong> table;
+                        deliver or return stock from the project page.</small>
                 </div>
                 {% endif %}
                 <!-- Approve & Dispense Form -->
                 <form method="post" action="{% url 'inventory:consumable_request_dispense' request_obj.pk %}" class="mb-3">
                     {% csrf_token %}
+                    {% if not requires_project_delivery %}
                     <div class="mb-3">
-                        <label class="form-label">{% if requires_project_delivery %}Deliver from{% else %}Dispense From{% endif %} <span class="text-danger">*</span></label>
+                        <label class="form-label">Dispense From <span class="text-danger">*</span></label>
                         {{ approve_form.warehouse }}
                         {% if approve_form.stock_info %}
                         <small class="text-muted">Available stock:</small>
@@ -234,12 +236,18 @@
                         </ul>
                         {% endif %}
                     </div>
+                    {% else %}
+                    <div class="mb-3">
+                        <label class="form-label">Preferred warehouse <span class="text-muted fw-normal">(optional)</span></label>
+                        {{ approve_form.warehouse }}
+                    </div>
+                    {% endif %}
                     <div class="mb-3">
                         <label class="form-label">Admin Notes</label>
                         {{ approve_form.admin_notes }}
                     </div>
                     <button type="submit" class="btn btn-success w-100 mb-2">
-                        <i class="fas fa-check-double me-1"></i>{% if requires_project_delivery %}Approve &amp; deliver to project{% else %}Approve &amp; Dispense{% endif %}
+                        <i class="fas fa-check-double me-1"></i>{% if requires_project_delivery %}Approve &amp; add to project items{% else %}Approve &amp; Dispense{% endif %}
                     </button>
                 </form>
 
@@ -278,7 +286,18 @@
                     </button>
                 </form>
                 {% elif request_obj.status == 'approved' %}
-                {% if request_obj.warehouse %}
+                {% if requires_project_delivery %}
+                <div class="alert alert-info mb-3 py-2">
+                    <small><i class="fas fa-info-circle me-1"></i>
+                        Add items to the project <strong>Items</strong> list, then deliver stock from the project page.</small>
+                </div>
+                <form method="post" action="{% url 'inventory:consumable_request_dispense' request_obj.pk %}" class="mb-3">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-success w-100">
+                        <i class="fas fa-check-double me-1"></i>Add to project items
+                    </button>
+                </form>
+                {% elif request_obj.warehouse %}
                 <!-- Already has warehouse from approval - dispense directly -->
                 <div class="alert alert-info mb-3 py-2">
                     <small><i class="fas fa-warehouse me-1"></i> Warehouse: <strong>{{ request_obj.warehouse.name }}</strong></small>

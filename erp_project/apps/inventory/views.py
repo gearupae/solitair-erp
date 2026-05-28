@@ -1305,7 +1305,7 @@ def consumable_request_detail(request, pk):
             consumable_request.status == 'pending'
             and consumable_request.requested_by == user
         ),
-        'requires_project_delivery': consumable_request.has_project_serial_items(),
+        'requires_project_delivery': consumable_request.uses_project_item_flow(),
     }
     
     # For admin: show approve/dispense forms
@@ -1384,7 +1384,9 @@ def consumable_request_dispense(request, pk):
                     n_lines = sync_consumable_request_to_project_item_lines(consumable_request)
                 items_dispensed = consumable_request.get_items_for_dispense()
                 msg = f'Request {consumable_request.request_number} dispensed.'
-                if items_dispensed:
+                if consumable_request.project_id:
+                    msg += ' Items are on the project Items list — deliver or return stock from the project page.'
+                elif items_dispensed:
                     msg += f' Stock reduced for {len(items_dispensed)} item(s).'
                 if n_lines:
                     msg += f' {n_lines} line(s) added to project items.'

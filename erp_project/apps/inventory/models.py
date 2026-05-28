@@ -911,6 +911,10 @@ class ConsumableRequest(BaseModel):
 
     def has_project_serial_items(self) -> bool:
         return bool(self.project_id) and self.has_serial_tracked_items()
+
+    def uses_project_item_flow(self) -> bool:
+        """When set, approve/dispense adds scope lines on the project; stock moves from the project page."""
+        return bool(self.project_id)
     
     def __str__(self):
         if self.item_id and self.quantity is not None:
@@ -969,6 +973,9 @@ class ConsumableRequest(BaseModel):
         Dispense the consumable and reduce stock.
         Creates StockMovement record(s) for audit trail.
         Supports multi-item (ConsumableRequestItem) or legacy single item.
+
+        Project-linked requests only add items to the project Items table;
+        delivery/return and stock reduction happen on the project page.
         """
         from django.utils import timezone
         from datetime import date
@@ -992,6 +999,21 @@ class ConsumableRequest(BaseModel):
             from apps.inventory.consumable_project_lines import sync_consumable_request_to_project_item_lines
 
             sync_consumable_request_to_project_item_lines(self)
+            dispense_warehouse = warehouse or self.warehouse
+            self.status = 'dispensed'
+            if dispense_warehouse:
+                self.warehouse = dispense_warehouse
+            self.dispensed_by = user
+            self.dispensed_date = timezone.now()
+            if not self.approved_by:
+                self.approved_by = user
+                self.approved_date = timezone.now()
+            if self.items.exists():
+                self.total_cost = sum(
+                    (li.total_cost or Decimal('0')) for li in self.items.all()
+                ).quantize(Decimal('0.01'))
+            self.save()
+            return None
 
         dispense_warehouse = warehouse or self.warehouse
         if not dispense_warehouse:
@@ -1010,19 +1032,6 @@ class ConsumableRequest(BaseModel):
         movements = []
         line_items = list(self.items.all()) if self.items.exists() else []
         for idx, (item, qty) in enumerate(items_to_dispense):
-            if item.track_by_serial:
-                from apps.projects.item_delivery import deliver_items_to_project
-
-                deliver_items_to_project(
-                    self.project,
-                    item,
-                    qty,
-                    date.today(),
-                    user,
-                    warehouse=dispense_warehouse,
-                )
-                continue
-
             if idx < len(line_items):
                 unit_cost = line_items[idx].unit_cost
             else:
