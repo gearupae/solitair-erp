@@ -113,52 +113,37 @@
                 </li>
                 {% endif %}
                 
-                <!-- Reports -->
-                {% if is_superuser or 'reports' in user_permissions %}
+                <!-- Projects -->
+                {% if 'projects' not in nav_hidden_modules %}{% if is_superuser or 'projects' in user_permissions %}
                 <li class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle {% if 'reports' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
-                        <i class="fas fa-chart-line me-1"></i>Reports
+                    <a class="nav-link dropdown-toggle {% if 'projects' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
+                        <i class="fas fa-project-diagram me-1"></i>Projects
                     </a>
                     <ul class="dropdown-menu dropdown-menu-dark">
                         <li>
-                            <a class="dropdown-item" href="{% url 'reports:index' %}">
-                                <i class="fas fa-th-large me-2"></i>All Reports
+                            <a class="dropdown-item" href="{% url 'projects:project_list' %}">
+                                <i class="fas fa-tasks me-2"></i>All Projects
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'projects:task_list' %}">
+                                <i class="fas fa-list-check me-2"></i>All Tasks
                             </a>
                         </li>
                         <li><hr class="dropdown-divider"></li>
                         <li>
-                            <a class="dropdown-item" href="{% url 'reports:lead_report' %}">
-                                <i class="fas fa-user-plus me-2"></i>Lead Report
-                            </a>
-                        </li>
-                        <li>
-                            <a class="dropdown-item" href="{% url 'reports:sales_report' %}">
-                                <i class="fas fa-file-invoice-dollar me-2"></i>Sales Report
-                            </a>
-                        </li>
-                        <li>
-                            <a class="dropdown-item" href="{% url 'reports:project_report_internal' %}">
-                                <i class="fas fa-hard-hat me-2"></i>Project Profit and Loss Report
-                            </a>
-                        </li>
-                        <li>
-                            <a class="dropdown-item" href="{% url 'reports:project_report_customer' %}">
-                                <i class="fas fa-users me-2"></i>Customer Progress Report
-                            </a>
-                        </li>
-                        <li>
-                            <a class="dropdown-item" href="{% url 'reports:project_report_period' %}">
-                                <i class="fas fa-calendar-alt me-2"></i>Period Wise Report
+                            <a class="dropdown-item" href="{% url 'projects:expense_list' %}">
+                                <i class="fas fa-receipt me-2"></i>Project Expenses
                             </a>
                         </li>
                     </ul>
                 </li>
-                {% endif %}
+                {% endif %}{% endif %}
                 
-                <!-- Purchase (includes Service Requests) -->
-                {% if is_superuser or 'purchase' in user_permissions or 'service_request' in user_permissions %}
+                <!-- Purchase -->
+                {% if is_superuser or 'purchase' in user_permissions %}
                 <li class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle {% if 'purchase' in request.path or 'service-request' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
+                    <a class="nav-link dropdown-toggle {% if 'purchase' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
                         <i class="fas fa-truck me-1"></i>Purchase
                     </a>
                     <ul class="dropdown-menu dropdown-menu-dark">
@@ -171,11 +156,6 @@
                         <li>
                             <a class="dropdown-item" href="{% url 'purchase:pr_list' %}">
                                 <i class="fas fa-clipboard-list me-2"></i>Purchase Requests
-                            </a>
-                        </li>
-                        <li>
-                            <a class="dropdown-item" href="{% url 'service_request:sr_list' %}">
-                                <i class="fas fa-tools me-2"></i>Service Requests
                             </a>
                         </li>
                         <li>
@@ -203,131 +183,35 @@
                 </li>
                 {% endif %}
                 
-                <!-- Inventory -->
-                {% if is_superuser or 'inventory' in user_permissions %}
+                <!-- Documents (includes Contracts as submenu) -->
+                {% if 'documents' not in nav_hidden_modules %}{% if is_superuser or 'documents' in user_permissions or 'contracts' in user_permissions %}
                 <li class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle {% if 'inventory' in request.path or 'stock-take' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
-                        <i class="fas fa-boxes me-1"></i>Inventory
+                    <a class="nav-link dropdown-toggle {% if 'documents' in request.path or '/contracts/' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
+                        <i class="fas fa-folder-open me-1"></i>Documents
                     </a>
                     <ul class="dropdown-menu dropdown-menu-dark">
+                        {% if is_superuser or 'documents' in user_permissions %}
                         <li>
-                            <a class="dropdown-item" href="{% url 'inventory:item_list' %}">
-                                <i class="fas fa-box me-2"></i>Items
+                            <a class="dropdown-item" href="{% url 'documents:document_list' %}">
+                                <i class="fas fa-file me-2"></i>All Documents
                             </a>
                         </li>
                         <li>
-                            <a class="dropdown-item" href="{% url 'inventory:category_list' %}">
-                                <i class="fas fa-layer-group me-2"></i>Categories
+                            <a class="dropdown-item" href="{% url 'documents:type_list' %}">
+                                <i class="fas fa-folder me-2"></i>Document Types
                             </a>
                         </li>
-                        <li>
-                            <a class="dropdown-item" href="{% url 'inventory:warehouse_list' %}">
-                                <i class="fas fa-warehouse me-2"></i>Warehouses
-                            </a>
-                        </li>
-                        <li>
-                            <a class="dropdown-item" href="{% url 'inventory:stock_list' %}">
-                                <i class="fas fa-chart-bar me-2"></i>Stock Levels
-                            </a>
-                        </li>
-                        <li>
-                            <a class="dropdown-item" href="{% url 'inventory:movement_list' %}">
-                                <i class="fas fa-exchange-alt me-2"></i>Movements
-                            </a>
-                        </li>
-                        <li>
-                            <a class="dropdown-item" href="{% url 'stock_take:session_list' %}">
-                                <i class="fas fa-clipboard-check me-2"></i>Stock Take
-                            </a>
-                        </li>
+                        {% endif %}
+                        {% if is_superuser or 'contracts' in user_permissions %}
+                        {% if is_superuser or 'documents' in user_permissions %}
                         <li><hr class="dropdown-divider"></li>
-                        <li class="dropdown-header">Medical Consumables</li>
+                        {% endif %}
                         <li>
-                            <a class="dropdown-item" href="{% url 'inventory:consumable_request_list' %}">
-                                <i class="fas fa-clipboard-list me-2"></i>Request items
+                            <a class="dropdown-item" href="{% url 'contracts:contract_list' %}">
+                                <i class="fas fa-file-contract me-2"></i>Contracts
                             </a>
                         </li>
-                        <li>
-                            <a class="dropdown-item" href="{% url 'inventory:consumable_inventory_reports' %}">
-                                <i class="fas fa-file-alt me-2"></i>Inventory Reports
-                            </a>
-                        </li>
-                        <li>
-                            <a class="dropdown-item" href="{% url 'inventory:inventory_aging_report' %}">
-                                <i class="fas fa-hourglass-half me-2"></i>Inventory Aging Report
-                            </a>
-                        </li>
-                    </ul>
-                </li>
-                {% endif %}
-                
-                <!-- Assets (Fleet only) -->
-                {% if 'assets' not in nav_hidden_modules %}{% if is_superuser or 'fleet' in user_permissions %}
-                <li class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle {% if 'assets' in request.path or '/fleet/' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
-                        <i class="fas fa-building me-1"></i>Assets
-                    </a>
-                    <ul class="dropdown-menu dropdown-menu-dark">
-                        <li>
-                            <a class="dropdown-item" href="{% url 'fleet:vehicle_list' %}">
-                                <i class="fas fa-truck me-2"></i>Fleet
-                            </a>
-                        </li>
-                    </ul>
-                </li>
-                {% endif %}{% endif %}
-                
-                <!-- Property Management -->
-                {% if 'property' not in nav_hidden_modules %}{% if is_superuser or 'property' in user_permissions %}
-                <li class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle {% if 'property' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
-                        <i class="fas fa-home me-1"></i>Property
-                    </a>
-                    <ul class="dropdown-menu dropdown-menu-dark">
-                        <li>
-                            <a class="dropdown-item" href="{% url 'property:property_list' %}">
-                                <i class="fas fa-building me-2"></i>Properties
-                            </a>
-                        </li>
-                        <li>
-                            <a class="dropdown-item" href="{% url 'property:tenant_list' %}">
-                                <i class="fas fa-users me-2"></i>Tenants
-                            </a>
-                        </li>
-                        <li>
-                            <a class="dropdown-item" href="{% url 'property:lease_list' %}">
-                                <i class="fas fa-file-contract me-2"></i>Leases
-                            </a>
-                        </li>
-                        <li><hr class="dropdown-divider"></li>
-                        <li class="dropdown-header">PDC Management</li>
-                        <li>
-                            <a class="dropdown-item" href="{% url 'property:pdc_list' %}">
-                                <i class="fas fa-money-check me-2"></i>PDC Cheques
-                            </a>
-                        </li>
-                        <li>
-                            <a class="dropdown-item" href="{% url 'property:pdc_bank_reconciliation' %}">
-                                <i class="fas fa-balance-scale me-2"></i>Bank Reconciliation
-                            </a>
-                        </li>
-                        <li><hr class="dropdown-divider"></li>
-                        <li class="dropdown-header">Reports</li>
-                        <li>
-                            <a class="dropdown-item" href="{% url 'property:pdc_register_report' %}">
-                                <i class="fas fa-list me-2"></i>PDC Register
-                            </a>
-                        </li>
-                        <li>
-                            <a class="dropdown-item" href="{% url 'property:pdc_outstanding_report' %}">
-                                <i class="fas fa-clock me-2"></i>Outstanding PDCs
-                            </a>
-                        </li>
-                        <li>
-                            <a class="dropdown-item" href="{% url 'property:reconciliation_exceptions_report' %}">
-                                <i class="fas fa-exclamation-triangle me-2"></i>Exceptions
-                            </a>
-                        </li>
+                        {% endif %}
                     </ul>
                 </li>
                 {% endif %}{% endif %}
@@ -450,33 +334,6 @@
                 </li>
                 {% endif %}{% endif %}
                 
-                <!-- Projects -->
-                {% if 'projects' not in nav_hidden_modules %}{% if is_superuser or 'projects' in user_permissions %}
-                <li class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle {% if 'projects' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
-                        <i class="fas fa-project-diagram me-1"></i>Projects
-                    </a>
-                    <ul class="dropdown-menu dropdown-menu-dark">
-                        <li>
-                            <a class="dropdown-item" href="{% url 'projects:project_list' %}">
-                                <i class="fas fa-tasks me-2"></i>All Projects
-                            </a>
-                        </li>
-                        <li>
-                            <a class="dropdown-item" href="{% url 'projects:task_list' %}">
-                                <i class="fas fa-list-check me-2"></i>All Tasks
-                            </a>
-                        </li>
-                        <li><hr class="dropdown-divider"></li>
-                        <li>
-                            <a class="dropdown-item" href="{% url 'projects:expense_list' %}">
-                                <i class="fas fa-receipt me-2"></i>Project Expenses
-                            </a>
-                        </li>
-                    </ul>
-                </li>
-                {% endif %}{% endif %}
-                
                 <!-- HR -->
                 {% if 'hr' not in nav_hidden_modules %}{% if is_superuser or 'hr' in user_permissions %}
                 <li class="nav-item dropdown">
@@ -563,35 +420,173 @@
                 </li>
                 {% endif %}{% endif %}
                 
-                <!-- Documents (includes Contracts as submenu) -->
-                {% if 'documents' not in nav_hidden_modules %}{% if is_superuser or 'documents' in user_permissions or 'contracts' in user_permissions %}
+                <!-- Assets (Fleet only) -->
+                {% if 'assets' not in nav_hidden_modules %}{% if is_superuser or 'fleet' in user_permissions %}
                 <li class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle {% if 'documents' in request.path or '/contracts/' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
-                        <i class="fas fa-folder-open me-1"></i>Documents
+                    <a class="nav-link dropdown-toggle {% if 'assets' in request.path or '/fleet/' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
+                        <i class="fas fa-building me-1"></i>Assets
                     </a>
                     <ul class="dropdown-menu dropdown-menu-dark">
-                        {% if is_superuser or 'documents' in user_permissions %}
                         <li>
-                            <a class="dropdown-item" href="{% url 'documents:document_list' %}">
-                                <i class="fas fa-file me-2"></i>All Documents
+                            <a class="dropdown-item" href="{% url 'fleet:vehicle_list' %}">
+                                <i class="fas fa-truck me-2"></i>Fleet
+                            </a>
+                        </li>
+                    </ul>
+                </li>
+                {% endif %}{% endif %}
+                
+                <!-- Inventory -->
+                {% if is_superuser or 'inventory' in user_permissions %}
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle {% if 'inventory' in request.path or 'stock-take' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
+                        <i class="fas fa-boxes me-1"></i>Inventory
+                    </a>
+                    <ul class="dropdown-menu dropdown-menu-dark">
+                        <li>
+                            <a class="dropdown-item" href="{% url 'inventory:item_list' %}">
+                                <i class="fas fa-box me-2"></i>Items
                             </a>
                         </li>
                         <li>
-                            <a class="dropdown-item" href="{% url 'documents:type_list' %}">
-                                <i class="fas fa-folder me-2"></i>Document Types
+                            <a class="dropdown-item" href="{% url 'inventory:category_list' %}">
+                                <i class="fas fa-layer-group me-2"></i>Categories
                             </a>
                         </li>
-                        {% endif %}
-                        {% if is_superuser or 'contracts' in user_permissions %}
-                        {% if is_superuser or 'documents' in user_permissions %}
+                        <li>
+                            <a class="dropdown-item" href="{% url 'inventory:warehouse_list' %}">
+                                <i class="fas fa-warehouse me-2"></i>Warehouses
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'inventory:stock_list' %}">
+                                <i class="fas fa-chart-bar me-2"></i>Stock Levels
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'inventory:movement_list' %}">
+                                <i class="fas fa-exchange-alt me-2"></i>Movements
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'stock_take:session_list' %}">
+                                <i class="fas fa-clipboard-check me-2"></i>Stock Take
+                            </a>
+                        </li>
                         <li><hr class="dropdown-divider"></li>
-                        {% endif %}
+                        <li class="dropdown-header">Medical Consumables</li>
                         <li>
-                            <a class="dropdown-item" href="{% url 'contracts:contract_list' %}">
-                                <i class="fas fa-file-contract me-2"></i>Contracts
+                            <a class="dropdown-item" href="{% url 'inventory:consumable_request_list' %}">
+                                <i class="fas fa-clipboard-list me-2"></i>Request items
                             </a>
                         </li>
-                        {% endif %}
+                        <li>
+                            <a class="dropdown-item" href="{% url 'inventory:consumable_inventory_reports' %}">
+                                <i class="fas fa-file-alt me-2"></i>Inventory Reports
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'inventory:inventory_aging_report' %}">
+                                <i class="fas fa-hourglass-half me-2"></i>Inventory Aging Report
+                            </a>
+                        </li>
+                    </ul>
+                </li>
+                {% endif %}
+                
+                <!-- Reports -->
+                {% if is_superuser or 'reports' in user_permissions %}
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle {% if 'reports' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
+                        <i class="fas fa-chart-line me-1"></i>Reports
+                    </a>
+                    <ul class="dropdown-menu dropdown-menu-dark">
+                        <li>
+                            <a class="dropdown-item" href="{% url 'reports:index' %}">
+                                <i class="fas fa-th-large me-2"></i>All Reports
+                            </a>
+                        </li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'reports:lead_report' %}">
+                                <i class="fas fa-user-plus me-2"></i>Lead Report
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'reports:sales_report' %}">
+                                <i class="fas fa-file-invoice-dollar me-2"></i>Sales Report
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'reports:project_report_internal' %}">
+                                <i class="fas fa-hard-hat me-2"></i>Project Profit and Loss Report
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'reports:project_report_customer' %}">
+                                <i class="fas fa-users me-2"></i>Customer Progress Report
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'reports:project_report_period' %}">
+                                <i class="fas fa-calendar-alt me-2"></i>Period Wise Report
+                            </a>
+                        </li>
+                    </ul>
+                </li>
+                {% endif %}
+                
+                <!-- Property Management -->
+                {% if 'property' not in nav_hidden_modules %}{% if is_superuser or 'property' in user_permissions %}
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle {% if 'property' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
+                        <i class="fas fa-home me-1"></i>Property
+                    </a>
+                    <ul class="dropdown-menu dropdown-menu-dark">
+                        <li>
+                            <a class="dropdown-item" href="{% url 'property:property_list' %}">
+                                <i class="fas fa-building me-2"></i>Properties
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'property:tenant_list' %}">
+                                <i class="fas fa-users me-2"></i>Tenants
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'property:lease_list' %}">
+                                <i class="fas fa-file-contract me-2"></i>Leases
+                            </a>
+                        </li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li class="dropdown-header">PDC Management</li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'property:pdc_list' %}">
+                                <i class="fas fa-money-check me-2"></i>PDC Cheques
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'property:pdc_bank_reconciliation' %}">
+                                <i class="fas fa-balance-scale me-2"></i>Bank Reconciliation
+                            </a>
+                        </li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li class="dropdown-header">Reports</li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'property:pdc_register_report' %}">
+                                <i class="fas fa-list me-2"></i>PDC Register
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'property:pdc_outstanding_report' %}">
+                                <i class="fas fa-clock me-2"></i>Outstanding PDCs
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'property:reconciliation_exceptions_report' %}">
+                                <i class="fas fa-exclamation-triangle me-2"></i>Exceptions
+                            </a>
+                        </li>
                     </ul>
                 </li>
                 {% endif %}{% endif %}

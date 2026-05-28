@@ -1,5 +1,80 @@
 {% extends 'base.html' %}
 
+{% block extra_css %}
+<style>
+.customer-info-card .card-header {
+    padding: 0.625rem 1rem;
+}
+.customer-info-card .card-body {
+    padding: 0.75rem 1rem 0.875rem;
+}
+.customer-info-card .info-field {
+    margin-bottom: 0;
+}
+.customer-info-card .info-label {
+    margin-bottom: 0.125rem;
+    line-height: 1.2;
+}
+.customer-info-card .info-value {
+    margin-bottom: 0;
+    line-height: 1.35;
+    font-size: 0.9375rem;
+}
+.customer-info-card .info-value a {
+    word-break: break-word;
+}
+
+.crm-activity-card .card-header {
+    padding: 0.625rem 1rem;
+}
+.crm-activity-card .card-body {
+    padding: 0.75rem 1rem;
+    overflow: hidden;
+}
+.crm-activity-feed {
+    max-width: 100%;
+}
+.crm-activity-item {
+    gap: 0.625rem;
+    min-width: 0;
+}
+.crm-activity-item .crm-activity-icon {
+    flex-shrink: 0;
+}
+.crm-activity-item .crm-activity-content {
+    min-width: 0;
+    overflow: hidden;
+}
+.crm-activity-item .crm-activity-title-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+.crm-activity-item .crm-activity-title {
+    min-width: 0;
+    flex: 1 1 auto;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+}
+.crm-activity-item .crm-activity-time {
+    flex: 0 0 auto;
+    white-space: nowrap;
+    font-size: 0.75rem;
+}
+.crm-activity-item .crm-activity-detail,
+.crm-activity-item .crm-activity-detail a {
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    white-space: normal;
+}
+.crm-activity-item .crm-activity-user {
+    word-break: break-word;
+}
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="page-header">
     <nav aria-label="breadcrumb">
@@ -31,25 +106,25 @@
 <div class="row g-4">
     <!-- Main Info -->
     <div class="col-lg-8">
-        <div class="card border-0 shadow-sm">
-            <div class="card-header bg-transparent py-3">
+        <div class="card border-0 shadow-sm customer-info-card">
+            <div class="card-header bg-transparent">
                 <h6 class="mb-0 fw-semibold">
                     <i class="fas fa-user me-2 text-primary"></i>Customer Information
                 </h6>
             </div>
             <div class="card-body">
-                <div class="row g-4">
-                    <div class="col-md-6">
-                        <label class="form-label text-muted small">Contact Name</label>
-                        <p class="fw-medium mb-0">{{ customer.name }}</p>
+                <div class="row g-2">
+                    <div class="col-md-6 info-field">
+                        <label class="form-label text-muted small info-label">Contact Name</label>
+                        <p class="fw-medium info-value">{{ customer.name }}</p>
                     </div>
-                    <div class="col-md-6">
-                        <label class="form-label text-muted small">Company</label>
-                        <p class="fw-medium mb-0">{{ customer.company|default:"-" }}</p>
+                    <div class="col-md-6 info-field">
+                        <label class="form-label text-muted small info-label">Company</label>
+                        <p class="fw-medium info-value">{{ customer.company|default:"-" }}</p>
                     </div>
-                    <div class="col-md-6">
-                        <label class="form-label text-muted small">Email</label>
-                        <p class="mb-0">
+                    <div class="col-md-6 info-field">
+                        <label class="form-label text-muted small info-label">Email</label>
+                        <p class="info-value">
                             {% if customer.email %}
                             <a href="mailto:{{ customer.email }}" class="text-decoration-none">
                                 <i class="fas fa-envelope me-1"></i>{{ customer.email }}
@@ -59,9 +134,9 @@
                             {% endif %}
                         </p>
                     </div>
-                    <div class="col-md-6">
-                        <label class="form-label text-muted small">Phone</label>
-                        <p class="mb-0">
+                    <div class="col-md-6 info-field">
+                        <label class="form-label text-muted small info-label">Phone</label>
+                        <p class="info-value">
                             {% if customer.phone %}
                             <a href="tel:{{ customer.phone }}" class="text-decoration-none">
                                 <i class="fas fa-phone me-1"></i>{{ customer.phone }}
@@ -71,26 +146,26 @@
                             {% endif %}
                         </p>
                     </div>
-                    <div class="col-md-6">
-                        <label class="form-label text-muted small">Type</label>
-                        <p class="fw-medium mb-0">
+                    <div class="col-md-6 info-field">
+                        <label class="form-label text-muted small info-label">Type</label>
+                        <p class="fw-medium info-value">
                             {% if customer.customer_type == 'lead' %}Lead{% else %}Customer{% endif %}
                         </p>
                     </div>
                     {% if customer.customer_type == 'customer' %}
-                    <div class="col-md-6">
-                        <label class="form-label text-muted small">Business type</label>
-                        <p class="fw-medium mb-0">{{ customer.get_business_segment_display|default:"—" }}</p>
+                    <div class="col-md-6 info-field">
+                        <label class="form-label text-muted small info-label">Business type</label>
+                        <p class="fw-medium info-value">{{ customer.get_business_segment_display|default:"—" }}</p>
                     </div>
                     {% elif customer.customer_type == 'lead' and customer.lead_kanban_stage %}
-                    <div class="col-md-6">
-                        <label class="form-label text-muted small">Pipeline stage</label>
-                        <p class="fw-medium mb-0">{{ customer.lead_kanban_stage.name }}</p>
+                    <div class="col-md-6 info-field">
+                        <label class="form-label text-muted small info-label">Pipeline stage</label>
+                        <p class="fw-medium info-value">{{ customer.lead_kanban_stage.name }}</p>
                     </div>
                     {% endif %}
-                    <div class="col-md-6">
-                        <label class="form-label text-muted small">Assigned salesman</label>
-                        <p class="fw-medium mb-0">
+                    <div class="col-md-6 info-field">
+                        <label class="form-label text-muted small info-label">Assigned salesman</label>
+                        <p class="fw-medium info-value">
                             {% if customer.assigned_salesperson %}
                             {{ customer.assigned_salesman_label }}
                             {% else %}
@@ -98,13 +173,13 @@
                             {% endif %}
                         </p>
                     </div>
-                    <div class="col-md-6">
-                        <label class="form-label text-muted small">VAT (TRN)</label>
-                        <p class="fw-medium mb-0">{{ customer.trn|default:"-" }}</p>
+                    <div class="col-md-6 info-field">
+                        <label class="form-label text-muted small info-label">VAT (TRN)</label>
+                        <p class="fw-medium info-value">{{ customer.trn|default:"-" }}</p>
                     </div>
-                    <div class="col-md-6">
-                        <label class="form-label text-muted small">Website</label>
-                        <p class="mb-0">
+                    <div class="col-md-6 info-field">
+                        <label class="form-label text-muted small info-label">Website</label>
+                        <p class="info-value">
                             {% if customer.website %}
                             <a href="{{ customer.website }}" target="_blank" rel="noopener noreferrer" class="text-decoration-none">
                                 <i class="fas fa-globe me-1"></i>{{ customer.website }}
@@ -114,13 +189,13 @@
                             {% endif %}
                         </p>
                     </div>
-                    <div class="col-md-6">
-                        <label class="form-label text-muted small">Job type</label>
-                        <p class="fw-medium mb-0">{% if customer.job_type %}{{ customer.get_job_type_display }}{% else %}-{% endif %}</p>
+                    <div class="col-md-6 info-field">
+                        <label class="form-label text-muted small info-label">Job type</label>
+                        <p class="fw-medium info-value">{% if customer.job_type %}{{ customer.get_job_type_display }}{% else %}-{% endif %}</p>
                     </div>
-                    <div class="col-md-6">
-                        <label class="form-label text-muted small">Project</label>
-                        <p class="mb-0">
+                    <div class="col-md-6 info-field">
+                        <label class="form-label text-muted small info-label">Project</label>
+                        <p class="info-value">
                             {% if customer.primary_project %}
                             <a href="{% url 'projects:project_detail' customer.primary_project.pk %}" class="text-decoration-none fw-medium">
                                 <i class="fas fa-project-diagram me-1"></i>{{ customer.primary_project.project_code }} — {{ customer.primary_project.name }}
@@ -130,14 +205,14 @@
                             {% endif %}
                         </p>
                     </div>
-                    <div class="col-12">
-                        <label class="form-label text-muted small">Address</label>
-                        <p class="mb-0">{{ customer.address|default:"-"|linebreaks }}</p>
+                    <div class="col-12 info-field">
+                        <label class="form-label text-muted small info-label">Address</label>
+                        <p class="info-value">{{ customer.address|default:"-"|linebreaksbr }}</p>
                     </div>
                     {% if customer.notes %}
-                    <div class="col-12">
-                        <label class="form-label text-muted small">Notes</label>
-                        <p class="mb-0">{{ customer.notes|linebreaks }}</p>
+                    <div class="col-12 info-field">
+                        <label class="form-label text-muted small info-label">Notes</label>
+                        <p class="info-value">{{ customer.notes|linebreaksbr }}</p>
                     </div>
                     {% endif %}
                 </div>
@@ -298,6 +373,73 @@
                 </div>
             </div>
         </div>
+
+        <!-- Tasks -->
+        {% if can_create_tasks %}
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-transparent py-3">
+                <h6 class="mb-0 fw-semibold">
+                    <i class="fas fa-list-check me-2 text-primary"></i>Task
+                </h6>
+            </div>
+            <div class="card-body">
+                <form method="post" action="{% url 'crm:customer_detail' customer.pk %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="create_task">
+                    {% if customer_task_form.non_field_errors %}
+                    <div class="alert alert-danger py-2 small">
+                        {{ customer_task_form.non_field_errors|join:", " }}
+                    </div>
+                    {% endif %}
+                    <div class="mb-3">
+                        <label for="{{ customer_task_form.name.id_for_label }}" class="form-label text-muted small">Task name</label>
+                        {{ customer_task_form.name }}
+                        {% if customer_task_form.name.errors %}
+                        <div class="text-danger small mt-1">{{ customer_task_form.name.errors|join:", " }}</div>
+                        {% endif %}
+                    </div>
+                    <div class="mb-3">
+                        <label for="{{ customer_task_form.description.id_for_label }}" class="form-label text-muted small">Task description</label>
+                        {{ customer_task_form.description }}
+                        {% if customer_task_form.description.errors %}
+                        <div class="text-danger small mt-1">{{ customer_task_form.description.errors|join:", " }}</div>
+                        {% endif %}
+                    </div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-6">
+                            <label for="{{ customer_task_form.start_date.id_for_label }}" class="form-label text-muted small">Start date</label>
+                            {{ customer_task_form.start_date }}
+                            {% if customer_task_form.start_date.errors %}
+                            <div class="text-danger small mt-1">{{ customer_task_form.start_date.errors|join:", " }}</div>
+                            {% endif %}
+                        </div>
+                        <div class="col-6">
+                            <label for="{{ customer_task_form.due_date.id_for_label }}" class="form-label text-muted small">End date</label>
+                            {{ customer_task_form.due_date }}
+                            {% if customer_task_form.due_date.errors %}
+                            <div class="text-danger small mt-1">{{ customer_task_form.due_date.errors|join:", " }}</div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="{{ customer_task_form.members.id_for_label }}" class="form-label text-muted small">Members</label>
+                        {{ customer_task_form.members }}
+                        {% if customer_task_form.members.errors %}
+                        <div class="text-danger small mt-1">{{ customer_task_form.members.errors|join:", " }}</div>
+                        {% endif %}
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-sm w-100">
+                        <i class="fas fa-plus me-1"></i>Create
+                    </button>
+                </form>
+                <p class="text-muted small mb-0 mt-3">
+                    Tasks appear on
+                    <a href="{% url 'projects:task_list' %}?customer={{ customer.pk }}">All Tasks</a>
+                    for each selected member.
+                </p>
+            </div>
+        </div>
+        {% endif %}
         
         <!-- Audit Info -->
         <div class="card border-0 shadow-sm">
@@ -329,8 +471,8 @@
         </div>
 
         <!-- Activity -->
-        <div class="card border-0 shadow-sm mt-4">
-            <div class="card-header bg-transparent py-3">
+        <div class="card border-0 shadow-sm mt-4 crm-activity-card">
+            <div class="card-header bg-transparent">
                 <h6 class="mb-0 fw-semibold">
                     <i class="fas fa-stream me-2 text-primary"></i>Activity
                 </h6>
@@ -339,31 +481,29 @@
                 {% if customer_activity %}
                 <div class="crm-activity-feed">
                     {% for item in customer_activity %}
-                    <div class="crm-activity-item d-flex align-items-start{% if not forloop.last %} mb-3 pb-3 border-bottom{% endif %}">
-                        <div class="me-3 mt-1">
+                    <div class="crm-activity-item d-flex align-items-start{% if not forloop.last %} mb-2 pb-2 border-bottom{% endif %}">
+                        <div class="crm-activity-icon me-2 mt-1">
                             <span class="badge {{ item.icon_bg }} rounded-pill p-2">
                                 <i class="fas {{ item.icon }} fa-xs"></i>
                             </span>
                         </div>
-                        <div class="flex-grow-1 min-w-0">
-                            <div class="d-flex justify-content-between align-items-start gap-2">
-                                <div class="min-w-0">
-                                    <div class="fw-medium small">{{ item.title }}</div>
-                                    {% if item.detail %}
-                                    <div class="text-muted small text-truncate">
-                                        {% if item.url %}
-                                        <a href="{{ item.url }}" class="text-decoration-none">{{ item.detail }}</a>
-                                        {% else %}
-                                        {{ item.detail }}
-                                        {% endif %}
-                                    </div>
-                                    {% endif %}
-                                    {% if item.user_label %}
-                                    <div class="text-muted small">by {{ item.user_label }}</div>
-                                    {% endif %}
-                                </div>
-                                <small class="text-muted text-nowrap">{{ item.timestamp|date:"d/m/Y H:i" }}</small>
+                        <div class="crm-activity-content flex-grow-1 min-w-0">
+                            <div class="crm-activity-title-row">
+                                <div class="crm-activity-title fw-medium small">{{ item.title }}</div>
+                                <small class="crm-activity-time text-muted">{{ item.timestamp|date:"d/m/Y H:i" }}</small>
                             </div>
+                            {% if item.detail %}
+                            <div class="crm-activity-detail text-muted small mt-1">
+                                {% if item.url %}
+                                <a href="{{ item.url }}" class="text-decoration-none text-break">{{ item.detail }}</a>
+                                {% else %}
+                                {{ item.detail }}
+                                {% endif %}
+                            </div>
+                            {% endif %}
+                            {% if item.user_label %}
+                            <div class="crm-activity-user text-muted small mt-1">by {{ item.user_label }}</div>
+                            {% endif %}
                         </div>
                     </div>
                     {% endfor %}
@@ -375,6 +515,23 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+$(function () {
+    if ($('.select2-task-members').length && $.fn.select2) {
+        $('.select2-task-members').select2({
+            theme: 'bootstrap-5',
+            width: '100%',
+            placeholder: 'Search by name or employee code…',
+            closeOnSelect: false,
+            allowClear: true,
+            minimumResultsForSearch: 0,
+        });
+    }
+});
+</script>
 {% endblock %}
 
 

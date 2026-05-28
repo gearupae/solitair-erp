@@ -7,6 +7,7 @@ from django.contrib import messages
 from django.views.generic import ListView, CreateView, UpdateView, DeleteView, DetailView
 from django.urls import reverse_lazy
 from django.http import JsonResponse, HttpResponseNotAllowed
+from django.urls import reverse
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_http_methods, require_POST
 from django.db.models import Q, Count
@@ -57,6 +58,74 @@ def log_action(user, action, model, record_id, changes=None):
     )
 
 
+def parse_customer_date_range(params):
+    """Return (date_from, date_to) from a single date_range field or legacy params."""
+    date_from = (params.get('date_from') or '').strip()
+    date_to = (params.get('date_to') or '').strip()
+    date_range = (params.get('date_range') or '').strip()
+
+    if date_range:
+        if ' to ' in date_range:
+            start, _, end = date_range.partition(' to ')
+            date_from = start.strip()
+            date_to = end.strip()
+        else:
+            date_from = date_range
+            date_to = ''
+
+    return date_from, date_to
+
+
+def customer_date_range_display(params):
+    """Display value for the combined date range filter input."""
+    date_range = (params.get('date_range') or '').strip()
+    if date_range:
+        return date_range
+    date_from, date_to = parse_customer_date_range(params)
+    if date_from and date_to:
+        return f'{date_from} to {date_to}'
+    return date_from
+
+
+def apply_customer_list_filters(queryset, params, *, apply_type=True):
+    """Apply list/board GET filters to a customer queryset."""
+    search = (params.get('search') or '').strip()
+    if search:
+        queryset = queryset.filter(
+            Q(name__icontains=search)
+            | Q(company__icontains=search)
+            | Q(email__icontains=search)
+            | Q(phone__icontains=search)
+            | Q(customer_number__icontains=search)
+            | Q(trn__icontains=search)
+            | Q(website__icontains=search)
+            | Q(job_type__icontains=search)
+        )
+
+    customer_type = params.get('type')
+    if apply_type and customer_type:
+        queryset = queryset.filter(customer_type=customer_type)
+
+    status = params.get('status')
+    if status:
+        queryset = queryset.filter(status=status)
+
+    salesman = (params.get('salesman') or '').strip()
+    if salesman:
+        try:
+            queryset = queryset.filter(assigned_salesperson_id=int(salesman))
+        except (TypeError, ValueError):
+            pass
+
+    date_from, date_to = parse_customer_date_range(params)
+    if date_from:
+        queryset = queryset.filter(created_at__date__gte=date_from)
+    if date_to:
+        queryset = queryset.filter(created_at__date__lte=date_to)
+
+    return queryset
+
+
 class CustomerListView(PermissionRequiredMixin, ListView):
     """List all customers with inline create form."""
     model = Customer
@@ -71,32 +140,7 @@ class CustomerListView(PermissionRequiredMixin, ListView):
             Customer.objects.select_related('assigned_salesperson', 'lead_kanban_stage'),
             self.request.user,
         )
-        
-        # Search
-        search = self.request.GET.get('search')
-        if search:
-            queryset = queryset.filter(
-                Q(name__icontains=search) |
-                Q(company__icontains=search) |
-                Q(email__icontains=search) |
-                Q(phone__icontains=search) |
-                Q(customer_number__icontains=search) |
-                Q(trn__icontains=search) |
-                Q(website__icontains=search) |
-                Q(job_type__icontains=search)
-            )
-        
-        # Filter by type
-        customer_type = self.request.GET.get('type')
-        if customer_type:
-            queryset = queryset.filter(customer_type=customer_type)
-        
-        # Filter by status
-        status = self.request.GET.get('status')
-        if status:
-            queryset = queryset.filter(status=status)
-        
-        return queryset
+        return apply_customer_list_filters(queryset, self.request.GET)
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -135,6 +179,7 @@ class CustomerListView(PermissionRequiredMixin, ListView):
         context['project_choices'] = get_crm_project_queryset(self.request.user)
         context['crm_customer_type_choices'] = Customer.CUSTOMER_TYPE_CHOICES
         context['crm_status_choices'] = Customer.STATUS_CHOICES
+        context['crm_filter_date_range'] = customer_date_range_display(self.request.GET)
 
         # Kanban board (leads pipeline + fixed customers column)
         board_stages = list(
@@ -151,10 +196,14 @@ class CustomerListView(PermissionRequiredMixin, ListView):
             ).first()
         )
         board_leads = annotate_latest_estimate_value(
-            filter_customers_for_user(
-                Customer.objects.filter(customer_type='lead', is_active=True)
-                .select_related('lead_kanban_stage', 'assigned_salesperson'),
-                user,
+            apply_customer_list_filters(
+                filter_customers_for_user(
+                    Customer.objects.filter(customer_type='lead', is_active=True)
+                    .select_related('lead_kanban_stage', 'assigned_salesperson'),
+                    user,
+                ),
+                self.request.GET,
+                apply_type=False,
             )
         ).order_by('customer_number')
         leads_by_stage = {s.id: [] for s in board_stages}
@@ -182,10 +231,14 @@ class CustomerListView(PermissionRequiredMixin, ListView):
         context['crm_show_customers_column'] = True
         context['kanban_customers'] = list(
             annotate_latest_estimate_value(
-                filter_customers_for_user(
-                    Customer.objects.filter(customer_type='customer', is_active=True)
-                    .select_related('assigned_salesperson'),
-                    user,
+                apply_customer_list_filters(
+                    filter_customers_for_user(
+                        Customer.objects.filter(customer_type='customer', is_active=True)
+                        .select_related('assigned_salesperson'),
+                        user,
+                    ),
+                    self.request.GET,
+                    apply_type=False,
                 )
             ).order_by('name', 'customer_number')[:400]
         )
@@ -205,7 +258,7 @@ class CustomerListView(PermissionRequiredMixin, ListView):
         form = CustomerForm(
             request.POST,
             request.FILES,
-            projects_queryset=get_crm_project_queryset(self.request.user),
+            projects_queryset=get_crm_project_queryset(request.user),
             user=request.user,
         )
         if form.is_valid():
@@ -235,7 +288,7 @@ def crm_project_options(request):
 
     projects = [
         {'id': p.pk, 'label': project_choice_label(p), 'name': p.name}
-        for p in get_crm_project_queryset(self.request.user)
+        for p in get_crm_project_queryset(request.user)
     ]
     return JsonResponse({'projects': projects})
 
@@ -472,6 +525,13 @@ def customer_inline_update(request, pk):
     return redirect('crm:customer_detail', pk=pk)
 
 
+def resolve_customer_task_project(customer):
+    """Optional project when creating tasks from CRM customer detail."""
+    if customer.primary_project_id and customer.primary_project.is_active:
+        return customer.primary_project
+    return customer.projects.filter(is_active=True).order_by('-created_at', '-pk').first()
+
+
 class CustomerDetailView(PermissionRequiredMixin, DetailView):
     """View customer details."""
     model = Customer
@@ -487,6 +547,68 @@ class CustomerDetailView(PermissionRequiredMixin, DetailView):
             ).prefetch_related('projects', 'public_uploads'),
             self.request.user,
         )
+
+    def post(self, request, *args, **kwargs):
+        if request.POST.get('action') != 'create_task':
+            return HttpResponseNotAllowed(['GET'])
+
+        self.object = self.get_object()
+        if not (
+            request.user.is_superuser
+            or PermissionChecker.has_permission(request.user, 'projects', 'create')
+        ):
+            messages.error(request, 'Permission denied.')
+            return redirect('crm:customer_detail', pk=self.object.pk)
+
+        from apps.projects.forms import CustomerTaskCreateForm
+        from apps.projects.models import Task
+        from apps.core.notification_utils import notify_if_new_assignee
+
+        form = CustomerTaskCreateForm(request.POST)
+        if not form.is_valid():
+            messages.error(request, 'Please correct the task form errors below.')
+            context = self.get_context_data(customer_task_form=form)
+            return self.render_to_response(context)
+
+        project = resolve_customer_task_project(self.object)
+
+        members = list(form.cleaned_data['members'])
+        if not members:
+            form.add_error('members', 'Select at least one member.')
+            context = self.get_context_data(customer_task_form=form)
+            return self.render_to_response(context)
+
+        created_count = 0
+        task_link = reverse('projects:task_list') + f'?customer={self.object.pk}'
+        context_label = project.project_code if project else self.object.customer_number
+        for member in members:
+            task = Task.objects.create(
+                project=project,
+                customer=self.object,
+                name=form.cleaned_data['name'],
+                description=form.cleaned_data['description'],
+                start_date=form.cleaned_data['start_date'],
+                due_date=form.cleaned_data['due_date'],
+                assigned_to=member,
+                created_by=request.user,
+            )
+            created_count += 1
+            notify_if_new_assignee(
+                member,
+                request.user,
+                f'Task assigned: {task.name}',
+                f'{context_label} — {task.name}',
+                task_link,
+            )
+
+        if created_count == 1:
+            messages.success(request, f'Task "{form.cleaned_data["name"]}" created.')
+        else:
+            messages.success(
+                request,
+                f'{created_count} tasks created for "{form.cleaned_data["name"]}".',
+            )
+        return redirect('crm:customer_detail', pk=self.object.pk)
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -494,6 +616,11 @@ class CustomerDetailView(PermissionRequiredMixin, DetailView):
         context['can_edit'] = self.request.user.is_superuser or PermissionChecker.has_permission(
             self.request.user, 'crm', 'edit'
         )
+        context['can_create_tasks'] = self.request.user.is_superuser or PermissionChecker.has_permission(
+            self.request.user, 'projects', 'create'
+        )
+        from apps.projects.forms import CustomerTaskCreateForm
+        context['customer_task_form'] = kwargs.get('customer_task_form', CustomerTaskCreateForm())
         # Inject customer advances for the advances tab
         try:
             from apps.advances.models import CustomerAdvance

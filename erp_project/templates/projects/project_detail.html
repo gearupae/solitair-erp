@@ -94,15 +94,19 @@
         {% endif %}
 
         <div class="card mb-4">
+            <style>
+                #projectItemsTable .project-inline-qty { width: 4.5rem; }
+                #projectItemsTable .line-action-cell form { margin: 0; }
+            </style>
             <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
                 <h6 class="mb-0 fw-semibold"><i class="fas fa-boxes me-2 text-dark"></i>Items</h6>
                 <div class="d-flex flex-wrap gap-2 align-items-center">
                     {% if can_deliver_items %}
-                    <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#itemDeliveryFormPanel" aria-expanded="false">
-                        <i class="fas fa-truck me-1"></i>Record delivery
+                    <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#itemDeliveryFormPanel" aria-expanded="false" title="Record delivery" aria-label="Record delivery">
+                        <i class="fas fa-truck"></i>
                     </button>
-                    <button class="btn btn-sm btn-outline-dark" type="button" data-bs-toggle="collapse" data-bs-target="#itemReturnFormPanel" aria-expanded="false">
-                        <i class="fas fa-undo me-1"></i>Return to stock
+                    <button class="btn btn-sm btn-outline-dark" type="button" data-bs-toggle="collapse" data-bs-target="#itemReturnFormPanel" aria-expanded="false" title="Return to stock" aria-label="Return to stock">
+                        <i class="fas fa-undo"></i>
                     </button>
                     {% endif %}
                     <a href="{% url 'inventory:consumable_request_create' %}?project={{ project.pk }}" class="btn btn-sm btn-primary">
@@ -169,13 +173,23 @@
             <div class="card-body p-0">
                 {% if project_item_lines %}
                 <div class="table-responsive">
-                    <table class="table mb-0 table-sm align-middle">
+                    <table class="table mb-0 table-sm align-middle" id="projectItemsTable">
                         <thead class="table-light">
                             <tr>
+                                {% if can_deliver_items %}
+                                <th style="width:2.25rem;" class="text-center">
+                                    <input type="checkbox" class="form-check-input" id="projectItemSelectAll" title="Select all" aria-label="Select all items">
+                                </th>
+                                {% endif %}
                                 <th>Item</th>
                                 <th class="text-center">Qty</th>
                                 <th class="text-center">Delivered</th>
                                 <th class="text-end">Net (excl. VAT)</th>
+                                {% if can_deliver_items %}
+                                <th class="text-center line-action-col d-none" style="min-width:6.5rem;">Deliver</th>
+                                <th class="text-center line-action-col d-none" style="min-width:7.5rem;">Return</th>
+                                <th class="text-center line-action-col d-none" style="width:2.75rem;"></th>
+                                {% endif %}
                             </tr>
                         </thead>
                         <tbody>
@@ -183,11 +197,28 @@
                             {% ifchanged line.group_name %}
                             {% if line.group_name %}
                             <tr class="table-secondary">
-                                <td colspan="4" class="fw-semibold small text-uppercase">{{ line.group_name }}</td>
+                                <td colspan="{% if can_deliver_items %}8{% else %}4{% endif %}" class="fw-semibold small text-uppercase">{{ line.group_name }}</td>
                             </tr>
                             {% endif %}
                             {% endifchanged %}
-                            <tr>
+                            <tr class="project-item-row{% if line.inventory_item_id %} project-item-row--inventory{% endif %}"
+                                {% if line.inventory_item_id %}
+                                data-item-id="{{ line.inventory_item_id }}"
+                                data-line-id="{{ line.pk }}"
+                                data-max-deliver="{{ line.max_deliver_qty }}"
+                                data-max-return="{{ line.max_return_qty }}"
+                                data-can-return="{% if line.returnable_qty > 0 %}1{% else %}0{% endif %}"
+                                data-serial="{% if line.track_by_serial %}1{% else %}0{% endif %}"
+                                {% endif %}>
+                                {% if can_deliver_items %}
+                                <td class="text-center">
+                                    {% if line.inventory_item_id %}
+                                    {% if line.max_deliver_qty > 0 or line.returnable_qty > 0 %}
+                                    <input type="checkbox" class="form-check-input project-item-select" aria-label="Select {{ line.inventory_item.name }}">
+                                    {% endif %}
+                                    {% endif %}
+                                </td>
+                                {% endif %}
                                 <td>
                                     {% if line.inventory_item %}
                                         <span class="fw-medium">{{ line.inventory_item.name }}</span>
@@ -213,6 +244,48 @@
                                     {% endif %}
                                 </td>
                                 <td class="text-end fw-medium text-nowrap">AED {{ line.line_net|floatformat:2 }}</td>
+                                {% if can_deliver_items %}
+                                <td class="line-action-cell d-none">
+                                    {% if line.inventory_item_id and line.max_deliver_qty > 0 %}
+                                    <form method="post" class="d-flex gap-1 align-items-center project-inline-deliver-form" id="deliver-form-{{ line.pk }}">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action" value="inline_deliver_item">
+                                        <input type="hidden" name="item_id" value="{{ line.inventory_item_id }}">
+                                        <input type="hidden" name="line_id" value="{{ line.pk }}">
+                                        <input type="number" name="quantity" class="form-control form-control-sm project-inline-qty"
+                                               min="{% if line.track_by_serial %}1{% else %}0.01{% endif %}"
+                                               max="{{ line.max_deliver_qty }}"
+                                               step="{% if line.track_by_serial %}1{% else %}0.01{% endif %}"
+                                               value="{% if line.track_by_serial %}{{ line.max_deliver_qty|floatformat:0 }}{% else %}{{ line.max_deliver_qty }}{% endif %}"
+                                               title="Max {{ line.max_deliver_qty }} for this line"
+                                               required>
+                                    </form>
+                                    {% endif %}
+                                </td>
+                                <td class="line-action-cell line-return-cell d-none">
+                                    {% if line.inventory_item_id and line.returnable_qty > 0 %}
+                                    <form method="post" class="d-flex gap-1 align-items-center project-inline-return-form" id="return-form-{{ line.pk }}">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action" value="inline_return_item">
+                                        <input type="hidden" name="item_id" value="{{ line.inventory_item_id }}">
+                                        <input type="hidden" name="line_id" value="{{ line.pk }}">
+                                        <input type="number" name="quantity" class="form-control form-control-sm project-inline-qty"
+                                               min="{% if line.track_by_serial %}1{% else %}0.01{% endif %}"
+                                               max="{{ line.max_return_qty }}"
+                                               step="{% if line.track_by_serial %}1{% else %}0.01{% endif %}"
+                                               value="{% if line.track_by_serial %}{{ line.max_return_qty|floatformat:0 }}{% else %}{{ line.max_return_qty }}{% endif %}"
+                                               title="Max {{ line.max_return_qty }} returnable"
+                                               required>
+                                        <button type="submit" class="btn btn-sm btn-outline-dark" title="Return to stock"><i class="fas fa-undo"></i></button>
+                                    </form>
+                                    {% endif %}
+                                </td>
+                                <td class="line-action-cell d-none text-center text-nowrap">
+                                    {% if line.inventory_item_id and line.max_deliver_qty > 0 %}
+                                    <button type="submit" form="deliver-form-{{ line.pk }}" class="btn btn-sm btn-success" title="Deliver to project"><i class="fas fa-check"></i></button>
+                                    {% endif %}
+                                </td>
+                                {% endif %}
                             </tr>
                             {% endfor %}
                         </tbody>
@@ -264,9 +337,9 @@
                             {% if task_form.status.errors %}<div class="text-danger small mt-1">{{ task_form.status.errors|join:", " }}</div>{% endif %}
                         </div>
                         <div class="col-md-4">
-                            <label for="{{ task_form.assigned_to.id_for_label }}" class="form-label">Assigned To</label>
-                            {{ task_form.assigned_to }}
-                            {% if task_form.assigned_to.errors %}<div class="text-danger small mt-1">{{ task_form.assigned_to.errors|join:", " }}</div>{% endif %}
+                            <label for="{{ task_form.members.id_for_label }}" class="form-label">Assigned to</label>
+                            {{ task_form.members }}
+                            {% if task_form.members.errors %}<div class="text-danger small mt-1">{{ task_form.members.errors|join:", " }}</div>{% endif %}
                         </div>
                         <div class="col-md-4">
                             <label for="{{ task_form.start_date.id_for_label }}" class="form-label">Start date</label>
@@ -751,6 +824,100 @@ function cancelInlineForm(formId) {
         }
     }
 }
+
+$(function () {
+    if ($('.select2-task-members').length && $.fn.select2) {
+        $('.select2-task-members').select2({
+            theme: 'bootstrap-5',
+            width: '100%',
+            placeholder: 'Search by name or employee code…',
+            closeOnSelect: false,
+            allowClear: true,
+            minimumResultsForSearch: 0,
+        });
+    }
+
+    var itemsTable = document.getElementById('projectItemsTable');
+    if (!itemsTable) return;
+
+    var headerActionCols = itemsTable.querySelectorAll('thead .line-action-col');
+    var selectAll = document.getElementById('projectItemSelectAll');
+
+    function setRowSelected(row, selected) {
+        row.querySelectorAll('.line-action-cell').forEach(function (cell) {
+            if (!selected) {
+                cell.classList.add('d-none');
+                return;
+            }
+            if (cell.classList.contains('line-return-cell')) {
+                if (row.dataset.canReturn === '1') {
+                    cell.classList.remove('d-none');
+                } else {
+                    cell.classList.add('d-none');
+                }
+            } else if (cell.querySelector('form, button[form]')) {
+                cell.classList.remove('d-none');
+            } else {
+                cell.classList.add('d-none');
+            }
+        });
+    }
+
+    function syncHeaderActionCols() {
+        var anySelected = itemsTable.querySelector('.project-item-select:checked');
+        headerActionCols.forEach(function (th) {
+            th.classList.toggle('d-none', !anySelected);
+        });
+    }
+
+    function syncSelectAll() {
+        if (!selectAll) return;
+        var boxes = itemsTable.querySelectorAll('.project-item-select');
+        var checked = itemsTable.querySelectorAll('.project-item-select:checked');
+        selectAll.indeterminate = checked.length > 0 && checked.length < boxes.length;
+        selectAll.checked = boxes.length > 0 && checked.length === boxes.length;
+    }
+
+    itemsTable.querySelectorAll('.project-item-select').forEach(function (cb) {
+        cb.addEventListener('change', function () {
+            var row = cb.closest('tr');
+            if (row) setRowSelected(row, cb.checked);
+            syncHeaderActionCols();
+            syncSelectAll();
+        });
+    });
+
+    if (selectAll) {
+        selectAll.addEventListener('change', function () {
+            itemsTable.querySelectorAll('.project-item-select').forEach(function (cb) {
+                cb.checked = selectAll.checked;
+                var row = cb.closest('tr');
+                if (row) setRowSelected(row, cb.checked);
+            });
+            syncHeaderActionCols();
+            syncSelectAll();
+        });
+    }
+
+    itemsTable.querySelectorAll('.project-inline-deliver-form, .project-inline-return-form').forEach(function (form) {
+        form.addEventListener('submit', function (e) {
+            var input = form.querySelector('.project-inline-qty');
+            if (!input) return;
+            var val = parseFloat(input.value, 10);
+            var max = parseFloat(input.getAttribute('max'), 10);
+            var min = parseFloat(input.getAttribute('min'), 10);
+            if (isNaN(val) || val < min) {
+                e.preventDefault();
+                alert('Enter a valid quantity (min ' + min + ').');
+                return;
+            }
+            if (!isNaN(max) && val > max) {
+                e.preventDefault();
+                alert('Quantity cannot exceed ' + max + ' for this line.');
+            }
+        });
+    });
+});
 
 </script>
 {% endblock %}

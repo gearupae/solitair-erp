@@ -320,6 +320,23 @@
                     </select>
                     <input type="text" name="rename_new_name" class="form-control form-control-sm mb-2" maxlength="200" placeholder="New name" autocomplete="off">
                     <button type="submit" name="action" value="rename" class="btn btn-outline-secondary btn-sm group-action-btn">Rename</button>
+
+                    <hr class="my-3">
+
+                    <label class="form-label small fw-semibold">Quotation PDF — group display</label>
+                    <p class="small text-muted mb-2">Applies when this group name is used on an estimate. Quotation PDF only — estimate screen and proforma are unchanged.</p>
+                    <select name="pdf_settings_group_id" id="pdfSettingsGroupSelect" class="form-select form-select-sm mb-2">
+                        <option value="">— Choose group —</option>
+                        {% for g in item_groups %}
+                        <option value="{{ g.pk }}" data-hide-items="{{ g.hide_items_on_pdf|yesno:'1,0' }}">{{ g.name }}{% if g.hide_items_on_pdf %} · hide items{% endif %}</option>
+                        {% endfor %}
+                    </select>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" name="hide_items_on_pdf" id="hideItemsOnPdfCheck" value="on">
+                        <label class="form-check-label small" for="hideItemsOnPdfCheck">Hide items</label>
+                    </div>
+                    <p class="small text-muted mb-2">When checked, the quotation PDF shows only the group name and consolidated price on one line (no item breakdown).</p>
+                    <button type="submit" name="action" value="set_pdf_hide" class="btn btn-outline-primary btn-sm group-action-btn">Save PDF setting</button>
                 </form>
             </div>
         </div>
@@ -400,7 +417,22 @@
                     e.preventDefault();
                     alert('Enter the new name.');
                 }
+            } else if (action === 'set_pdf_hide') {
+                var pdfSel = document.getElementById('pdfSettingsGroupSelect');
+                if (!pdfSel || !pdfSel.value) {
+                    e.preventDefault();
+                    alert('Choose a group.');
+                }
             }
+        });
+    }
+
+    var pdfSettingsSelect = document.getElementById('pdfSettingsGroupSelect');
+    var hideItemsCheck = document.getElementById('hideItemsOnPdfCheck');
+    if (pdfSettingsSelect && hideItemsCheck) {
+        pdfSettingsSelect.addEventListener('change', function () {
+            var opt = pdfSettingsSelect.selectedOptions[0];
+            hideItemsCheck.checked = opt && opt.dataset.hideItems === '1';
         });
     }
 })();

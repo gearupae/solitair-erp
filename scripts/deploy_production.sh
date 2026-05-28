@@ -59,7 +59,7 @@ APP="${REMOTE}"
 
 [[ -f "\${APP}/venv/bin/activate" ]] || { echo "Missing venv at \${APP}/venv"; exit 1; }
 
-chown -R www-data:www-data "\${APP}/erp_project"
+chown -R www-data:www-data "\${APP}"
 cd "\${APP}"
 source venv/bin/activate
 pip install -q -r requirements.txt

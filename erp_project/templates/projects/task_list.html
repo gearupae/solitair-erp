@@ -16,6 +16,17 @@
 .task-list-table .col-task {
     max-width: 18rem;
 }
+.task-list-table .col-description {
+    max-width: 14rem;
+}
+.task-list-table .task-desc-preview {
+    cursor: pointer;
+    text-decoration: underline dotted rgba(0, 0, 0, 0.25);
+    text-underline-offset: 2px;
+}
+.task-list-table .task-desc-preview:hover {
+    color: var(--bs-primary);
+}
 .task-list-table .task-tooltip-target {
     cursor: default;
 }
@@ -105,7 +116,7 @@
 <div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2">
     <div>
         <h4 class="mb-1 fw-bold">{{ title }}</h4>
-        <p class="text-muted mb-0">Tasks across all projects</p>
+        <p class="text-muted mb-0">Tasks across projects, customers, and leads</p>
     </div>
     <div class="d-flex flex-wrap gap-2 align-items-center">
         <div class="btn-group" role="group" aria-label="View mode">
@@ -126,7 +137,7 @@
             {% endif %}
             <div class="col-md-3">
                 <label class="form-label small text-muted mb-0">Search</label>
-                <input type="text" name="search" class="form-control form-control-sm" placeholder="Task or project…" value="{{ request.GET.search }}">
+                <input type="text" name="search" class="form-control form-control-sm" placeholder="Task, project, or customer…" value="{{ request.GET.search }}">
             </div>
             <div class="col-md-2">
                 <label class="form-label small text-muted mb-0">Status</label>
@@ -177,7 +188,7 @@
             <div class="kanban-card {% if not can_edit %}kanban-card--readonly{% endif %}" draggable="{% if can_edit %}true{% else %}false{% endif %}" data-task-id="{{ task.pk }}" data-current-status="pending">
                 <div class="kanban-card-title">{{ task.name }}</div>
                 <div class="kanban-card-meta">
-                    <a href="{% url 'projects:project_detail' task.project.pk %}" class="text-decoration-none">{{ task.project.project_code }}</a>
+                    {% include 'projects/includes/task_context_link.html' %}
                     · {{ task.start_date|date:"d/m/Y"|default:"—" }} → {{ task.due_date|date:"d/m/Y"|default:"—" }}
                 </div>
             </div>
@@ -193,7 +204,7 @@
             <div class="kanban-card {% if not can_edit %}kanban-card--readonly{% endif %}" draggable="{% if can_edit %}true{% else %}false{% endif %}" data-task-id="{{ task.pk }}" data-current-status="in_progress">
                 <div class="kanban-card-title">{{ task.name }}</div>
                 <div class="kanban-card-meta">
-                    <a href="{% url 'projects:project_detail' task.project.pk %}" class="text-decoration-none">{{ task.project.project_code }}</a>
+                    {% include 'projects/includes/task_context_link.html' %}
                     · {{ task.start_date|date:"d/m/Y"|default:"—" }} → {{ task.due_date|date:"d/m/Y"|default:"—" }}
                 </div>
             </div>
@@ -209,7 +220,7 @@
             <div class="kanban-card {% if not can_edit %}kanban-card--readonly{% endif %}" draggable="{% if can_edit %}true{% else %}false{% endif %}" data-task-id="{{ task.pk }}" data-current-status="completed">
                 <div class="kanban-card-title">{{ task.name }}</div>
                 <div class="kanban-card-meta">
-                    <a href="{% url 'projects:project_detail' task.project.pk %}" class="text-decoration-none">{{ task.project.project_code }}</a>
+                    {% include 'projects/includes/task_context_link.html' %}
                     · {{ task.start_date|date:"d/m/Y"|default:"—" }} → {{ task.due_date|date:"d/m/Y"|default:"—" }}
                 </div>
             </div>
@@ -228,8 +239,9 @@
             <table class="table table-hover table-sm mb-0 task-list-table">
                 <thead>
                     <tr>
-                        <th class="col-project">Project</th>
+                        <th class="col-project">Linked to</th>
                         <th class="col-task">Task</th>
+                        <th class="col-description">Description</th>
                         <th>Assigned</th>
                         <th>Status</th>
                         <th>Start</th>
@@ -241,15 +253,45 @@
                     {% for task in tasks %}
                     <tr>
                         <td class="col-project">
-                            <div class="task-tooltip-target text-truncate" title="{{ task.project.project_code|escape }} — {{ task.project.name|escape }}">
+                            <div class="task-tooltip-target text-truncate" title="{{ task.context_code|escape }} — {{ task.context_name|escape }}{% if task.context_type_label %} ({{ task.context_type_label }}){% endif %}">
+                                {% if task.project %}
                                 <a href="{% url 'projects:project_detail' task.project.pk %}" class="text-decoration-none fw-medium">
                                     {{ task.project.project_code }}
                                 </a>
                                 <span class="text-muted small d-block text-truncate">{{ task.project.name }}</span>
+                                {% elif task.customer %}
+                                <a href="{% url 'crm:customer_detail' task.customer.pk %}" class="text-decoration-none fw-medium">
+                                    {{ task.customer.customer_number }}
+                                </a>
+                                <span class="text-muted small d-block text-truncate">
+                                    {{ task.customer.name }}
+                                    {% if task.customer.customer_type == 'lead' %} · Lead{% else %} · Customer{% endif %}
+                                </span>
+                                {% else %}
+                                <span class="text-muted">—</span>
+                                {% endif %}
                             </div>
                         </td>
                         <td class="col-task">
-                            <span class="task-tooltip-target text-truncate d-block" title="{% if task.description %}{{ task.name|escape }} — {{ task.description|escape }}{% else %}{{ task.name|escape }}{% endif %}">{{ task.name }}</span>
+                            <span class="task-tooltip-target text-truncate d-block" title="{{ task.name|escape }}">{{ task.name }}</span>
+                        </td>
+                        <td class="col-description">
+                            {% if task.description %}
+                            {% if task.description|wordcount > 12 %}
+                            <span class="task-desc-preview d-block text-truncate"
+                                  data-bs-toggle="tooltip"
+                                  data-bs-placement="top"
+                                  data-bs-title="{{ task.description|escape }}"
+                                  data-full-desc="{{ task.description|escape }}"
+                                  role="button"
+                                  tabindex="0"
+                                  title="Click to view full description">{{ task.description|truncatewords:12 }}</span>
+                            {% else %}
+                            <span class="d-block">{{ task.description }}</span>
+                            {% endif %}
+                            {% else %}
+                            <span class="text-muted">—</span>
+                            {% endif %}
                         </td>
                         <td>
                             {% if task.assigned_to %}
@@ -282,12 +324,24 @@
                         <td>{{ task.start_date|date:"d/m/Y"|default:"—" }}</td>
                         <td>{{ task.due_date|date:"d/m/Y"|default:"—" }}</td>
                         <td class="text-end text-nowrap">
+                            {% if can_edit and task.status != 'completed' %}
+                            <form method="post" action="{% url 'projects:task_set_status' task.pk %}" class="d-inline">
+                                {% csrf_token %}
+                                <input type="hidden" name="status" value="completed">
+                                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                                <button type="submit" class="btn btn-action btn-outline-success btn-sm" title="Mark complete"><i class="fas fa-check"></i></button>
+                            </form>
+                            {% endif %}
+                            {% if task.project %}
                             <a href="{% url 'projects:project_detail' task.project.pk %}" class="btn btn-action btn-outline-primary btn-sm" title="Open project"><i class="fas fa-folder-open"></i></a>
+                            {% elif task.customer %}
+                            <a href="{% url 'crm:customer_detail' task.customer.pk %}" class="btn btn-action btn-outline-primary btn-sm" title="Open customer / lead"><i class="fas fa-user"></i></a>
+                            {% endif %}
                         </td>
                     </tr>
                     {% empty %}
                     <tr>
-                        <td colspan="7" class="text-center py-5 text-muted">No tasks found.</td>
+                        <td colspan="8" class="text-center py-5 text-muted">No tasks found.</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -310,9 +364,46 @@
     </ul>
 </nav>
 {% endif %}
+
+{% if view_mode != 'kanban' %}
+<div class="modal fade" id="taskDescriptionModal" tabindex="-1" aria-labelledby="taskDescriptionModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="taskDescriptionModalLabel">Task description</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-0 text-break" id="taskDescriptionModalBody"></p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
 {% endblock %}
 
 {% block extra_js %}
+{% if view_mode != 'kanban' %}
+<script>
+(function() {
+    const modalEl = document.getElementById('taskDescriptionModal');
+    const bodyEl = document.getElementById('taskDescriptionModalBody');
+    if (!modalEl || !bodyEl) return;
+    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    document.querySelectorAll('.task-desc-preview').forEach(function(el) {
+        function openModal(e) {
+            if (e.type === 'keydown' && e.key !== 'Enter' && e.key !== ' ') return;
+            if (e.type === 'keydown') e.preventDefault();
+            const text = el.getAttribute('data-full-desc') || el.textContent.trim();
+            bodyEl.textContent = text;
+            modal.show();
+        }
+        el.addEventListener('click', openModal);
+        el.addEventListener('keydown', openModal);
+    });
+})();
+</script>
+{% endif %}
 {% if view_mode == 'kanban' %}
 <script>
 (function() {

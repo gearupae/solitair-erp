@@ -90,11 +90,11 @@
     --crm-kanban-col-min: 16rem;
     display: flex;
     flex-wrap: nowrap;
-    gap: 1rem;
+    gap: 0.5rem;
     align-items: stretch;
     overflow-x: auto;
     overflow-y: hidden;
-    padding-bottom: 0.35rem;
+    padding-bottom: 0.25rem;
     -webkit-overflow-scrolling: touch;
 }
 .crm-kanban-board-row .kanban-col {
@@ -122,7 +122,7 @@
     align-items: center;
 }
 .kanban-col-body {
-    padding: 0.65rem;
+    padding: 0.4rem;
     flex: 1;
     min-height: 120px;
 }
@@ -139,9 +139,8 @@
     background: var(--kb-body-bg, #f8fafc);
 }
 .kanban-col--themed .kanban-card {
-    background: var(--kb-card-bg, #fff);
-    border: 1px solid var(--kb-card-border, #e5e7eb);
-    border-left: 3px solid var(--kb-accent, #94a3b8);
+    background: #fff;
+    border: 1px solid #e5e7eb;
 }
 .kanban-col--themed .kanban-card-title a {
     color: var(--kb-header-color, inherit);
@@ -154,8 +153,8 @@
     background: #fff;
     border: 1px solid #e5e7eb;
     border-radius: 8px;
-    padding: 0.65rem 0.75rem;
-    margin-bottom: 0.5rem;
+    padding: 0.55rem 0.65rem;
+    margin-bottom: 0.35rem;
     box-shadow: 0 1px 2px rgba(0,0,0,0.04);
     cursor: grab;
 }
@@ -176,6 +175,45 @@
     border: 2px solid var(--kb-accent, #22c55e);
     background: var(--kb-body-bg, rgba(220, 252, 231, 0.35));
     border-radius: 0 0 8px 8px;
+}
+
+.crm-customers-filter-toolbar {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: flex-end;
+    gap: 0.5rem;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 0.1rem;
+}
+.crm-customers-filter-toolbar .crm-filter-field {
+    flex: 0 0 auto;
+}
+.crm-customers-filter-toolbar .crm-filter-search {
+    flex: 1 1 10rem;
+    min-width: 10rem;
+}
+.crm-customers-filter-toolbar .crm-filter-type,
+.crm-customers-filter-toolbar .crm-filter-status,
+.crm-customers-filter-toolbar .crm-filter-salesman {
+    width: 8.5rem;
+}
+.crm-customers-filter-toolbar .crm-filter-period {
+    width: 14rem;
+}
+.crm-customers-filter-toolbar .crm-filter-period .flatpickr-input {
+    min-height: 38px;
+}
+.crm-customers-filter-toolbar .crm-filter-actions {
+    flex: 0 0 auto;
+    white-space: nowrap;
+}
+.crm-customers-filter-toolbar .form-label {
+    margin-bottom: 0.25rem;
+}
+.crm-customers-filter-toolbar .form-control,
+.crm-customers-filter-toolbar .form-select {
+    min-height: 38px;
 }
 </style>
 {% endblock %}
@@ -325,15 +363,15 @@
 
 <div class="tab-content">
     <div class="tab-pane fade" id="crmTabKanban" role="tabpanel" aria-labelledby="crm-tab-kanban" tabindex="0">
-        <div class="card border-0 shadow-sm mb-4">
-            <div class="card-body py-3">
+        <div class="card border-0 shadow-sm mb-2">
+            <div class="card-body py-2 px-2">
                 {% if can_configure_kanban %}
                 <div class="d-flex justify-content-end mb-3">
                     <a href="{% url 'settings:crm_kanban' %}" class="btn btn-light btn-sm shrink-0"><i class="fas fa-cog me-1"></i>Pipeline settings</a>
                 </div>
                 {% endif %}
                 <form id="crmKanbanCsrf" class="d-none">{% csrf_token %}</form>
-                <div class="crm-kanban-board-row mb-2">
+                <div class="crm-kanban-board-row mb-0">
                     <div class="kanban-col kanban-col--themed" style="{{ kanban_unassigned_style }}">
                         <div class="kanban-col-header">Unassigned <span class="badge">{{ kanban_leads_unassigned|length }}</span></div>
                         <div class="kanban-col-body crm-kanban-list" data-stage-id="" data-list-kind="lead">
@@ -460,13 +498,13 @@
 <!-- Filters -->
 <div class="card border-0 shadow-sm mb-4">
     <div class="card-body py-3">
-        <form method="get" class="row g-3 align-items-end">
-            <div class="col-md-4">
+        <form method="get" class="crm-customers-filter-toolbar">
+            <div class="crm-filter-field crm-filter-search">
                 <label class="form-label small text-muted">Search</label>
-                <input type="text" name="search" class="form-control" placeholder="Name, company, email, VAT, website, job type..." value="{{ request.GET.search }}">
+                <input type="text" name="search" class="form-control" placeholder="Name, company, email, VAT..." value="{{ request.GET.search }}">
             </div>
             {% if not crm_sales_rep_only %}
-            <div class="col-md-2">
+            <div class="crm-filter-field crm-filter-type">
                 <label class="form-label small text-muted">Type</label>
                 <select name="type" class="form-select">
                     <option value="">All Types</option>
@@ -474,8 +512,10 @@
                     <option value="customer" {% if request.GET.type == 'customer' %}selected{% endif %}>Customer</option>
                 </select>
             </div>
+            {% else %}
+            <input type="hidden" name="type" value="{{ request.GET.type|default:'lead' }}">
             {% endif %}
-            <div class="col-md-2">
+            <div class="crm-filter-field crm-filter-status">
                 <label class="form-label small text-muted">Status</label>
                 <select name="status" class="form-select">
                     <option value="">All Status</option>
@@ -484,11 +524,29 @@
                     <option value="inactive" {% if request.GET.status == 'inactive' %}selected{% endif %}>Inactive</option>
                 </select>
             </div>
-            <div class="col-md-4">
-                <button type="submit" class="btn btn-primary me-2">
-                    <i class="fas fa-filter me-1"></i>Filter
-                </button>
-                <a href="{% url 'crm:customer_list' %}" class="btn btn-light">Clear</a>
+            {% if not crm_sales_rep_only %}
+            <div class="crm-filter-field crm-filter-salesman">
+                <label class="form-label small text-muted">Salesman</label>
+                <select name="salesman" class="form-select">
+                    <option value="">All salesmen</option>
+                    {% for item in salesman_choice_options %}
+                    <option value="{{ item.id }}" {% if request.GET.salesman == item.id|stringformat:'s' %}selected{% endif %}>{{ item.label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endif %}
+            <div class="crm-filter-field crm-filter-period">
+                <label class="form-label small text-muted">Period</label>
+                <input type="text" name="date_range" id="crmCustomerDateRange" class="form-control" placeholder="Select period" value="{{ crm_filter_date_range }}" autocomplete="off">
+            </div>
+            <div class="crm-filter-field crm-filter-actions">
+                <label class="form-label small text-muted d-none d-xl-block">&nbsp;</label>
+                <div class="d-flex gap-2">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-filter me-1"></i>Filter
+                    </button>
+                    <a href="{% url 'crm:customer_list' %}" class="btn btn-light">Clear</a>
+                </div>
             </div>
         </form>
     </div>
@@ -667,6 +725,30 @@
 {% endblock %}
 
 {% block extra_js %}
+<script>
+(function () {
+    document.addEventListener('DOMContentLoaded', function () {
+        var rangeEl = document.getElementById('crmCustomerDateRange');
+        if (rangeEl && typeof flatpickr !== 'undefined') {
+            var defaultDates = [];
+            var raw = (rangeEl.value || '').trim();
+            if (raw) {
+                defaultDates = raw.split(' to ').map(function (part) {
+                    return part.trim();
+                }).filter(Boolean);
+            }
+            flatpickr(rangeEl, {
+                mode: 'range',
+                dateFormat: 'Y-m-d',
+                altInput: true,
+                altFormat: 'd M Y',
+                rangeSeparator: ' to ',
+                defaultDate: defaultDates.length ? defaultDates : undefined,
+            });
+        }
+    });
+})();
+</script>
 <script>
 (function () {
     document.addEventListener('DOMContentLoaded', function () {

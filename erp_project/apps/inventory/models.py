@@ -90,6 +90,13 @@ class ItemGroup(models.Model):
     Named group; items can belong to many groups (M2M).
     """
     name = models.CharField(max_length=200, unique=True)
+    hide_items_on_pdf = models.BooleanField(
+        default=False,
+        help_text=(
+            'When on, quotation PDFs show only this group name and consolidated '
+            'price (no individual line items) for estimate lines using this group name.'
+        ),
+    )
 
     class Meta:
         ordering = ['name']

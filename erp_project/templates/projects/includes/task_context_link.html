@@ -1,0 +1,7 @@
+{% if task.project %}
+<a href="{% url 'projects:project_detail' task.project.pk %}" class="text-decoration-none">{{ task.project.project_code }}</a>
+{% elif task.customer %}
+<a href="{% url 'crm:customer_detail' task.customer.pk %}" class="text-decoration-none">{{ task.customer.customer_number }}</a>
+{% else %}
+<span class="text-muted">—</span>
+{% endif %}

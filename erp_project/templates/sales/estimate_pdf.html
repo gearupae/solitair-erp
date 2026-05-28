@@ -597,6 +597,15 @@
                 </tr>
                 {% else %}
                 {% for group in pdf_item_groups %}
+                {% if pdf_variant == 'quotation' and group.hide_items_on_pdf and group.name %}
+                <tr>
+                    <td class="item-number">{{ group.collapsed_index }}</td>
+                    <td class="item-description"><strong>{{ group.name }}</strong></td>
+                    <td class="text-center">1.00</td>
+                    <td class="text-right">{{ group.line_subtotal|floatformat:2 }}</td>
+                    <td class="text-right">{{ group.line_total|floatformat:2 }}</td>
+                </tr>
+                {% else %}
                 {% if group.name %}
                 <tr class="group-row">
                     <td colspan="5">{{ group.name }}</td>
@@ -616,6 +625,7 @@
                     <td colspan="4" class="text-right">{{ group.name }} total</td>
                     <td class="text-right">AED {{ group.line_total|floatformat:2 }}</td>
                 </tr>
+                {% endif %}
                 {% endif %}
                 {% empty %}
                 <tr>
@@ -648,6 +658,13 @@
                 </tr>
                 {% else %}
                 {% for group in pdf_item_groups %}
+                {% if pdf_variant == 'quotation' and group.hide_items_on_pdf and group.name %}
+                <tr>
+                    <td class="item-number">{{ group.collapsed_index }}</td>
+                    <td class="item-description"><strong>{{ group.name }}</strong> <span style="color:#525252;">— AED {{ group.line_total|floatformat:2 }}</span></td>
+                    <td class="text-center">1.00</td>
+                </tr>
+                {% else %}
                 {% if group.name %}
                 <tr class="group-row">
                     <td colspan="3">{{ group.name }}</td>
@@ -664,6 +681,7 @@
                 <tr class="group-total-row">
                     <td colspan="3" class="text-right">{{ group.name }} total: AED {{ group.line_total|floatformat:2 }}</td>
                 </tr>
+                {% endif %}
                 {% endif %}
                 {% empty %}
                 <tr>

@@ -433,6 +433,28 @@ def item_bulk_group(request):
         g.name = new_name
         g.save(update_fields=['name'])
         messages.success(request, 'Group renamed for all items using it.')
+    elif action == 'set_pdf_hide':
+        gid = request.POST.get('pdf_settings_group_id')
+        if not (gid and str(gid).isdigit()):
+            messages.warning(request, 'Choose a group.')
+            return redirect('inventory:item_list')
+        g = ItemGroup.objects.filter(pk=int(gid)).first()
+        if not g:
+            messages.error(request, 'Group not found.')
+            return redirect('inventory:item_list')
+        hide = request.POST.get('hide_items_on_pdf') == 'on'
+        g.hide_items_on_pdf = hide
+        g.save(update_fields=['hide_items_on_pdf'])
+        if hide:
+            messages.success(
+                request,
+                f'"{g.name}" will show as one consolidated line on quotation PDFs (items hidden).',
+            )
+        else:
+            messages.success(
+                request,
+                f'"{g.name}" will show individual items on quotation PDFs again.',
+            )
     else:
         messages.error(request, 'Invalid action.')
 

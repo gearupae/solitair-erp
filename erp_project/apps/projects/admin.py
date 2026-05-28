@@ -20,10 +20,10 @@ class ProjectAdmin(admin.ModelAdmin):
 
 @admin.register(Task)
 class TaskAdmin(admin.ModelAdmin):
-    list_display = ['name', 'project', 'assigned_to', 'status', 'priority', 'start_date', 'due_date']
-    list_filter = ['status', 'priority', 'project']
-    search_fields = ['name', 'project__project_code', 'project__name']
-    raw_id_fields = ['project', 'assigned_to']
+    list_display = ['name', 'project', 'customer', 'assigned_to', 'status', 'priority', 'start_date', 'due_date']
+    list_filter = ['status', 'priority', 'project', 'customer']
+    search_fields = ['name', 'project__project_code', 'project__name', 'customer__customer_number', 'customer__name']
+    raw_id_fields = ['project', 'customer', 'assigned_to']
 
 @admin.register(ProjectGatepass)
 class ProjectGatepassAdmin(admin.ModelAdmin):

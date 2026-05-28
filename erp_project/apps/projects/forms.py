@@ -85,6 +85,72 @@ class ProjectForm(forms.ModelForm):
         self.fields['budget'].widget.attrs.setdefault('step', '0.01')
         self.fields['estimated_cost'].widget.attrs.setdefault('step', '0.01')
 
+class CustomerTaskCreateForm(forms.Form):
+    """Quick task create from CRM customer detail (one task per selected member)."""
+
+    name = forms.CharField(
+        max_length=200,
+        widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Task name'}),
+    )
+    description = forms.CharField(
+        required=False,
+        widget=forms.Textarea(attrs={'class': 'form-control', 'rows': 2, 'placeholder': 'Task description'}),
+    )
+    start_date = forms.DateField(
+        required=False,
+        widget=forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
+    )
+    due_date = forms.DateField(
+        required=False,
+        label='End date',
+        widget=forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
+    )
+    members = forms.ModelMultipleChoiceField(
+        queryset=User.objects.none(),
+        widget=forms.SelectMultiple(
+            attrs={
+                'class': 'form-select select2-task-members',
+                'data-placeholder': 'Search by name or employee code…',
+            }
+        ),
+        label='Members',
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        staff_qs = project_staff_select_queryset()
+        self.fields['members'].queryset = staff_qs
+        self.fields['members'].label_from_instance = project_staff_choice_label
+
+    def clean(self):
+        cleaned = super().clean()
+        start = cleaned.get('start_date')
+        end = cleaned.get('due_date')
+        if start and end and start > end:
+            raise ValidationError('Start date must be on or before end date.')
+        return cleaned
+
+
+class ProjectTaskCreateForm(CustomerTaskCreateForm):
+    """Quick task create from project detail (one task per selected member)."""
+
+    status = forms.ChoiceField(
+        choices=Task.STATUS_CHOICES,
+        initial='pending',
+        widget=forms.Select(attrs={'class': 'form-select'}),
+    )
+    priority = forms.ChoiceField(
+        choices=Task.PRIORITY_CHOICES,
+        initial='medium',
+        widget=forms.Select(attrs={'class': 'form-select'}),
+    )
+    estimated_hours = forms.DecimalField(
+        required=False,
+        initial=Decimal('0.00'),
+        widget=forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01'}),
+    )
+
+
 class TaskForm(forms.ModelForm):
     class Meta:
         model = Task
@@ -98,7 +164,9 @@ class TaskForm(forms.ModelForm):
             'description': forms.Textarea(attrs={'rows': 2}),
         }
     
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, project=None, customer=None, **kwargs):
+        self.project = project
+        self.customer = customer
         super().__init__(*args, **kwargs)
         # Filter assigned_to to active users only
         self.fields['assigned_to'].queryset = (
@@ -114,6 +182,13 @@ class TaskForm(forms.ModelForm):
                 field.widget.attrs['class'] = 'form-select'
             else:
                 field.widget.attrs['class'] = 'form-control'
+
+    def _post_clean(self):
+        if self.project is not None:
+            self.instance.project = self.project
+        if self.customer is not None:
+            self.instance.customer = self.customer
+        super()._post_clean()
 
 
 class ProjectGatepassForm(forms.ModelForm):

@@ -23,13 +23,16 @@ from .models import (
     ProjectPublicUpload,
     ProjectItemLine,
 )
-from .forms import ProjectForm, TaskForm, ProjectExpenseForm, ProjectGatepassForm, ProjectItemDeliveryForm, ProjectItemReturnForm
+from .forms import ProjectForm, ProjectTaskCreateForm, TaskForm, ProjectExpenseForm, ProjectGatepassForm, ProjectItemDeliveryForm, ProjectItemReturnForm
 from .gatepass_alerts import pick_display_gatepass
 from .item_delivery import (
     deliver_items_to_project,
     project_delivery_display_rows,
     project_delivery_summary_groups,
     project_inventory_spend_total,
+    project_item_delivered_qty,
+    project_item_remaining_qty,
+    project_item_returnable_qty,
     project_return_history_rows,
     return_items_from_project,
     return_serial_unit_from_project,
@@ -216,9 +219,9 @@ class TaskListView(PermissionRequiredMixin, ListView):
 
     def get_queryset(self):
         qs = Task.objects.filter(is_active=True).select_related(
-            'project', 'assigned_to', 'assigned_to__employee_profile'
+            'project', 'customer', 'assigned_to', 'assigned_to__employee_profile'
         ).order_by(
-            'due_date', 'start_date', 'project__project_code', 'name'
+            'due_date', 'start_date', 'project__project_code', 'customer__customer_number', 'name'
         )
         search = self.request.GET.get('search')
         if search:
@@ -226,6 +229,8 @@ class TaskListView(PermissionRequiredMixin, ListView):
                 Q(name__icontains=search)
                 | Q(project__name__icontains=search)
                 | Q(project__project_code__icontains=search)
+                | Q(customer__name__icontains=search)
+                | Q(customer__customer_number__icontains=search)
             )
         status = self.request.GET.get('status')
         if status:
@@ -233,6 +238,9 @@ class TaskListView(PermissionRequiredMixin, ListView):
         project_id = self.request.GET.get('project')
         if project_id:
             qs = qs.filter(project_id=project_id)
+        customer_id = self.request.GET.get('customer')
+        if customer_id:
+            qs = qs.filter(customer_id=customer_id)
         assigned = self.request.GET.get('assigned_to')
         if assigned:
             qs = qs.filter(assigned_to_id=assigned)
@@ -493,17 +501,29 @@ class ProjectDetailView(PermissionRequiredMixin, DetailView):
         context['tasks'] = self.object.tasks.filter(is_active=True).select_related(
             'assigned_to', 'assigned_to__employee_profile'
         )
-        from .item_delivery import project_item_delivered_qty
-
         item_lines = list(self.object.item_lines.all())
         for line in item_lines:
             if line.inventory_item_id:
-                line.delivered_qty = project_item_delivered_qty(self.object, line.inventory_item)
+                item = line.inventory_item
+                delivered = project_item_delivered_qty(self.object, item)
+                remaining = project_item_remaining_qty(self.object, item) or Decimal('0')
+                returnable = project_item_returnable_qty(self.object, item)
+                line.delivered_qty = delivered
+                line.remaining_qty = remaining
+                line.returnable_qty = returnable
+                line.max_deliver_qty = min(remaining, line.quantity)
+                line.max_return_qty = min(returnable, line.quantity)
+                line.track_by_serial = item.track_by_serial
             else:
                 line.delivered_qty = None
+                line.remaining_qty = None
+                line.returnable_qty = None
+                line.max_deliver_qty = None
+                line.max_return_qty = None
+                line.track_by_serial = False
         context['project_item_lines'] = item_lines
         if 'task_form' not in context:
-            context['task_form'] = TaskForm()
+            context['task_form'] = ProjectTaskCreateForm()
 
         can_edit_gp = self.request.user.is_superuser or PermissionChecker.has_permission(
             self.request.user, 'projects', 'edit'
@@ -630,7 +650,6 @@ class ProjectDetailView(PermissionRequiredMixin, DetailView):
         if 'item_delivery_form' in kwargs:
             context['item_delivery_form'] = kwargs['item_delivery_form']
         else:
-            from django.utils import timezone
             context['item_delivery_form'] = ProjectItemDeliveryForm(
                 project=self.object,
                 initial={'delivered_date': timezone.now().date()},
@@ -638,7 +657,6 @@ class ProjectDetailView(PermissionRequiredMixin, DetailView):
         if 'item_return_form' in kwargs:
             context['item_return_form'] = kwargs['item_return_form']
         else:
-            from django.utils import timezone
             context['item_return_form'] = ProjectItemReturnForm(
                 project=self.object,
                 initial={'returned_date': timezone.now().date()},
@@ -739,6 +757,108 @@ class ProjectDetailView(PermissionRequiredMixin, DetailView):
             context = self.get_context_data(item_return_form=form)
             return self.render_to_response(context)
 
+        if action in ('inline_deliver_item', 'inline_return_item'):
+            if not (
+                request.user.is_superuser
+                or PermissionChecker.has_permission(request.user, 'inventory', 'edit')
+            ):
+                messages.error(request, 'Permission denied.')
+                return redirect('projects:project_detail', pk=self.object.pk)
+            if not self.object.allows_edit_by(request.user):
+                messages.error(request, 'This project cannot be edited.')
+                return redirect('projects:project_detail', pk=self.object.pk)
+
+            item_pk = request.POST.get('item_id', '').strip()
+            if not item_pk.isdigit():
+                messages.error(request, 'Invalid item.')
+                return redirect('projects:project_detail', pk=self.object.pk)
+
+            from apps.inventory.models import Item
+
+            item = get_object_or_404(Item, pk=int(item_pk), is_active=True)
+            line_pk = request.POST.get('line_id', '').strip()
+            max_qty = None
+            if line_pk.isdigit():
+                line = ProjectItemLine.objects.filter(
+                    pk=int(line_pk),
+                    project=self.object,
+                    inventory_item=item,
+                ).first()
+                if line:
+                    if action == 'inline_deliver_item':
+                        remaining = project_item_remaining_qty(self.object, item) or Decimal('0')
+                        max_qty = min(remaining, line.quantity)
+                    else:
+                        returnable = project_item_returnable_qty(self.object, item)
+                        max_qty = min(returnable, line.quantity)
+
+            try:
+                qty = Decimal(str(request.POST.get('quantity', ''))).quantize(Decimal('0.01'))
+            except Exception:
+                messages.error(request, 'Enter a valid quantity.')
+                return redirect('projects:project_detail', pk=self.object.pk)
+
+            if qty <= 0:
+                messages.error(request, 'Quantity must be greater than zero.')
+                return redirect('projects:project_detail', pk=self.object.pk)
+
+            if max_qty is not None and qty > max_qty:
+                if action == 'inline_deliver_item':
+                    messages.error(
+                        request,
+                        f'You can deliver at most {max_qty} for this line (listed qty {line.quantity}).',
+                    )
+                else:
+                    messages.error(
+                        request,
+                        f'You can return at most {max_qty} for this line.',
+                    )
+                return redirect('projects:project_detail', pk=self.object.pk)
+
+            today = timezone.now().date()
+            try:
+                if action == 'inline_deliver_item':
+                    result = deliver_items_to_project(
+                        self.object,
+                        item,
+                        qty,
+                        today,
+                        request.user,
+                    )
+                    serials = result.get('serials') or []
+                    if serials:
+                        messages.success(
+                            request,
+                            f'Delivered {len(serials)} unit(s) of {item.name} to the project.',
+                        )
+                    else:
+                        messages.success(
+                            request,
+                            f'Delivered {qty} × {item.name} to the project.',
+                        )
+                else:
+                    result = return_items_from_project(
+                        self.object,
+                        item,
+                        qty,
+                        today,
+                        request.user,
+                    )
+                    serials = result.get('serials') or []
+                    if serials:
+                        messages.success(
+                            request,
+                            f'Returned {len(serials)} unit(s) of {item.name} to stock.',
+                        )
+                    else:
+                        messages.success(
+                            request,
+                            f'Returned {qty} × {item.name} to stock.',
+                        )
+            except ValidationError as exc:
+                messages.error(request, exc.messages[0] if exc.messages else str(exc))
+            return redirect('projects:project_detail', pk=self.object.pk)
+
         if action == 'return_serial_unit':
             if not (
                 request.user.is_superuser
@@ -747,7 +867,6 @@ class ProjectDetailView(PermissionRequiredMixin, DetailView):
                 messages.error(request, 'Permission denied.')
                 return redirect('projects:project_detail', pk=self.object.pk)
             serial_pk = request.POST.get('serial_pk')
-            from django.utils import timezone
             return_date = timezone.now().date()
             try:
                 sn = return_serial_unit_from_project(
@@ -814,20 +933,45 @@ class ProjectDetailView(PermissionRequiredMixin, DetailView):
             messages.error(request, 'Permission denied.')
             return redirect('projects:project_detail', pk=self.object.pk)
 
-        form = TaskForm(request.POST)
+        form = ProjectTaskCreateForm(request.POST)
         if form.is_valid():
-            task = form.save(commit=False)
-            task.project = self.object
-            task.save()
-            messages.success(request, f'Task {task.name} created.')
-            link = reverse('projects:project_detail', kwargs={'pk': self.object.pk})
-            notify_if_new_assignee(
-                task.assigned_to,
-                request.user,
-                f'Task assigned: {task.name}',
-                f'{self.object.project_code} — {task.name}',
-                link,
-            )
+            members = list(form.cleaned_data['members'])
+            if not members:
+                form.add_error('members', 'Select at least one member.')
+                context = self.get_context_data(task_form=form)
+                return self.render_to_response(context)
+
+            link = reverse('projects:task_list') + f'?project={self.object.pk}'
+            customer = self.object.customer if self.object.customer_id else None
+            created_count = 0
+            for member in members:
+                task = Task.objects.create(
+                    project=self.object,
+                    customer=customer,
+                    name=form.cleaned_data['name'],
+                    description=form.cleaned_data['description'],
+                    start_date=form.cleaned_data['start_date'],
+                    due_date=form.cleaned_data['due_date'],
+                    assigned_to=member,
+                    status=form.cleaned_data['status'],
+                    priority=form.cleaned_data['priority'],
+                    estimated_hours=form.cleaned_data['estimated_hours'] or Decimal('0.00'),
+                )
+                created_count += 1
+                notify_if_new_assignee(
+                    member,
+                    request.user,
+                    f'Task assigned: {task.name}',
+                    f'{self.object.project_code} — {task.name}',
+                    link,
+                )
+            if created_count == 1:
+                messages.success(request, f'Task {form.cleaned_data["name"]} created.')
+            else:
+                messages.success(
+                    request,
+                    f'{created_count} tasks created for {form.cleaned_data["name"]}.',
+                )
             return redirect('projects:project_detail', pk=self.object.pk)
         messages.error(request, 'Please correct the errors below.')
         context = self.get_context_data()
@@ -871,7 +1015,9 @@ def task_update_status(request, pk, status):
         task.status = status
         task.save()
         messages.success(request, f'Task status updated to {task.get_status_display()}.')
-    return redirect('projects:project_detail', pk=task.project.pk)
+    if task.project_id:
+        return redirect('projects:project_detail', pk=task.project.pk)
+    return redirect('projects:task_list')
 
 
 # ============ PROJECT EXPENSE VIEWS ============

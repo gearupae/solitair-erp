@@ -27,7 +27,8 @@ class WarehouseAdmin(admin.ModelAdmin):
 
 @admin.register(ItemGroup)
 class ItemGroupAdmin(admin.ModelAdmin):
-    list_display = ['name']
+    list_display = ['name', 'hide_items_on_pdf']
+    list_filter = ['hide_items_on_pdf']
     search_fields = ['name']
 
 

@@ -194,7 +194,22 @@ class Task(BaseModel):
         ('high', 'High'),
     ]
     
-    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='tasks')
+    project = models.ForeignKey(
+        Project,
+        on_delete=models.CASCADE,
+        related_name='tasks',
+        null=True,
+        blank=True,
+    )
+    customer = models.ForeignKey(
+        Customer,
+        on_delete=models.CASCADE,
+        related_name='tasks',
+        null=True,
+        blank=True,
+        verbose_name='Customer / lead',
+        help_text='CRM record when the task is not tied to a project.',
+    )
     name = models.CharField(max_length=200)
     description = models.TextField(blank=True)
     assigned_to = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='assigned_tasks')
@@ -206,9 +221,44 @@ class Task(BaseModel):
     
     class Meta:
         ordering = ['due_date', 'start_date', 'priority', 'name']
-    
+
+    def clean(self):
+        super().clean()
+        if not self.project_id and not self.customer_id:
+            raise ValidationError('Task must be linked to a project or a customer/lead.')
+
     def __str__(self):
-        return f"{self.project.project_code} - {self.name}"
+        if self.project_id:
+            prefix = self.project.project_code
+        elif self.customer_id:
+            prefix = self.customer.customer_number
+        else:
+            prefix = 'Unlinked'
+        return f"{prefix} - {self.name}"
+
+    @property
+    def context_code(self):
+        if self.project_id:
+            return self.project.project_code
+        if self.customer_id:
+            return self.customer.customer_number
+        return '—'
+
+    @property
+    def context_name(self):
+        if self.project_id:
+            return self.project.name
+        if self.customer_id:
+            return self.customer.name
+        return ''
+
+    @property
+    def context_type_label(self):
+        if self.project_id:
+            return 'Project'
+        if self.customer_id:
+            return 'Lead' if self.customer.customer_type == 'lead' else 'Customer'
+        return ''
 
 
 class ProjectItemLine(models.Model):
