@@ -136,6 +136,14 @@ def estimate_status_change_allowed(current_status, new_status, *, user=None, est
 
     if new_status in ('quotation_won', 'quotation_lost'):
         return (
+            current_status == 'under_negotiation'
+            and user is not None
+            and estimate is not None
+            and user_can_mark_estimate_won_lost(user, estimate)
+        )
+
+    if new_status == 'under_negotiation':
+        return (
             current_status == 'approved'
             and user is not None
             and estimate is not None
@@ -216,6 +224,13 @@ def get_estimate_status_actions(estimate, user):
                 'icon': 'fa-undo',
             })
         elif current == 'approved' and can_mark_won_lost:
+            actions.append({
+                'status': 'under_negotiation',
+                'label': 'Mark under negotiation',
+                'btn_class': 'btn-outline-info',
+                'icon': 'fa-handshake',
+            })
+        elif current == 'under_negotiation' and can_mark_won_lost:
             actions.extend([
                 {
                     'status': 'quotation_won',

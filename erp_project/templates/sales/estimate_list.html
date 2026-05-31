@@ -23,6 +23,12 @@
     display: block;
     max-width: 100%;
 }
+.estimate-list-table .col-qw,
+.estimate-list-table .col-ql {
+    width: 2.75rem;
+    text-align: center;
+    white-space: nowrap;
+}
 .estimate-list-actions {
     min-width: 11rem;
 }
@@ -61,6 +67,11 @@
     color: #9a3412;
     border-color: #fed7aa;
 }
+.estimate-status-select.estimate-status-under_negotiation {
+    background-color: #cffafe;
+    color: #0e7490;
+    border-color: #a5f3fc;
+}
 .estimate-status-select.estimate-status-quotation_won {
     background-color: #dcfce7;
     color: #14532d;
@@ -78,6 +89,10 @@
 .estimate-status-badge-rejected {
     background-color: #ffedd5 !important;
     color: #9a3412 !important;
+}
+.estimate-status-badge-under-negotiation {
+    background-color: #cffafe !important;
+    color: #0e7490 !important;
 }
 .estimate-sort-th {
     font-weight: 600;
@@ -177,6 +192,7 @@
 .estimate-kanban-board-row .estimate-k-col--sent .kanban-col-header { background: #dbeafe; color: #1e40af; }
 .estimate-kanban-board-row .estimate-k-col--approved .kanban-col-header { background: #e0e7ff; color: #3730a3; }
 .estimate-kanban-board-row .estimate-k-col--lost .kanban-col-header { background: #ffedd5; color: #9a3412; }
+.estimate-kanban-board-row .estimate-k-col--negotiation .kanban-col-header { background: #cffafe; color: #0e7490; }
 .estimate-kanban-board-row .estimate-k-col--quot-won .kanban-col-header { background: #dcfce7; color: #166534; }
 .estimate-kanban-board-row .estimate-k-col--quot-lost .kanban-col-header { background: #fee2e2; color: #991b1b; }
 </style>
@@ -390,9 +406,19 @@
         </div>
     </div>
     <div class="kanban-col estimate-k-col--lost" data-status="rejected">
-        <div class="kanban-col-header">lost <span class="badge" style="background:#c2410c;">{{ estimates_board_lost|length }}</span></div>
+        <div class="kanban-col-header">rejected <span class="badge" style="background:#c2410c;">{{ estimates_board_lost|length }}</span></div>
         <div class="kanban-col-body">
             {% for estimate in estimates_board_lost %}
+            {% include "sales/includes/estimate_kanban_card.html" with estimate=estimate %}
+            {% empty %}
+            <p class="text-muted small mb-0 py-2 text-center">No estimates</p>
+            {% endfor %}
+        </div>
+    </div>
+    <div class="kanban-col estimate-k-col--negotiation" data-status="under_negotiation">
+        <div class="kanban-col-header">under negotiation <span class="badge" style="background:#0e7490;">{{ estimates_board_negotiation|length }}</span></div>
+        <div class="kanban-col-body">
+            {% for estimate in estimates_board_negotiation %}
             {% include "sales/includes/estimate_kanban_card.html" with estimate=estimate %}
             {% empty %}
             <p class="text-muted small mb-0 py-2 text-center">No estimates</p>
@@ -436,10 +462,12 @@
                             </a>
                         </th>
                         <th class="estimate-sort-th col-customer">
-                            <a href="{% url 'sales:estimate_list' %}?{{ sort_links.customer }}" class="estimate-sort-link" title="Sort by customer">
-                                Customer{% if sort_field == 'customer' %}{% if sort_order == 'asc' %}<i class="fas fa-sort-up ms-1" aria-hidden="true"></i>{% else %}<i class="fas fa-sort-down ms-1" aria-hidden="true"></i>{% endif %}{% else %}<i class="fas fa-sort ms-1 text-muted opacity-50" aria-hidden="true"></i>{% endif %}
+                            <a href="{% url 'sales:estimate_list' %}?{{ sort_links.customer }}" class="estimate-sort-link" title="Sort by company">
+                                Company{% if sort_field == 'customer' %}{% if sort_order == 'asc' %}<i class="fas fa-sort-up ms-1" aria-hidden="true"></i>{% else %}<i class="fas fa-sort-down ms-1" aria-hidden="true"></i>{% endif %}{% else %}<i class="fas fa-sort ms-1 text-muted opacity-50" aria-hidden="true"></i>{% endif %}
                             </a>
                         </th>
+                        <th class="col-qw" title="Previous quotation won for this company">QW</th>
+                        <th class="col-ql" title="Previous quotation lost for this company">QL</th>
                         <th class="estimate-sort-th">
                             <a href="{% url 'sales:estimate_list' %}?{{ sort_links.date }}" class="estimate-sort-link" title="Sort by date">
                                 Date{% if sort_field == 'date' %}{% if sort_order == 'asc' %}<i class="fas fa-sort-up ms-1" aria-hidden="true"></i>{% else %}<i class="fas fa-sort-down ms-1" aria-hidden="true"></i>{% endif %}{% else %}<i class="fas fa-sort ms-1 text-muted opacity-50" aria-hidden="true"></i>{% endif %}
@@ -471,7 +499,9 @@
                                 {{ estimate.display_estimate_number }}
                             </a>
                         </td>
-                        <td class="col-customer"><span class="text-truncate" title="{{ estimate.customer.name }}">{{ estimate.customer.name }}</span></td>
+                        <td class="col-customer"><span class="text-truncate" title="{{ estimate.customer.display_name }}">{{ estimate.customer.display_name }}</span></td>
+                        <td class="col-qw">{{ estimate.customer_qw_count|default:0 }}</td>
+                        <td class="col-ql">{{ estimate.customer_ql_count|default:0 }}</td>
                         <td>{{ estimate.date|date:"d/m/Y" }}</td>
                         <td>
                             {% if estimate.valid_until %}
@@ -511,6 +541,8 @@
                                 <span class="badge estimate-status-badge-approved">{{ estimate.get_status_display }}</span>
                             {% elif estimate.status == 'rejected' %}
                                 <span class="badge estimate-status-badge-rejected">{{ estimate.get_status_display }}</span>
+                            {% elif estimate.status == 'under_negotiation' %}
+                                <span class="badge estimate-status-badge-under-negotiation">{{ estimate.get_status_display }}</span>
                             {% elif estimate.status == 'quotation_won' %}
                                 <span class="badge bg-success">{{ estimate.get_status_display }}</span>
                             {% elif estimate.status == 'quotation_lost' %}
@@ -528,6 +560,8 @@
                                 <span class="badge estimate-status-badge-approved">{{ estimate.get_status_display }}</span>
                             {% elif estimate.status == 'rejected' %}
                                 <span class="badge estimate-status-badge-rejected">{{ estimate.get_status_display }}</span>
+                            {% elif estimate.status == 'under_negotiation' %}
+                                <span class="badge estimate-status-badge-under-negotiation">{{ estimate.get_status_display }}</span>
                             {% elif estimate.status == 'quotation_won' %}
                                 <span class="badge bg-success">{{ estimate.get_status_display }}</span>
                             {% elif estimate.status == 'quotation_lost' %}
@@ -606,7 +640,7 @@
                     </tr>
                     {% empty %}
                     <tr>
-                        <td colspan="7" class="text-center py-5 text-muted">
+                        <td colspan="9" class="text-center py-5 text-muted">
                             <i class="fas fa-file-invoice fa-3x mb-3 d-block"></i>
                             <p class="mb-2">No estimates found</p>
                             {% if can_create %}

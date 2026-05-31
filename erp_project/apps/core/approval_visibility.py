@@ -49,7 +49,7 @@ def _build_amount_tier_q(config, user, amount_field):
 
 
 ESTIMATE_APPROVER_VISIBLE_STATUSES = frozenset({
-    'sent', 'approved', 'rejected', 'quotation_won', 'quotation_lost',
+    'sent', 'approved', 'rejected', 'under_negotiation', 'quotation_won', 'quotation_lost',
 })
 
 

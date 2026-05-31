@@ -68,9 +68,27 @@
                     <div class="col-md-4">
                         <h6 class="text-muted mb-2">Min / Max Selling Price</h6>
                         <p class="mb-0">
-                            AED {{ item.minimum_selling_price|floatformat:2 }}
+                            {% if item.minimum_selling_price > 0 %}
+                                {% if item.minimum_selling_price_type == 'percent' %}
+                                    {{ item.minimum_selling_price|floatformat:2 }}%
+                                    <span class="text-muted">(AED {{ item.get_effective_minimum_selling_price|floatformat:2 }})</span>
+                                {% else %}
+                                    AED {{ item.minimum_selling_price|floatformat:2 }}
+                                {% endif %}
+                            {% else %}
+                                —
+                            {% endif %}
                             —
-                            {% if item.maximum_selling_price > 0 %}AED {{ item.maximum_selling_price|floatformat:2 }}{% else %}No cap{% endif %}
+                            {% if item.maximum_selling_price > 0 %}
+                                {% if item.maximum_selling_price_type == 'percent' %}
+                                    {{ item.maximum_selling_price|floatformat:2 }}%
+                                    <span class="text-muted">(AED {{ item.get_effective_maximum_selling_price|floatformat:2 }})</span>
+                                {% else %}
+                                    AED {{ item.maximum_selling_price|floatformat:2 }}
+                                {% endif %}
+                            {% else %}
+                                No cap
+                            {% endif %}
                         </p>
                     </div>
                     <div class="col-md-4">

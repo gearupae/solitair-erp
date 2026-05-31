@@ -2,11 +2,14 @@
 CRM Forms
 """
 from django import forms
+from django.core.exceptions import ValidationError
+
 from .models import Customer
 from .utils import (
     get_crm_project_queryset,
     get_sales_employee_for_user,
     get_sales_employee_queryset,
+    normalize_customer_website,
     project_choice_label,
     salesperson_display_name,
 )
@@ -52,6 +55,8 @@ class CustomerForm(forms.ModelForm):
         self.fields['business_segment'].label = 'Business type'
         self.fields['trn_document'].required = False
         self.fields['trade_license_document'].required = False
+        if not self.instance.pk:
+            self.fields['phone'].required = True
 
         self.fields['assigned_salesperson'].queryset = get_sales_employee_queryset()
         self.fields['assigned_salesperson'].required = True
@@ -96,7 +101,17 @@ class CustomerForm(forms.ModelForm):
             elif field_name == 'trn':
                 field.widget.attrs['placeholder'] = 'VAT / TRN number'
             elif field_name == 'website':
-                field.widget.attrs['placeholder'] = 'https://example.com'
+                field.widget = forms.TextInput(attrs=field.widget.attrs)
+                field.widget.attrs['placeholder'] = 'gear-up.ae, www.gear-up.ae, or https://gear-up.ae'
+
+    def clean_website(self):
+        raw = self.cleaned_data.get('website') or ''
+        try:
+            return normalize_customer_website(raw)
+        except ValidationError:
+            raise forms.ValidationError(
+                'Enter a valid website (e.g. gear-up.ae, www.gear-up.ae, or https://gear-up.ae).'
+            )
 
     def clean(self):
         cleaned = super().clean()
@@ -115,9 +130,15 @@ class CustomerForm(forms.ModelForm):
                 'Select a salesman to assign this account.',
             )
 
+        phone = (cleaned.get('phone') or '').strip()
+        if not self.instance.pk and not phone:
+            self.add_error('phone', 'Phone number is required.')
+        else:
+            cleaned['phone'] = phone
+
         if seg == 'b2c':
             cleaned['trn'] = ''
-        elif seg == 'b2b':
+        elif seg == 'b2b' and ctype == 'customer':
             lic_f = cleaned.get('trade_license_document')
             has_lic = bool(lic_f) or (
                 self.instance.pk and bool(self.instance.trade_license_document)
@@ -125,7 +146,7 @@ class CustomerForm(forms.ModelForm):
             if not has_lic:
                 self.add_error(
                     'trade_license_document',
-                    'Trade license upload is required for B2B accounts.',
+                    'Trade license upload is required for B2B customers.',
                 )
 
         return cleaned

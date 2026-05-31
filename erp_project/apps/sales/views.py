@@ -8,7 +8,7 @@ from django.contrib import messages
 from django.views.generic import ListView, CreateView, UpdateView, DetailView
 from django.urls import reverse, reverse_lazy
 from django.db import transaction
-from django.db.models import Q, Sum, Prefetch
+from django.db.models import Q, Sum, Prefetch, Count
 from django.http import JsonResponse, HttpResponse, HttpResponseForbidden, HttpResponseNotAllowed
 from django.views.decorators.http import require_POST
 from django.core.exceptions import ValidationError
@@ -52,43 +52,138 @@ def _estimate_save_success_message(
             msg += f' Resubmitted as revision {estimate.revision_label}.'
     return msg
 
+def _inventory_item_estimate_json(item):
+    """Serialize inventory item bounds as effective AED amounts for estimate line validation."""
+    return {
+        'id': item.id,
+        'item_code': item.item_code,
+        'name': item.name,
+        'selling_price': item.selling_price,
+        'minimum_selling_price': item.get_effective_minimum_selling_price(),
+        'maximum_selling_price': item.get_effective_maximum_selling_price(),
+        'tax_code_id': item.tax_code_id,
+    }
+
+
+def _inventory_items_for_estimate_json(limit=2000):
+    from apps.inventory.models import Item
+
+    return [
+        _inventory_item_estimate_json(item)
+        for item in Item.objects.filter(is_active=True, status='active').order_by('item_code', 'pk')[:limit]
+    ]
+
+
 def _estimate_form_inventory_groups_context():
     """
     Item groups with active items for estimate line-item bulk add + group name datalist.
     """
-    from apps.inventory.models import ItemGroup, Item
+    from apps.inventory.models import ItemGroup, Item, ItemGroupMembership
 
-    item_qs = (
-        Item.objects.filter(is_active=True, status='active')
-        .order_by('item_code', 'pk')
-        .only(
-            'id', 'item_code', 'name', 'selling_price',
-            'minimum_selling_price', 'maximum_selling_price', 'tax_code_id',
-        )
-    )
     groups = []
-    for g in ItemGroup.objects.prefetch_related(
-        Prefetch('items', queryset=item_qs)
-    ).order_by('name'):
+    for g in ItemGroup.objects.order_by('name'):
+        memberships = (
+            ItemGroupMembership.objects.filter(
+                group=g,
+                item__is_active=True,
+                item__status='active',
+            )
+            .select_related('item')
+            .order_by('sort_order', 'item__item_code', 'pk')
+        )
+        if not memberships.exists():
+            continue
         groups.append({
             'name': g.name,
             'items': [
                 {
-                    'id': i.id,
-                    'item_code': i.item_code,
-                    'name': i.name,
-                    'selling_price': i.selling_price,
-                    'minimum_selling_price': i.minimum_selling_price,
-                    'maximum_selling_price': i.maximum_selling_price,
-                    'tax_code_id': i.tax_code_id,
+                    **_inventory_item_estimate_json(m.item),
+                    'default_quantity': float(m.default_quantity or 1),
                 }
-                for i in g.items.all()
+                for m in memberships
             ],
         })
     return {
         'inventory_groups_json': json.dumps(groups, cls=DjangoJSONEncoder),
         'inventory_group_names': [entry['name'] for entry in groups],
     }
+
+
+def _estimate_text_templates_context():
+    """Active client note / terms templates for the estimate form dropdowns."""
+    from apps.settings_app.models import EstimateTextTemplate
+
+    client_notes = list(
+        EstimateTextTemplate.objects.filter(
+            template_type=EstimateTextTemplate.CLIENT_NOTE,
+            is_active=True,
+        )
+        .order_by('sort_order', 'name')
+        .values('id', 'name', 'body', 'is_default')
+    )
+    terms = list(
+        EstimateTextTemplate.objects.filter(
+            template_type=EstimateTextTemplate.TERMS,
+            is_active=True,
+        )
+        .order_by('sort_order', 'name')
+        .values('id', 'name', 'body', 'is_default')
+    )
+    return {
+        'estimate_client_note_templates_json': json.dumps(client_notes, cls=DjangoJSONEncoder),
+        'estimate_terms_templates_json': json.dumps(terms, cls=DjangoJSONEncoder),
+    }
+
+
+def _estimate_default_signatures_context():
+    """Company default signature previews for the estimate form."""
+    from apps.settings_app.models import CompanySettings
+
+    cs = CompanySettings.get_settings()
+    return {
+        'company_default_authorized_signature_url': (
+            cs.estimate_default_authorized_signature.url
+            if cs.estimate_default_authorized_signature else ''
+        ),
+        'company_default_customer_signature_url': (
+            cs.estimate_default_customer_signature.url
+            if cs.estimate_default_customer_signature else ''
+        ),
+    }
+
+
+def apply_company_default_estimate_signatures(estimate, request_files=None):
+    """Copy company default signature images when the estimate has none uploaded."""
+    import os
+
+    from django.core.files.base import ContentFile
+
+    from apps.settings_app.models import CompanySettings
+
+    cs = CompanySettings.get_settings()
+    request_files = request_files or {}
+    updates = []
+
+    for est_field, cs_field, upload_key in (
+        ('authorized_signature', 'estimate_default_authorized_signature', 'authorized_signature'),
+        ('customer_signature', 'estimate_default_customer_signature', 'customer_signature'),
+    ):
+        if getattr(estimate, est_field):
+            continue
+        if request_files.get(upload_key):
+            continue
+        source = getattr(cs, cs_field, None)
+        if not source:
+            continue
+        with source.open('rb') as src:
+            content = src.read()
+        filename = os.path.basename(source.name)
+        dest = getattr(estimate, est_field)
+        dest.save(filename, ContentFile(content), save=False)
+        updates.append(est_field)
+
+    if updates:
+        estimate.save(update_fields=updates)
 
 
 @login_required
@@ -118,7 +213,7 @@ def user_can_convert_estimate_to_project(user):
 
 ESTIMATE_LIST_SORT_FIELDS = {
     'estimate_number': 'estimate_number',
-    'customer': 'customer__name',
+    'customer': 'customer__company',
     'date': 'date',
     'valid': 'valid_until',
     'status': 'status',
@@ -147,16 +242,80 @@ def _estimate_list_sort_querystring(request_get, field):
     return params.urlencode()
 
 
+def attach_customer_quotation_won_counts(estimates):
+    """
+    Set customer_qw_count on each estimate: other quotation-won rows for the same customer.
+    """
+    items = list(estimates)
+    if not items:
+        return items
+
+    customer_ids = {e.customer_id for e in items if e.customer_id}
+    totals = {}
+    if customer_ids:
+        totals = dict(
+            Estimate.objects.filter(
+                is_active=True,
+                customer_id__in=customer_ids,
+                status='quotation_won',
+            )
+            .values('customer_id')
+            .annotate(c=Count('id'))
+            .values_list('customer_id', 'c')
+        )
+
+    for estimate in items:
+        customer_id = estimate.customer_id
+        if not customer_id:
+            estimate.customer_qw_count = 0
+            continue
+        count = totals.get(customer_id, 0)
+        if estimate.status == 'quotation_won':
+            count = max(0, count - 1)
+        estimate.customer_qw_count = count
+
+    return items
+
+
+def attach_customer_quotation_lost_counts(estimates):
+    """Set customer_ql_count: other quotation-lost rows for the same customer."""
+    items = list(estimates)
+    if not items:
+        return items
+
+    customer_ids = {e.customer_id for e in items if e.customer_id}
+    totals = {}
+    if customer_ids:
+        totals = dict(
+            Estimate.objects.filter(
+                is_active=True,
+                customer_id__in=customer_ids,
+                status='quotation_lost',
+            )
+            .values('customer_id')
+            .annotate(c=Count('id'))
+            .values_list('customer_id', 'c')
+        )
+
+    for estimate in items:
+        customer_id = estimate.customer_id
+        if not customer_id:
+            estimate.customer_ql_count = 0
+            continue
+        count = totals.get(customer_id, 0)
+        if estimate.status == 'quotation_lost':
+            count = max(0, count - 1)
+        estimate.customer_ql_count = count
+
+    return items
+
+
 def _scope_estimate_form_fields(form, user):
-    from apps.core.visibility import filter_customers_for_user, filter_projects_for_user
+    from apps.core.visibility import filter_customers_for_user
     from apps.crm.models import Customer
-    from apps.projects.models import Project
 
     form.fields['customer'].queryset = filter_customers_for_user(
         Customer.objects.filter(is_active=True), user
-    )
-    form.fields['project'].queryset = filter_projects_for_user(
-        Project.objects.filter(is_active=True), user
     )
     return form
 
@@ -333,6 +492,7 @@ class EstimateListView(PermissionRequiredMixin, ListView):
                     'sent',
                     'approved',
                     'rejected',
+                    'under_negotiation',
                     'quotation_won',
                     'quotation_lost',
                 }
@@ -345,6 +505,7 @@ class EstimateListView(PermissionRequiredMixin, ListView):
             context['estimates_board_sent'] = list(by_status['sent'])
             context['estimates_board_approved'] = list(by_status['approved'])
             context['estimates_board_lost'] = list(by_status['rejected'])
+            context['estimates_board_negotiation'] = list(by_status['under_negotiation'])
             context['estimates_board_quot_won'] = list(by_status['quotation_won'])
             context['estimates_board_quot_lost'] = list(by_status['quotation_lost'])
         else:
@@ -352,12 +513,16 @@ class EstimateListView(PermissionRequiredMixin, ListView):
             context['estimates_board_sent'] = []
             context['estimates_board_approved'] = []
             context['estimates_board_lost'] = []
+            context['estimates_board_negotiation'] = []
             context['estimates_board_quot_won'] = []
             context['estimates_board_quot_lost'] = []
 
         from .approval_rules import allowed_status_choices_for_estimate
 
         page_estimates = context.get('estimates') or []
+        if context['view_mode'] != 'kanban':
+            attach_customer_quotation_won_counts(page_estimates)
+            attach_customer_quotation_lost_counts(page_estimates)
         for est in page_estimates:
             est.allowed_status_choices = allowed_status_choices_for_estimate(
                 est, self.request.user
@@ -375,17 +540,18 @@ class EstimateCreateView(CreatePermissionMixin, CreateView):
     module_name = 'sales'
 
     def get_initial(self):
-        from apps.settings_app.models import CompanySettings
+        from apps.settings_app.models import EstimateTextTemplate
         initial = super().get_initial()
         initial['date'] = date.today()
-        cs = CompanySettings.get_settings()
         initial['assigned_to'] = self.request.user.pk
         u = self.request.user
         initial['prepared_by'] = (u.get_full_name() or '').strip() or u.username
-        if cs.estimate_default_client_note:
-            initial['client_note'] = cs.estimate_default_client_note
-        if cs.estimate_default_terms:
-            initial['terms_and_conditions'] = cs.estimate_default_terms
+        client_note = EstimateTextTemplate.get_default_body(EstimateTextTemplate.CLIENT_NOTE)
+        if client_note:
+            initial['client_note'] = client_note
+        terms = EstimateTextTemplate.get_default_body(EstimateTextTemplate.TERMS)
+        if terms:
+            initial['terms_and_conditions'] = terms
         return initial
 
     def get_form(self, form_class=None):
@@ -397,21 +563,16 @@ class EstimateCreateView(CreatePermissionMixin, CreateView):
         context = super().get_context_data(**kwargs)
         context['title'] = 'Create Estimate'
         context['today'] = date.today().isoformat()
-        context['scope_choices'] = Estimate.SCOPE_CHOICES
         # Tax Codes for VAT selection (SAP/Oracle Standard)
         context['tax_codes'] = TaxCode.objects.filter(is_active=True).order_by('code')
         context['default_tax_code'] = get_default_estimate_csv_tax_code()
-        rows = list(
-            Item.objects.filter(is_active=True, status='active')
-            .values(
-                'id', 'item_code', 'name', 'selling_price',
-                'minimum_selling_price', 'maximum_selling_price', 'tax_code_id',
-            )[:2000]
-        )
+        rows = _inventory_items_for_estimate_json()
         context['inventory_items_json'] = json.dumps(rows, cls=DjangoJSONEncoder)
         context['estimate_items_sample_csv_url'] = reverse('sales:estimate_items_sample_csv')
         context['inventory_items_export_csv_url'] = reverse('inventory:item_export_csv')
         context.update(_estimate_form_inventory_groups_context())
+        context.update(_estimate_text_templates_context())
+        context.update(_estimate_default_signatures_context())
         if 'items_formset' not in kwargs:
             if self.request.POST:
                 context['items_formset'] = EstimateItemFormSet(
@@ -438,6 +599,7 @@ class EstimateCreateView(CreatePermissionMixin, CreateView):
                     items_formset = EstimateItemFormSet(request.POST, request.FILES, prefix='items')
                     return self.form_invalid(form, items_formset)
                 self.object = form.save()
+                apply_company_default_estimate_signatures(self.object, request.FILES)
                 bulk_create_estimate_items(self.object, rows, replace_existing=False)
                 messages.success(request, f'Estimate {self.object.estimate_number} created successfully.')
                 est = self.object
@@ -463,6 +625,7 @@ class EstimateCreateView(CreatePermissionMixin, CreateView):
     
     def form_valid(self, form, items_formset):
         self.object = form.save()
+        apply_company_default_estimate_signatures(self.object, self.request.FILES)
         items_formset.instance = self.object
         items_formset.save()
         self.object.calculate_totals()
@@ -517,20 +680,15 @@ class EstimateUpdateView(UpdatePermissionMixin, UpdateView):
         context = super().get_context_data(**kwargs)
         context['title'] = f'Edit Estimate: {self.object.estimate_number}'
         context['today'] = date.today().isoformat()
-        context['scope_choices'] = Estimate.SCOPE_CHOICES
         context['tax_codes'] = TaxCode.objects.filter(is_active=True).order_by('code')
         context['default_tax_code'] = get_default_estimate_csv_tax_code()
-        rows = list(
-            Item.objects.filter(is_active=True, status='active')
-            .values(
-                'id', 'item_code', 'name', 'selling_price',
-                'minimum_selling_price', 'maximum_selling_price', 'tax_code_id',
-            )[:2000]
-        )
+        rows = _inventory_items_for_estimate_json()
         context['inventory_items_json'] = json.dumps(rows, cls=DjangoJSONEncoder)
         context['estimate_items_sample_csv_url'] = reverse('sales:estimate_items_sample_csv')
         context['inventory_items_export_csv_url'] = reverse('inventory:item_export_csv')
         context.update(_estimate_form_inventory_groups_context())
+        context.update(_estimate_text_templates_context())
+        context.update(_estimate_default_signatures_context())
         if 'items_formset' not in kwargs:
             if self.request.POST:
                 context['items_formset'] = EstimateItemFormSet(
@@ -845,16 +1003,14 @@ def estimate_duplicate(request, pk):
     source = get_object_or_404(Estimate.objects.select_related('customer'), pk=pk, is_active=True)
     items_qs = list(source.items.order_by('sort_order', 'id'))
 
-    scope_val = source.scope if source.scope is not None else []
-    if isinstance(scope_val, list):
-        scope_val = list(scope_val)
-
     with transaction.atomic():
         dest = Estimate(
             customer=source.customer,
             assigned_to=source.assigned_to,
             prepared_by=source.prepared_by,
-            scope=scope_val,
+            type_of_occupancy=source.type_of_occupancy,
+            type_of_work=source.type_of_work,
+            scope_of_work=source.scope_of_work,
             date=source.date,
             valid_until=source.valid_until,
             status='draft',
@@ -865,6 +1021,7 @@ def estimate_duplicate(request, pk):
             discount_value=source.discount_value,
             show_rates_on_pdf=source.show_rates_on_pdf,
             show_group_totals_on_pdf=source.show_group_totals_on_pdf,
+            show_brand_name_on_pdf=source.show_brand_name_on_pdf,
             # Fresh draft; avoids two estimates pinned to same project/invoices ambiguity
             project=None,
         )
@@ -874,6 +1031,7 @@ def estimate_duplicate(request, pk):
             EstimateItem.objects.create(
                 estimate=dest,
                 group_name=it.group_name,
+                group_qty_multiplier=it.group_qty_multiplier,
                 sort_order=it.sort_order,
                 inventory_item=it.inventory_item,
                 description=it.description,
@@ -947,10 +1105,10 @@ def estimate_update_status(request, pk, status):
         if status in ('quotation_won', 'quotation_lost'):
             from .approval_rules import user_can_mark_estimate_won_lost
 
-            if estimate.status != 'approved':
+            if estimate.status != 'under_negotiation':
                 messages.error(
                     request,
-                    'Mark estimate won or lost only after the estimate has been approved.',
+                    'Mark estimate won or lost only when the estimate is under negotiation.',
                 )
             elif not user_can_mark_estimate_won_lost(request.user, estimate):
                 messages.error(
@@ -1492,10 +1650,10 @@ def estimate_set_status(request, pk):
         if status in ('quotation_won', 'quotation_lost'):
             from .approval_rules import user_can_mark_estimate_won_lost
 
-            if estimate.status != 'approved':
+            if estimate.status != 'under_negotiation':
                 messages.error(
                     request,
-                    'Mark estimate won or lost only after the estimate has been approved.',
+                    'Mark estimate won or lost only when the estimate is under negotiation.',
                 )
             elif not user_can_mark_estimate_won_lost(request.user, estimate):
                 messages.error(
@@ -1569,8 +1727,8 @@ def inventory_item_json(request, pk):
         'name': item.name,
         'description': item.description or '',
         'selling_price': str(item.selling_price),
-        'minimum_selling_price': str(item.minimum_selling_price),
-        'maximum_selling_price': str(item.maximum_selling_price),
+        'minimum_selling_price': str(item.get_effective_minimum_selling_price()),
+        'maximum_selling_price': str(item.get_effective_maximum_selling_price()),
         'tax_code_id': item.tax_code_id,
     })
 

@@ -11,6 +11,10 @@
     background-color: #ffedd5 !important;
     color: #9a3412 !important;
 }
+.estimate-status-badge-under-negotiation {
+    background-color: #cffafe !important;
+    color: #0e7490 !important;
+}
 </style>
 {% endblock %}
 
@@ -114,11 +118,30 @@
                         <h6 class="text-muted mb-2 text-uppercase small fw-semibold">Prepared by</h6>
                         <p class="mb-0">{{ estimate.prepared_by|default:"—" }}</p>
                     </div>
+                    {% if estimate.project %}
                     <div class="col">
                         <h6 class="text-muted mb-2 text-uppercase small fw-semibold">Project</h6>
-                        <p class="mb-0 text-break">{% if estimate.project %}{{ estimate.project.name }}{% else %}—{% endif %}</p>
+                        <p class="mb-0 text-break">{{ estimate.project.name }}</p>
                     </div>
-                    {% if estimate.scope %}
+                    {% endif %}
+                    {% if estimate.type_of_occupancy %}
+                    <div class="col">
+                        <h6 class="text-muted mb-2 text-uppercase small fw-semibold">Type of occupancy</h6>
+                        <p class="mb-0">{{ estimate.get_type_of_occupancy_display }}</p>
+                    </div>
+                    {% endif %}
+                    {% if estimate.type_of_work %}
+                    <div class="col">
+                        <h6 class="text-muted mb-2 text-uppercase small fw-semibold">Type of work</h6>
+                        <p class="mb-0">{{ estimate.get_type_of_work_display }}</p>
+                    </div>
+                    {% endif %}
+                    {% if estimate.scope_of_work %}
+                    <div class="col">
+                        <h6 class="text-muted mb-2 text-uppercase small fw-semibold">Scope of work</h6>
+                        <p class="mb-0">{{ estimate.get_scope_of_work_display }}</p>
+                    </div>
+                    {% elif estimate.scope %}
                     <div class="col-12">
                         <h6 class="text-muted mb-2 text-uppercase small fw-semibold">Scope</h6>
                         <p class="mb-0">{% for label in estimate.scope_display_labels %}<span class="badge bg-light text-dark border me-1 mb-1">{{ label }}</span>{% endfor %}</p>
@@ -267,6 +290,8 @@
                         <span class="badge estimate-status-badge-approved fs-6">{{ estimate.get_status_display }}</span>
                     {% elif estimate.status == 'rejected' %}
                         <span class="badge estimate-status-badge-rejected fs-6">{{ estimate.get_status_display }}</span>
+                    {% elif estimate.status == 'under_negotiation' %}
+                        <span class="badge estimate-status-badge-under-negotiation fs-6">{{ estimate.get_status_display }}</span>
                     {% elif estimate.status == 'quotation_won' %}
                         <span class="badge bg-success fs-6">{{ estimate.get_status_display }}</span>
                     {% elif estimate.status == 'quotation_lost' %}

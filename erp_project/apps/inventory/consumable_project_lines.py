@@ -16,6 +16,7 @@ def sync_consumable_request_to_project_item_lines(consumable_request) -> int:
     Returns the number of ``ProjectItemLine`` rows created.
     """
     from apps.projects.models import ProjectItemLine
+    from apps.inventory.models import Item
 
     project = consumable_request.project
     if not project:
@@ -45,7 +46,7 @@ def sync_consumable_request_to_project_item_lines(consumable_request) -> int:
         uc = unit_cost or Decimal('0')
         if uc <= 0:
             uc = item.purchase_price or Decimal('0')
-        qty = qty or Decimal('0')
+        qty = Item.normalize_quantity(item, qty or Decimal('0'))
         line_net = (qty * uc).quantize(Decimal('0.01'))
         bulk.append(
             ProjectItemLine(

@@ -107,6 +107,38 @@ class ItemGroup(models.Model):
         return self.name
 
 
+class ItemGroupMembership(models.Model):
+    """Item in a group with default estimate line quantity."""
+    group = models.ForeignKey(
+        ItemGroup,
+        on_delete=models.CASCADE,
+        related_name='memberships',
+    )
+    item = models.ForeignKey(
+        'Item',
+        on_delete=models.CASCADE,
+        related_name='group_memberships',
+    )
+    default_quantity = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal('1.00'),
+        help_text='Default qty when this group is added to an estimate.',
+    )
+    sort_order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ['sort_order', 'id']
+        verbose_name = 'Group membership'
+        verbose_name_plural = 'Group memberships'
+        constraints = [
+            models.UniqueConstraint(fields=['group', 'item'], name='inventory_group_item_unique'),
+        ]
+
+    def __str__(self):
+        return f'{self.group.name} — {self.item.item_code} × {self.default_quantity}'
+
+
 class Item(BaseModel):
     """
     Inventory Item model.
@@ -127,6 +159,13 @@ class Item(BaseModel):
         ('repair', 'Under Repair'),
         ('damaged', 'Damaged'),
     ]
+
+    SELLING_PRICE_BOUND_AMOUNT = 'amount'
+    SELLING_PRICE_BOUND_PERCENT = 'percent'
+    SELLING_PRICE_BOUND_TYPE_CHOICES = [
+        (SELLING_PRICE_BOUND_AMOUNT, 'Amount'),
+        (SELLING_PRICE_BOUND_PERCENT, 'Percentage'),
+    ]
     
     item_code = models.CharField(max_length=50, unique=True, editable=False)
     name = models.CharField(max_length=200)
@@ -140,6 +179,7 @@ class Item(BaseModel):
     )
     item_groups = models.ManyToManyField(
         ItemGroup,
+        through='ItemGroupMembership',
         blank=True,
         related_name='items',
         verbose_name='Groups',
@@ -162,7 +202,19 @@ class Item(BaseModel):
         default=Decimal('0.00'),
         help_text='Highest allowed selling price for this item (0 = no cap)',
     )
-    
+    minimum_selling_price_type = models.CharField(
+        max_length=10,
+        choices=SELLING_PRICE_BOUND_TYPE_CHOICES,
+        default=SELLING_PRICE_BOUND_AMOUNT,
+        help_text='Whether minimum is a fixed amount (AED) or % of selling price',
+    )
+    maximum_selling_price_type = models.CharField(
+        max_length=10,
+        choices=SELLING_PRICE_BOUND_TYPE_CHOICES,
+        default=SELLING_PRICE_BOUND_AMOUNT,
+        help_text='Whether maximum is a fixed amount (AED) or % of selling price',
+    )
+
     # Stock
     unit = models.CharField(max_length=20, default='pcs')  # pcs, kg, m, etc.
     minimum_stock = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
@@ -220,6 +272,10 @@ class Item(BaseModel):
         help_text='When enabled, stock is tracked by individual model numbers received via PO.',
     )
 
+    WHOLE_QUANTITY_UNITS = frozenset({
+        'pcs', 'pc', 'piece', 'pieces', 'box', 'set', 'pair', 'unit', 'ea', 'each',
+    })
+
     # Warranty / batch (warranty report)
     brand = models.CharField(max_length=120, blank=True, default='')
     serial_batch_number = models.CharField(max_length=120, blank=True, default='')
@@ -228,6 +284,49 @@ class Item(BaseModel):
     
     class Meta:
         ordering = ['name']
+
+    def requires_whole_quantity(self) -> bool:
+        if self.track_by_serial:
+            return True
+        return (self.unit or 'pcs').strip().lower() in self.WHOLE_QUANTITY_UNITS
+
+    @classmethod
+    def normalize_quantity(cls, item, quantity) -> Decimal:
+        from decimal import ROUND_HALF_UP
+
+        qty = quantity if isinstance(quantity, Decimal) else Decimal(str(quantity or 0))
+        if item is not None and item.requires_whole_quantity():
+            return qty.to_integral_value(rounding=ROUND_HALF_UP)
+        return qty.quantize(Decimal('0.01'))
+
+    @classmethod
+    def resolve_selling_price_bound(cls, value, bound_type, selling_price):
+        """Return effective AED bound from stored amount or % of selling price."""
+        from decimal import ROUND_HALF_UP
+
+        val = value if isinstance(value, Decimal) else Decimal(str(value or '0'))
+        sp = selling_price if isinstance(selling_price, Decimal) else Decimal(str(selling_price or '0'))
+        if val <= 0:
+            return Decimal('0.00')
+        if bound_type == cls.SELLING_PRICE_BOUND_PERCENT:
+            if sp <= 0:
+                return Decimal('0.00')
+            return (sp * val / Decimal('100')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        return val
+
+    def get_effective_minimum_selling_price(self):
+        return self.resolve_selling_price_bound(
+            self.minimum_selling_price,
+            self.minimum_selling_price_type,
+            self.selling_price,
+        )
+
+    def get_effective_maximum_selling_price(self):
+        return self.resolve_selling_price_bound(
+            self.maximum_selling_price,
+            self.maximum_selling_price_type,
+            self.selling_price,
+        )
 
     def clean(self):
         super().clean()
@@ -240,15 +339,10 @@ class Item(BaseModel):
                 dup = dup.exclude(pk=self.pk)
             if dup.exists():
                 raise ValidationError({'name': 'An item with this name already exists. Use a unique name.'})
-        min_sp = self.minimum_selling_price or Decimal('0.00')
-        max_sp = self.maximum_selling_price or Decimal('0.00')
-        sp = self.selling_price or Decimal('0.00')
+        min_sp = self.get_effective_minimum_selling_price()
+        max_sp = self.get_effective_maximum_selling_price()
         if min_sp > 0 and max_sp > 0 and min_sp > max_sp:
             raise ValidationError({'maximum_selling_price': 'Maximum selling price must be greater than or equal to minimum.'})
-        if min_sp > 0 and sp > 0 and sp < min_sp:
-            raise ValidationError({'selling_price': 'Selling price is below the minimum selling price.'})
-        if max_sp > 0 and sp > 0 and sp > max_sp:
-            raise ValidationError({'selling_price': 'Selling price exceeds the maximum selling price.'})
     
     def __str__(self):
         return f"{self.item_code} - {self.name}"
@@ -256,8 +350,8 @@ class Item(BaseModel):
     def selling_price_bounds_error(self, price):
         """Return a user-facing message if price is outside min/max bounds, else None."""
         p = price if isinstance(price, Decimal) else Decimal(str(price or '0'))
-        min_sp = self.minimum_selling_price or Decimal('0.00')
-        max_sp = self.maximum_selling_price or Decimal('0.00')
+        min_sp = self.get_effective_minimum_selling_price()
+        max_sp = self.get_effective_maximum_selling_price()
         if min_sp > 0 and p > 0 and p < min_sp:
             return f'Amount is low for {self.name}.'
         if max_sp > 0 and p > max_sp:

@@ -95,7 +95,9 @@ class ItemForm(forms.ModelForm):
         model = Item
         fields = [
             'name', 'description', 'category', 'item_groups', 'item_type', 'status',
-            'purchase_price', 'selling_price', 'minimum_selling_price', 'maximum_selling_price',
+            'purchase_price', 'selling_price',
+            'minimum_selling_price', 'minimum_selling_price_type',
+            'maximum_selling_price', 'maximum_selling_price_type',
             'unit', 'minimum_stock', 'tax_code',
             'condition_status', 'condition_notes', 'track_by_serial',
             'storage_location_master', 'barcode',
@@ -111,8 +113,14 @@ class ItemForm(forms.ModelForm):
             'description': forms.Textarea(attrs={'rows': 2}),
             'purchase_price': forms.NumberInput(attrs={'step': 'any', 'min': '0', 'placeholder': '0.00'}),
             'selling_price': forms.NumberInput(attrs={'step': 'any', 'min': '0', 'placeholder': '0.00'}),
-            'minimum_selling_price': forms.NumberInput(attrs={'step': 'any', 'min': '0', 'placeholder': '0.00'}),
-            'maximum_selling_price': forms.NumberInput(attrs={'step': 'any', 'min': '0', 'placeholder': '0.00'}),
+            'minimum_selling_price': forms.NumberInput(attrs={'step': 'any', 'min': '0', 'placeholder': '0.00', 'class': 'form-control selling-bound-value'}),
+            'maximum_selling_price': forms.NumberInput(attrs={'step': 'any', 'min': '0', 'placeholder': '0.00', 'class': 'form-control selling-bound-value'}),
+            'minimum_selling_price_type': forms.RadioSelect(
+                attrs={'class': 'selling-bound-type'},
+            ),
+            'maximum_selling_price_type': forms.RadioSelect(
+                attrs={'class': 'selling-bound-type'},
+            ),
             'minimum_stock': forms.NumberInput(attrs={'step': 'any', 'min': '0', 'placeholder': '0.00'}),
             'tax_code': TaxCodeSelect(attrs={'class': 'form-select', 'id': 'id_tax_code'}),
             'barcode': forms.TextInput(attrs={'id': 'id_barcode', 'autocomplete': 'off'}),
@@ -135,6 +143,10 @@ class ItemForm(forms.ModelForm):
                     field.widget.attrs['id'] = 'id_tax_code'
                 else:
                     field.widget.attrs['class'] = 'form-select'
+            elif field_name in ('minimum_selling_price_type', 'maximum_selling_price_type'):
+                continue
+            elif field_name in ('minimum_selling_price', 'maximum_selling_price'):
+                field.widget.attrs.setdefault('class', 'form-control selling-bound-value')
             elif field_name == 'condition_notes':
                 field.widget = forms.Textarea(attrs={'class': 'form-control', 'rows': 2, 'placeholder': 'e.g., Assigned to John, Bay 3 / Sent for repair on...'})
             elif field_name in ('purchase_date', 'warranty_expiry'):
@@ -166,6 +178,12 @@ class ItemForm(forms.ModelForm):
         self.fields['minimum_stock'].required = False
         self.fields['minimum_selling_price'].required = False
         self.fields['maximum_selling_price'].required = False
+        self.fields['minimum_selling_price_type'].required = False
+        self.fields['maximum_selling_price_type'].required = False
+        self.fields['minimum_selling_price_type'].label = ''
+        self.fields['maximum_selling_price_type'].label = ''
+        self.fields['minimum_selling_price'].label = ''
+        self.fields['maximum_selling_price'].label = ''
         self.fields['condition_status'].required = False
         self.fields['description'].required = False
         self.fields['condition_notes'].required = False
@@ -221,15 +239,18 @@ class ItemForm(forms.ModelForm):
                     'Cannot disable while model numbers are registered for this item.',
                 )
 
-        min_sp = cleaned.get('minimum_selling_price') or Decimal('0.00')
-        max_sp = cleaned.get('maximum_selling_price') or Decimal('0.00')
-        sp = cleaned.get('selling_price') or Decimal('0.00')
+        min_sp = Item.resolve_selling_price_bound(
+            cleaned.get('minimum_selling_price'),
+            cleaned.get('minimum_selling_price_type') or Item.SELLING_PRICE_BOUND_AMOUNT,
+            cleaned.get('selling_price'),
+        )
+        max_sp = Item.resolve_selling_price_bound(
+            cleaned.get('maximum_selling_price'),
+            cleaned.get('maximum_selling_price_type') or Item.SELLING_PRICE_BOUND_AMOUNT,
+            cleaned.get('selling_price'),
+        )
         if min_sp > 0 and max_sp > 0 and min_sp > max_sp:
             self.add_error('maximum_selling_price', 'Maximum must be greater than or equal to minimum.')
-        if min_sp > 0 and sp > 0 and sp < min_sp:
-            self.add_error('selling_price', 'Selling price is below the minimum selling price.')
-        if max_sp > 0 and sp > 0 and sp > max_sp:
-            self.add_error('selling_price', 'Selling price exceeds the maximum selling price.')
         return cleaned
 
     def save(self, commit=True):
@@ -348,6 +369,19 @@ class ConsumableRequestItemForm(forms.ModelForm):
         self.fields['item'].widget.attrs['class'] = 'form-select'
         self.fields['quantity'].widget.attrs['class'] = 'form-control'
         self.fields['quantity'].widget.attrs['min'] = '0.01'
+
+    def clean(self):
+        cleaned = super().clean()
+        item = cleaned.get('item')
+        qty = cleaned.get('quantity')
+        if item and qty is not None:
+            normalized = Item.normalize_quantity(item, qty)
+            if item.requires_whole_quantity() and qty != normalized:
+                raise forms.ValidationError(
+                    {'quantity': 'This item is counted in whole units (e.g. pcs). Enter a whole number.'}
+                )
+            cleaned['quantity'] = normalized
+        return cleaned
 
 
 ConsumableRequestItemFormSet = forms.inlineformset_factory(

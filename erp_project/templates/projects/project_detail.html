@@ -230,7 +230,7 @@
                                         {{ line.description }}
                                     {% endif %}
                                 </td>
-                                <td class="text-center">{{ line.quantity|floatformat:2 }}</td>
+                                <td class="text-center">{% if line.requires_whole_quantity %}{{ line.quantity|floatformat:0 }}{% else %}{{ line.quantity|floatformat:2 }}{% endif %}</td>
                                 <td class="text-center">
                                     {% if line.inventory_item %}
                                     {% if line.delivered_qty > 0 %}

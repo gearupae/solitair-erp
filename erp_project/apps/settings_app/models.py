@@ -261,6 +261,18 @@ class CompanySettings(models.Model):
             'into the project Items scope table (not Tasks). If off: only the empty project shell is created.'
         ),
     )
+    estimate_default_authorized_signature = models.ImageField(
+        upload_to='company/estimate_signatures/',
+        blank=True,
+        null=True,
+        help_text='Default authorized signatory image for new estimates.',
+    )
+    estimate_default_customer_signature = models.ImageField(
+        upload_to='company/estimate_signatures/',
+        blank=True,
+        null=True,
+        help_text='Default customer signature image for new estimates.',
+    )
 
     class Meta:
         verbose_name = 'Company Settings'
@@ -274,6 +286,66 @@ class CompanySettings(models.Model):
         """Get or create company settings."""
         settings, _ = cls.objects.get_or_create(pk=1, defaults={'company_name': 'My Company'})
         return settings
+
+
+class EstimateTextTemplate(models.Model):
+    """Reusable client note or terms & conditions templates for sales estimates."""
+
+    CLIENT_NOTE = 'client_note'
+    TERMS = 'terms'
+    TEMPLATE_TYPE_CHOICES = [
+        (CLIENT_NOTE, 'Client note'),
+        (TERMS, 'Terms & conditions'),
+    ]
+
+    template_type = models.CharField(max_length=20, choices=TEMPLATE_TYPE_CHOICES)
+    name = models.CharField(max_length=120)
+    body = models.TextField(blank=True)
+    is_default = models.BooleanField(
+        default=False,
+        help_text='Pre-selected when creating a new estimate (one default per type).',
+    )
+    sort_order = models.PositiveIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ['sort_order', 'name']
+        verbose_name = 'Estimate text template'
+        verbose_name_plural = 'Estimate text templates'
+
+    def __str__(self):
+        return f'{self.get_template_type_display()}: {self.name}'
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        if self.is_default:
+            EstimateTextTemplate.objects.filter(
+                template_type=self.template_type,
+                is_default=True,
+            ).exclude(pk=self.pk).update(is_default=False)
+
+    @classmethod
+    def get_default_body(cls, template_type):
+        """Return body text for the default template, with legacy CompanySettings fallback."""
+        template = (
+            cls.objects.filter(template_type=template_type, is_active=True, is_default=True)
+            .order_by('sort_order', 'name')
+            .first()
+        )
+        if not template:
+            template = (
+                cls.objects.filter(template_type=template_type, is_active=True)
+                .order_by('sort_order', 'name')
+                .first()
+            )
+        if template:
+            return template.body
+        cs = CompanySettings.get_settings()
+        if template_type == cls.CLIENT_NOTE:
+            return cs.estimate_default_client_note or ''
+        if template_type == cls.TERMS:
+            return cs.estimate_default_terms or ''
+        return ''
 
 
 class NumberSeries(models.Model):

@@ -6,10 +6,16 @@
     <p class="text-muted mb-0">Configure your company information and preferences</p>
 </div>
 
-<div class="card border-0 shadow-sm">
+<div class="card border-0 shadow-sm mb-4">
     <div class="card-body p-4">
         <form method="post" enctype="multipart/form-data">
             {% csrf_token %}
+
+            {% if form.errors %}
+            <div class="alert alert-danger">
+                Please fix the errors below and try again.
+            </div>
+            {% endif %}
             
             <h5 class="fw-semibold mb-3">
                 <i class="fas fa-building me-2 text-primary"></i>Company Information
@@ -86,7 +92,7 @@
             <h5 class="fw-semibold mb-3">
                 <i class="fas fa-cog me-2 text-primary"></i>System Preferences
             </h5>
-            <div class="row g-3">
+            <div class="row g-3 mb-4">
                 <div class="col-md-4">
                     <label class="form-label">Currency</label>
                     <select name="currency" class="form-select">
@@ -137,16 +143,32 @@
             <h5 class="fw-semibold mb-2">
                 <i class="fas fa-file-invoice me-2 text-primary"></i>Sales estimates — defaults
             </h5>
-            <p class="text-muted small mb-3">New estimates pre-fill from these fields. You can change text here anytime; updates apply to newly created estimates (existing estimates are unchanged).</p>
+            <p class="text-muted small mb-3">Default signatures and project conversion behaviour. Client note and terms templates are managed in the section below.</p>
+
+            <h6 class="fw-semibold mb-2">Default signatures</h6>
+            <p class="text-muted small mb-3">Uploaded images are copied automatically onto new estimates (users can still replace them per estimate).</p>
             <div class="row g-3 mb-4">
-                <div class="col-12">
-                    <label class="form-label">Default client note</label>
-                    <textarea name="estimate_default_client_note" class="form-control" rows="4">{{ object.estimate_default_client_note }}</textarea>
+                <div class="col-md-6">
+                    <label class="form-label">Authorized signature (image)</label>
+                    <input type="file" name="estimate_default_authorized_signature" class="form-control" accept="image/*">
+                    {% if object.estimate_default_authorized_signature %}
+                    <div class="mt-2">
+                        <img src="{{ object.estimate_default_authorized_signature.url }}" alt="Authorized signature" class="img-thumbnail" style="max-height:80px">
+                    </div>
+                    {% endif %}
                 </div>
-                <div class="col-12">
-                    <label class="form-label">Default terms &amp; conditions</label>
-                    <textarea name="estimate_default_terms" class="form-control" rows="5">{{ object.estimate_default_terms }}</textarea>
+                <div class="col-md-6">
+                    <label class="form-label">Customer signature (image)</label>
+                    <input type="file" name="estimate_default_customer_signature" class="form-control" accept="image/*">
+                    {% if object.estimate_default_customer_signature %}
+                    <div class="mt-2">
+                        <img src="{{ object.estimate_default_customer_signature.url }}" alt="Customer signature" class="img-thumbnail" style="max-height:80px">
+                    </div>
+                    {% endif %}
                 </div>
+            </div>
+
+            <div class="row g-3 mb-4">
                 <div class="col-12">
                     <div class="form-check form-switch mt-2">
                         <input class="form-check-input" type="checkbox" name="estimate_to_project_prompt_include_lines" id="id_estimate_to_project_prompt_include_lines" value="1" {% if object.estimate_to_project_prompt_include_lines %}checked{% endif %}>
@@ -176,9 +198,287 @@
         </form>
     </div>
 </div>
+
+<div class="card border-0 shadow-sm" id="estimate-templates">
+    <div class="card-body p-4">
+        <h5 class="fw-semibold mb-1">
+            <i class="fas fa-file-invoice me-2 text-primary"></i>Estimate text templates
+        </h5>
+        <p class="text-muted small mb-4">Manage reusable client notes and terms for new estimates. Pick a template to edit, or click <strong>New</strong> to create one.</p>
+
+        <div class="row g-4">
+            <div class="col-lg-6">
+                <div class="border rounded p-3 h-100 bg-light-subtle">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h6 class="fw-semibold mb-0">Client note</h6>
+                        <button type="button" class="btn btn-sm btn-outline-primary" id="cnNewBtn">
+                            <i class="fas fa-plus me-1"></i>New
+                        </button>
+                    </div>
+                    <label class="form-label small text-muted" for="cnTemplateSelect">Select template</label>
+                    <select id="cnTemplateSelect" class="form-select mb-3">
+                        <option value="">— Choose a template —</option>
+                        {% for t in client_note_templates %}
+                        <option value="{{ t.pk }}">{{ t.name }}{% if t.is_default %} (default){% endif %}{% if not t.is_active %} — inactive{% endif %}</option>
+                        {% endfor %}
+                    </select>
+
+                    <form method="post" id="cnTemplateForm" class="d-none">
+                        {% csrf_token %}
+                        <input type="hidden" name="estimate_template_action" value="save">
+                        <input type="hidden" name="template_type" value="client_note">
+                        <input type="hidden" name="template_id" id="cnTemplateId" value="">
+                        <input type="hidden" name="sort_order" id="cnSortOrder" value="0">
+                        <div class="mb-3">
+                            <label class="form-label" for="cnTemplateName">Template name</label>
+                            <input type="text" name="name" id="cnTemplateName" class="form-control" maxlength="120" required placeholder="e.g. Standard client note">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label" for="cnTemplateBody">Text</label>
+                            <textarea name="body" id="cnTemplateBody" class="form-control" rows="6" placeholder="Client note text…"></textarea>
+                        </div>
+                        <div class="d-flex flex-wrap gap-3 mb-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="is_default" id="cnTemplateDefault">
+                                <label class="form-check-label" for="cnTemplateDefault">Default for new estimates</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="is_active" id="cnTemplateActive" checked>
+                                <label class="form-check-label" for="cnTemplateActive">Active</label>
+                            </div>
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-primary btn-sm">Save</button>
+                            <button type="button" class="btn btn-outline-danger btn-sm d-none" id="cnDeleteBtn">Delete</button>
+                            <button type="button" class="btn btn-light btn-sm d-none" id="cnCancelBtn">Cancel</button>
+                        </div>
+                    </form>
+                    <form method="post" id="cnDeleteForm" class="d-none">
+                        {% csrf_token %}
+                        <input type="hidden" name="estimate_template_action" value="delete">
+                        <input type="hidden" name="template_type" value="client_note">
+                        <input type="hidden" name="template_id" id="cnDeleteTemplateId" value="">
+                    </form>
+                    <p class="text-muted small mb-0 mt-3" id="cnEmptyHint"{% if client_note_templates %} style="display:none"{% endif %}>No templates yet. Click <strong>New</strong> to create your first client note template.</p>
+                </div>
+            </div>
+
+            <div class="col-lg-6">
+                <div class="border rounded p-3 h-100 bg-light-subtle">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h6 class="fw-semibold mb-0">Terms &amp; conditions</h6>
+                        <button type="button" class="btn btn-sm btn-outline-primary" id="termsNewBtn">
+                            <i class="fas fa-plus me-1"></i>New
+                        </button>
+                    </div>
+                    <label class="form-label small text-muted" for="termsTemplateSelect">Select template</label>
+                    <select id="termsTemplateSelect" class="form-select mb-3">
+                        <option value="">— Choose a template —</option>
+                        {% for t in terms_templates %}
+                        <option value="{{ t.pk }}">{{ t.name }}{% if t.is_default %} (default){% endif %}{% if not t.is_active %} — inactive{% endif %}</option>
+                        {% endfor %}
+                    </select>
+
+                    <form method="post" id="termsTemplateForm" class="d-none">
+                        {% csrf_token %}
+                        <input type="hidden" name="estimate_template_action" value="save">
+                        <input type="hidden" name="template_type" value="terms">
+                        <input type="hidden" name="template_id" id="termsTemplateId" value="">
+                        <input type="hidden" name="sort_order" id="termsSortOrder" value="0">
+                        <div class="mb-3">
+                            <label class="form-label" for="termsTemplateName">Template name</label>
+                            <input type="text" name="name" id="termsTemplateName" class="form-control" maxlength="120" required placeholder="e.g. Standard T&amp;C">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label" for="termsTemplateBody">Text</label>
+                            <textarea name="body" id="termsTemplateBody" class="form-control" rows="6" placeholder="Terms &amp; conditions text…"></textarea>
+                        </div>
+                        <div class="d-flex flex-wrap gap-3 mb-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="is_default" id="termsTemplateDefault">
+                                <label class="form-check-label" for="termsTemplateDefault">Default for new estimates</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="is_active" id="termsTemplateActive" checked>
+                                <label class="form-check-label" for="termsTemplateActive">Active</label>
+                            </div>
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-primary btn-sm">Save</button>
+                            <button type="button" class="btn btn-outline-danger btn-sm d-none" id="termsDeleteBtn">Delete</button>
+                            <button type="button" class="btn btn-light btn-sm d-none" id="termsCancelBtn">Cancel</button>
+                        </div>
+                    </form>
+                    <form method="post" id="termsDeleteForm" class="d-none">
+                        {% csrf_token %}
+                        <input type="hidden" name="estimate_template_action" value="delete">
+                        <input type="hidden" name="template_type" value="terms">
+                        <input type="hidden" name="template_id" id="termsDeleteTemplateId" value="">
+                    </form>
+                    <p class="text-muted small mb-0 mt-3" id="termsEmptyHint"{% if terms_templates %} style="display:none"{% endif %}>No templates yet. Click <strong>New</strong> to create your first terms template.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
+{% block extra_js %}
+<script>
+const clientNoteTemplates = {{ client_note_templates_json|safe }};
+const termsTemplates = {{ terms_templates_json|safe }};
 
+function setupEstimateTemplateEditor(config) {
+    const {
+        templates,
+        selectId,
+        formId,
+        templateIdInputId,
+        sortOrderInputId,
+        nameInputId,
+        bodyInputId,
+        defaultInputId,
+        activeInputId,
+        newBtnId,
+        deleteBtnId,
+        cancelBtnId,
+        deleteFormId,
+        deleteTemplateIdInputId,
+        emptyHintId,
+        urlParam,
+    } = config;
 
+    const byId = Object.fromEntries(templates.map(t => [String(t.id), t]));
+    const select = document.getElementById(selectId);
+    const form = document.getElementById(formId);
+    const templateIdInput = document.getElementById(templateIdInputId);
+    const sortOrderInput = document.getElementById(sortOrderInputId);
+    const nameInput = document.getElementById(nameInputId);
+    const bodyInput = document.getElementById(bodyInputId);
+    const defaultInput = document.getElementById(defaultInputId);
+    const activeInput = document.getElementById(activeInputId);
+    const newBtn = document.getElementById(newBtnId);
+    const deleteBtn = document.getElementById(deleteBtnId);
+    const cancelBtn = document.getElementById(cancelBtnId);
+    const deleteForm = document.getElementById(deleteFormId);
+    const deleteTemplateIdInput = document.getElementById(deleteTemplateIdInputId);
+    const emptyHint = document.getElementById(emptyHintId);
 
+    function hideForm() {
+        form.classList.add('d-none');
+        deleteBtn.classList.add('d-none');
+        cancelBtn.classList.add('d-none');
+        if (emptyHint && !templates.length) emptyHint.style.display = '';
+    }
 
+    function showForm(isNew) {
+        form.classList.remove('d-none');
+        cancelBtn.classList.remove('d-none');
+        if (emptyHint) emptyHint.style.display = 'none';
+        if (isNew) {
+            deleteBtn.classList.add('d-none');
+        } else {
+            deleteBtn.classList.remove('d-none');
+        }
+    }
+
+    function loadTemplate(template, isNew) {
+        if (!template) {
+            hideForm();
+            return;
+        }
+        templateIdInput.value = isNew ? '' : String(template.id);
+        sortOrderInput.value = String(template.sort_order || 0);
+        nameInput.value = template.name || '';
+        bodyInput.value = template.body || '';
+        defaultInput.checked = !!template.is_default;
+        activeInput.checked = isNew ? true : !!template.is_active;
+        showForm(isNew);
+        if (!isNew) {
+            deleteTemplateIdInput.value = String(template.id);
+        }
+    }
+
+    function startNew() {
+        select.value = '';
+        loadTemplate({
+            id: '',
+            name: '',
+            body: '',
+            is_default: false,
+            is_active: true,
+            sort_order: 0,
+        }, true);
+        nameInput.focus();
+    }
+
+    select.addEventListener('change', function() {
+        const template = byId[select.value];
+        if (template) {
+            loadTemplate(template, false);
+        } else {
+            hideForm();
+        }
+    });
+
+    newBtn.addEventListener('click', startNew);
+
+    cancelBtn.addEventListener('click', function() {
+        select.value = '';
+        hideForm();
+    });
+
+    deleteBtn.addEventListener('click', function() {
+        const label = nameInput.value || 'this template';
+        if (!confirm(`Delete “${label}”?`)) return;
+        deleteForm.submit();
+    });
+
+    const params = new URLSearchParams(window.location.search);
+    const preselect = params.get(urlParam);
+    if (preselect && byId[preselect]) {
+        select.value = preselect;
+        loadTemplate(byId[preselect], false);
+    }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    setupEstimateTemplateEditor({
+        templates: clientNoteTemplates,
+        selectId: 'cnTemplateSelect',
+        formId: 'cnTemplateForm',
+        templateIdInputId: 'cnTemplateId',
+        sortOrderInputId: 'cnSortOrder',
+        nameInputId: 'cnTemplateName',
+        bodyInputId: 'cnTemplateBody',
+        defaultInputId: 'cnTemplateDefault',
+        activeInputId: 'cnTemplateActive',
+        newBtnId: 'cnNewBtn',
+        deleteBtnId: 'cnDeleteBtn',
+        cancelBtnId: 'cnCancelBtn',
+        deleteFormId: 'cnDeleteForm',
+        deleteTemplateIdInputId: 'cnDeleteTemplateId',
+        emptyHintId: 'cnEmptyHint',
+        urlParam: 'cn',
+    });
+    setupEstimateTemplateEditor({
+        templates: termsTemplates,
+        selectId: 'termsTemplateSelect',
+        formId: 'termsTemplateForm',
+        templateIdInputId: 'termsTemplateId',
+        sortOrderInputId: 'termsSortOrder',
+        nameInputId: 'termsTemplateName',
+        bodyInputId: 'termsTemplateBody',
+        defaultInputId: 'termsTemplateDefault',
+        activeInputId: 'termsTemplateActive',
+        newBtnId: 'termsNewBtn',
+        deleteBtnId: 'termsDeleteBtn',
+        cancelBtnId: 'termsCancelBtn',
+        deleteFormId: 'termsDeleteForm',
+        deleteTemplateIdInputId: 'termsDeleteTemplateId',
+        emptyHintId: 'termsEmptyHint',
+        urlParam: 'terms',
+    });
+});
+</script>
+{% endblock %}

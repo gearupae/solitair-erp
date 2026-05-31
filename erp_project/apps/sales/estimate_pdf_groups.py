@@ -25,7 +25,7 @@ def build_pdf_item_groups(estimate):
     group_order = []
     groups_by_name = {}
 
-    for item in estimate.items.all():
+    for item in estimate.items.select_related('inventory_item').all():
         name = (item.group_name or '').strip()
         line_amt = (item.total or Decimal('0.00')) + (item.vat_amount or Decimal('0.00'))
 

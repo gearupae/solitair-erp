@@ -7,7 +7,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.contrib import messages
 from django.views.generic import ListView, CreateView, UpdateView, View, TemplateView
-from django.urls import reverse_lazy
+from django.urls import reverse, reverse_lazy
 from django.http import JsonResponse
 from django.db.models import Prefetch
 
@@ -23,6 +23,7 @@ from .models import (
     ApprovalConfiguration,
     ApprovalConfigurationLevel,
     Company,
+    EstimateTextTemplate,
 )
 from .forms import UserForm, RoleForm, CompanySettingsForm, CompanyForm
 from apps.core.mixins import PermissionRequiredMixin
@@ -250,13 +251,133 @@ class CompanySettingsView(PermissionRequiredMixin, UpdateView):
         return CompanySettings.get_settings()
     
     def get_context_data(self, **kwargs):
+        import json
+
+        from django.core.serializers.json import DjangoJSONEncoder
+
         context = super().get_context_data(**kwargs)
         context['title'] = 'Company Settings'
+        client_note_templates = list(
+            EstimateTextTemplate.objects.filter(
+                template_type=EstimateTextTemplate.CLIENT_NOTE,
+            ).order_by('sort_order', 'name')
+        )
+        terms_templates = list(
+            EstimateTextTemplate.objects.filter(
+                template_type=EstimateTextTemplate.TERMS,
+            ).order_by('sort_order', 'name')
+        )
+        context['client_note_templates'] = client_note_templates
+        context['terms_templates'] = terms_templates
+        context['client_note_templates_json'] = json.dumps(
+            [
+                {
+                    'id': t.pk,
+                    'name': t.name,
+                    'body': t.body,
+                    'is_default': t.is_default,
+                    'is_active': t.is_active,
+                    'sort_order': t.sort_order,
+                }
+                for t in client_note_templates
+            ],
+            cls=DjangoJSONEncoder,
+        )
+        context['terms_templates_json'] = json.dumps(
+            [
+                {
+                    'id': t.pk,
+                    'name': t.name,
+                    'body': t.body,
+                    'is_default': t.is_default,
+                    'is_active': t.is_active,
+                    'sort_order': t.sort_order,
+                }
+                for t in terms_templates
+            ],
+            cls=DjangoJSONEncoder,
+        )
         return context
+
+    def post(self, request, *args, **kwargs):
+        if request.POST.get('estimate_template_action'):
+            return self._handle_estimate_template_post(request)
+        return super().post(request, *args, **kwargs)
+
+    def _handle_estimate_template_post(self, request):
+        action = request.POST.get('estimate_template_action')
+        template_type = request.POST.get('template_type')
+
+        if template_type not in dict(EstimateTextTemplate.TEMPLATE_TYPE_CHOICES):
+            messages.error(request, 'Invalid template type.')
+            return redirect('settings:company')
+
+        type_label = dict(EstimateTextTemplate.TEMPLATE_TYPE_CHOICES)[template_type]
+        query_key = 'cn' if template_type == EstimateTextTemplate.CLIENT_NOTE else 'terms'
+
+        if action == 'save':
+            name = (request.POST.get('name') or '').strip()[:120]
+            body = request.POST.get('body') or ''
+            if not name:
+                messages.error(request, f'Template name is required for {type_label.lower()}.')
+                return redirect('settings:company')
+            is_default = request.POST.get('is_default') == 'on'
+            is_active = request.POST.get('is_active') == 'on'
+            sort_order = int(request.POST.get('sort_order') or 0)
+            template_id = request.POST.get('template_id') or ''
+            if template_id:
+                template = get_object_or_404(
+                    EstimateTextTemplate,
+                    pk=int(template_id),
+                    template_type=template_type,
+                )
+                template.name = name
+                template.body = body
+                template.sort_order = sort_order
+                template.is_active = is_active
+                template.is_default = is_default
+                template.save()
+                messages.success(request, f'{type_label} template “{name}” saved.')
+            else:
+                if not sort_order:
+                    sort_order = (
+                        EstimateTextTemplate.objects.filter(template_type=template_type)
+                        .order_by('-sort_order')
+                        .values_list('sort_order', flat=True)
+                        .first()
+                        or 0
+                    ) + 1
+                template = EstimateTextTemplate.objects.create(
+                    template_type=template_type,
+                    name=name,
+                    body=body,
+                    is_default=is_default,
+                    sort_order=sort_order,
+                    is_active=is_active,
+                )
+                messages.success(request, f'{type_label} template “{name}” created.')
+            return redirect(f'{reverse("settings:company")}?{query_key}={template.pk}#estimate-templates')
+        elif action == 'delete' and request.POST.get('template_id'):
+            template = get_object_or_404(
+                EstimateTextTemplate,
+                pk=int(request.POST['template_id']),
+                template_type=template_type,
+            )
+            name = template.name
+            template.delete()
+            messages.success(request, f'{type_label} template “{name}” deleted.')
+            return redirect(f'{reverse("settings:company")}#estimate-templates')
+        else:
+            messages.error(request, 'Invalid template request.')
+        return redirect('settings:company')
     
     def form_valid(self, form):
         messages.success(self.request, 'Company settings updated successfully.')
         return super().form_valid(form)
+
+    def form_invalid(self, form):
+        messages.error(self.request, 'Could not save company settings. Please check the form and try again.')
+        return super().form_invalid(form)
 
 
 class CompanyListView(PermissionRequiredMixin, ListView):

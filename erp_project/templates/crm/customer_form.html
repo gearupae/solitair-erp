@@ -10,11 +10,26 @@ $(function () {
         var docs = document.getElementById('crmEditB2bDocs');
         var trnWrap = document.getElementById('crmEditTrnWrap');
         var trnInput = document.querySelector('[name="trn"]');
+        var licInput = document.querySelector('[name="trade_license_document"]');
+        var licRequired = document.getElementById('crmEditLicenseRequired');
+        var licOptional = document.getElementById('crmEditLicenseOptional');
+        var docsHelp = document.getElementById('crmEditB2bDocsHelp');
+        var isCustomer = typeSel && typeSel.value === 'customer';
         var isB2b = seg && seg.value === 'b2b';
         if (busWrap) busWrap.style.display = '';
         if (trnWrap) trnWrap.style.display = isB2b ? '' : 'none';
         if (trnInput && !isB2b) trnInput.value = '';
         if (docs) docs.classList.toggle('d-none', !isB2b);
+        if (licInput) licInput.required = isB2b && isCustomer;
+        if (licRequired) licRequired.classList.toggle('d-none', !isB2b || !isCustomer);
+        if (licOptional) licOptional.classList.toggle('d-none', !isB2b || isCustomer);
+        if (docsHelp) {
+            if (isB2b && isCustomer) {
+                docsHelp.textContent = 'B2B customers must upload a trade license (TRN certificate upload is optional).';
+            } else if (isB2b) {
+                docsHelp.textContent = 'B2B leads may upload a trade license now (optional). TRN certificate upload is optional.';
+            }
+        }
     }
     var typeSel = document.getElementById('crmEditCustomerType');
     var seg = document.querySelector('[name="business_segment"]');
@@ -86,7 +101,7 @@ $(function () {
             </h6>
             <div class="row g-3 mb-3 d-none" id="crmEditB2bDocs">
                 <div class="col-12">
-                    <p class="small text-muted mb-0">B2B accounts must upload a trade license (TRN certificate upload is optional).</p>
+                    <p class="small text-muted mb-0" id="crmEditB2bDocsHelp">B2B customers must upload a trade license (TRN certificate upload is optional).</p>
                 </div>
                 <div class="col-md-6">
                     <label class="form-label" for="{{ form.trn_document.id_for_label }}">{{ form.trn_document.label }} <span class="text-muted small">(optional)</span></label>
@@ -97,7 +112,10 @@ $(function () {
                     {% endif %}
                 </div>
                 <div class="col-md-6">
-                    <label class="form-label" for="{{ form.trade_license_document.id_for_label }}">{{ form.trade_license_document.label }} <span class="text-danger">*</span></label>
+                    <label class="form-label" for="{{ form.trade_license_document.id_for_label }}">{{ form.trade_license_document.label }}
+                        <span class="text-danger" id="crmEditLicenseRequired">*</span>
+                        <span class="text-muted small d-none" id="crmEditLicenseOptional">(optional)</span>
+                    </label>
                     {{ form.trade_license_document }}
                     {% for err in form.trade_license_document.errors %}<div class="text-danger small">{{ err }}</div>{% endfor %}
                     {% if object.trade_license_document %}

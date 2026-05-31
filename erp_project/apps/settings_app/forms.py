@@ -174,9 +174,9 @@ class CompanySettingsForm(forms.ModelForm):
             'website',
             'tax_id', 'fiscal_year_start', 'currency', 'date_format', 'timezone',
             'inventory_valuation_method',
-            'estimate_default_client_note', 'estimate_default_terms',
             'contract_default_terms',
             'estimate_to_project_prompt_include_lines',
+            'estimate_default_authorized_signature', 'estimate_default_customer_signature',
         ]
     
     def __init__(self, *args, **kwargs):
@@ -190,10 +190,16 @@ class CompanySettingsForm(forms.ModelForm):
         for field_name, field in self.fields.items():
             if field_name == 'logo':
                 field.widget.attrs['class'] = 'form-control'
+            elif field_name in (
+                'estimate_default_authorized_signature',
+                'estimate_default_customer_signature',
+            ):
+                field.widget.attrs['class'] = 'form-control'
+                field.widget.attrs['accept'] = 'image/*'
             elif field_name == 'address':
                 field.widget.attrs['class'] = 'form-control'
                 field.widget.attrs['rows'] = 3
-            elif field_name in ('estimate_default_client_note', 'estimate_default_terms', 'contract_default_terms'):
+            elif field_name in ('contract_default_terms',):
                 field.widget.attrs['class'] = 'form-control'
                 field.widget.attrs['rows'] = 5
             elif field_name == 'estimate_to_project_prompt_include_lines':

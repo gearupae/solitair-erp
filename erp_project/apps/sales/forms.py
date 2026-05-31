@@ -8,10 +8,10 @@ VAT is ALWAYS derived from a TaxCode:
 from django import forms
 from django.contrib.auth import get_user_model
 from django.forms.models import BaseInlineFormSet
+from decimal import Decimal
 from .models import Estimate, EstimateItem, Invoice, InvoiceItem
 from apps.crm.models import Customer
 from apps.finance.models import TaxCode
-from apps.projects.models import Project
 from .estimate_csv import get_default_estimate_csv_tax_code
 
 User = get_user_model()
@@ -20,17 +20,14 @@ User = get_user_model()
 class EstimateForm(forms.ModelForm):
     """Form for creating/editing estimates."""
 
-    scope = forms.ChoiceField(
-        choices=[('', '— Select scope —')] + list(Estimate.SCOPE_CHOICES),
-        required=False,
-        widget=forms.Select(attrs={'class': 'form-select'}),
-    )
-
     class Meta:
         model = Estimate
         fields = [
-            'customer', 'assigned_to', 'prepared_by', 'project', 'date', 'valid_until',
+            'customer', 'assigned_to', 'prepared_by',
+            'type_of_occupancy', 'type_of_work', 'scope_of_work',
+            'date', 'valid_until',
             'discount_type', 'discount_value', 'show_rates_on_pdf', 'show_group_totals_on_pdf',
+            'show_brand_name_on_pdf',
             'notes', 'client_note', 'terms_and_conditions',
             'authorized_signature', 'customer_signature',
         ]
@@ -56,6 +53,9 @@ class EstimateForm(forms.ModelForm):
             'show_group_totals_on_pdf': forms.CheckboxInput(
                 attrs={'class': 'form-check-input', 'role': 'switch'},
             ),
+            'show_brand_name_on_pdf': forms.CheckboxInput(
+                attrs={'class': 'form-check-input', 'role': 'switch'},
+            ),
         }
 
     def __init__(self, *args, **kwargs):
@@ -66,9 +66,6 @@ class EstimateForm(forms.ModelForm):
         self.fields['assigned_to'].widget.attrs['class'] = 'form-select'
         self.fields['assigned_to'].required = False
         self.fields['assigned_to'].label = 'Assigned to'
-        self.fields['project'].queryset = Project.objects.filter(is_active=True).order_by('name')
-        self.fields['project'].widget.attrs['class'] = 'form-select'
-        self.fields['project'].required = False
         self.fields['valid_until'].required = False
         self.fields['date'].input_formats = ['%Y-%m-%d']
         self.fields['valid_until'].input_formats = ['%Y-%m-%d']
@@ -77,23 +74,22 @@ class EstimateForm(forms.ModelForm):
         self.fields['client_note'].required = False
         self.fields['terms_and_conditions'].required = False
         self.fields['prepared_by'].required = False
-        self.fields['scope'].label = 'Scope'
+        for field_name in ('type_of_occupancy', 'type_of_work', 'scope_of_work'):
+            field = self.fields[field_name]
+            field.required = False
+            field.widget.attrs['class'] = 'form-select'
+        self.fields['type_of_occupancy'].label = 'Type of occupancy'
+        self.fields['type_of_work'].label = 'Type of work'
+        self.fields['scope_of_work'].label = 'Scope of work'
         self.fields['show_rates_on_pdf'].label = 'Show rates & line totals on PDF'
         self.fields['show_rates_on_pdf'].required = False
         self.fields['show_group_totals_on_pdf'].label = 'Show group totals on PDF'
         self.fields['show_group_totals_on_pdf'].required = False
-
-        if self.instance.pk and self.instance.scope:
-            scopes = list(self.instance.scope or [])
-            if len(scopes) == 1:
-                self.initial['scope'] = scopes[0]
-            elif len(scopes) > 1:
-                self.initial['scope'] = scopes[0]
+        self.fields['show_brand_name_on_pdf'].label = 'Show brand name'
+        self.fields['show_brand_name_on_pdf'].required = False
 
     def save(self, commit=True):
         instance = super().save(commit=False)
-        val = self.cleaned_data.get('scope')
-        instance.scope = [val] if val else []
         if instance.pk:
             instance.status = Estimate.objects.values_list('status', flat=True).get(pk=instance.pk)
         if commit:
@@ -110,7 +106,7 @@ class EstimateItemForm(forms.ModelForm):
     class Meta:
         model = EstimateItem
         fields = [
-            'group_name', 'sort_order', 'inventory_item', 'description', 'quantity', 'unit_price',
+            'group_name', 'group_qty_multiplier', 'sort_order', 'inventory_item', 'description', 'quantity', 'unit_price',
             'profit_type', 'profit_value', 'rate', 'tax_code', 'is_vat_inclusive',
         ]
         widgets = {
@@ -119,6 +115,12 @@ class EstimateItemForm(forms.ModelForm):
                 'placeholder': 'PDF section',
                 'list': 'estimate-group-names',
                 'title': 'Estimate / PDF section title for this line. Editing this does not change inventory masters—only how this estimate is grouped on the PDF.',
+            }),
+            'group_qty_multiplier': forms.NumberInput(attrs={
+                'class': 'form-control form-control-sm item-group-qty-mult',
+                'step': '1',
+                'min': '1',
+                'title': 'Multiplied with qty for every line in this group (effective qty = qty × group ×).',
             }),
             'sort_order': forms.HiddenInput(),
             'description': forms.TextInput(attrs={'class': 'form-control form-control-sm'}),
@@ -146,7 +148,7 @@ class EstimateItemForm(forms.ModelForm):
         for field_name, field in self.fields.items():
             if field_name in ['tax_code']:
                 field.widget.attrs['class'] = 'form-select form-select-sm item-tax-code'
-            elif field_name not in ('inventory_item', 'profit_type', 'profit_value', 'rate', 'group_name', 'sort_order', 'description', 'quantity', 'unit_price', 'is_vat_inclusive'):
+            elif field_name not in ('inventory_item', 'profit_type', 'profit_value', 'rate', 'group_name', 'group_qty_multiplier', 'sort_order', 'description', 'quantity', 'unit_price', 'is_vat_inclusive'):
                 pass
 
         self.fields['tax_code'].queryset = TaxCode.objects.filter(is_active=True)
@@ -163,6 +165,8 @@ class EstimateItemForm(forms.ModelForm):
 
         self.fields['group_name'].required = False
         self.fields['group_name'].help_text = 'Shown when this estimate is printed / on the PDF; does not update inventory.'
+        self.fields['group_qty_multiplier'].required = False
+        self.fields['group_qty_multiplier'].label = 'Group ×'
 
         if not self.instance.pk:
             default_tax_code = get_default_estimate_csv_tax_code()
@@ -177,6 +181,9 @@ class EstimateItemForm(forms.ModelForm):
             err = inv.selling_price_bounds_error(unit_price)
             if err:
                 self.add_error('unit_price', err)
+        mult = cleaned.get('group_qty_multiplier')
+        if mult is not None and mult < Decimal('1'):
+            self.add_error('group_qty_multiplier', 'Group multiplier must be at least 1.')
         return cleaned
 
 

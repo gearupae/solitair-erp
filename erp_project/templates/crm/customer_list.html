@@ -299,8 +299,8 @@
                 <input type="email" name="email" class="form-control" placeholder="email@example.com">
             </div>
             <div class="col-md-3">
-                <label class="form-label">Phone</label>
-                <input type="text" name="phone" class="form-control" placeholder="+971 XX XXX XXXX">
+                <label class="form-label">Phone <span class="text-danger">*</span></label>
+                <input type="text" name="phone" class="form-control" placeholder="+971 XX XXX XXXX" required>
             </div>
             <div class="col-md-3">
                 <label class="form-label">Status</label>
@@ -320,7 +320,7 @@
             </div>
             <div class="col-md-3">
                 <label class="form-label">Website</label>
-                <input type="url" name="website" class="form-control" placeholder="https://">
+                <input type="text" name="website" class="form-control" placeholder="gear-up.ae, www.gear-up.ae, or https://gear-up.ae">
             </div>
             <div class="col-md-3">
                 <label class="form-label">Job type</label>
@@ -332,20 +332,17 @@
                     <option value="maintenance">Maintenance</option>
                 </select>
             </div>
-            <div class="col-md-3">
-                <label class="form-label" for="{{ form.primary_project.id_for_label }}">{{ form.primary_project.label }}</label>
-                {{ form.primary_project }}
-                {% for err in form.primary_project.errors %}<div class="text-danger small">{{ err }}</div>{% endfor %}
-                <div class="form-text small mb-0" id="crmProjectSelectHint">{% if not project_choices %}No projects yet — add them under <a href="{% url 'projects:project_list' %}">Projects</a>.{% endif %}</div>
-            </div>
             <div class="col-md-3" id="crmB2bTrnDocWrap" style="display:none;">
                 <label class="form-label">TRN certificate <span class="text-muted small">(optional)</span></label>
                 <input type="file" name="trn_document" class="form-control" accept=".pdf,.jpg,.jpeg,.png,.webp,.heic">
                 <div class="form-text small mb-0">PDF or image.</div>
             </div>
             <div class="col-md-3" id="crmB2bLicenseDocWrap" style="display:none;">
-                <label class="form-label">Trade license <span class="text-danger">*</span></label>
-                <input type="file" name="trade_license_document" class="form-control" accept=".pdf,.jpg,.jpeg,.png,.webp,.heic">
+                <label class="form-label">Trade license
+                    <span class="text-danger" id="crmInlineLicenseRequired">*</span>
+                    <span class="text-muted small d-none" id="crmInlineLicenseOptional">(optional)</span>
+                </label>
+                <input type="file" name="trade_license_document" id="crmInlineTradeLicense" class="form-control" accept=".pdf,.jpg,.jpeg,.png,.webp,.heic">
             </div>
             <div class="col-12">
                 <label class="form-label">Notes</label>
@@ -777,18 +774,27 @@
 (function () {
     function crmInlineToggleCustomerFields() {
         var typeSel = document.getElementById('crmInlineCustomerType');
+        var typeHidden = document.querySelector('#customerForm input[name="customer_type"][type="hidden"]');
         var segWrap = document.getElementById('crmBusinessSegmentWrap');
         var seg = document.getElementById('crmInlineBusinessSegment');
         var b2bTrn = document.getElementById('crmB2bTrnDocWrap');
         var b2bLic = document.getElementById('crmB2bLicenseDocWrap');
         var trnWrap = document.getElementById('crmInlineTrnWrap');
         var trnInput = document.getElementById('crmInlineTrn');
+        var licInput = document.getElementById('crmInlineTradeLicense');
+        var licRequired = document.getElementById('crmInlineLicenseRequired');
+        var licOptional = document.getElementById('crmInlineLicenseOptional');
+        var customerType = typeHidden ? typeHidden.value : (typeSel ? typeSel.value : 'lead');
         if (segWrap) segWrap.style.display = '';
         var isB2b = seg && seg.value === 'b2b';
+        var isCustomer = customerType === 'customer';
         if (trnWrap) trnWrap.style.display = isB2b ? '' : 'none';
         if (trnInput && !isB2b) trnInput.value = '';
         if (b2bTrn) b2bTrn.style.display = isB2b ? '' : 'none';
         if (b2bLic) b2bLic.style.display = isB2b ? '' : 'none';
+        if (licInput) licInput.required = isB2b && isCustomer;
+        if (licRequired) licRequired.classList.toggle('d-none', !isB2b || !isCustomer);
+        if (licOptional) licOptional.classList.toggle('d-none', !isB2b || isCustomer);
     }
     document.addEventListener('DOMContentLoaded', function () {
         var typeSel = document.getElementById('crmInlineCustomerType');
@@ -797,53 +803,6 @@
         if (seg) seg.addEventListener('change', crmInlineToggleCustomerFields);
         crmInlineToggleCustomerFields();
     });
-})();
-</script>
-<script>
-(function () {
-    var projectOptionsUrl = '{% url "crm:project_options" %}';
-
-    function loadCrmProjectOptions() {
-        var sel = document.querySelector('#customerForm select[name="primary_project"]');
-        var hint = document.getElementById('crmProjectSelectHint');
-        if (!sel) return;
-        var current = sel.value;
-        fetch(projectOptionsUrl, { headers: { 'Accept': 'application/json' } })
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-                var projects = data.projects || [];
-                sel.innerHTML = '';
-                var empty = document.createElement('option');
-                empty.value = '';
-                empty.textContent = '— Select project —';
-                sel.appendChild(empty);
-                projects.forEach(function (p) {
-                    var opt = document.createElement('option');
-                    opt.value = String(p.id);
-                    opt.textContent = p.label;
-                    if (String(p.id) === String(current)) opt.selected = true;
-                    sel.appendChild(opt);
-                });
-                if (hint) {
-                    if (projects.length) {
-                        hint.classList.add('d-none');
-                    } else {
-                        hint.classList.remove('d-none');
-                    }
-                }
-            })
-            .catch(function () { /* keep server-rendered options */ });
-    }
-
-    document.addEventListener('DOMContentLoaded', loadCrmProjectOptions);
-
-    var origToggle = window.toggleInlineForm;
-    if (typeof origToggle === 'function') {
-        window.toggleInlineForm = function (formId) {
-            origToggle(formId);
-            if (formId === 'customerForm') loadCrmProjectOptions();
-        };
-    }
 })();
 </script>
 {% if can_edit %}

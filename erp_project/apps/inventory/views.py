@@ -27,6 +27,7 @@ from .models import (
     StorageLocation,
     Item,
     ItemGroup,
+    ItemGroupMembership,
     ItemSerialNumber,
     Stock,
     StockMovement,
@@ -359,106 +360,178 @@ def item_export_csv(request):
 
 
 @login_required
-@require_POST
-def item_bulk_group(request):
-    """Add/remove M2M groups for selected items, rename ItemGroup, or clear all groups."""
-    if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'inventory', 'edit')):
+def item_group_manage(request):
+    """Manage item groups: members, default estimate qty, rename, PDF settings."""
+    can_edit = request.user.is_superuser or PermissionChecker.has_permission(
+        request.user, 'inventory', 'edit'
+    )
+    if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'inventory', 'view')):
         messages.error(request, 'Permission denied.')
         return redirect('inventory:item_list')
 
-    action = request.POST.get('action')
-    raw_ids = [x.strip() for x in request.POST.get('item_ids', '').split(',') if x.strip().isdigit()]
-    items_qs = Item.objects.filter(pk__in=raw_ids, is_active=True)
+    def _redirect(group=None):
+        url = reverse('inventory:item_group_manage')
+        if group:
+            return redirect(f'{url}?group={group.pk}')
+        return redirect(url)
 
-    if action == 'add':
-        if not raw_ids:
-            messages.warning(request, 'Select at least one item.')
+    if request.method == 'POST':
+        if not can_edit:
+            messages.error(request, 'Permission denied.')
             return redirect('inventory:item_list')
-        did_any = False
-        for pk in request.POST.getlist('add_group_ids'):
-            if not str(pk).isdigit():
-                continue
-            g = ItemGroup.objects.filter(pk=int(pk)).first()
-            if g:
-                did_any = True
-                for it in items_qs:
-                    it.item_groups.add(g)
-        for part in (request.POST.get('new_groups') or '').split(','):
-            name = part.strip()[:200]
+
+        action = (request.POST.get('action') or '').strip()
+        group_pk = request.POST.get('group_id')
+
+        if action == 'create_group':
+            name = (request.POST.get('new_group_name') or '').strip()[:200]
             if not name:
-                continue
-            g, _ = ItemGroup.objects.get_or_create(name=name)
-            did_any = True
-            for it in items_qs:
-                it.item_groups.add(g)
-        if not did_any:
-            messages.warning(request, 'Pick existing groups or type new names (comma-separated).')
-            return redirect('inventory:item_list')
-        messages.success(request, 'Groups added to selected items (existing links kept).')
-    elif action == 'remove':
-        if not raw_ids:
-            messages.warning(request, 'Select at least one item.')
-            return redirect('inventory:item_list')
-        rm = request.POST.get('remove_group_id')
-        if rm and str(rm).isdigit():
-            g = ItemGroup.objects.filter(pk=int(rm)).first()
-            if g:
-                for it in items_qs:
-                    it.item_groups.remove(g)
-                messages.success(request, 'Removed that group from selected items.')
-            else:
-                messages.warning(request, 'Group not found.')
-        else:
-            messages.warning(request, 'Choose a group to remove.')
-    elif action == 'clear':
-        if not raw_ids:
-            messages.warning(request, 'Select at least one item.')
-            return redirect('inventory:item_list')
-        for it in items_qs:
-            it.item_groups.clear()
-        messages.success(request, 'All groups cleared from selected items.')
-    elif action == 'rename':
-        gid = request.POST.get('rename_group_id')
-        new_name = (request.POST.get('rename_new_name') or '').strip()[:200]
-        if not (gid and str(gid).isdigit() and new_name):
-            messages.warning(request, 'Choose a group and enter a new name.')
-            return redirect('inventory:item_list')
-        g = ItemGroup.objects.filter(pk=int(gid)).first()
-        if not g:
-            messages.error(request, 'Group not found.')
-            return redirect('inventory:item_list')
-        if ItemGroup.objects.filter(name__iexact=new_name).exclude(pk=g.pk).exists():
-            messages.error(request, 'Another group already uses that name.')
-            return redirect('inventory:item_list')
-        g.name = new_name
-        g.save(update_fields=['name'])
-        messages.success(request, 'Group renamed for all items using it.')
-    elif action == 'set_pdf_hide':
-        gid = request.POST.get('pdf_settings_group_id')
-        if not (gid and str(gid).isdigit()):
-            messages.warning(request, 'Choose a group.')
-            return redirect('inventory:item_list')
-        g = ItemGroup.objects.filter(pk=int(gid)).first()
-        if not g:
-            messages.error(request, 'Group not found.')
-            return redirect('inventory:item_list')
-        hide = request.POST.get('hide_items_on_pdf') == 'on'
-        g.hide_items_on_pdf = hide
-        g.save(update_fields=['hide_items_on_pdf'])
-        if hide:
-            messages.success(
-                request,
-                f'"{g.name}" will show as one consolidated line on quotation PDFs (items hidden).',
-            )
-        else:
-            messages.success(
-                request,
-                f'"{g.name}" will show individual items on quotation PDFs again.',
-            )
-    else:
-        messages.error(request, 'Invalid action.')
+                messages.warning(request, 'Enter a group name.')
+                return _redirect()
+            if ItemGroup.objects.filter(name__iexact=name).exists():
+                messages.error(request, 'A group with that name already exists.')
+                return _redirect()
+            g = ItemGroup.objects.create(name=name)
+            messages.success(request, f'Group "{g.name}" created.')
+            return _redirect(g)
 
-    return redirect('inventory:item_list')
+        if not group_pk or not str(group_pk).isdigit():
+            messages.warning(request, 'Choose a group first.')
+            return _redirect()
+        group = get_object_or_404(ItemGroup, pk=int(group_pk))
+
+        if action == 'rename':
+            new_name = (request.POST.get('rename_new_name') or '').strip()[:200]
+            if not new_name:
+                messages.warning(request, 'Enter a new name.')
+                return _redirect(group)
+            if ItemGroup.objects.filter(name__iexact=new_name).exclude(pk=group.pk).exists():
+                messages.error(request, 'Another group already uses that name.')
+                return _redirect(group)
+            group.name = new_name
+            group.save(update_fields=['name'])
+            messages.success(request, 'Group renamed.')
+            return _redirect(group)
+
+        if action == 'set_pdf_hide':
+            hide = request.POST.get('hide_items_on_pdf') == 'on'
+            group.hide_items_on_pdf = hide
+            group.save(update_fields=['hide_items_on_pdf'])
+            if hide:
+                messages.success(
+                    request,
+                    f'"{group.name}" will show as one consolidated line on quotation PDFs.',
+                )
+            else:
+                messages.success(
+                    request,
+                    f'"{group.name}" will show individual items on quotation PDFs.',
+                )
+            return _redirect(group)
+
+        if action == 'save_quantities':
+            updated = 0
+            for key, val in request.POST.items():
+                if not key.startswith('qty_'):
+                    continue
+                mid = key[4:]
+                if not str(mid).isdigit():
+                    continue
+                membership = ItemGroupMembership.objects.filter(pk=int(mid), group=group).first()
+                if not membership:
+                    continue
+                try:
+                    qty = Decimal(str(val).strip().replace(',', ''))
+                except Exception:
+                    continue
+                if qty < Decimal('1'):
+                    qty = Decimal('1')
+                membership.default_quantity = qty.quantize(Decimal('0.01'))
+                membership.save(update_fields=['default_quantity'])
+                updated += 1
+            messages.success(request, f'Saved quantities for {updated} item(s).')
+            return _redirect(group)
+
+        if action == 'add_item':
+            item_id = request.POST.get('add_item_id')
+            if not item_id or not str(item_id).isdigit():
+                messages.warning(request, 'Choose an item to add.')
+                return _redirect(group)
+            item = get_object_or_404(Item, pk=int(item_id), is_active=True)
+            try:
+                qty = Decimal(str(request.POST.get('add_item_qty') or '1').strip().replace(',', ''))
+            except Exception:
+                qty = Decimal('1')
+            if qty < Decimal('1'):
+                qty = Decimal('1')
+            membership, created = ItemGroupMembership.objects.get_or_create(
+                group=group,
+                item=item,
+                defaults={'default_quantity': qty.quantize(Decimal('0.01'))},
+            )
+            if not created:
+                messages.info(request, f'{item.item_code} is already in this group.')
+            else:
+                messages.success(request, f'Added {item.item_code} to "{group.name}".')
+            return _redirect(group)
+
+        if action == 'remove_member':
+            mid = request.POST.get('membership_id')
+            if mid and str(mid).isdigit():
+                deleted, _ = ItemGroupMembership.objects.filter(pk=int(mid), group=group).delete()
+                if deleted:
+                    messages.success(request, 'Item removed from group.')
+                else:
+                    messages.warning(request, 'Item not found in this group.')
+            return _redirect(group)
+
+        if action == 'delete_group':
+            name = group.name
+            group.delete()
+            messages.success(request, f'Group "{name}" deleted.')
+            return _redirect()
+
+        messages.error(request, 'Invalid action.')
+        return _redirect(group)
+
+    groups = (
+        ItemGroup.objects.annotate(member_count=Count('memberships'))
+        .order_by('name')
+    )
+    selected = None
+    memberships = []
+    available_items = Item.objects.none()
+    group_param = (request.GET.get('group') or '').strip()
+    if group_param.isdigit():
+        selected = ItemGroup.objects.filter(pk=int(group_param)).first()
+    if not selected and groups.exists():
+        selected = groups.first()
+
+    if selected:
+        memberships = (
+            ItemGroupMembership.objects.filter(group=selected)
+            .select_related('item')
+            .order_by('sort_order', 'item__item_code', 'pk')
+        )
+        member_ids = memberships.values_list('item_id', flat=True)
+        available_items = (
+            Item.objects.filter(is_active=True, status='active')
+            .exclude(pk__in=member_ids)
+            .order_by('item_code', 'name')[:500]
+        )
+
+    return render(
+        request,
+        'inventory/item_group_manage.html',
+        {
+            'title': 'Item groups',
+            'groups': groups,
+            'selected_group': selected,
+            'memberships': memberships,
+            'available_items': available_items,
+            'can_edit': can_edit,
+        },
+    )
 
 
 class ItemCreateView(CreatePermissionMixin, CreateView):

@@ -1,5 +1,7 @@
 """CRM helpers."""
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError
+from django.core.validators import URLValidator
 from django.db.models import Q
 
 from apps.core.visibility import (
@@ -226,6 +228,17 @@ def filter_customers_for_user(queryset, user):
     from apps.core import visibility
 
     return visibility.filter_customers_for_user(queryset, user)
+
+
+def normalize_customer_website(value: str) -> str:
+    """Accept gear-up.ae, www.gear-up.ae, or https://gear-up.ae and store as a valid URL."""
+    website = (value or '').strip()
+    if not website:
+        return ''
+    if not website.startswith(('http://', 'https://')):
+        website = f'https://{website}'
+    URLValidator()(website)
+    return website
 
 
 def annotate_latest_estimate_value(queryset):

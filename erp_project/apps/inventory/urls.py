@@ -21,7 +21,7 @@ urlpatterns = [
     # Items
     path('items/', views.ItemListView.as_view(), name='item_list'),
     path('items/export/csv/', views.item_export_csv, name='item_export_csv'),
-    path('items/bulk-group/', views.item_bulk_group, name='item_bulk_group'),
+    path('groups/', views.item_group_manage, name='item_group_manage'),
     path('items/create/', views.ItemCreateView.as_view(), name='item_create'),
     path('items/<int:pk>/', views.ItemDetailView.as_view(), name='item_detail'),
     path('items/<int:pk>/register-serials/', views.item_register_on_hand_serials, name='item_register_serials'),

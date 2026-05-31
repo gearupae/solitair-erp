@@ -25,6 +25,7 @@ class Estimate(BaseModel):
         ('sent', 'Sent'),
         ('approved', 'Approved'),
         ('rejected', 'Rejected'),
+        ('under_negotiation', 'Under Negotiation'),
         ('quotation_won', 'Quot Won'),
         ('quotation_lost', 'Quot Lost'),
     ]
@@ -53,6 +54,30 @@ class Estimate(BaseModel):
         ('amc_certification', 'AMC Certification'),
         ('fitout_certification', 'Fitout Certification'),
     ]
+
+    OCCUPANCY_TYPE_CHOICES = [
+        ('residential', 'Residential'),
+        ('commercial', 'Commercial'),
+        ('labour_accommodation', 'Labour Accommodation'),
+        ('restaurants', 'Restaurants'),
+        ('factories_industries', 'Factories - Industries'),
+    ]
+
+    TYPE_OF_WORK_CHOICES = [
+        ('installation_with_amc', 'Installation with AMC'),
+        ('installation_without_amc', 'Installation without AMC'),
+        ('amc', 'AMC'),
+        ('maintenance', 'Maintenance'),
+        ('direct_sale', 'Direct Sale'),
+    ]
+
+    SCOPE_OF_WORK_CHOICES = [
+        ('two_way_manifold', '2 Way Manifold System'),
+        ('four_way_manifold', '4 Way Manifold System'),
+        ('central_tank', 'Central Tank System'),
+        ('rectification', 'Rectification Work'),
+        ('fitout', 'Fitout'),
+    ]
     
     estimate_number = models.CharField(max_length=50, unique=True, editable=False)
     customer = models.ForeignKey(
@@ -75,7 +100,28 @@ class Estimate(BaseModel):
         blank=True,
         related_name='estimates',
     )
-    scope = models.JSONField(default=list, blank=True, help_text='Selected scope tags')
+    scope = models.JSONField(default=list, blank=True, help_text='Legacy scope tags (deprecated)')
+    type_of_occupancy = models.CharField(
+        max_length=40,
+        blank=True,
+        default='',
+        choices=OCCUPANCY_TYPE_CHOICES,
+        verbose_name='Type of occupancy',
+    )
+    type_of_work = models.CharField(
+        max_length=40,
+        blank=True,
+        default='',
+        choices=TYPE_OF_WORK_CHOICES,
+        verbose_name='Type of work',
+    )
+    scope_of_work = models.CharField(
+        max_length=40,
+        blank=True,
+        default='',
+        choices=SCOPE_OF_WORK_CHOICES,
+        verbose_name='Scope of work',
+    )
     date = models.DateField()
     valid_until = models.DateField(null=True, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft')
@@ -137,6 +183,10 @@ class Estimate(BaseModel):
     show_group_totals_on_pdf = models.BooleanField(
         default=False,
         help_text='If on, PDF shows each group heading and a subtotal after its line items.',
+    )
+    show_brand_name_on_pdf = models.BooleanField(
+        default=False,
+        help_text='If on, PDF shows the inventory item brand name on each line.',
     )
 
     # Calculated fields
@@ -223,10 +273,24 @@ class Estimate(BaseModel):
 
     @property
     def scope_display_labels(self):
+        """Human-readable work classification (new fields + legacy scope)."""
+        labels = []
+        if self.type_of_occupancy:
+            labels.append(self.get_type_of_occupancy_display())
+        if self.type_of_work:
+            labels.append(self.get_type_of_work_display())
+        if self.scope_of_work:
+            labels.append(self.get_scope_of_work_display())
+        if labels:
+            return labels
         if not self.scope:
             return []
-        labels = dict(self.SCOPE_CHOICES)
-        return [labels.get(code, code) for code in self.scope]
+        legacy = dict(self.SCOPE_CHOICES)
+        return [legacy.get(code, code) for code in self.scope]
+
+    @property
+    def has_work_classification(self) -> bool:
+        return bool(self.type_of_occupancy or self.type_of_work or self.scope_of_work)
 
     @property
     def allows_follow_on_conversion(self) -> bool:
@@ -297,6 +361,12 @@ class EstimateItem(models.Model):
         related_name='items'
     )
     group_name = models.CharField(max_length=200, blank=True, help_text='Section / group heading')
+    group_qty_multiplier = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal('1.00'),
+        help_text='Multiplied with line qty for all items sharing this group name.',
+    )
     sort_order = models.PositiveIntegerField(default=0)
     inventory_item = models.ForeignKey(
         'inventory.Item',
@@ -352,6 +422,11 @@ class EstimateItem(models.Model):
     
     def __str__(self):
         return f"{self.description} - {self.quantity}"
+
+    @property
+    def effective_quantity(self):
+        mult = self.group_qty_multiplier if self.group_qty_multiplier else Decimal('1')
+        return (self.quantity * mult).quantize(Decimal('0.01'))
 
     def compute_rate(self):
         """

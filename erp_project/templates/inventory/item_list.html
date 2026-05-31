@@ -11,9 +11,9 @@
             <i class="fas fa-file-export me-2"></i>Export CSV
         </a>
         {% if can_edit %}
-        <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#itemGroupModal">
+        <a href="{% url 'inventory:item_group_manage' %}" class="btn btn-outline-primary">
             <i class="fas fa-object-group me-1"></i>Groups
-        </button>
+        </a>
         {% endif %}
         {% if can_create %}
         <a href="{% url 'inventory:item_create' %}" class="btn btn-primary">
@@ -104,7 +104,6 @@
             <table class="table table-hover mb-0">
                 <thead>
                     <tr>
-                        {% if can_edit %}<th class="text-center" style="width:2.25rem;" title="Select rows"><input type="checkbox" id="itemSelectAll" class="form-check-input m-0"></th>{% endif %}
                         <th>Code</th>
                         <th>Name</th>
                         <th>Category</th>
@@ -122,7 +121,6 @@
                 <tbody>
                     {% for item in items %}
                     <tr>
-                        {% if can_edit %}<td class="text-center align-middle"><input type="checkbox" class="form-check-input item-check m-0" value="{{ item.pk }}"></td>{% endif %}
                         <td>
                             <a href="{% url 'inventory:item_detail' item.pk %}" class="fw-medium text-decoration-none">{{ item.item_code }}</a>
                         </td>
@@ -208,7 +206,7 @@
                     </tr>
                     {% empty %}
                     <tr>
-                        <td colspan="{% if can_edit %}13{% else %}12{% endif %}" class="text-center py-5 text-muted">
+                        <td colspan="12" class="text-center py-5 text-muted">
                             <i class="fas fa-cubes fa-3x mb-3 d-block"></i>
                             No items found
                         </td>
@@ -268,174 +266,4 @@
     {% endif %}
 </div>
 
-{% if can_edit %}
-<div class="modal fade" id="itemGroupModal" tabindex="-1" aria-labelledby="itemGroupModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content">
-            <div class="modal-header py-2">
-                <h5 class="modal-title fs-6" id="itemGroupModalLabel">Item groups</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <p class="small text-muted mb-3">Selected on this page: <strong id="bulkSelectedCount">0</strong></p>
-
-                <form method="post" action="{% url 'inventory:item_bulk_group' %}" id="itemGroupForm">
-                    {% csrf_token %}
-                    <input type="hidden" name="item_ids" id="bulkItemIds" value="">
-
-                    <label class="form-label small fw-semibold">Add to group(s) — keeps existing groups</label>
-                    <select name="add_group_ids" id="addGroupSelect" class="form-select form-select-sm mb-2" multiple size="5">
-                        {% for g in item_groups %}
-                        <option value="{{ g.pk }}">{{ g.name }}</option>
-                        {% endfor %}
-                    </select>
-                    <label class="form-label small text-muted mb-0">New groups (comma-separated, optional)</label>
-                    <input type="text" name="new_groups" id="newGroupsInput" class="form-control form-control-sm mb-2" maxlength="500" placeholder="e.g. Kit A, Spares" autocomplete="off">
-                    <button type="submit" name="action" value="add" class="btn btn-primary btn-sm group-action-btn">Add groups</button>
-
-                    <hr class="my-3">
-
-                    <label class="form-label small fw-semibold">Remove one group from selected items</label>
-                    <select name="remove_group_id" id="removeGroupSelect" class="form-select form-select-sm mb-2">
-                        <option value="">— Choose —</option>
-                        {% for g in item_groups %}
-                        <option value="{{ g.pk }}">{{ g.name }}</option>
-                        {% endfor %}
-                    </select>
-                    <button type="submit" name="action" value="remove" class="btn btn-outline-warning btn-sm group-action-btn">Remove from selected</button>
-
-                    <hr class="my-3">
-
-                    <label class="form-label small fw-semibold d-block">Clear all groups from selected</label>
-                    <button type="submit" name="action" value="clear" class="btn btn-outline-danger btn-sm group-action-btn">Clear all groups</button>
-
-                    <hr class="my-3">
-
-                    <label class="form-label small fw-semibold">Rename a group (all items using it)</label>
-                    <select name="rename_group_id" class="form-select form-select-sm mb-2">
-                        <option value="">— Choose —</option>
-                        {% for g in item_groups %}
-                        <option value="{{ g.pk }}">{{ g.name }}</option>
-                        {% endfor %}
-                    </select>
-                    <input type="text" name="rename_new_name" class="form-control form-control-sm mb-2" maxlength="200" placeholder="New name" autocomplete="off">
-                    <button type="submit" name="action" value="rename" class="btn btn-outline-secondary btn-sm group-action-btn">Rename</button>
-
-                    <hr class="my-3">
-
-                    <label class="form-label small fw-semibold">Quotation PDF — group display</label>
-                    <p class="small text-muted mb-2">Applies when this group name is used on an estimate. Quotation PDF only — estimate screen and proforma are unchanged.</p>
-                    <select name="pdf_settings_group_id" id="pdfSettingsGroupSelect" class="form-select form-select-sm mb-2">
-                        <option value="">— Choose group —</option>
-                        {% for g in item_groups %}
-                        <option value="{{ g.pk }}" data-hide-items="{{ g.hide_items_on_pdf|yesno:'1,0' }}">{{ g.name }}{% if g.hide_items_on_pdf %} · hide items{% endif %}</option>
-                        {% endfor %}
-                    </select>
-                    <div class="form-check mb-2">
-                        <input class="form-check-input" type="checkbox" name="hide_items_on_pdf" id="hideItemsOnPdfCheck" value="on">
-                        <label class="form-check-label small" for="hideItemsOnPdfCheck">Hide items</label>
-                    </div>
-                    <p class="small text-muted mb-2">When checked, the quotation PDF shows only the group name and consolidated price on one line (no item breakdown).</p>
-                    <button type="submit" name="action" value="set_pdf_hide" class="btn btn-outline-primary btn-sm group-action-btn">Save PDF setting</button>
-                </form>
-            </div>
-        </div>
-    </div>
-</div>
-{% endif %}
-{% endblock %}
-
-{% block extra_js %}
-{% if can_edit %}
-<script>
-(function () {
-    var selectAll = document.getElementById('itemSelectAll');
-    var modal = document.getElementById('itemGroupModal');
-    var bulkCount = document.getElementById('bulkSelectedCount');
-    var groupForm = document.getElementById('itemGroupForm');
-    var bulkIds = document.getElementById('bulkItemIds');
-
-    function syncBulkIds() {
-        var ids = Array.from(document.querySelectorAll('.item-check:checked')).map(function (cb) { return cb.value; });
-        if (bulkIds) bulkIds.value = ids.join(',');
-        if (bulkCount) bulkCount.textContent = String(ids.length);
-    }
-
-    function needItems() {
-        if (!bulkIds || !bulkIds.value.trim()) {
-            alert('Select one or more items with the checkboxes.');
-            return false;
-        }
-        return true;
-    }
-
-    if (selectAll) {
-        selectAll.addEventListener('change', function () {
-            document.querySelectorAll('.item-check').forEach(function (cb) { cb.checked = selectAll.checked; });
-            syncBulkIds();
-        });
-    }
-    document.querySelectorAll('.item-check').forEach(function (cb) {
-        cb.addEventListener('change', syncBulkIds);
-    });
-    if (modal) {
-        modal.addEventListener('show.bs.modal', syncBulkIds);
-    }
-    if (groupForm) {
-        groupForm.addEventListener('submit', function (e) {
-            var submitter = e.submitter;
-            var action = submitter && submitter.value;
-            syncBulkIds();
-
-            if (action === 'add') {
-                if (!needItems()) { e.preventDefault(); return; }
-                var ms = document.getElementById('addGroupSelect');
-                var newG = (document.getElementById('newGroupsInput') && document.getElementById('newGroupsInput').value.trim()) || '';
-                if (ms && ms.selectedOptions.length === 0 && !newG) {
-                    e.preventDefault();
-                    alert('Pick one or more existing groups (Ctrl/Cmd-click) and/or type new names.');
-                }
-            } else if (action === 'remove') {
-                if (!needItems()) { e.preventDefault(); return; }
-                var sel = document.getElementById('removeGroupSelect');
-                if (!sel || !sel.value) {
-                    e.preventDefault();
-                    alert('Choose which group to remove.');
-                }
-            } else if (action === 'clear') {
-                if (!needItems()) { e.preventDefault(); return; }
-                if (!window.confirm('Remove every group from the selected items?')) e.preventDefault();
-            } else if (action === 'rename') {
-                var sel = groupForm.querySelector('[name="rename_group_id"]');
-                var inp = groupForm.querySelector('[name="rename_new_name"]');
-                if (!sel || !sel.value) {
-                    e.preventDefault();
-                    alert('Choose a group to rename.');
-                    return;
-                }
-                if (!inp || !inp.value.trim()) {
-                    e.preventDefault();
-                    alert('Enter the new name.');
-                }
-            } else if (action === 'set_pdf_hide') {
-                var pdfSel = document.getElementById('pdfSettingsGroupSelect');
-                if (!pdfSel || !pdfSel.value) {
-                    e.preventDefault();
-                    alert('Choose a group.');
-                }
-            }
-        });
-    }
-
-    var pdfSettingsSelect = document.getElementById('pdfSettingsGroupSelect');
-    var hideItemsCheck = document.getElementById('hideItemsOnPdfCheck');
-    if (pdfSettingsSelect && hideItemsCheck) {
-        pdfSettingsSelect.addEventListener('change', function () {
-            var opt = pdfSettingsSelect.selectedOptions[0];
-            hideItemsCheck.checked = opt && opt.dataset.hideItems === '1';
-        });
-    }
-})();
-</script>
-{% endif %}
 {% endblock %}

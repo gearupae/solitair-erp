@@ -37,7 +37,16 @@
 }
 /* Percent widths sum to 100% — keeps table inside card (no overflow-x scroll) */
 #itemsTable .items-col-group {
-    width: 13%;
+    width: 11%;
+}
+#itemsTable .items-col-group-mult {
+    width: 5%;
+}
+#itemsTable .items-col-group-mult .form-control {
+    padding-left: 0.2rem;
+    padding-right: 0.2rem;
+    font-size: 0.75rem;
+    text-align: center;
 }
 #itemsTable .items-col-group .form-control,
 #itemsTable .items-col-group .form-select {
@@ -213,13 +222,19 @@
                     {{ form.prepared_by }}
                 </div>
                 <div class="col-md-4">
-                    <label class="form-label">Project</label>
-                    {{ form.project }}
+                    <label class="form-label" for="{{ form.type_of_occupancy.id_for_label }}">Type of occupancy</label>
+                    {{ form.type_of_occupancy }}
+                    {% if form.type_of_occupancy.errors %}<div class="text-danger small">{{ form.type_of_occupancy.errors|join:", " }}</div>{% endif %}
                 </div>
                 <div class="col-md-4">
-                    <label class="form-label" for="{{ form.scope.id_for_label }}">Scope</label>
-                    {{ form.scope }}
-                    {% if form.scope.errors %}<div class="text-danger small">{{ form.scope.errors|join:", " }}</div>{% endif %}
+                    <label class="form-label" for="{{ form.type_of_work.id_for_label }}">Type of work</label>
+                    {{ form.type_of_work }}
+                    {% if form.type_of_work.errors %}<div class="text-danger small">{{ form.type_of_work.errors|join:", " }}</div>{% endif %}
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="{{ form.scope_of_work.id_for_label }}">Scope of work</label>
+                    {{ form.scope_of_work }}
+                    {% if form.scope_of_work.errors %}<div class="text-danger small">{{ form.scope_of_work.errors|join:", " }}</div>{% endif %}
                 </div>
                 <div class="col-md-4">
                     <label class="form-label">Date <span class="text-danger">*</span></label>
@@ -240,20 +255,29 @@
                     <small class="text-muted d-block">Use % or fixed amount based on type</small>
                 </div>
                 <div class="col-12 mt-1">
-                    <div class="form-check form-switch">
-                        {{ form.show_rates_on_pdf }}
-                        <label class="form-check-label" for="{{ form.show_rates_on_pdf.id_for_label }}">Show rates &amp; line totals on PDF</label>
+                    <div class="row g-3 align-items-center">
+                        <div class="col-md-4">
+                            <div class="form-check form-switch mb-0">
+                                {{ form.show_rates_on_pdf }}
+                                <label class="form-check-label" for="{{ form.show_rates_on_pdf.id_for_label }}">Show rates &amp; line totals on PDF</label>
+                            </div>
+                            {% if form.show_rates_on_pdf.errors %}<div class="text-danger small">{{ form.show_rates_on_pdf.errors|join:", " }}</div>{% endif %}
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-check form-switch mb-0">
+                                {{ form.show_group_totals_on_pdf }}
+                                <label class="form-check-label" for="{{ form.show_group_totals_on_pdf.id_for_label }}">Show group totals on PDF</label>
+                            </div>
+                            {% if form.show_group_totals_on_pdf.errors %}<div class="text-danger small">{{ form.show_group_totals_on_pdf.errors|join:", " }}</div>{% endif %}
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-check form-switch mb-0">
+                                {{ form.show_brand_name_on_pdf }}
+                                <label class="form-check-label" for="{{ form.show_brand_name_on_pdf.id_for_label }}">Show brand name</label>
+                            </div>
+                            {% if form.show_brand_name_on_pdf.errors %}<div class="text-danger small">{{ form.show_brand_name_on_pdf.errors|join:", " }}</div>{% endif %}
+                        </div>
                     </div>
-                    <small class="text-muted d-block ms-1">When off, the printed PDF shows each line as description and quantity only; total VAT and grand total still appear at the bottom.</small>
-                    {% if form.show_rates_on_pdf.errors %}<div class="text-danger small">{{ form.show_rates_on_pdf.errors|join:", " }}</div>{% endif %}
-                </div>
-                <div class="col-12 mt-1">
-                    <div class="form-check form-switch">
-                        {{ form.show_group_totals_on_pdf }}
-                        <label class="form-check-label" for="{{ form.show_group_totals_on_pdf.id_for_label }}">Show group totals on PDF</label>
-                    </div>
-                    <small class="text-muted d-block ms-1">When on, each named line group shows its section heading and a subtotal after its items on the PDF.</small>
-                    {% if form.show_group_totals_on_pdf.errors %}<div class="text-danger small">{{ form.show_group_totals_on_pdf.errors|join:", " }}</div>{% endif %}
                 </div>
             </div>
         </div>
@@ -295,7 +319,8 @@
                 <strong>How each line is calculated:</strong>
                 <strong>Rate</strong> = base per unit + profit — if profit is <strong>%</strong>, rate = base × (1 + %÷100) (e.g. base 10 and 100% → 20/unit).
                 If profit is <strong>Amt</strong>, rate = base + AED <em>per unit</em> (e.g. base 10 + 100 → 110/unit).
-                <strong>Net</strong> = qty × rate (excl. VAT). <strong>Gross</strong> includes VAT from the tax code (not shown per line).
+                <strong>Group ×</strong> multiplies the <strong>Qty</strong> on every line with the same group name (not shown on PDF). <strong>Net</strong> = qty × rate (excl. VAT).
+                <strong>Gross</strong> includes VAT from the tax code (not shown per line).
             </p>
             {{ items_formset.management_form }}
             <div class="line-items-table-wrap">
@@ -303,6 +328,7 @@
                     <thead class="table-light">
                         <tr>
                             <th class="items-col-group" title="Choose a group on the left to load items; edit the PDF section title on the right (screen layout only—does not change inventory).">Group</th>
+                            <th class="items-col-group-mult" title="Multiplied with qty for all lines in this group">Group ×</th>
                             <th class="items-col-inventory">Inventory</th>
                             <th class="items-col-desc">Description</th>
                             <th class="items-col-qty">Qty</th>
@@ -327,6 +353,7 @@
                                 </div>
                                 {{ item_form.sort_order }}
                             </td>
+                            <td class="items-col-group-mult">{{ item_form.group_qty_multiplier }}</td>
                             <td class="items-col-inventory">{{ item_form.inventory_item }}</td>
                             <td class="items-col-desc">{{ item_form.description }}</td>
                             <td class="items-col-qty">{{ item_form.quantity }}</td>
@@ -349,31 +376,31 @@
                     </tbody>
                     <tfoot>
                         <tr>
-                            <td colspan="9" class="text-end fw-medium">Subtotal net (excl. VAT &amp; discount):</td>
+                            <td colspan="10" class="text-end fw-medium">Subtotal net (excl. VAT &amp; discount):</td>
                             <td class="text-end fw-medium" id="subtotal">0.00</td>
                             <td></td>
                             <td></td>
                         </tr>
                         <tr>
-                            <td colspan="9" class="text-end fw-medium">VAT:</td>
+                            <td colspan="10" class="text-end fw-medium">VAT:</td>
                             <td></td>
                             <td class="text-end fw-medium" id="vatTotal">0.00</td>
                             <td></td>
                         </tr>
                         <tr>
-                            <td colspan="9" class="text-end fw-medium">Before discount (incl. VAT):</td>
+                            <td colspan="10" class="text-end fw-medium">Before discount (incl. VAT):</td>
                             <td></td>
                             <td class="text-end fw-medium" id="beforeDiscount">0.00</td>
                             <td></td>
                         </tr>
                         <tr>
-                            <td colspan="9" class="text-end fw-medium text-danger">Discount:</td>
+                            <td colspan="10" class="text-end fw-medium text-danger">Discount:</td>
                             <td></td>
                             <td class="text-end fw-medium text-danger" id="discountDisplay">0.00</td>
                             <td></td>
                         </tr>
                         <tr>
-                            <td colspan="9" class="text-end fw-bold">Total (incl. VAT):</td>
+                            <td colspan="10" class="text-end fw-bold">Total (incl. VAT):</td>
                             <td></td>
                             <td class="text-end fw-bold" id="grandTotal">0.00</td>
                             <td></td>
@@ -384,21 +411,35 @@
         </div>
     </div>
     
+    {% if object %}
     <div class="card mb-4">
         <div class="card-header">
             <h6 class="mb-0 fw-semibold"><i class="fas fa-comment me-2"></i>Client note</h6>
         </div>
         <div class="card-body">
+            <div class="mb-3">
+                <label class="form-label" for="clientNoteTemplateSelect">Template</label>
+                <select id="clientNoteTemplateSelect" class="form-select">
+                    <option value="">— Select template —</option>
+                </select>
+                <small class="text-muted">Choose a template from <a href="{% url 'settings:company' %}">Company Settings</a>, or type your own text below.</small>
+            </div>
             {{ form.client_note }}
-            <small class="text-muted">Defaults come from <a href="{% url 'settings:company' %}">Company Settings</a>; edit per estimate as needed.</small>
         </div>
     </div>
+    {% endif %}
 
     <div class="card mb-4">
         <div class="card-header">
             <h6 class="mb-0 fw-semibold"><i class="fas fa-file-contract me-2"></i>Terms &amp; conditions</h6>
         </div>
         <div class="card-body">
+            <div class="mb-3">
+                <label class="form-label" for="termsTemplateSelect">Template</label>
+                <select id="termsTemplateSelect" class="form-select">
+                    <option value="">— Select template —</option>
+                </select>
+            </div>
             {{ form.terms_and_conditions }}
         </div>
     </div>
@@ -413,6 +454,11 @@
                 {{ form.authorized_signature }}
                 {% if object.authorized_signature %}
                 <div class="mt-2"><img src="{{ object.authorized_signature.url }}" alt="" class="img-thumbnail" style="max-height:80px"></div>
+                {% elif company_default_authorized_signature_url %}
+                <div class="mt-2">
+                    <img src="{{ company_default_authorized_signature_url }}" alt="" class="img-thumbnail" style="max-height:80px">
+                    <div class="small text-muted mt-1">Default from <a href="{% url 'settings:company' %}">Company Settings</a> — applied when you save unless you upload a different file.</div>
+                </div>
                 {% endif %}
             </div>
             <div class="col-md-6">
@@ -420,6 +466,11 @@
                 {{ form.customer_signature }}
                 {% if object.customer_signature %}
                 <div class="mt-2"><img src="{{ object.customer_signature.url }}" alt="" class="img-thumbnail" style="max-height:80px"></div>
+                {% elif company_default_customer_signature_url %}
+                <div class="mt-2">
+                    <img src="{{ company_default_customer_signature_url }}" alt="" class="img-thumbnail" style="max-height:80px">
+                    <div class="small text-muted mt-1">Default from <a href="{% url 'settings:company' %}">Company Settings</a> — applied when you save unless you upload a different file.</div>
+                </div>
                 {% endif %}
             </div>
         </div>
@@ -444,6 +495,8 @@ const taxCodes = [
 ];
 const inventoryItems = {{ inventory_items_json|safe }};
 const inventoryGroups = {{ inventory_groups_json|safe }};
+const estimateClientNoteTemplates = {{ estimate_client_note_templates_json|safe }};
+const estimateTermsTemplates = {{ estimate_terms_templates_json|safe }};
 const defaultTaxCodeId = {% if default_tax_code %}{{ default_tax_code.id }}{% else %}null{% endif %};
 const profitChoices = [
     {v: 'none', l: 'None'},
@@ -502,39 +555,57 @@ function getBasePriceBoundsMessage(meta, price) {
     return '';
 }
 
-function validateRowBasePrice(row, showToast) {
+function clearSellingRateFieldValidity(el) {
+    if (!el) return;
+    el.setCustomValidity('');
+    el.classList.remove('is-invalid');
+}
+
+function getRowRateHighlightField(row) {
+    const pt = row.querySelector('.item-profit-type')?.value || 'none';
+    const pval = parseFloat(row.querySelector('.item-profit-value')?.value);
+    if (pt !== 'none' && !Number.isNaN(pval) && pval > 0) {
+        return row.querySelector('.item-profit-value');
+    }
+    return row.querySelector('.item-base-price');
+}
+
+/** Validate computed selling rate (base + profit) against inventory min/max bounds. */
+function validateRowSellingRate(row, showToast, triggerEl) {
     const invSel = row.querySelector('.item-inventory');
     const bp = row.querySelector('.item-base-price');
-    if (!invSel || !bp || row.style.display === 'none') return true;
+    const pv = row.querySelector('.item-profit-value');
+    if (!invSel || row.style.display === 'none') return true;
+
+    clearSellingRateFieldValidity(bp);
+    clearSellingRateFieldValidity(pv);
+
     const invId = invSel.value;
-    if (!invId) {
-        bp.setCustomValidity('');
-        bp.classList.remove('is-invalid');
-        return true;
-    }
-    const price = parseFloat(bp.value);
-    if (Number.isNaN(price)) {
-        bp.setCustomValidity('');
-        bp.classList.remove('is-invalid');
-        return true;
-    }
+    if (!invId) return true;
+
+    const rate = computeRate(row);
     const meta = getInventoryMeta(invId);
-    const msg = getBasePriceBoundsMessage(meta, price);
+    const msg = getBasePriceBoundsMessage(meta, rate);
     if (msg) {
-        bp.setCustomValidity(msg);
-        bp.classList.add('is-invalid');
+        const highlight = triggerEl || getRowRateHighlightField(row);
+        if (highlight) {
+            highlight.setCustomValidity(msg);
+            highlight.classList.add('is-invalid');
+        }
         if (showToast !== false && window.toastr) toastr.error(msg);
         return false;
     }
-    bp.setCustomValidity('');
-    bp.classList.remove('is-invalid');
     return true;
 }
 
-function validateAllBasePrices(showToast) {
+function validateRowBasePrice(row, showToast) {
+    return validateRowSellingRate(row, showToast, row.querySelector('.item-base-price'));
+}
+
+function validateAllSellingRates(showToast) {
     let ok = true;
     document.querySelectorAll('#itemsBody .item-row').forEach(row => {
-        if (!validateRowBasePrice(row, showToast)) ok = false;
+        if (!validateRowSellingRate(row, showToast)) ok = false;
     });
     return ok;
 }
@@ -616,6 +687,184 @@ function setInventorySelectValue(selectEl, invId, triggerChange) {
     }
 }
 
+function bindGroupQtyMultBehavior(input) {
+    if (!input || input.dataset.groupQtyMultBound) return;
+    input.dataset.groupQtyMultBound = '1';
+    input.step = '1';
+    input.min = '1';
+    input.addEventListener('change', () => {
+        const n = parseFloat(input.value);
+        if (input.value === '' || Number.isNaN(n) || n < 1) input.value = '1';
+    });
+}
+
+function initGroupQtyMultFields(root) {
+    (root || document).querySelectorAll('.item-group-qty-mult').forEach(bindGroupQtyMultBehavior);
+}
+
+function normalizeGroupName(name) {
+    return (name || '').trim();
+}
+
+function getGroupQtyMultiplier(row) {
+    const raw = parseFloat(row.querySelector('.item-group-qty-mult')?.value);
+    if (Number.isNaN(raw) || raw < 1) return 1;
+    return raw;
+}
+
+function getBaseQty(row) {
+    const qtyInput = row.querySelector('.item-qty');
+    if (!qtyInput) return 1;
+    if (qtyInput.dataset.baseQty != null && qtyInput.dataset.baseQty !== '') {
+        const base = parseFloat(qtyInput.dataset.baseQty);
+        if (!Number.isNaN(base) && base > 0) return base;
+    }
+    const qty = parseFloat(qtyInput.value) || 1;
+    const mult = getGroupQtyMultiplier(row);
+    const base = qty / mult;
+    qtyInput.dataset.baseQty = String(base);
+    return base;
+}
+
+function setBaseQty(row, base) {
+    const qtyInput = row.querySelector('.item-qty');
+    if (!qtyInput) return;
+    const n = parseFloat(base);
+    qtyInput.dataset.baseQty = String(!Number.isNaN(n) && n > 0 ? n : 1);
+}
+
+function initBaseQtyForRow(row) {
+    if (!row) return;
+    const qtyInput = row.querySelector('.item-qty');
+    if (!qtyInput) return;
+    const qty = parseFloat(qtyInput.value) || 1;
+    const mult = getGroupQtyMultiplier(row);
+    qtyInput.dataset.baseQty = String(qty / mult);
+}
+
+function initAllBaseQty() {
+    document.querySelectorAll('#itemsBody .item-row').forEach(row => {
+        if (row.style.display === 'none') return;
+        initBaseQtyForRow(row);
+    });
+}
+
+function setRowQtyFromBaseAndMult(row, mult) {
+    const qtyInput = row.querySelector('.item-qty');
+    if (!qtyInput) return;
+    const base = getBaseQty(row);
+    const m = Number.isNaN(parseFloat(mult)) || parseFloat(mult) < 1 ? 1 : parseFloat(mult);
+    const nextQty = Math.max(1, Math.round(base * m));
+    qtyInput.value = String(nextQty);
+}
+
+function applyGroupMultiplier(groupName, sourceRow) {
+    if (!sourceRow) return;
+    const mult = getGroupQtyMultiplier(sourceRow);
+    if (!groupName) {
+        setRowQtyFromBaseAndMult(sourceRow, mult);
+        calculateRowTotal(sourceRow.querySelector('.item-qty'));
+        return;
+    }
+    document.querySelectorAll('#itemsBody .item-row').forEach(row => {
+        if (row.style.display === 'none') return;
+        if (getRowGroupName(row) !== groupName) return;
+        setRowQtyFromBaseAndMult(row, mult);
+    });
+    recalculateRowsForGroup(groupName);
+}
+
+function updateBaseQtyFromManualEdit(row) {
+    const qtyInput = row.querySelector('.item-qty');
+    if (!qtyInput) return;
+    const qty = parseFloat(qtyInput.value) || 1;
+    const mult = getGroupQtyMultiplier(row);
+    setBaseQty(row, qty / mult);
+}
+
+function findGroupQtyMultiplierForName(groupName) {
+    const name = normalizeGroupName(groupName);
+    if (!name) return '1';
+    for (const row of document.querySelectorAll('#itemsBody .item-row')) {
+        if (row.style.display === 'none') continue;
+        if (normalizeGroupName(row.querySelector('.item-group-name')?.value) !== name) continue;
+        const mult = row.querySelector('.item-group-qty-mult')?.value;
+        if (mult != null && mult !== '') return mult;
+    }
+    return '1';
+}
+
+function getRowGroupName(row) {
+    return normalizeGroupName(row?.querySelector('.item-group-name')?.value);
+}
+
+function recalculateRowsForGroup(groupName, fallbackRow) {
+    if (!groupName) {
+        const q = fallbackRow?.querySelector('.item-qty');
+        if (q) calculateRowTotal(q);
+        return;
+    }
+    document.querySelectorAll('#itemsBody .item-row').forEach(row => {
+        if (row.style.display === 'none') return;
+        if (getRowGroupName(row) !== groupName) return;
+        const q = row.querySelector('.item-qty');
+        if (q) calculateRowTotal(q);
+    });
+}
+
+/** One editable Group × per named group; other rows show synced value (hidden input still posts). */
+function refreshGroupQtyMultDisplay() {
+    const seen = new Set();
+    document.querySelectorAll('#itemsBody .item-row').forEach(row => {
+        if (row.style.display === 'none') return;
+        const cell = row.querySelector('.items-col-group-mult');
+        const input = row.querySelector('.item-group-qty-mult');
+        if (!cell || !input) return;
+        let label = cell.querySelector('.group-qty-mult-label');
+        const groupName = getRowGroupName(row);
+        if (groupName && seen.has(groupName)) {
+            input.classList.add('d-none');
+            if (!label) {
+                label = document.createElement('span');
+                label.className = 'group-qty-mult-label text-muted small';
+                cell.appendChild(label);
+            }
+            label.textContent = '×' + (input.value || '1');
+            label.classList.remove('d-none');
+        } else {
+            input.classList.remove('d-none');
+            if (label) label.classList.add('d-none');
+            if (groupName) seen.add(groupName);
+        }
+    });
+}
+
+function syncGroupQtyMultiplier(changedInput) {
+    const row = changedInput?.closest('tr.item-row');
+    if (!row) return;
+    const groupName = getRowGroupName(row);
+    let mult = changedInput.value;
+    if (mult === '' || mult == null) mult = '1';
+    if (!groupName) return;
+    document.querySelectorAll('#itemsBody .item-row').forEach(r => {
+        if (r.style.display === 'none') return;
+        if (getRowGroupName(r) !== groupName) return;
+        const inp = r.querySelector('.item-group-qty-mult');
+        if (inp && inp !== changedInput) inp.value = mult;
+    });
+}
+
+function inheritGroupQtyMultiplier(row) {
+    if (!row) return;
+    const groupName = getRowGroupName(row);
+    const multInput = row.querySelector('.item-group-qty-mult');
+    if (!multInput) return;
+    multInput.value = findGroupQtyMultiplierForName(groupName);
+    syncGroupQtyMultiplier(multInput);
+    refreshGroupQtyMultDisplay();
+    applyGroupMultiplier(groupName, row);
+}
+
 function bindQtyInputBehavior(input) {
     if (!input || input.dataset.qtyStepBound) return;
     input.dataset.qtyStepBound = '1';
@@ -628,7 +877,11 @@ function bindQtyInputBehavior(input) {
         input.value = String(n);
     }
     input.addEventListener('input', () => input.setCustomValidity(''));
-    input.addEventListener('change', () => input.setCustomValidity(''));
+    input.addEventListener('change', () => {
+        input.setCustomValidity('');
+        const row = input.closest('tr.item-row');
+        if (row) updateBaseQtyFromManualEdit(row);
+    });
 }
 
 function initQtyFields(root) {
@@ -663,9 +916,12 @@ function getVatRatePercent(taxSel) {
     return tc ? parseFloat(tc.rate) || 0 : 0;
 }
 
-function populateRowFromInventory(row, invId, groupName) {
+function populateRowFromInventory(row, invId, groupName, defaultQuantity) {
     const meta = getInventoryMeta(invId);
     if (!meta || !row) return;
+    const resolvedDefaultQty = defaultQuantity != null && defaultQuantity !== undefined
+        ? defaultQuantity
+        : meta.default_quantity;
     if (groupName != null && groupName !== undefined) {
         const g = row.querySelector('.item-group-name');
         if (g) g.value = groupName;
@@ -677,7 +933,19 @@ function populateRowFromInventory(row, invId, groupName) {
     const tc = row.querySelector('.item-tax-code');
     if (tc) tc.value = meta.tax_code_id || defaultTaxCodeId || '';
     computeRate(row);
-    calculateRowTotal(row.querySelector('.item-qty'));
+    const qtyInput = row.querySelector('.item-qty');
+    if (qtyInput) {
+        const dq = resolvedDefaultQty != null ? parseFloat(resolvedDefaultQty) : NaN;
+        if (!Number.isNaN(dq) && dq >= 1) {
+            qtyInput.value = String(Math.max(1, Math.round(dq)));
+        }
+        setBaseQty(row, parseFloat(qtyInput.value) || 1);
+    }
+    if (groupName != null && groupName !== undefined) {
+        inheritGroupQtyMultiplier(row);
+    } else {
+        calculateRowTotal(qtyInput);
+    }
     validateRowBasePrice(row, true);
 }
 
@@ -689,14 +957,14 @@ function onInventoryChange(sel) {
     populateRowFromInventory(row, id);
 }
 
-function applyInventoryItemToRow(row, invId, groupName) {
+function applyInventoryItemToRow(row, invId, groupName, defaultQuantity) {
     const sel = row.querySelector('.item-inventory');
     if (sel) {
         suppressInventoryChange = true;
         syncInventorySelectUi(sel, invId);
         suppressInventoryChange = false;
     }
-    populateRowFromInventory(row, invId, groupName);
+    populateRowFromInventory(row, invId, groupName, defaultQuantity);
 }
 
 function fillInventoryGroupBulkSelect(sel) {
@@ -738,8 +1006,17 @@ function addLinesFromInventoryGroupSelect(sel) {
             addItemRow();
             targetRow = tbody.lastElementChild;
         }
-        applyInventoryItemToRow(targetRow, it.id, g.name);
+        applyInventoryItemToRow(targetRow, it.id, g.name, it.default_quantity);
     });
+    const mult = findGroupQtyMultiplierForName(g.name);
+    document.querySelectorAll('#itemsBody .item-row').forEach(r => {
+        if (r.style.display === 'none') return;
+        if (getRowGroupName(r) !== normalizeGroupName(g.name)) return;
+        const inp = r.querySelector('.item-group-qty-mult');
+        if (inp) inp.value = mult;
+    });
+    refreshGroupQtyMultDisplay();
+    applyGroupMultiplier(normalizeGroupName(g.name), row);
 }
 
 function addItemRow() {
@@ -755,6 +1032,7 @@ function addItemRow() {
             </div>
             <input type="hidden" name="items-${formCount}-sort_order" value="${formCount}" id="id_items-${formCount}-sort_order">
         </td>
+        <td class="items-col-group-mult"><input type="number" name="items-${formCount}-group_qty_multiplier" value="1" step="1" min="1" class="form-control form-control-sm item-group-qty-mult" title="Multiplied with qty for every line in this group"></td>
         <td class="items-col-inventory"><select name="items-${formCount}-inventory_item" class="form-select form-select-sm item-inventory">${getInventoryOptions()}</select></td>
         <td class="items-col-desc"><input type="text" name="items-${formCount}-description" class="form-control form-control-sm"></td>
         <td class="items-col-qty"><input type="number" name="items-${formCount}-quantity" value="1" step="1" min="1" class="form-control form-control-sm item-qty"></td>
@@ -776,6 +1054,9 @@ function addItemRow() {
     initInventorySelect2(tr.querySelector('.item-inventory'));
     syncInventoryFieldHeight(tr);
     bindQtyInputBehavior(tr.querySelector('.item-qty'));
+    bindGroupQtyMultBehavior(tr.querySelector('.item-group-qty-mult'));
+    setBaseQty(tr, 1);
+    refreshGroupQtyMultDisplay();
     formCount++;
     document.getElementById('id_items-TOTAL_FORMS').value = formCount;
     calculateRowTotal(tr.querySelector('.item-qty'));
@@ -790,6 +1071,7 @@ function removeItemRow(btn) {
     } else {
         row.remove();
     }
+    refreshGroupQtyMultDisplay();
     calculateTotals();
 }
 
@@ -845,13 +1127,30 @@ function bindLineItemsTableEvents() {
 
     tbody.addEventListener('input', function(e) {
         const t = e.target;
-        if (!t.matches('.item-qty, .item-base-price, .item-profit-value')) return;
         const row = t.closest('tr.item-row');
+
+        if (t.matches('.item-group-qty-mult')) {
+            if (!row) return;
+            const n = parseFloat(t.value);
+            if (t.value !== '' && !Number.isNaN(n) && n >= 1) {
+                syncGroupQtyMultiplier(t);
+                refreshGroupQtyMultDisplay();
+                applyGroupMultiplier(getRowGroupName(row), row);
+            }
+            return;
+        }
+        if (t.matches('.item-group-name')) {
+            if (!row) return;
+            inheritGroupQtyMultiplier(row);
+            return;
+        }
+        if (!t.matches('.item-qty, .item-base-price, .item-profit-value')) return;
         if (!row) return;
+        if (t.matches('.item-qty')) updateBaseQtyFromManualEdit(row);
         const q = row.querySelector('.item-qty');
         if (q) calculateRowTotal(q);
-        if (t.matches('.item-base-price')) {
-            validateRowBasePrice(row, true);
+        if (t.matches('.item-base-price, .item-profit-value')) {
+            validateRowSellingRate(row, true, t);
         }
     });
 
@@ -861,14 +1160,39 @@ function bindLineItemsTableEvents() {
             addLinesFromInventoryGroupSelect(t);
             return;
         }
-        if (t.matches('.item-base-price')) {
+        if (t.matches('.item-base-price, .item-profit-value')) {
             const row = t.closest('tr.item-row');
-            if (row) validateRowBasePrice(row, true);
+            if (row) validateRowSellingRate(row, true, t);
             return;
         }
-        if (!t.matches('.item-qty, .item-profit-type, .item-tax-code')) return;
+        if (t.matches('.item-group-qty-mult')) {
+            const row = t.closest('tr.item-row');
+            if (!row) return;
+            const n = parseFloat(t.value);
+            if (t.value === '' || Number.isNaN(n) || n < 1) t.value = '1';
+            syncGroupQtyMultiplier(t);
+            refreshGroupQtyMultDisplay();
+            applyGroupMultiplier(getRowGroupName(row), row);
+            return;
+        }
+        if (t.matches('.item-group-name')) {
+            const row = t.closest('tr.item-row');
+            if (!row) return;
+            inheritGroupQtyMultiplier(row);
+            return;
+        }
+        if (t.matches('.item-profit-type')) {
+            const row = t.closest('tr.item-row');
+            if (!row) return;
+            const q = row.querySelector('.item-qty');
+            if (q) calculateRowTotal(q);
+            validateRowSellingRate(row, true, row.querySelector('.item-profit-value'));
+            return;
+        }
+        if (!t.matches('.item-qty, .item-tax-code')) return;
         const row = t.closest('tr.item-row');
         if (!row) return;
+        if (t.matches('.item-qty')) updateBaseQtyFromManualEdit(row);
         const q = row.querySelector('.item-qty');
         if (q) calculateRowTotal(q);
     });
@@ -891,11 +1215,56 @@ function applyDefaultTaxToRows() {
     });
 }
 
+function setupEstimateTextTemplateSelect(selectId, templates, textareaName, autoSelectDefault) {
+    const select = document.getElementById(selectId);
+    const textarea = document.querySelector(`[name="${textareaName}"]`);
+    if (!select || !textarea) return;
+
+    const byId = {};
+    templates.forEach(t => {
+        byId[String(t.id)] = t;
+        const opt = document.createElement('option');
+        opt.value = String(t.id);
+        opt.textContent = t.name + (t.is_default ? ' (default)' : '');
+        select.appendChild(opt);
+    });
+
+    select.addEventListener('change', function() {
+        const template = byId[select.value];
+        if (!template) return;
+        textarea.value = template.body || '';
+    });
+
+    if (autoSelectDefault) {
+        const defaultTemplate = templates.find(t => t.is_default) || templates[0];
+        if (defaultTemplate) {
+            select.value = String(defaultTemplate.id);
+        }
+    }
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     bindLineItemsTableEvents();
     setupEstimateItemsCsvLabel();
     applyDefaultTaxToRows();
+    if (document.getElementById('clientNoteTemplateSelect')) {
+        setupEstimateTextTemplateSelect(
+            'clientNoteTemplateSelect',
+            estimateClientNoteTemplates,
+            'client_note',
+            false
+        );
+    }
+    setupEstimateTextTemplateSelect(
+        'termsTemplateSelect',
+        estimateTermsTemplates,
+        'terms_and_conditions',
+        {% if not object %}true{% else %}false{% endif %}
+    );
     initQtyFields(document.getElementById('itemsBody'));
+    initGroupQtyMultFields(document.getElementById('itemsBody'));
+    initAllBaseQty();
+    refreshGroupQtyMultDisplay();
     document.querySelectorAll('.estimate-add-from-group').forEach(fillInventoryGroupBulkSelect);
     document.querySelectorAll('#itemsBody .item-row').forEach(row => {
         const q = row.querySelector('.item-qty');
@@ -904,9 +1273,11 @@ document.addEventListener('DOMContentLoaded', function() {
     document.querySelector('[name="discount_type"]')?.addEventListener('change', calculateTotals);
     document.querySelector('[name="discount_value"]')?.addEventListener('input', calculateTotals);
     document.getElementById('estimateForm')?.addEventListener('submit', function(e) {
-        if (!validateAllBasePrices(true)) {
+        if (!validateAllSellingRates(true)) {
             e.preventDefault();
-            const firstInvalid = document.querySelector('#itemsBody .item-base-price.is-invalid');
+            const firstInvalid = document.querySelector(
+                '#itemsBody .item-base-price.is-invalid, #itemsBody .item-profit-value.is-invalid'
+            );
             firstInvalid?.focus();
             firstInvalid?.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }

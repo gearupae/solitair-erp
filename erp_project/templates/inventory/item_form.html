@@ -25,6 +25,12 @@
         margin-bottom: 0;
         cursor: pointer;
     }
+    .selling-bound-type-toggle .btn {
+        min-width: 5.5rem;
+    }
+    .selling-bound-effective {
+        min-height: 1.25rem;
+    }
 </style>
 {% endblock %}
 
@@ -93,13 +99,35 @@
                 </div>
                 <div class="col-md-3">
                     <label class="form-label">Minimum Selling Price</label>
-                    {{ form.minimum_selling_price }}
-                    <small class="text-muted">Lowest allowed sale price</small>
+                    <div class="btn-group btn-group-sm w-100 selling-bound-type-toggle mb-2" role="group" aria-label="Minimum selling price type">
+                        {% for radio in form.minimum_selling_price_type %}
+                        {{ radio.tag }}
+                        <label class="btn btn-outline-secondary" for="{{ radio.id_for_label }}">{{ radio.choice_label }}</label>
+                        {% endfor %}
+                    </div>
+                    <div class="input-group">
+                        <span class="input-group-text selling-bound-suffix" data-bound="min">AED</span>
+                        {{ form.minimum_selling_price }}
+                    </div>
+                    <small class="text-muted d-block mt-1">Lowest allowed sale price on quotes</small>
+                    <small class="text-muted d-block selling-bound-effective" data-bound="min"></small>
+                    {% if form.minimum_selling_price.errors %}<div class="text-danger small">{{ form.minimum_selling_price.errors|join:", " }}</div>{% endif %}
                 </div>
                 <div class="col-md-3">
                     <label class="form-label">Maximum Selling Price</label>
-                    {{ form.maximum_selling_price }}
-                    <small class="text-muted">Leave 0 for no cap</small>
+                    <div class="btn-group btn-group-sm w-100 selling-bound-type-toggle mb-2" role="group" aria-label="Maximum selling price type">
+                        {% for radio in form.maximum_selling_price_type %}
+                        {{ radio.tag }}
+                        <label class="btn btn-outline-secondary" for="{{ radio.id_for_label }}">{{ radio.choice_label }}</label>
+                        {% endfor %}
+                    </div>
+                    <div class="input-group">
+                        <span class="input-group-text selling-bound-suffix" data-bound="max">AED</span>
+                        {{ form.maximum_selling_price }}
+                    </div>
+                    <small class="text-muted d-block mt-1">Leave 0 for no cap</small>
+                    <small class="text-muted d-block selling-bound-effective" data-bound="max"></small>
+                    {% if form.maximum_selling_price.errors %}<div class="text-danger small">{{ form.maximum_selling_price.errors|join:", " }}</div>{% endif %}
                 </div>
                 <div class="col-md-3">
                     <label class="form-label">Tax Code</label>
@@ -308,6 +336,68 @@
 {% endblock %}
 
 {% block extra_js %}
+<script>
+(function () {
+    function parseNum(value) {
+        const n = parseFloat(String(value || '').replace(',', '.'));
+        return Number.isFinite(n) ? n : 0;
+    }
+
+    function getBoundType(prefix) {
+        const checked = document.querySelector(`input[name="${prefix}_selling_price_type"]:checked`);
+        return checked ? checked.value : 'amount';
+    }
+
+    function syncSellingBoundUi(boundKey, prefix) {
+        const type = getBoundType(prefix);
+        const suffix = document.querySelector(`.selling-bound-suffix[data-bound="${boundKey}"]`);
+        const valueInput = document.getElementById(`id_${prefix}_selling_price`);
+        const effectiveEl = document.querySelector(`.selling-bound-effective[data-bound="${boundKey}"]`);
+        const sellingPrice = parseNum(document.getElementById('id_selling_price')?.value);
+        const rawValue = parseNum(valueInput?.value);
+
+        if (suffix) suffix.textContent = type === 'percent' ? '%' : 'AED';
+        if (valueInput) {
+            valueInput.placeholder = type === 'percent' ? 'e.g. 80' : '0.00';
+        }
+
+        document.querySelectorAll(`input[name="${prefix}_selling_price_type"]`).forEach(radio => {
+            const label = document.querySelector(`label[for="${radio.id}"]`);
+            if (label) {
+                label.classList.toggle('active', radio.checked);
+                label.classList.toggle('btn-primary', radio.checked);
+                label.classList.toggle('btn-outline-secondary', !radio.checked);
+            }
+        });
+
+        if (!effectiveEl) return;
+        if (type !== 'percent' || rawValue <= 0) {
+            effectiveEl.textContent = '';
+            return;
+        }
+        if (sellingPrice <= 0) {
+            effectiveEl.textContent = 'Enter selling price to see the AED equivalent.';
+            return;
+        }
+        const effective = (sellingPrice * rawValue / 100).toFixed(2);
+        effectiveEl.textContent = `= AED ${effective} (${rawValue}% of selling price)`;
+    }
+
+    function syncAllSellingBounds() {
+        syncSellingBoundUi('min', 'minimum');
+        syncSellingBoundUi('max', 'maximum');
+    }
+
+    document.querySelectorAll('input[name="minimum_selling_price_type"], input[name="maximum_selling_price_type"]').forEach(el => {
+        el.classList.add('btn-check');
+        el.addEventListener('change', syncAllSellingBounds);
+    });
+    document.getElementById('id_selling_price')?.addEventListener('input', syncAllSellingBounds);
+    document.getElementById('id_minimum_selling_price')?.addEventListener('input', () => syncSellingBoundUi('min', 'minimum'));
+    document.getElementById('id_maximum_selling_price')?.addEventListener('input', () => syncSellingBoundUi('max', 'maximum'));
+    syncAllSellingBounds();
+})();
+</script>
 <script>
 (function () {
     function updateVatRateDisplay() {

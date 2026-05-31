@@ -145,6 +145,7 @@
         .status-sent { border-color: rgba(125, 211, 252, 0.45); }
         .status-approved { border-color: rgba(129, 140, 248, 0.55); color: #c7d2fe; }
         .status-rejected { border-color: rgba(251, 191, 36, 0.5); color: #fde68a; }
+        .status-under_negotiation { border-color: rgba(34, 211, 238, 0.55); color: #a5f3fc; }
         .status-quotation_won { border-color: rgba(74, 222, 128, 0.65); color: #bbf7d0; }
         .status-quotation_lost { border-color: rgba(248, 113, 113, 0.65); color: #fecaca; }
 
@@ -523,7 +524,24 @@
                         <span class="addr-to-detail-value">{{ estimate.project.name }}</span>
                     </div>
                     {% endif %}
-                    {% if estimate.scope %}
+                    {% if estimate.type_of_occupancy %}
+                    <div class="addr-to-detail-row">
+                        <span class="addr-to-detail-label">Type of occupancy</span>
+                        <span class="addr-to-detail-value">{{ estimate.get_type_of_occupancy_display }}</span>
+                    </div>
+                    {% endif %}
+                    {% if estimate.type_of_work %}
+                    <div class="addr-to-detail-row">
+                        <span class="addr-to-detail-label">Type of work</span>
+                        <span class="addr-to-detail-value">{{ estimate.get_type_of_work_display }}</span>
+                    </div>
+                    {% endif %}
+                    {% if estimate.scope_of_work %}
+                    <div class="addr-to-detail-row">
+                        <span class="addr-to-detail-label">Scope of work</span>
+                        <span class="addr-to-detail-value">{{ estimate.get_scope_of_work_display }}</span>
+                    </div>
+                    {% elif estimate.scope %}
                     <div class="addr-to-detail-row">
                         <span class="addr-to-detail-label">Scope</span>
                         <span class="addr-to-detail-value">{{ estimate.scope_display_labels|join:", " }}</span>
@@ -614,7 +632,7 @@
                 {% for row in group.items %}
                 <tr>
                     <td class="item-number">{{ row.index }}</td>
-                    <td class="item-description">{{ row.item.description }}{% if row.item.inventory_item %} <span style="color:#737373;">({{ row.item.inventory_item.item_code }})</span>{% endif %}</td>
+                    <td class="item-description">{{ row.item.description }}{% if estimate.show_brand_name_on_pdf and row.item.inventory_item.brand %} <span style="color:#525252;">— {{ row.item.inventory_item.brand }}</span>{% endif %}{% if row.item.inventory_item %} <span style="color:#737373;">({{ row.item.inventory_item.item_code }})</span>{% endif %}</td>
                     <td class="text-center">{{ row.item.quantity|floatformat:2 }}</td>
                     <td class="text-right">{{ row.item.rate|floatformat:2 }}</td>
                     <td class="text-right">{{ row.item.total|add:row.item.vat_amount|floatformat:2 }}</td>
@@ -673,7 +691,7 @@
                 {% for row in group.items %}
                 <tr>
                     <td class="item-number">{{ row.index }}</td>
-                    <td class="item-description">{{ row.item.description }}{% if row.item.inventory_item %} <span style="color:#737373;">({{ row.item.inventory_item.item_code }})</span>{% endif %}</td>
+                    <td class="item-description">{{ row.item.description }}{% if estimate.show_brand_name_on_pdf and row.item.inventory_item.brand %} <span style="color:#525252;">— {{ row.item.inventory_item.brand }}</span>{% endif %}{% if row.item.inventory_item %} <span style="color:#737373;">({{ row.item.inventory_item.item_code }})</span>{% endif %}</td>
                     <td class="text-center">{{ row.item.quantity|floatformat:2 }}</td>
                 </tr>
                 {% endfor %}

@@ -502,9 +502,20 @@ class ProjectDetailView(PermissionRequiredMixin, DetailView):
             'assigned_to', 'assigned_to__employee_profile'
         )
         item_lines = list(self.object.item_lines.all())
+        from apps.inventory.models import Item
+
         for line in item_lines:
             if line.inventory_item_id:
                 item = line.inventory_item
+                normalized_qty = Item.normalize_quantity(item, line.quantity)
+                if normalized_qty != line.quantity:
+                    rate = line.rate or line.unit_price or Decimal('0')
+                    ProjectItemLine.objects.filter(pk=line.pk).update(
+                        quantity=normalized_qty,
+                        line_net=(normalized_qty * rate).quantize(Decimal('0.01')),
+                    )
+                    line.quantity = normalized_qty
+                    line.line_net = (normalized_qty * rate).quantize(Decimal('0.01'))
                 delivered = project_item_delivered_qty(self.object, item)
                 remaining = project_item_remaining_qty(self.object, item) or Decimal('0')
                 returnable = project_item_returnable_qty(self.object, item)
@@ -514,6 +525,7 @@ class ProjectDetailView(PermissionRequiredMixin, DetailView):
                 line.max_deliver_qty = min(remaining, line.quantity)
                 line.max_return_qty = min(returnable, line.quantity)
                 line.track_by_serial = item.track_by_serial
+                line.requires_whole_quantity = item.requires_whole_quantity()
             else:
                 line.delivered_qty = None
                 line.remaining_qty = None
@@ -521,6 +533,7 @@ class ProjectDetailView(PermissionRequiredMixin, DetailView):
                 line.max_deliver_qty = None
                 line.max_return_qty = None
                 line.track_by_serial = False
+                line.requires_whole_quantity = False
         context['project_item_lines'] = item_lines
         if 'task_form' not in context:
             context['task_form'] = ProjectTaskCreateForm()
