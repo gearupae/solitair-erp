@@ -78,7 +78,7 @@ class Customer(BaseModel):
     ]
     
     customer_number = models.CharField(max_length=50, unique=True, editable=False)
-    name = models.CharField(max_length=200)
+    name = models.CharField(max_length=200, blank=True, default='')
     email = models.EmailField(blank=True)
     phone = models.CharField(max_length=20, blank=True)
     company = models.CharField(max_length=200, blank=True)
@@ -160,7 +160,8 @@ class Customer(BaseModel):
         verbose_name_plural = 'Customers'
     
     def __str__(self):
-        return f"{self.customer_number} - {self.name}"
+        label = self.display_name or self.customer_number
+        return f"{self.customer_number} - {label}"
     
     def save(self, *args, **kwargs):
         is_new = self._state.adding
@@ -189,10 +190,11 @@ class Customer(BaseModel):
     @property
     def public_upload_option_label(self):
         """Number + contact name (+ company when different) for public pickers."""
-        base = f'{self.customer_number} — {self.name}'
+        primary = (self.name or self.company or '').strip()
+        base = f'{self.customer_number} — {primary}'
         company = (self.company or '').strip()
         name = (self.name or '').strip()
-        if company and company.casefold() != name.casefold():
+        if company and name and company.casefold() != name.casefold():
             return f'{base} · {company}'
         return base
 

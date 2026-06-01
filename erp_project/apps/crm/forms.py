@@ -43,12 +43,15 @@ class CustomerForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
 
         qs = projects_queryset if projects_queryset is not None else get_crm_project_queryset()
-        self.fields['primary_project'].queryset = qs
-        self.fields['primary_project'].required = False
-        self.fields['primary_project'].empty_label = '— Select project —'
-        self.fields['primary_project'].label_from_instance = project_choice_label
-        self.fields['primary_project'].widget.attrs['class'] = 'form-select'
-        self.fields['primary_project'].label = 'Project'
+        if self.instance.pk:
+            self.fields.pop('primary_project', None)
+        else:
+            self.fields['primary_project'].queryset = qs
+            self.fields['primary_project'].required = False
+            self.fields['primary_project'].empty_label = '— Select project —'
+            self.fields['primary_project'].label_from_instance = project_choice_label
+            self.fields['primary_project'].widget.attrs['class'] = 'form-select'
+            self.fields['primary_project'].label = 'Project'
         self.fields['scope'].label = 'Scope'
         self.fields['business_segment'].required = True
         self.fields['business_segment'].widget.attrs['class'] = 'form-select'
@@ -64,6 +67,8 @@ class CustomerForm(forms.ModelForm):
         self.fields['assigned_salesperson'].label_from_instance = salesperson_display_name
         self.fields['assigned_salesperson'].widget.attrs['class'] = 'form-select'
         self.fields['assigned_salesperson'].label = 'Assigned salesman'
+        self.fields['name'].required = False
+        self.fields['company'].required = True
 
         if user and not self.instance.pk:
             emp = get_sales_employee_for_user(user)
@@ -115,6 +120,8 @@ class CustomerForm(forms.ModelForm):
 
     def clean(self):
         cleaned = super().clean()
+        if self.instance.pk and self.instance.customer_type == 'customer':
+            cleaned['customer_type'] = 'customer'
         ctype = cleaned.get('customer_type')
         seg = (cleaned.get('business_segment') or '').strip()
 
@@ -135,6 +142,14 @@ class CustomerForm(forms.ModelForm):
             self.add_error('phone', 'Phone number is required.')
         else:
             cleaned['phone'] = phone
+
+        company = (cleaned.get('company') or '').strip()
+        if not company:
+            self.add_error('company', 'Company name is required.')
+        else:
+            cleaned['company'] = company
+
+        cleaned['name'] = (cleaned.get('name') or '').strip()
 
         if seg == 'b2c':
             cleaned['trn'] = ''

@@ -5,8 +5,9 @@
 $(function () {
     function crmEditToggleCustomerFields() {
         var typeSel = document.getElementById('crmEditCustomerType');
+        var typeHidden = document.querySelector('input[name="customer_type"][type="hidden"]');
+        var customerType = typeHidden ? typeHidden.value : (typeSel ? typeSel.value : 'customer');
         var seg = document.querySelector('[name="business_segment"]');
-        var busWrap = document.getElementById('crmEditBusinessWrap');
         var docs = document.getElementById('crmEditB2bDocs');
         var trnWrap = document.getElementById('crmEditTrnWrap');
         var trnInput = document.querySelector('[name="trn"]');
@@ -14,9 +15,8 @@ $(function () {
         var licRequired = document.getElementById('crmEditLicenseRequired');
         var licOptional = document.getElementById('crmEditLicenseOptional');
         var docsHelp = document.getElementById('crmEditB2bDocsHelp');
-        var isCustomer = typeSel && typeSel.value === 'customer';
+        var isCustomer = customerType === 'customer';
         var isB2b = seg && seg.value === 'b2b';
-        if (busWrap) busWrap.style.display = '';
         if (trnWrap) trnWrap.style.display = isB2b ? '' : 'none';
         if (trnInput && !isB2b) trnInput.value = '';
         if (docs) docs.classList.toggle('d-none', !isB2b);
@@ -58,33 +58,30 @@ $(function () {
     <div class="card-body p-4">
         <form method="post" enctype="multipart/form-data">
             {% csrf_token %}
-            
+
             <h6 class="fw-semibold mb-3">
                 <i class="fas fa-user me-2 text-primary"></i>Basic Information
             </h6>
             <div class="row g-3 mb-4">
-                <div class="col-md-6">
-                    <label class="form-label">Contact Name <span class="text-danger">*</span></label>
-                    <input type="text" name="name" class="form-control" value="{{ object.name }}" placeholder="Full Name" required>
+                <div class="col-md-4">
+                    <label class="form-label">Company <span class="text-danger">*</span></label>
+                    <input type="text" name="company" class="form-control" value="{{ object.company }}" placeholder="Company Name" required>
+                    {% for err in form.company.errors %}<div class="text-danger small">{{ err }}</div>{% endfor %}
                 </div>
-                <div class="col-md-6">
-                    <label class="form-label">Company</label>
-                    <input type="text" name="company" class="form-control" value="{{ object.company }}" placeholder="Company Name">
+                <div class="col-md-4">
+                    <label class="form-label">Contact Name</label>
+                    <input type="text" name="name" class="form-control" value="{{ object.name }}" placeholder="Full Name (optional)">
+                    {% for err in form.name.errors %}<div class="text-danger small">{{ err }}</div>{% endfor %}
                 </div>
-                <div class="col-md-6">
-                    <label class="form-label">Type <span class="text-danger">*</span></label>
-                    <select name="customer_type" class="form-select" id="crmEditCustomerType" required>
-                        <option value="lead" {% if object.customer_type == 'lead' %}selected{% endif %}>Lead</option>
-                        <option value="customer" {% if object.customer_type == 'customer' %}selected{% endif %}>Customer</option>
-                    </select>
-                </div>
-                <div class="col-md-6" id="crmEditBusinessWrap">
+                {% if object.customer_type == 'customer' %}
+                <input type="hidden" name="customer_type" value="customer">
+                <div class="col-md-4">
                     <label class="form-label" for="{{ form.business_segment.id_for_label }}">{{ form.business_segment.label }} <span class="text-danger">*</span></label>
                     {{ form.business_segment }}
                     {% for err in form.business_segment.errors %}<div class="text-danger small">{{ err }}</div>{% endfor %}
                     <div class="form-text">Select B2B or B2C.</div>
                 </div>
-                <div class="col-md-6">
+                <div class="col-md-4">
                     <label class="form-label">Status</label>
                     <select name="status" class="form-select">
                         <option value="active" {% if object.status == 'active' %}selected{% endif %}>Active</option>
@@ -92,10 +89,53 @@ $(function () {
                         <option value="inactive" {% if object.status == 'inactive' %}selected{% endif %}>Inactive</option>
                     </select>
                 </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="{{ form.assigned_salesperson.id_for_label }}">{{ form.assigned_salesperson.label }} <span class="text-danger">*</span></label>
+                    {{ form.assigned_salesperson }}
+                    {% for err in form.assigned_salesperson.errors %}<div class="text-danger small">{{ err }}</div>{% endfor %}
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">{{ form.job_type.label }}</label>
+                    {{ form.job_type }}
+                    {% for err in form.job_type.errors %}<div class="text-danger small">{{ err }}</div>{% endfor %}
+                </div>
+                {% else %}
+                <div class="col-md-4">
+                    <label class="form-label">Type <span class="text-danger">*</span></label>
+                    <select name="customer_type" class="form-select" id="crmEditCustomerType" required>
+                        <option value="lead" {% if object.customer_type == 'lead' %}selected{% endif %}>Lead</option>
+                        <option value="customer" {% if object.customer_type == 'customer' %}selected{% endif %}>Customer</option>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="{{ form.business_segment.id_for_label }}">{{ form.business_segment.label }} <span class="text-danger">*</span></label>
+                    {{ form.business_segment }}
+                    {% for err in form.business_segment.errors %}<div class="text-danger small">{{ err }}</div>{% endfor %}
+                    <div class="form-text">Select B2B or B2C.</div>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Status</label>
+                    <select name="status" class="form-select">
+                        <option value="active" {% if object.status == 'active' %}selected{% endif %}>Active</option>
+                        <option value="prospect" {% if object.status == 'prospect' %}selected{% endif %}>Prospect</option>
+                        <option value="inactive" {% if object.status == 'inactive' %}selected{% endif %}>Inactive</option>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="{{ form.assigned_salesperson.id_for_label }}">{{ form.assigned_salesperson.label }} <span class="text-danger">*</span></label>
+                    {{ form.assigned_salesperson }}
+                    {% for err in form.assigned_salesperson.errors %}<div class="text-danger small">{{ err }}</div>{% endfor %}
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">{{ form.job_type.label }}</label>
+                    {{ form.job_type }}
+                    {% for err in form.job_type.errors %}<div class="text-danger small">{{ err }}</div>{% endfor %}
+                </div>
+                {% endif %}
             </div>
-            
+
             <hr class="my-4">
-            
+
             <h6 class="fw-semibold mb-3">
                 <i class="fas fa-briefcase me-2 text-primary"></i>Business Details
             </h6>
@@ -103,7 +143,7 @@ $(function () {
                 <div class="col-12">
                     <p class="small text-muted mb-0" id="crmEditB2bDocsHelp">B2B customers must upload a trade license (TRN certificate upload is optional).</p>
                 </div>
-                <div class="col-md-6">
+                <div class="col-md-4">
                     <label class="form-label" for="{{ form.trn_document.id_for_label }}">{{ form.trn_document.label }} <span class="text-muted small">(optional)</span></label>
                     {{ form.trn_document }}
                     {% for err in form.trn_document.errors %}<div class="text-danger small">{{ err }}</div>{% endfor %}
@@ -111,7 +151,7 @@ $(function () {
                     <div class="small mt-1"><a href="{{ object.trn_document.url }}" target="_blank" rel="noopener"><i class="fas fa-paperclip me-1"></i>Current TRN document</a></div>
                     {% endif %}
                 </div>
-                <div class="col-md-6">
+                <div class="col-md-4">
                     <label class="form-label" for="{{ form.trade_license_document.id_for_label }}">{{ form.trade_license_document.label }}
                         <span class="text-danger" id="crmEditLicenseRequired">*</span>
                         <span class="text-muted small d-none" id="crmEditLicenseOptional">(optional)</span>
@@ -123,59 +163,41 @@ $(function () {
                     {% endif %}
                 </div>
             </div>
-            <div class="row g-3 mb-3">
-                <div class="col-md-6" id="crmEditTrnWrap" style="display:none;">
+            <div class="row g-3 mb-4">
+                <div class="col-md-4" id="crmEditTrnWrap" style="display:none;">
                     <label class="form-label">{{ form.trn.label }}</label>
                     {{ form.trn }}
                     {% for err in form.trn.errors %}<div class="text-danger small">{{ err }}</div>{% endfor %}
                 </div>
-                <div class="col-md-6">
+                <div class="col-md-4">
                     <label class="form-label">{{ form.website.label }}</label>
                     {{ form.website }}
                     {% for err in form.website.errors %}<div class="text-danger small">{{ err }}</div>{% endfor %}
                 </div>
             </div>
-            <div class="row g-3 mb-4">
-                <div class="col-md-6" id="crmEditAssignWrap">
-                    <label class="form-label" for="{{ form.assigned_salesperson.id_for_label }}">{{ form.assigned_salesperson.label }} <span class="text-danger">*</span></label>
-                    {{ form.assigned_salesperson }}
-                    {% for err in form.assigned_salesperson.errors %}<div class="text-danger small">{{ err }}</div>{% endfor %}
-                    <div class="form-text">Defaults to you when creating; change if assigning to someone else.</div>
-                </div>
-                <div class="col-md-6">
-                    <label class="form-label">{{ form.primary_project.label }}</label>
-                    {{ form.primary_project }}
-                    {% for err in form.primary_project.errors %}<div class="text-danger small">{{ err }}</div>{% endfor %}
-                </div>
-                <div class="col-md-6">
-                    <label class="form-label">{{ form.job_type.label }}</label>
-                    {{ form.job_type }}
-                    {% for err in form.job_type.errors %}<div class="text-danger small">{{ err }}</div>{% endfor %}
-                </div>
-            </div>
-            
+
             <hr class="my-4">
-            
+
             <h6 class="fw-semibold mb-3">
                 <i class="fas fa-address-card me-2 text-primary"></i>Contact Details
             </h6>
             <div class="row g-3 mb-4">
-                <div class="col-md-6">
+                <div class="col-md-4">
                     <label class="form-label">Email</label>
                     <input type="email" name="email" class="form-control" value="{{ object.email }}" placeholder="email@example.com">
                 </div>
-                <div class="col-md-6">
+                <div class="col-md-4">
                     <label class="form-label">Phone</label>
                     <input type="text" name="phone" class="form-control" value="{{ object.phone }}" placeholder="+971 XX XXX XXXX">
                 </div>
-                <div class="col-12">
+                <div class="col-md-4">
                     <label class="form-label">Address</label>
                     <textarea name="address" class="form-control" rows="3" placeholder="Full Address">{{ object.address }}</textarea>
                 </div>
             </div>
-            
+
             <hr class="my-4">
-            
+
             <h6 class="fw-semibold mb-3">
                 <i class="fas fa-sticky-note me-2 text-primary"></i>Additional Information
             </h6>
@@ -185,7 +207,7 @@ $(function () {
                     <textarea name="notes" class="form-control" rows="4" placeholder="Additional notes about this customer...">{{ object.notes }}</textarea>
                 </div>
             </div>
-            
+
             <div class="mt-4 pt-3 border-top">
                 <button type="submit" class="btn btn-primary">
                     <i class="fas fa-save me-2"></i>Save Customer
@@ -206,11 +228,11 @@ $(function () {
     </div>
     <div class="card-body">
         <div class="row">
-            <div class="col-md-6">
+            <div class="col-md-4">
                 <label class="form-label text-muted small">Customer Number</label>
                 <p class="fw-medium">{{ object.customer_number }}</p>
             </div>
-            <div class="col-md-6">
+            <div class="col-md-4">
                 <label class="form-label text-muted small">Created</label>
                 <p class="mb-0">
                     {{ object.created_at|date:"d/m/Y H:i" }}
@@ -219,7 +241,7 @@ $(function () {
                     {% endif %}
                 </p>
             </div>
-            <div class="col-md-6">
+            <div class="col-md-4">
                 <label class="form-label text-muted small">Last Updated</label>
                 <p class="mb-0">
                     {{ object.updated_at|date:"d/m/Y H:i" }}
@@ -233,8 +255,3 @@ $(function () {
 </div>
 {% endif %}
 {% endblock %}
-
-
-
-
-

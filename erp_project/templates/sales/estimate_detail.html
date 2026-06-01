@@ -29,7 +29,9 @@
     <div class="d-flex justify-content-between align-items-center">
         <div>
             <h4 class="mb-1 fw-bold">{{ estimate.display_estimate_number }}</h4>
-            <span class="text-muted">{{ estimate.customer.name }}</span>
+            <span class="text-muted">
+                {% if estimate.customer.company %}{{ estimate.customer.company }}{% if estimate.customer.name %} · {{ estimate.customer.name }}{% endif %}{% else %}{{ estimate.customer.name }}{% endif %}
+            </span>
             {% if estimate.revision_label %}
             <span class="badge bg-info text-dark ms-2">Revision {{ estimate.revision_label }}</span>
             {% endif %}
@@ -100,11 +102,12 @@
             <div class="card-body pt-0">
                 <div class="row row-cols-1 row-cols-sm-2 row-cols-lg-3 g-4 align-items-start">
                     <div class="col">
-                        <h6 class="text-muted mb-2 text-uppercase small fw-semibold">Customer</h6>
-                        <p class="fw-medium mb-0">{{ estimate.customer.name }}</p>
-                        {% if estimate.customer.company %}
-                        <small class="text-muted d-block mt-1">{{ estimate.customer.company }}</small>
-                        {% endif %}
+                        <h6 class="text-muted mb-2 text-uppercase small fw-semibold">Company</h6>
+                        <p class="fw-medium mb-0">{{ estimate.customer.company|default:"—" }}</p>
+                    </div>
+                    <div class="col">
+                        <h6 class="text-muted mb-2 text-uppercase small fw-semibold">Contact person</h6>
+                        <p class="mb-0">{{ estimate.customer.name|default:"—" }}</p>
                     </div>
                     <div class="col">
                         <h6 class="text-muted mb-2 text-uppercase small fw-semibold">Date</h6>
@@ -343,16 +346,16 @@
                     <span>Subtotal (excl. VAT)</span>
                     <span>AED {{ estimate.subtotal|floatformat:2 }}</span>
                 </div>
+                {% if estimate.discount_applied and estimate.discount_applied > 0 %}
+                <div class="d-flex justify-content-between mb-2">
+                    <span>Discount (excl. VAT)</span>
+                    <span class="text-danger">− AED {{ estimate.discount_applied|floatformat:2 }}</span>
+                </div>
+                {% endif %}
                 <div class="d-flex justify-content-between mb-2">
                     <span>VAT</span>
                     <span>AED {{ estimate.vat_amount|floatformat:2 }}</span>
                 </div>
-                {% if estimate.discount_applied and estimate.discount_applied > 0 %}
-                <div class="d-flex justify-content-between mb-2">
-                    <span>Discount</span>
-                    <span class="text-danger">− AED {{ estimate.discount_applied|floatformat:2 }}</span>
-                </div>
-                {% endif %}
                 <hr>
                 <div class="d-flex justify-content-between">
                     <span class="fw-bold">Total</span>

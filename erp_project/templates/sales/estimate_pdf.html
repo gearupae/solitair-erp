@@ -245,6 +245,7 @@
 
         .item-number { color: #737373; font-size: 9px; }
         .item-description { font-weight: 500; }
+        .item-brand { font-size: 9px; color: #525252; }
 
         /* Totals */
         .totals-section {
@@ -591,6 +592,7 @@
                 <tr>
                     <th style="width:26px;">#</th>
                     <th>Description</th>
+                    {% if estimate.show_brand_name_on_pdf %}<th style="width:88px;">Brand</th>{% endif %}
                     <th class="text-center" style="width:48px;">Qty</th>
                     <th class="text-right" style="width:72px;">Rate</th>
                     <th class="text-right" style="width:72px;">Line</th>
@@ -609,6 +611,7 @@
                         <div style="margin-top:4px;color:#737373;font-size:9px;">{{ proforma_invoice.charge_value|floatformat:2 }}% of quotation subtotal (AED {{ estimate.subtotal|floatformat:2 }})</div>
                         {% endif %}
                     </td>
+                    {% if estimate.show_brand_name_on_pdf %}<td></td>{% endif %}
                     <td class="text-center">1.00</td>
                     <td class="text-right">{{ proforma_invoice.line_subtotal|floatformat:2 }}</td>
                     <td class="text-right">{{ proforma_invoice.total_amount|floatformat:2 }}</td>
@@ -619,6 +622,7 @@
                 <tr>
                     <td class="item-number">{{ group.collapsed_index }}</td>
                     <td class="item-description"><strong>{{ group.name }}</strong></td>
+                    {% if estimate.show_brand_name_on_pdf %}<td></td>{% endif %}
                     <td class="text-center">1.00</td>
                     <td class="text-right">{{ group.line_subtotal|floatformat:2 }}</td>
                     <td class="text-right">{{ group.line_total|floatformat:2 }}</td>
@@ -626,13 +630,16 @@
                 {% else %}
                 {% if group.name %}
                 <tr class="group-row">
-                    <td colspan="5">{{ group.name }}</td>
+                    <td colspan="{% if estimate.show_brand_name_on_pdf %}6{% else %}5{% endif %}">{{ group.name }}</td>
                 </tr>
                 {% endif %}
                 {% for row in group.items %}
                 <tr>
                     <td class="item-number">{{ row.index }}</td>
-                    <td class="item-description">{{ row.item.description }}{% if estimate.show_brand_name_on_pdf and row.item.inventory_item.brand %} <span style="color:#525252;">— {{ row.item.inventory_item.brand }}</span>{% endif %}{% if row.item.inventory_item %} <span style="color:#737373;">({{ row.item.inventory_item.item_code }})</span>{% endif %}</td>
+                    <td class="item-description">{{ row.item.description }}{% if row.item.inventory_item %} <span style="color:#737373;">({{ row.item.inventory_item.item_code }})</span>{% endif %}</td>
+                    {% if estimate.show_brand_name_on_pdf %}
+                    <td class="item-brand">{% if row.item.inventory_item and row.item.inventory_item.brand %}{{ row.item.inventory_item.brand }}{% endif %}</td>
+                    {% endif %}
                     <td class="text-center">{{ row.item.quantity|floatformat:2 }}</td>
                     <td class="text-right">{{ row.item.rate|floatformat:2 }}</td>
                     <td class="text-right">{{ row.item.total|add:row.item.vat_amount|floatformat:2 }}</td>
@@ -640,14 +647,14 @@
                 {% endfor %}
                 {% if group.name and estimate.show_group_totals_on_pdf %}
                 <tr class="group-total-row">
-                    <td colspan="4" class="text-right">{{ group.name }} total</td>
+                    <td colspan="{% if estimate.show_brand_name_on_pdf %}5{% else %}4{% endif %}" class="text-right">Subtotal:</td>
                     <td class="text-right">AED {{ group.line_total|floatformat:2 }}</td>
                 </tr>
                 {% endif %}
                 {% endif %}
                 {% empty %}
                 <tr>
-                    <td colspan="5" style="text-align:center;padding:20px;color:#737373;">No items</td>
+                    <td colspan="{% if estimate.show_brand_name_on_pdf %}6{% else %}5{% endif %}" style="text-align:center;padding:20px;color:#737373;">No items</td>
                 </tr>
                 {% endfor %}
                 {% endif %}
@@ -659,6 +666,7 @@
                 <tr>
                     <th style="width:26px;">#</th>
                     <th>Description</th>
+                    {% if estimate.show_brand_name_on_pdf %}<th style="width:88px;">Brand</th>{% endif %}
                     <th class="text-center" style="width:56px;">Qty</th>
                 </tr>
             </thead>
@@ -672,6 +680,7 @@
                         <div style="margin-top:4px;color:#525252;">{{ proforma_invoice.description|linebreaksbr }}</div>
                         {% endif %}
                     </td>
+                    {% if estimate.show_brand_name_on_pdf %}<td></td>{% endif %}
                     <td class="text-center">1.00</td>
                 </tr>
                 {% else %}
@@ -680,30 +689,34 @@
                 <tr>
                     <td class="item-number">{{ group.collapsed_index }}</td>
                     <td class="item-description"><strong>{{ group.name }}</strong> <span style="color:#525252;">— AED {{ group.line_total|floatformat:2 }}</span></td>
+                    {% if estimate.show_brand_name_on_pdf %}<td></td>{% endif %}
                     <td class="text-center">1.00</td>
                 </tr>
                 {% else %}
                 {% if group.name %}
                 <tr class="group-row">
-                    <td colspan="3">{{ group.name }}</td>
+                    <td colspan="{% if estimate.show_brand_name_on_pdf %}4{% else %}3{% endif %}">{{ group.name }}</td>
                 </tr>
                 {% endif %}
                 {% for row in group.items %}
                 <tr>
                     <td class="item-number">{{ row.index }}</td>
-                    <td class="item-description">{{ row.item.description }}{% if estimate.show_brand_name_on_pdf and row.item.inventory_item.brand %} <span style="color:#525252;">— {{ row.item.inventory_item.brand }}</span>{% endif %}{% if row.item.inventory_item %} <span style="color:#737373;">({{ row.item.inventory_item.item_code }})</span>{% endif %}</td>
+                    <td class="item-description">{{ row.item.description }}{% if row.item.inventory_item %} <span style="color:#737373;">({{ row.item.inventory_item.item_code }})</span>{% endif %}</td>
+                    {% if estimate.show_brand_name_on_pdf %}
+                    <td class="item-brand">{% if row.item.inventory_item and row.item.inventory_item.brand %}{{ row.item.inventory_item.brand }}{% endif %}</td>
+                    {% endif %}
                     <td class="text-center">{{ row.item.quantity|floatformat:2 }}</td>
                 </tr>
                 {% endfor %}
                 {% if group.name and estimate.show_group_totals_on_pdf %}
                 <tr class="group-total-row">
-                    <td colspan="3" class="text-right">{{ group.name }} total: AED {{ group.line_total|floatformat:2 }}</td>
+                    <td colspan="{% if estimate.show_brand_name_on_pdf %}4{% else %}3{% endif %}" class="text-right">Subtotal: AED {{ group.line_total|floatformat:2 }}</td>
                 </tr>
                 {% endif %}
                 {% endif %}
                 {% empty %}
                 <tr>
-                    <td colspan="3" style="text-align:center;padding:20px;color:#737373;">No items</td>
+                    <td colspan="{% if estimate.show_brand_name_on_pdf %}4{% else %}3{% endif %}" style="text-align:center;padding:20px;color:#737373;">No items</td>
                 </tr>
                 {% endfor %}
                 {% endif %}
@@ -734,21 +747,28 @@
                     <span class="totals-label">Subtotal (excl. VAT)</span>
                     <span class="totals-value">AED {{ estimate.subtotal|floatformat:2 }}</span>
                 </div>
+                {% if estimate.discount_applied and estimate.discount_applied > 0 %}
+                <div class="totals-row">
+                    <span class="totals-label">Discount (excl. VAT)</span>
+                    <span class="totals-value" style="color:#b91c1c;">− AED {{ estimate.discount_applied|floatformat:2 }}</span>
+                </div>
+                {% endif %}
                 {% for rate, amounts in vat_summary.items %}
                 <div class="totals-row vat-row">
                     <span class="totals-label">VAT @ {{ rate|floatformat:0 }}%</span>
                     <span class="totals-value">AED {{ amounts.vat|floatformat:2 }}</span>
                 </div>
                 {% endfor %}
+                {% else %}
+                {% if estimate.discount_applied and estimate.discount_applied > 0 %}
+                <div class="totals-row">
+                    <span class="totals-label">Discount (excl. VAT)</span>
+                    <span class="totals-value" style="color:#b91c1c;">− AED {{ estimate.discount_applied|floatformat:2 }}</span>
+                </div>
                 {% endif %}
                 <div class="totals-row">
                     <span class="totals-label">Total VAT</span>
                     <span class="totals-value">AED {{ estimate.vat_amount|floatformat:2 }}</span>
-                </div>
-                {% if estimate.discount_applied and estimate.discount_applied > 0 %}
-                <div class="totals-row">
-                    <span class="totals-label">Discount</span>
-                    <span class="totals-value" style="color:#b91c1c;">− AED {{ estimate.discount_applied|floatformat:2 }}</span>
                 </div>
                 {% endif %}
                 <div class="totals-row total">

@@ -57,10 +57,11 @@ class Estimate(BaseModel):
 
     OCCUPANCY_TYPE_CHOICES = [
         ('residential', 'Residential'),
+        ('villa', 'Villa'),
         ('commercial', 'Commercial'),
         ('labour_accommodation', 'Labour Accommodation'),
         ('restaurants', 'Restaurants'),
-        ('factories_industries', 'Factories - Industries'),
+        ('factories_industries', 'Factories/Industries'),
     ]
 
     TYPE_OF_WORK_CHOICES = [
@@ -195,7 +196,7 @@ class Estimate(BaseModel):
     total_amount = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     discount_applied = models.DecimalField(
         max_digits=15, decimal_places=2, default=Decimal('0.00'),
-        help_text='Last calculated discount amount on total',
+        help_text='Last calculated discount amount on subtotal (excl. VAT)',
     )
     
     class Meta:
@@ -274,25 +275,75 @@ class Estimate(BaseModel):
             return Decimal('0.00')
         return val.quantize(Decimal('0.01'))
 
-    def calculate_totals(self):
-        """Calculate subtotal, VAT, discount, and total from line items."""
-        items = list(self.items.all())
-        subtotal = Decimal('0.00')
-        vat_sum = Decimal('0.00')
-        for item in items:
-            item.save()  # refresh rate, total, vat from line
-            subtotal += item.total
-            vat_sum += item.vat_amount
-        gross_before = subtotal + vat_sum
-        discount_amt = Decimal('0.00')
+    def compute_discount_amount(self, subtotal: Decimal) -> Decimal:
+        """Discount applied to subtotal (excl. VAT) before tax."""
+        subtotal = subtotal if isinstance(subtotal, Decimal) else Decimal(str(subtotal or '0'))
         if self.discount_type == 'percent' and self.discount_value > 0:
-            discount_amt = (gross_before * self.discount_value / Decimal('100')).quantize(Decimal('0.01'))
-        elif self.discount_type == 'amount' and self.discount_value > 0:
-            discount_amt = min(self.discount_value, gross_before)
+            return (subtotal * self.discount_value / Decimal('100')).quantize(Decimal('0.01'))
+        if self.discount_type == 'amount' and self.discount_value > 0:
+            return min(self.discount_value, subtotal).quantize(Decimal('0.01'))
+        return Decimal('0.00')
+
+    @staticmethod
+    def allocate_line_discounts(items, subtotal: Decimal, discount_amt: Decimal) -> list[Decimal]:
+        """Split header discount across lines proportionally (last line takes rounding remainder)."""
+        if not items or discount_amt <= 0 or subtotal <= 0:
+            return [Decimal('0.00')] * len(items)
+        allocations: list[Decimal] = []
+        remaining = discount_amt
+        last_idx = len(items) - 1
+        for idx, item in enumerate(items):
+            if idx == last_idx:
+                allocations.append(remaining.quantize(Decimal('0.01')))
+                continue
+            share = (discount_amt * item.total / subtotal).quantize(Decimal('0.01'))
+            allocations.append(share)
+            remaining -= share
+        return allocations
+
+    def discounted_line_amounts(self, items=None):
+        """
+        Per-line net (excl. VAT) and VAT after header discount.
+        Returns list of (line_net, line_vat) aligned with items.
+        """
+        items = list(items if items is not None else self.items.all())
+        for item in items:
+            item.save()
+        subtotal = sum((item.total for item in items), Decimal('0.00'))
+        discount_amt = self.compute_discount_amount(subtotal)
+        allocations = self.allocate_line_discounts(items, subtotal, discount_amt)
+        result = []
+        for item, line_disc in zip(items, allocations):
+            line_net = (item.total - line_disc).quantize(Decimal('0.01'))
+            line_vat = (line_net * item.vat_rate / Decimal('100')).quantize(Decimal('0.01'))
+            result.append((line_net, line_vat))
+        return result, subtotal, discount_amt
+
+    def build_vat_summary(self) -> dict:
+        """VAT breakdown by rate after discount (for PDF / reports)."""
+        line_amounts, _, _ = self.discounted_line_amounts()
+        items = list(self.items.all())
+        summary: dict[float, dict] = {}
+        for item, (line_net, line_vat) in zip(items, line_amounts):
+            rate = float(item.vat_rate)
+            if rate not in summary:
+                summary[rate] = {'taxable': Decimal('0.00'), 'vat': Decimal('0.00')}
+            summary[rate]['taxable'] += line_net
+            summary[rate]['vat'] += line_vat
+        return {
+            rate: {'taxable': float(vals['taxable']), 'vat': float(vals['vat'])}
+            for rate, vals in summary.items()
+        }
+
+    def calculate_totals(self):
+        """Calculate subtotal, discount (excl. VAT), VAT on discounted net, and grand total."""
+        items = list(self.items.all())
+        line_amounts, subtotal, discount_amt = self.discounted_line_amounts(items)
+        vat_sum = sum((lv for _, lv in line_amounts), Decimal('0.00'))
         self.subtotal = subtotal
-        self.vat_amount = vat_sum
         self.discount_applied = discount_amt
-        self.total_amount = gross_before - discount_amt
+        self.vat_amount = vat_sum
+        self.total_amount = (subtotal - discount_amt + vat_sum).quantize(Decimal('0.01'))
         self.save(update_fields=['subtotal', 'vat_amount', 'total_amount', 'discount_applied'])
 
     @property

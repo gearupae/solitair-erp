@@ -376,8 +376,14 @@
                     </tbody>
                     <tfoot>
                         <tr>
-                            <td colspan="10" class="text-end fw-medium">Subtotal net (excl. VAT &amp; discount):</td>
+                            <td colspan="10" class="text-end fw-medium">Subtotal (excl. VAT):</td>
                             <td class="text-end fw-medium" id="subtotal">0.00</td>
+                            <td></td>
+                            <td></td>
+                        </tr>
+                        <tr>
+                            <td colspan="10" class="text-end fw-medium text-danger">Discount (excl. VAT):</td>
+                            <td class="text-end fw-medium text-danger" id="discountDisplay">0.00</td>
                             <td></td>
                             <td></td>
                         </tr>
@@ -385,18 +391,6 @@
                             <td colspan="10" class="text-end fw-medium">VAT:</td>
                             <td></td>
                             <td class="text-end fw-medium" id="vatTotal">0.00</td>
-                            <td></td>
-                        </tr>
-                        <tr>
-                            <td colspan="10" class="text-end fw-medium">Before discount (incl. VAT):</td>
-                            <td></td>
-                            <td class="text-end fw-medium" id="beforeDiscount">0.00</td>
-                            <td></td>
-                        </tr>
-                        <tr>
-                            <td colspan="10" class="text-end fw-medium text-danger">Discount:</td>
-                            <td></td>
-                            <td class="text-end fw-medium text-danger" id="discountDisplay">0.00</td>
                             <td></td>
                         </tr>
                         <tr>
@@ -947,6 +941,7 @@ function populateRowFromInventory(row, invId, groupName, defaultQuantity) {
         calculateRowTotal(qtyInput);
     }
     validateRowBasePrice(row, true);
+    ensureTrailingEmptyRow();
 }
 
 function onInventoryChange(sel) {
@@ -1017,6 +1012,7 @@ function addLinesFromInventoryGroupSelect(sel) {
     });
     refreshGroupQtyMultDisplay();
     applyGroupMultiplier(normalizeGroupName(g.name), row);
+    ensureTrailingEmptyRow();
 }
 
 function addItemRow() {
@@ -1062,6 +1058,31 @@ function addItemRow() {
     calculateRowTotal(tr.querySelector('.item-qty'));
 }
 
+function getVisibleEstimateRows() {
+    return Array.from(document.querySelectorAll('#itemsBody .item-row')).filter(r => r.style.display !== 'none');
+}
+
+function isEstimateRowFilled(row) {
+    if (!row || row.style.display === 'none') return false;
+    const inv = (row.querySelector('.item-inventory')?.value || '').trim();
+    const desc = (row.querySelector('[name$="-description"]')?.value || '').trim();
+    const base = parseFloat(row.querySelector('.item-base-price')?.value) || 0;
+    return Boolean(inv || desc || base > 0);
+}
+
+/** Keep one blank line ready after the last filled row. */
+function ensureTrailingEmptyRow() {
+    const rows = getVisibleEstimateRows();
+    if (!rows.length) {
+        addItemRow();
+        return;
+    }
+    const last = rows[rows.length - 1];
+    if (isEstimateRowFilled(last)) {
+        addItemRow();
+    }
+}
+
 function removeItemRow(btn) {
     const row = btn.closest('tr');
     const del = row.querySelector('input[name$="-DELETE"]');
@@ -1073,6 +1094,7 @@ function removeItemRow(btn) {
     }
     refreshGroupQtyMultDisplay();
     calculateTotals();
+    ensureTrailingEmptyRow();
 }
 
 function calculateRowTotal(input) {
@@ -1091,11 +1113,12 @@ function calculateRowTotal(input) {
     if (netEl) netEl.textContent = net.toFixed(2);
     if (grossEl) grossEl.textContent = gross.toFixed(2);
     calculateTotals();
+    ensureTrailingEmptyRow();
 }
 
 function calculateTotals() {
+    const rows = [];
     let subtotal = 0;
-    let vatTotal = 0;
     document.querySelectorAll('#itemsBody .item-row').forEach(row => {
         if (row.style.display === 'none') return;
         const qty = parseFloat(row.querySelector('.item-qty')?.value) || 0;
@@ -1103,21 +1126,36 @@ function calculateTotals() {
         const taxSel = row.querySelector('.item-tax-code');
         const vatRate = getVatRatePercent(taxSel);
         const net = qty * rate;
-        const vat = net * (vatRate / 100);
+        rows.push({ net, vatRate });
         subtotal += net;
-        vatTotal += vat;
     });
-    const beforeDisc = subtotal + vatTotal;
     const dt = document.querySelector('[name="discount_type"]')?.value || 'none';
     const dv = parseFloat(document.querySelector('[name="discount_value"]')?.value) || 0;
     let disc = 0;
-    if (dt === 'percent' && dv > 0) disc = beforeDisc * (dv / 100);
-    else if (dt === 'amount' && dv > 0) disc = Math.min(dv, beforeDisc);
-    const grand = beforeDisc - disc;
+    if (dt === 'percent' && dv > 0) disc = subtotal * (dv / 100);
+    else if (dt === 'amount' && dv > 0) disc = Math.min(dv, subtotal);
+    disc = Math.round(disc * 100) / 100;
+
+    let remainingDisc = disc;
+    let vatTotal = 0;
+    rows.forEach((row, idx) => {
+        let lineDisc = 0;
+        if (disc > 0 && subtotal > 0) {
+            if (idx === rows.length - 1) {
+                lineDisc = remainingDisc;
+            } else {
+                lineDisc = Math.round(disc * (row.net / subtotal) * 100) / 100;
+                remainingDisc -= lineDisc;
+            }
+        }
+        const lineNet = row.net - lineDisc;
+        vatTotal += Math.round(lineNet * (row.vatRate / 100) * 100) / 100;
+    });
+
+    const grand = subtotal - disc + vatTotal;
     document.getElementById('subtotal').textContent = subtotal.toFixed(2);
-    document.getElementById('vatTotal').textContent = vatTotal.toFixed(2);
-    document.getElementById('beforeDiscount').textContent = beforeDisc.toFixed(2);
     document.getElementById('discountDisplay').textContent = disc.toFixed(2);
+    document.getElementById('vatTotal').textContent = vatTotal.toFixed(2);
     document.getElementById('grandTotal').textContent = grand.toFixed(2);
 }
 
@@ -1142,6 +1180,11 @@ function bindLineItemsTableEvents() {
         if (t.matches('.item-group-name')) {
             if (!row) return;
             inheritGroupQtyMultiplier(row);
+            ensureTrailingEmptyRow();
+            return;
+        }
+        if (t.matches('[name$="-description"]')) {
+            ensureTrailingEmptyRow();
             return;
         }
         if (!t.matches('.item-qty, .item-base-price, .item-profit-value')) return;
@@ -1270,6 +1313,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const q = row.querySelector('.item-qty');
         if (q) calculateRowTotal(q);
     });
+    ensureTrailingEmptyRow();
     document.querySelector('[name="discount_type"]')?.addEventListener('change', calculateTotals);
     document.querySelector('[name="discount_value"]')?.addEventListener('input', calculateTotals);
     document.getElementById('estimateForm')?.addEventListener('submit', function(e) {

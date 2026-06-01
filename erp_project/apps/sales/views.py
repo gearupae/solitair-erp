@@ -1339,12 +1339,7 @@ def _build_estimate_pdf_context(request, estimate, *, proforma_invoice=None):
             'vat': float(proforma_invoice.vat_amount),
         }
     else:
-        for item in estimate.items.all():
-            rate = float(item.vat_rate)
-            if rate not in vat_summary:
-                vat_summary[rate] = {'taxable': 0, 'vat': 0}
-            vat_summary[rate]['taxable'] += float(item.total)
-            vat_summary[rate]['vat'] += float(item.vat_amount)
+        vat_summary = estimate.build_vat_summary()
 
     logo_absolute_url = ''
     if company.logo:

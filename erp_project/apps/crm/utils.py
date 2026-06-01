@@ -71,8 +71,10 @@ def _sales_employee_base_filter():
 
 
 def get_sales_employee_queryset():
-    """Active HR employees in Sales (department/designation) for CRM assignment filters."""
-    return _sales_employee_base_filter().select_related(
+    """Active HR employees available for CRM assigned salesman dropdowns."""
+    from apps.hr.models import Employee
+
+    return Employee.objects.filter(is_active=True, status='active').select_related(
         'department', 'designation', 'user'
     ).order_by('first_name', 'last_name', 'employee_code')
 
@@ -86,18 +88,9 @@ def get_sales_employee_for_user(user):
 
 
 def is_sales_hr_employee(employee):
-    if not employee or not employee.is_active or employee.status != 'active':
+    if not employee or not employee.pk:
         return False
-    if employee.department:
-        code = (employee.department.code or '').lower()
-        name = (employee.department.name or '').lower()
-        if code == 'sales' or name == 'sales':
-            return True
-    if employee.designation:
-        desig = (employee.designation.name or '').lower()
-        if desig in {'sales', 'salesman'} or 'sales' in desig or 'salesman' in desig:
-            return True
-    return False
+    return _sales_employee_base_filter().filter(pk=employee.pk).exists()
 
 
 def ensure_sales_crm_role_for_user(user):
