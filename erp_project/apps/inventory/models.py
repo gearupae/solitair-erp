@@ -29,7 +29,7 @@ class Category(BaseModel):
     description = models.TextField(blank=True)
     
     class Meta:
-        ordering = ['name']
+        ordering = ['-created_at', '-pk']
         verbose_name_plural = 'Categories'
     
     def __str__(self):
@@ -74,7 +74,7 @@ class Warehouse(BaseModel):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active')
     
     class Meta:
-        ordering = ['name']
+        ordering = ['-created_at', '-pk']
     
     def __str__(self):
         return self.name
@@ -283,7 +283,7 @@ class Item(BaseModel):
     warranty_expiry = models.DateField(null=True, blank=True)
     
     class Meta:
-        ordering = ['name']
+        ordering = ['-created_at', '-pk']
 
     def requires_whole_quantity(self) -> bool:
         if self.track_by_serial:

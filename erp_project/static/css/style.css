@@ -254,6 +254,34 @@ body {
     align-items: center;
     justify-content: center;
     border-radius: 6px;
+    flex-shrink: 0;
+}
+
+/* Table list: keep view / edit / delete icons on one row */
+.table th.col-actions,
+.table td.col-actions {
+    width: 1%;
+    min-width: 8.5rem;
+    white-space: nowrap;
+    vertical-align: middle;
+}
+
+.table td.col-actions .table-actions-inner,
+.table td.text-center:has(.btn-action) {
+    white-space: nowrap;
+}
+
+.table td.col-actions .table-actions-inner {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.25rem;
+    flex-wrap: nowrap;
+}
+
+.table thead th.text-center[width="100"],
+.table thead th.col-actions {
+    min-width: 8.5rem;
 }
 
 /* Forms */

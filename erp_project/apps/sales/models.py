@@ -227,6 +227,30 @@ class Estimate(BaseModel):
         from apps.sales.proforma_calculation import resolve_proforma_vat_rate_percent
 
         return resolve_proforma_vat_rate_percent(self)
+
+    @property
+    def proforma_billed_total(self):
+        from apps.sales.proforma_calculation import proforma_billed_sums
+
+        return proforma_billed_sums(self)[1]
+
+    @property
+    def proforma_remaining_total(self):
+        from apps.sales.proforma_calculation import proforma_billing_limits
+
+        return proforma_billing_limits(self)['remaining_total']
+
+    @property
+    def proforma_remaining_subtotal(self):
+        from apps.sales.proforma_calculation import proforma_billing_limits
+
+        return proforma_billing_limits(self)['remaining_subtotal']
+
+    @property
+    def proforma_max_percent(self):
+        from apps.sales.proforma_calculation import proforma_billing_limits
+
+        return proforma_billing_limits(self)['max_percent']
     
     def save(self, *args, **kwargs):
         if not self.estimate_number:
@@ -296,6 +320,24 @@ class Estimate(BaseModel):
     def allows_follow_on_conversion(self) -> bool:
         """True when the estimate may be converted to an invoice or project."""
         return self.status in self.FOLLOW_ON_STATUSES
+
+    def active_invoices(self):
+        """Invoices created from this estimate (excluding cancelled)."""
+        return self.invoices.exclude(status='cancelled')
+
+    @property
+    def primary_invoice(self):
+        """Most recent non-cancelled invoice linked to this estimate, if any."""
+        return self.active_invoices().order_by('-created_at').first()
+
+    @property
+    def has_invoice(self) -> bool:
+        return self.active_invoices().exists()
+
+    @property
+    def can_create_invoice_from_estimate(self) -> bool:
+        """One sales invoice per estimate; use proforma on won quotes for partial billing."""
+        return self.allows_follow_on_conversion and not self.has_invoice
 
     def allows_edit_by(self, user) -> bool:
         from apps.sales.approval_rules import user_can_edit_estimate

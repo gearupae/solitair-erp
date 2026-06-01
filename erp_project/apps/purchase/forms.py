@@ -72,7 +72,7 @@ class PurchaseRequestItemForm(forms.ModelForm):
         fields = ['inventory_item', 'quantity', 'unit', 'estimated_price']
         widgets = {
             'estimated_price': forms.NumberInput(attrs={'step': '0.01', 'min': '0'}),
-            'quantity': forms.NumberInput(attrs={'step': '0.01', 'min': '0'}),
+            'quantity': forms.NumberInput(attrs={'step': '1', 'min': '0'}),
         }
 
     def __init__(self, *args, **kwargs):
@@ -97,7 +97,7 @@ class PurchaseRequestItemForm(forms.ModelForm):
             self.fields['quantity'].initial = Decimal('0')
 
         self.fields['quantity'].widget.attrs.update(
-            {'class': 'form-control item-qty', 'step': '0.01', 'min': '0'}
+            {'class': 'form-control item-qty', 'step': '1', 'min': '0'}
         )
         self.fields['estimated_price'].widget.attrs.update(
             {'class': 'form-control item-cost', 'step': '0.01', 'min': '0'}

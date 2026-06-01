@@ -147,7 +147,7 @@ class ProjectTaskCreateForm(CustomerTaskCreateForm):
     estimated_hours = forms.DecimalField(
         required=False,
         initial=Decimal('0.00'),
-        widget=forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01'}),
+        widget=forms.NumberInput(attrs={'class': 'form-control', 'step': '1', 'min': '0'}),
     )
 
 
@@ -162,6 +162,7 @@ class TaskForm(forms.ModelForm):
             'start_date': forms.DateInput(attrs={'type': 'date'}),
             'due_date': forms.DateInput(attrs={'type': 'date'}),
             'description': forms.Textarea(attrs={'rows': 2}),
+            'estimated_hours': forms.NumberInput(attrs={'step': '1', 'min': '0'}),
         }
     
     def __init__(self, *args, project=None, customer=None, **kwargs):

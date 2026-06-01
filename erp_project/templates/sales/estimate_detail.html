@@ -56,16 +56,20 @@
                 <i class="fas fa-edit me-2"></i>Edit
             </a>
             {% endif %}
-            {% if estimate.allows_follow_on_conversion %}
-            <a href="{% url 'sales:estimate_convert' estimate.pk %}" class="btn btn-outline-success" onclick="return confirm('Create invoice from this estimate?');">
+            {% if can_convert_estimate_follow_on and estimate.can_create_invoice_from_estimate %}
+            <a href="{% url 'sales:estimate_convert' estimate.pk %}" class="btn btn-outline-success" onclick="return confirm('Create invoice from this estimate? Each estimate can only be converted once.');">
                 <i class="fas fa-file-invoice me-2"></i>Convert to Invoice
+            </a>
+            {% elif estimate.primary_invoice %}
+            <a href="{% url 'sales:invoice_detail' estimate.primary_invoice.pk %}" class="btn btn-outline-success">
+                <i class="fas fa-file-invoice me-2"></i>View Invoice ({{ estimate.primary_invoice.invoice_number }})
             </a>
             {% endif %}
             {% if estimate.project %}
             <a href="{% url 'projects:project_detail' estimate.project.pk %}" class="btn btn-outline-primary">
                 <i class="fas fa-project-diagram me-2"></i>View linked project
             </a>
-            {% elif estimate.allows_follow_on_conversion and estimate.is_active %}
+            {% elif can_convert_estimate_follow_on and estimate.allows_follow_on_conversion and estimate.is_active %}
                 {% if estimate_to_project_prompt_include_lines %}
                 <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#convertProjectModal">
                     <i class="fas fa-project-diagram me-2"></i>Convert to Project
@@ -357,7 +361,22 @@
             </div>
         </div>
 
-        {% if can_create_proforma %}
+        {% if estimate.primary_invoice %}
+        <div class="card mb-4">
+            <div class="card-header bg-transparent py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <h6 class="mb-0 fw-semibold"><i class="fas fa-file-invoice me-2 text-dark"></i>Sales invoice</h6>
+                <a href="{% url 'sales:invoice_detail' estimate.primary_invoice.pk %}" class="btn btn-sm btn-success">
+                    <i class="fas fa-file-invoice me-1"></i>{{ estimate.primary_invoice.invoice_number }}
+                </a>
+            </div>
+            <div class="card-body">
+                <p class="text-muted small mb-0">
+                    This estimate was converted to an invoice. Use <strong>Receive Payment</strong> on the invoice to record customer payments.
+                </p>
+            </div>
+        </div>
+        {% endif %}
+        {% if can_create_proforma and not estimate.has_invoice %}
         <div class="card mb-4" id="proforma-create">
             <div class="card-header bg-transparent py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
                 <h6 class="mb-0 fw-semibold"><i class="fas fa-file-invoice-dollar me-2 text-dark"></i>Proforma invoice</h6>
@@ -367,6 +386,11 @@
                     data-estimate-number="{{ estimate.display_estimate_number }}"
                     data-subtotal="{{ estimate.subtotal }}"
                     data-vat="{{ estimate.vat_amount }}"
+                    data-estimate-total="{{ estimate.total_amount }}"
+                    data-billed-total="{{ estimate.proforma_billed_total }}"
+                    data-remaining-total="{{ estimate.proforma_remaining_total }}"
+                    data-remaining-subtotal="{{ estimate.proforma_remaining_subtotal }}"
+                    data-max-percent="{{ estimate.proforma_max_percent }}"
                     data-vat-rate="{{ estimate.proforma_vat_rate_percent }}">
                     <i class="fas fa-plus me-1"></i>Create proforma
                 </button>
@@ -471,7 +495,7 @@
     </div>
 </div>
 
-{% if estimate.allows_follow_on_conversion and estimate.is_active and not estimate.project and estimate_to_project_prompt_include_lines %}
+{% if can_convert_estimate_follow_on and estimate.allows_follow_on_conversion and estimate.is_active and not estimate.project and estimate_to_project_prompt_include_lines %}
 <div class="modal fade" id="convertProjectModal" tabindex="-1" aria-labelledby="convertProjectModalLabel" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -573,7 +597,7 @@
 </script>
 {% endif %}
 {% if can_create_proforma %}
-<script src="{% static 'js/proforma_modal.js' %}?v=4"></script>
+<script src="{% static 'js/proforma_modal.js' %}?v=5"></script>
 {% endif %}
 {% endblock %}
 

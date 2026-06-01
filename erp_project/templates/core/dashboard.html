@@ -148,9 +148,10 @@
 </div>
 
 {% if gatepass_expiry_alerts or fleet_expiry_alerts %}
-<div class="row g-4 mb-4 mt-4 pt-1">
+<div class="row g-4 mb-4 mt-4 pt-1{% if gatepass_expiry_alerts and not fleet_expiry_alerts %} d-none{% endif %}">
     {% if gatepass_expiry_alerts %}
-    <div class="col-12">
+    {# Hidden on dashboard only — data still loaded; remove d-none to show again #}
+    <div class="col-12 d-none" id="dashboard-gatepass-expiry">
         <div class="card border-0 shadow-sm">
             <div class="card-header bg-transparent border-0 py-3 d-flex flex-wrap justify-content-between align-items-center gap-2">
                 <h5 class="mb-0 fw-semibold">

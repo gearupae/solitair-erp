@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+{% load humanize %}
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -140,6 +141,7 @@
             body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
             .no-print { display: none !important; }
             .estimate-container { padding: 0; max-width: none; }
+            .report-section { break-inside: avoid-page; }
         }
         .print-actions {
             position: fixed;
@@ -169,6 +171,35 @@
             font-size: 10px;
             line-height: 1.55;
         }
+        .report-section { margin-bottom: 18px; page-break-inside: avoid; }
+        .report-section-title {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #153a5c;
+            font-weight: 700;
+            margin-bottom: 8px;
+            padding-bottom: 4px;
+            border-bottom: 2px solid #e5e5e5;
+        }
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+        .kpi-box {
+            border: 1px solid #e5e5e5;
+            background: #fafafa;
+            padding: 8px 10px;
+            font-size: 9px;
+        }
+        .kpi-box .kpi-label { color: #737373; text-transform: uppercase; font-size: 8px; letter-spacing: 0.06em; }
+        .kpi-box .kpi-value { font-size: 12px; font-weight: 700; color: #171717; margin-top: 4px; }
+        .group-heading { font-size: 9px; font-weight: 700; color: #525252; text-transform: uppercase; margin: 10px 0 6px; }
+        .text-end { text-align: right; }
+        .text-profit { color: #166534; }
+        .text-loss { color: #b91c1c; }
     </style>
 </head>
 <body>
@@ -233,6 +264,24 @@
                         <span class="addr-to-detail-label">Progress (tasks)</span>
                         <span class="addr-to-detail-value">{{ project.task_progress_percent }}% ({{ project.completed_tasks }}/{{ project.total_tasks }})</span>
                     </div>
+                    {% if report.estimate %}
+                    <div class="addr-to-detail-row">
+                        <span class="addr-to-detail-label">Source estimate</span>
+                        <span class="addr-to-detail-value">{{ report.estimate.estimate_number }}</span>
+                    </div>
+                    {% endif %}
+                    {% if report.contract_value > 0 %}
+                    <div class="addr-to-detail-row">
+                        <span class="addr-to-detail-label">Contract value</span>
+                        <span class="addr-to-detail-value">AED {{ report.contract_value|floatformat:2|intcomma }}</span>
+                    </div>
+                    {% endif %}
+                    {% if report.budget > 0 %}
+                    <div class="addr-to-detail-row">
+                        <span class="addr-to-detail-label">Budget (base)</span>
+                        <span class="addr-to-detail-value">AED {{ report.budget|floatformat:2|intcomma }}</span>
+                    </div>
+                    {% endif %}
                 </div>
             </div>
             <div class="addr-block addr-from">
@@ -258,45 +307,343 @@
         </div>
         {% endif %}
 
-        <div class="summary-strip">
-            <strong>Tasks:</strong> {{ tasks|length }} total
-            · <strong>Completed:</strong> {{ project.completed_tasks }}
-            · <strong>Progress:</strong> {{ project.task_progress_percent }}%
+        <div class="kpi-grid">
+            <div class="kpi-box">
+                <div class="kpi-label">{{ report.revenue_label }}</div>
+                <div class="kpi-value">AED {{ report.revenue|floatformat:2|intcomma }}</div>
+            </div>
+            <div class="kpi-box">
+                <div class="kpi-label">Total project cost</div>
+                <div class="kpi-value">AED {{ report.cost_summary.total|floatformat:2|intcomma }}</div>
+            </div>
+            <div class="kpi-box">
+                <div class="kpi-label">Gross profit / (loss)</div>
+                <div class="kpi-value {% if report.is_profitable %}text-profit{% else %}text-loss{% endif %}">
+                    AED {{ report.gross_profit|floatformat:2|intcomma }}
+                </div>
+            </div>
+            <div class="kpi-box">
+                <div class="kpi-label">Tasks · Manpower</div>
+                <div class="kpi-value">{{ project.completed_tasks }}/{{ project.total_tasks }} · {{ report.labour_total_hours|floatformat:1 }} hrs</div>
+            </div>
         </div>
 
-        <table class="items-table">
-            <thead>
-                <tr>
-                    <th style="width:28px;">#</th>
-                    <th>Task</th>
-                    <th class="text-center" style="width:72px;">Start</th>
-                    <th class="text-center" style="width:72px;">Due</th>
-                    <th style="width:88px;">Status</th>
-                    <th style="width:72px;">Priority</th>
-                    <th>Assigned</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for task in tasks %}
-                <tr>
-                    <td class="item-number">{{ forloop.counter }}</td>
-                    <td>
-                        <strong>{{ task.name }}</strong>
-                        {% if task.description %}<div style="color:#525252;font-size:9px;margin-top:4px;">{{ task.description|truncatewords:40 }}</div>{% endif %}
-                    </td>
-                    <td class="text-center">{{ task.start_date|date:"d/m/Y"|default:"—" }}</td>
-                    <td class="text-center">{{ task.due_date|date:"d/m/Y"|default:"—" }}</td>
-                    <td>{{ task.get_status_display }}</td>
-                    <td>{{ task.get_priority_display }}</td>
-                    <td>{% if task.assigned_to %}{{ task.assigned_to.get_full_name|default:task.assigned_to.username }}{% else %}—{% endif %}</td>
-                </tr>
-                {% empty %}
-                <tr>
-                    <td colspan="7" style="text-align:center;padding:20px;color:#737373;">No tasks</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+        <div class="report-section">
+            <div class="report-section-title">Project team</div>
+            {% if team.members or team.technicians or project.manager %}
+            <table class="items-table">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Role / designation</th>
+                        <th>Department</th>
+                        <th>Contact</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if project.manager %}
+                    <tr>
+                        <td><strong>{{ project.manager.get_full_name|default:project.manager.username }}</strong></td>
+                        <td>Project manager</td>
+                        <td>—</td>
+                        <td>{{ project.manager.email|default:"—" }}</td>
+                    </tr>
+                    {% endif %}
+                    {% for row in team.members %}
+                    <tr>
+                        <td>{{ row.display_name }}{% if row.badges %} <span class="item-number">({{ row.badges|join:", " }})</span>{% endif %}</td>
+                        <td>{{ row.designation }}</td>
+                        <td>{{ row.department }}</td>
+                        <td>{{ row.email }}{% if row.phone != "—" %} · {{ row.phone }}{% endif %}</td>
+                    </tr>
+                    {% endfor %}
+                    {% for row in team.technicians %}
+                    <tr>
+                        <td>{{ row.display_name }}</td>
+                        <td>{{ row.designation }} (technician)</td>
+                        <td>{{ row.department }}</td>
+                        <td>{{ row.email }}{% if row.phone != "—" %} · {{ row.phone }}{% endif %}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p style="color:#737373;font-size:10px;margin:0;">No team members assigned.</p>
+            {% endif %}
+        </div>
+
+        <div class="report-section">
+            <div class="report-section-title">Scope items (from estimate / project)</div>
+            {% if report.estimate_groups %}
+            {% for group_name, lines in report.estimate_groups.items %}
+            <div class="group-heading">{{ group_name }}</div>
+            <table class="items-table">
+                <thead>
+                    <tr>
+                        <th>Description</th>
+                        <th>Inventory item</th>
+                        <th class="text-center">Qty</th>
+                        <th class="text-end">Rate</th>
+                        <th class="text-end">Net</th>
+                        <th class="text-end">Total incl. VAT</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for line in lines %}
+                    <tr>
+                        <td>{{ line.description }}</td>
+                        <td>{% if line.inventory_item %}{{ line.inventory_item.name }} <span class="item-number">({{ line.inventory_item.item_code }})</span>{% else %}—{% endif %}</td>
+                        <td class="text-center">{{ line.quantity|floatformat:2 }}</td>
+                        <td class="text-end">{{ line.rate|floatformat:2 }}</td>
+                        <td class="text-end">{{ line.line_net|floatformat:2 }}</td>
+                        <td class="text-end">{{ line.line_total_incl_vat|floatformat:2 }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% endfor %}
+            <div class="summary-strip" style="text-align:right;">
+                <strong>Estimate total:</strong> AED {{ report.estimate_grand_total|floatformat:2|intcomma }}
+                (net AED {{ report.estimate_net_total|floatformat:2|intcomma }} + VAT AED {{ report.estimate_vat_total|floatformat:2|intcomma }})
+            </div>
+            {% else %}
+            <p style="color:#737373;font-size:10px;margin:0;">No scope lines on this project.</p>
+            {% endif %}
+        </div>
+
+        {% if report.compare_rows %}
+        <div class="report-section">
+            <div class="report-section-title">Estimate vs delivered (quantities)</div>
+            <table class="items-table">
+                <thead>
+                    <tr>
+                        <th>Item</th>
+                        <th class="text-end">Est. qty</th>
+                        <th class="text-end">Delivered</th>
+                        <th class="text-end">Returned</th>
+                        <th class="text-end">On site</th>
+                        <th class="text-end">Variance</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in report.compare_rows %}
+                    <tr>
+                        <td><strong>{{ row.item_name }}</strong> <span class="item-number">{{ row.item_code }}</span></td>
+                        <td class="text-end">{% if row.estimated_qty is not None %}{{ row.estimated_qty|floatformat:2 }}{% else %}—{% endif %}</td>
+                        <td class="text-end">{{ row.delivered_qty|floatformat:2 }}</td>
+                        <td class="text-end">{{ row.returned_qty|floatformat:2 }}</td>
+                        <td class="text-end">{{ row.on_site_qty|floatformat:2 }}</td>
+                        <td class="text-end">{% if row.variance_qty is not None %}{{ row.variance_qty|floatformat:2 }}{% else %}—{% endif %}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+
+        <div class="report-section">
+            <div class="report-section-title">Items delivered to site</div>
+            {% if report.utilization_rows %}
+            <table class="items-table">
+                <thead>
+                    <tr>
+                        <th>Item</th>
+                        <th>Detail</th>
+                        <th class="text-end">Qty</th>
+                        <th>Delivered</th>
+                        <th>Delivered by</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in report.utilization_rows %}
+                    <tr>
+                        <td><strong>{{ row.item_name }}</strong> <span class="item-number">{{ row.item_code }}</span></td>
+                        <td>{{ row.detail }}</td>
+                        <td class="text-end">{{ row.quantity|floatformat:2 }}</td>
+                        <td>{{ row.delivered_date|date:"d/m/Y"|default:"—" }}</td>
+                        <td>{{ row.delivered_by }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            <div class="summary-strip">
+                <strong>Inventory on site (value):</strong> AED {{ report.inventory_spend_total|floatformat:2|intcomma }}
+            </div>
+            {% else %}
+            <p style="color:#737373;font-size:10px;margin:0;">No items delivered to this project yet.</p>
+            {% endif %}
+        </div>
+
+        {% if report.return_rows %}
+        <div class="report-section">
+            <div class="report-section-title">Items returned from site</div>
+            <table class="items-table">
+                <thead>
+                    <tr>
+                        <th>Item</th>
+                        <th>Detail</th>
+                        <th class="text-end">Qty</th>
+                        <th>Returned</th>
+                        <th>Returned by</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in report.return_rows %}
+                    <tr>
+                        <td><strong>{{ row.item_name }}</strong> <span class="item-number">{{ row.item_code }}</span></td>
+                        <td>{{ row.detail }}</td>
+                        <td class="text-end">{{ row.quantity|floatformat:2 }}</td>
+                        <td>{{ row.returned_date|date:"d/m/Y" }}</td>
+                        <td>{{ row.returned_by }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+
+        {% if report.labour_rows %}
+        <div class="report-section">
+            <div class="report-section-title">Manpower / labour</div>
+            <table class="items-table">
+                <thead>
+                    <tr>
+                        <th>Technician</th>
+                        <th class="text-end">Hours</th>
+                        <th class="text-end">Rate</th>
+                        <th class="text-end">Cost (AED)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in report.labour_rows %}
+                    <tr>
+                        <td>{{ row.display_name }}</td>
+                        <td class="text-end">{{ row.hours|floatformat:2 }}</td>
+                        <td class="text-end">{{ row.hourly_rate|floatformat:2 }}</td>
+                        <td class="text-end">{{ row.labour_cost|floatformat:2|intcomma }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            <div class="summary-strip">
+                <strong>Total labour:</strong> {{ report.labour_total_hours|floatformat:2 }} hrs · AED {{ report.labour_total_cost|floatformat:2|intcomma }}
+            </div>
+        </div>
+        {% endif %}
+
+        {% if report.expenses.vendor_bills or report.expenses.category_rows %}
+        <div class="report-section">
+            <div class="report-section-title">Other expenses</div>
+            {% if report.expenses.vendor_bills %}
+            <div class="group-heading">Vendor bills</div>
+            <table class="items-table">
+                <thead>
+                    <tr>
+                        <th>Bill #</th>
+                        <th>Vendor</th>
+                        <th>Date</th>
+                        <th>Status</th>
+                        <th class="text-end">Amount (AED)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for bill in report.expenses.vendor_bills %}
+                    <tr>
+                        <td>{{ bill.bill_number }}</td>
+                        <td>{{ bill.vendor.name }}</td>
+                        <td>{{ bill.bill_date|date:"d/m/Y" }}</td>
+                        <td>{{ bill.get_status_display }}</td>
+                        <td class="text-end">{{ bill.total_amount|floatformat:2|intcomma }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% endif %}
+            {% if report.expenses.category_rows %}
+            <div class="group-heading">Manual expenses by category</div>
+            <table class="items-table">
+                <thead>
+                    <tr><th>Category</th><th class="text-end">Count</th><th class="text-end">Total (AED)</th></tr>
+                </thead>
+                <tbody>
+                    {% for row in report.expenses.category_rows %}
+                    <tr>
+                        <td>{{ row.label }}</td>
+                        <td class="text-end">{{ row.count }}</td>
+                        <td class="text-end">{{ row.total|floatformat:2|intcomma }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% endif %}
+            <div class="summary-strip">
+                <strong>Total other expenses:</strong> AED {{ report.expenses.other_expenses_total|floatformat:2|intcomma }}
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="report-section">
+            <div class="report-section-title">Cost summary</div>
+            <table class="items-table">
+                <tbody>
+                    <tr><td>Materials &amp; inventory on site</td><td class="text-end">AED {{ report.cost_summary.materials_inventory|floatformat:2|intcomma }}</td></tr>
+                    <tr><td>Manpower / labour</td><td class="text-end">AED {{ report.cost_summary.labour|floatformat:2|intcomma }}</td></tr>
+                    <tr><td>Manual expenses</td><td class="text-end">AED {{ report.cost_summary.manual_expenses|floatformat:2|intcomma }}</td></tr>
+                    <tr><td>Vendor bills</td><td class="text-end">AED {{ report.cost_summary.vendor_bills|floatformat:2|intcomma }}</td></tr>
+                    <tr style="background:#f0f4f8;font-weight:700;">
+                        <td>Total project cost</td>
+                        <td class="text-end">AED {{ report.cost_summary.total|floatformat:2|intcomma }}</td>
+                    </tr>
+                    <tr style="background:#f0f4f8;font-weight:700;">
+                        <td>{{ report.revenue_label }}</td>
+                        <td class="text-end">AED {{ report.revenue|floatformat:2|intcomma }}</td>
+                    </tr>
+                    <tr style="background:#e8f5e9;font-weight:700;">
+                        <td>Gross profit / (loss){% if report.profit_margin_pct is not None %} ({{ report.profit_margin_pct }}% margin){% endif %}</td>
+                        <td class="text-end {% if report.is_profitable %}text-profit{% else %}text-loss{% endif %}">AED {{ report.gross_profit|floatformat:2|intcomma }}</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="report-section">
+            <div class="report-section-title">Tasks ({{ tasks|length }}) — {{ project.task_progress_percent }}% complete</div>
+            <table class="items-table">
+                <thead>
+                    <tr>
+                        <th style="width:28px;">#</th>
+                        <th>Task</th>
+                        <th class="text-center" style="width:64px;">Start</th>
+                        <th class="text-center" style="width:64px;">Due</th>
+                        <th style="width:80px;">Status</th>
+                        <th style="width:64px;">Priority</th>
+                        <th class="text-end" style="width:56px;">Est. hrs</th>
+                        <th>Assigned to</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for task in tasks %}
+                    <tr>
+                        <td class="item-number">{{ forloop.counter }}</td>
+                        <td>
+                            <strong>{{ task.name }}</strong>
+                            {% if task.description %}<div style="color:#525252;font-size:9px;margin-top:4px;">{{ task.description|truncatewords:50 }}</div>{% endif %}
+                        </td>
+                        <td class="text-center">{{ task.start_date|date:"d/m/Y"|default:"—" }}</td>
+                        <td class="text-center">{{ task.due_date|date:"d/m/Y"|default:"—" }}</td>
+                        <td>{{ task.get_status_display }}</td>
+                        <td>{{ task.get_priority_display }}</td>
+                        <td class="text-end">{{ task.estimated_hours|floatformat:2 }}</td>
+                        <td>{% if task.assigned_to %}{{ task.assigned_to.get_full_name|default:task.assigned_to.username }}{% else %}—{% endif %}</td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="8" style="text-align:center;padding:20px;color:#737373;">No tasks</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
 
         <div class="doc-footer">
             <div><strong>{{ company.company_name }}</strong> — Project report {{ project.project_code }}</div>

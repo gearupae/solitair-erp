@@ -35,7 +35,7 @@ class DocumentListView(PermissionRequiredMixin, ListView):
         elif status == 'active':
             queryset = queryset.filter(expiry_date__gt=today + timedelta(days=30))
         
-        return queryset
+        return queryset.order_by('-created_at', '-pk')
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -87,7 +87,7 @@ class DocumentTypeListView(PermissionRequiredMixin, ListView):
     permission_type = 'view'
     
     def get_queryset(self):
-        return DocumentType.objects.filter(is_active=True)
+        return DocumentType.objects.filter(is_active=True).order_by('-created_at', '-pk')
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)

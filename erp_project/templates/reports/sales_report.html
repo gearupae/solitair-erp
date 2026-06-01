@@ -3,6 +3,23 @@
 
 {% block extra_css %}
 <style>
+/* Slightly larger type across the sales report */
+.sales-report-page {
+    font-size: 0.9375rem;
+}
+.sales-report-page .sales-kpi-label {
+    font-size: 0.875rem;
+}
+.sales-report-page .sales-kpi-value {
+    font-size: 1.35rem;
+}
+.sales-report-page .sales-kpi-sub {
+    font-size: 0.875rem;
+}
+.sales-report-page .sales-section-heading {
+    font-size: 0.8125rem;
+}
+
 .sales-kpi { border-left: 3px solid var(--kpi-accent, #dee2e6); }
 .sales-kpi--invoice { --kpi-accent: #0d6efd; }
 .sales-kpi--collected { --kpi-accent: #198754; }
@@ -25,12 +42,12 @@
 }
 .sales-pipeline-chip.is-active { border-color: #cfe2ff; background: #f8fbff; }
 .sales-pipeline-chip__label {
-    font-size: 0.65rem;
+    font-size: 0.75rem;
     text-transform: uppercase;
     color: #6c757d;
     margin-bottom: 0.1rem;
 }
-.sales-pipeline-chip__count { font-size: 1.05rem; font-weight: 700; line-height: 1.1; }
+.sales-pipeline-chip__count { font-size: 1.15rem; font-weight: 700; line-height: 1.1; }
 
 /* Detail tabs */
 .sales-detail-card {
@@ -38,9 +55,9 @@
 }
 .sales-detail-tabs {
     display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    padding: 0.85rem 1rem 0;
+    flex-wrap: nowrap;
+    gap: 0.35rem;
+    padding: 0.75rem 0.75rem 0;
     background: linear-gradient(180deg, #f8f9fb 0%, #fff 100%);
     border-bottom: 1px solid #eef0f3;
 }
@@ -54,9 +71,11 @@
     cursor: pointer;
     display: flex;
     align-items: center;
+    justify-content: flex-start;
     gap: 0.55rem;
-    padding: 0.65rem 0.95rem;
+    flex: 1 1 0;
     min-width: 0;
+    padding: 0.75rem 0.95rem;
     transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
 }
 .sales-detail-tab:hover {
@@ -73,8 +92,8 @@
     z-index: 1;
 }
 .sales-detail-tab__icon {
-    width: 2rem;
-    height: 2rem;
+    width: 2.25rem;
+    height: 2.25rem;
     border-radius: 0.55rem;
     display: inline-flex;
     align-items: center;
@@ -82,36 +101,48 @@
     background: color-mix(in srgb, var(--tab-accent) 12%, white);
     color: var(--tab-accent);
     flex-shrink: 0;
-    font-size: 0.85rem;
+    font-size: 0.95rem;
 }
 .sales-detail-tab__body {
     text-align: left;
     min-width: 0;
+    flex: 1 1 auto;
 }
 .sales-detail-tab__label {
     display: block;
-    font-size: 0.78rem;
+    font-size: 0.9rem;
     font-weight: 600;
     line-height: 1.2;
-    white-space: nowrap;
 }
 .sales-detail-tab__meta {
     display: block;
-    font-size: 0.68rem;
+    font-size: 0.8rem;
     color: #6c757d;
-    line-height: 1.2;
-    white-space: nowrap;
+    line-height: 1.25;
 }
 .sales-detail-tab__count {
     background: #eef1f5;
     border-radius: 999px;
     color: #495057;
-    font-size: 0.68rem;
+    font-size: 0.78rem;
     font-weight: 700;
     line-height: 1;
-    min-width: 1.35rem;
-    padding: 0.28rem 0.45rem;
+    min-width: 1.5rem;
+    padding: 0.32rem 0.5rem;
     text-align: center;
+    flex-shrink: 0;
+    margin-left: auto;
+}
+@media (max-width: 768px) {
+    .sales-detail-tabs {
+        flex-wrap: wrap;
+    }
+    .sales-detail-tab {
+        flex: 1 1 calc(50% - 0.2rem);
+    }
+    .sales-detail-tab--quotations {
+        flex: 1 1 100%;
+    }
 }
 .sales-detail-tab.active .sales-detail-tab__count {
     background: color-mix(in srgb, var(--tab-accent) 16%, white);
@@ -134,17 +165,17 @@
     background: #fbfcfd;
     border-bottom: 1px solid #e9ecef;
     color: #6c757d;
-    font-size: 0.68rem;
+    font-size: 0.75rem;
     font-weight: 700;
     letter-spacing: 0.04em;
-    padding: 0.75rem 1rem;
+    padding: 0.85rem 1rem;
     text-transform: uppercase;
     white-space: nowrap;
 }
 .sales-detail-table tbody td {
     border-bottom: 1px solid #f1f3f5;
-    font-size: 0.84rem;
-    padding: 0.8rem 1rem;
+    font-size: 0.925rem;
+    padding: 0.85rem 1rem;
     vertical-align: middle;
 }
 .sales-detail-table tbody tr:hover {
@@ -172,9 +203,9 @@
 }
 .sales-status-badge {
     border-radius: 999px;
-    font-size: 0.72rem;
+    font-size: 0.8125rem;
     font-weight: 600;
-    padding: 0.28rem 0.55rem;
+    padding: 0.32rem 0.6rem;
 }
 .sales-status-badge.is-won {
     background: #d1e7dd;
@@ -213,6 +244,7 @@
 {% endblock %}
 
 {% block content %}
+<div class="sales-report-page">
 <div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
     <div>
         <nav aria-label="breadcrumb">
@@ -233,15 +265,15 @@
     <div class="card-body py-2 px-3">
         <form method="get" class="row g-2 align-items-end">
             <div class="col-sm-4 col-md-3">
-                <label class="form-label small mb-1">Start Date</label>
-                <input type="date" name="start_date" class="form-control form-control-sm" value="{{ start_date|date:'Y-m-d' }}">
+                <label class="form-label mb-1">Start Date</label>
+                <input type="date" name="start_date" class="form-control" value="{{ start_date|date:'Y-m-d' }}">
             </div>
             <div class="col-sm-4 col-md-3">
-                <label class="form-label small mb-1">End Date</label>
-                <input type="date" name="end_date" class="form-control form-control-sm" value="{{ end_date|date:'Y-m-d' }}">
+                <label class="form-label mb-1">End Date</label>
+                <input type="date" name="end_date" class="form-control" value="{{ end_date|date:'Y-m-d' }}">
             </div>
             <div class="col-sm-4 col-md-2">
-                <button type="submit" class="btn btn-primary btn-sm w-100"><i class="fas fa-sync me-1"></i>Update</button>
+                <button type="submit" class="btn btn-primary w-100"><i class="fas fa-sync me-1"></i>Update</button>
             </div>
         </form>
     </div>
@@ -251,36 +283,36 @@
     <div class="col-6 col-md-3">
         <div class="card border-0 shadow-sm sales-kpi sales-kpi--invoice h-100">
             <div class="card-body py-2 px-3">
-                <div class="text-muted small">Invoiced</div>
-                <div class="fs-5 fw-bold text-primary lh-sm">AED {{ invoiced.total|default:0|floatformat:2|intcomma }}</div>
-                <div class="small text-muted">{{ invoiced.count|default:0|intcomma }} invoice{{ invoiced.count|pluralize }}</div>
+                <div class="text-muted sales-kpi-label">Invoiced</div>
+                <div class="fw-bold text-primary lh-sm sales-kpi-value">AED {{ invoiced.total|default:0|floatformat:2|intcomma }}</div>
+                <div class="text-muted sales-kpi-sub">{{ invoiced.count|default:0|intcomma }} invoice{{ invoiced.count|pluralize }}</div>
             </div>
         </div>
     </div>
     <div class="col-6 col-md-3">
         <div class="card border-0 shadow-sm sales-kpi sales-kpi--collected h-100">
             <div class="card-body py-2 px-3">
-                <div class="text-muted small">Collected</div>
-                <div class="fs-5 fw-bold text-success lh-sm">AED {{ collected.total|floatformat:2|intcomma }}</div>
-                <div class="small text-muted">{{ collected.count|intcomma }} in period</div>
+                <div class="text-muted sales-kpi-label">Collected</div>
+                <div class="fw-bold text-success lh-sm sales-kpi-value">AED {{ collected.total|floatformat:2|intcomma }}</div>
+                <div class="text-muted sales-kpi-sub">{{ collected.count|intcomma }} in period</div>
             </div>
         </div>
     </div>
     <div class="col-6 col-md-3">
         <div class="card border-0 shadow-sm sales-kpi sales-kpi--outstanding h-100">
             <div class="card-body py-2 px-3">
-                <div class="text-muted small">Outstanding AR</div>
-                <div class="fs-5 fw-bold text-warning lh-sm">AED {{ outstanding.total|floatformat:2|intcomma }}</div>
-                <div class="small text-muted">{{ outstanding.count|default:0|intcomma }} open</div>
+                <div class="text-muted sales-kpi-label">Outstanding AR</div>
+                <div class="fw-bold text-warning lh-sm sales-kpi-value">AED {{ outstanding.total|floatformat:2|intcomma }}</div>
+                <div class="text-muted sales-kpi-sub">{{ outstanding.count|default:0|intcomma }} open</div>
             </div>
         </div>
     </div>
     <div class="col-6 col-md-3">
         <div class="card border-0 shadow-sm sales-kpi sales-kpi--won h-100">
             <div class="card-body py-2 px-3">
-                <div class="text-muted small">Quot won</div>
-                <div class="fs-5 fw-bold text-success lh-sm">AED {{ won.total|default:0|floatformat:2|intcomma }}</div>
-                <div class="small text-muted">{{ won.count|default:0|intcomma }} · lost {{ lost.count|default:0|intcomma }}</div>
+                <div class="text-muted sales-kpi-label">Quot won</div>
+                <div class="fw-bold text-success lh-sm sales-kpi-value">AED {{ won.total|default:0|floatformat:2|intcomma }}</div>
+                <div class="text-muted sales-kpi-sub">{{ won.count|default:0|intcomma }} · lost {{ lost.count|default:0|intcomma }}</div>
             </div>
         </div>
     </div>
@@ -288,7 +320,7 @@
 
 <div class="card border-0 shadow-sm mb-3">
     <div class="card-body py-2 px-3">
-        <div class="small text-muted text-uppercase fw-medium mb-2">Quotations in period</div>
+        <div class="text-muted text-uppercase fw-medium mb-2 sales-section-heading">Quotations in period</div>
         <div class="sales-pipeline-grid">
             {% for row in pipeline_rows %}
             <div class="sales-pipeline-chip{% if row.count %} is-active{% endif %}">
@@ -441,6 +473,7 @@
             </div>
         </div>
     </div>
+</div>
 </div>
 {% endblock %}
 

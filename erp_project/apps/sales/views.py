@@ -198,17 +198,11 @@ def estimate_items_sample_csv(request):
     return response
 
 
-def user_can_convert_estimate_to_project(user):
-    """Whether the user may convert an approved estimate to a project (button + POST)."""
-    if not user or not user.is_authenticated:
-        return False
-    if user.is_superuser:
-        return True
-    return (
-        PermissionChecker.has_permission(user, 'sales', 'edit')
-        or PermissionChecker.has_permission(user, 'sales', 'create')
-        or PermissionChecker.has_permission(user, 'projects', 'create')
-    )
+def user_can_convert_estimate_to_project(user, estimate):
+    """Whether the user may convert this estimate to a project (button + POST)."""
+    from .approval_rules import user_can_convert_estimate_follow_on
+
+    return user_can_convert_estimate_follow_on(user, estimate)
 
 
 ESTIMATE_LIST_SORT_FIELDS = {
@@ -363,6 +357,10 @@ class EstimateListView(PermissionRequiredMixin, ListView):
                 'proforma_invoices',
                 queryset=EstimateProformaInvoice.objects.order_by('-created_at'),
             ),
+            Prefetch(
+                'invoices',
+                queryset=Invoice.objects.exclude(status='cancelled').order_by('-created_at'),
+            ),
         )
 
         from apps.core.visibility import filter_estimates_for_user
@@ -452,6 +450,12 @@ class EstimateListView(PermissionRequiredMixin, ListView):
         kanban_q['view'] = 'kanban'
         context['estimate_list_url_list'] = '?' + list_q.urlencode()
         context['estimate_list_url_kanban'] = '?' + kanban_q.urlencode()
+
+        from .approval_rules import user_can_convert_estimate_follow_on
+
+        user = self.request.user
+        for est in context.get('estimates', []):
+            est.can_convert_follow_on = user_can_convert_estimate_follow_on(user, est)
 
         base_qs = Estimate.objects.filter(is_active=True)
         if is_portal:
@@ -837,6 +841,10 @@ class EstimateDetailView(PermissionRequiredMixin, DetailView):
         ).prefetch_related(
             Prefetch('items', queryset=items_qs),
             Prefetch('proforma_invoices', queryset=EstimateProformaInvoice.objects.select_related('created_by')),
+            Prefetch(
+                'invoices',
+                queryset=Invoice.objects.exclude(status='cancelled').order_by('-created_at'),
+            ),
         )
         from apps.core.visibility import filter_estimates_for_user
 
@@ -862,9 +870,13 @@ class EstimateDetailView(PermissionRequiredMixin, DetailView):
             get_estimate_status_actions,
             user_can_approve_estimate_edit,
             user_can_approve_estimate_status,
+            user_can_convert_estimate_follow_on,
         )
 
         context['can_edit'] = self.object.allows_edit_by(self.request.user)
+        context['can_convert_estimate_follow_on'] = user_can_convert_estimate_follow_on(
+            self.request.user, self.object
+        )
         context['can_approve_estimate_status'] = user_can_approve_estimate_status(
             self.request.user, self.object
         )
@@ -1164,14 +1176,28 @@ def estimate_convert_to_invoice(request, pk):
     """Convert an approved or quotation-won estimate to invoice."""
     estimate = get_object_or_404(Estimate, pk=pk)
 
-    if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'sales', 'create')):
-        messages.error(request, 'Permission denied.')
-        return redirect('sales:estimate_list')
+    from .approval_rules import user_can_convert_estimate_follow_on
+
+    if not user_can_convert_estimate_follow_on(request.user, estimate):
+        messages.error(
+            request,
+            'Only the assigned salesperson or the user who created this estimate can convert it to an invoice.',
+        )
+        return redirect('sales:estimate_detail', pk=pk)
 
     if not estimate.allows_follow_on_conversion:
         messages.error(request, 'Only approved or quotation-won estimates can be converted to an invoice.')
-        return redirect('sales:estimate_list')
-    
+        return redirect('sales:estimate_detail', pk=pk)
+
+    existing = estimate.primary_invoice
+    if existing:
+        messages.warning(
+            request,
+            f'This estimate already has invoice {existing.invoice_number}. '
+            f'Record payments on the invoice, not the estimate.',
+        )
+        return redirect('sales:invoice_detail', pk=existing.pk)
+
     # Create invoice from estimate
     invoice = Invoice.objects.create(
         estimate=estimate,
@@ -1220,8 +1246,11 @@ def estimate_convert_to_project(request, pk):
         pk=pk,
     )
 
-    if not user_can_convert_estimate_to_project(request.user):
-        messages.error(request, 'Permission denied.')
+    if not user_can_convert_estimate_to_project(request.user, estimate):
+        messages.error(
+            request,
+            'Only the assigned salesperson or the user who created this estimate can convert it to a project.',
+        )
         return redirect('sales:estimate_detail', pk=pk)
 
     if not estimate.allows_follow_on_conversion:
@@ -1485,10 +1514,14 @@ def estimate_proforma_edit(request, pk, proforma_pk):
             messages.success(request, f'Proforma {proforma.proforma_number} updated.')
             return redirect('sales:estimate_proforma_invoice_pdf', pk=pk, proforma_pk=proforma.pk)
 
+    from .proforma_calculation import proforma_billing_limits
+
+    billing_limits = proforma_billing_limits(estimate, exclude_proforma_pk=proforma.pk)
     return render(request, 'sales/proforma_invoice_edit.html', {
         'title': f'Edit {proforma.proforma_number}',
         'estimate': estimate,
         'proforma': proforma,
+        'billing_limits': billing_limits,
     })
 
 

@@ -33,6 +33,7 @@ from .item_delivery import (
     project_item_delivered_qty,
     project_item_remaining_qty,
     project_item_returnable_qty,
+    project_item_activity_timeline,
     project_return_history_rows,
     return_items_from_project,
     return_serial_unit_from_project,
@@ -417,7 +418,11 @@ def project_approve_completion(request, pk):
             project, approver=request.user, submitter=submitter
         )
     messages.success(request, f'{project.project_code} marked as Completed.')
-    return redirect('projects:project_detail', pk=pk)
+    from apps.core.visibility import user_can_access_project
+
+    if user_can_access_project(request.user, project):
+        return redirect('projects:project_detail', pk=pk)
+    return redirect('projects:project_list')
 
 
 @login_required
@@ -459,6 +464,36 @@ def project_reject_completion(request, pk):
     return redirect('projects:project_detail', pk=pk)
 
 
+@login_required
+def project_request_completion(request, pk):
+    """Submit a completion request from the project detail page (no edit form required)."""
+    if request.method != 'POST':
+        return HttpResponseNotAllowed(['POST'])
+
+    project = get_object_or_404(Project, pk=pk, is_active=True)
+    if not project.allows_edit_by(request.user):
+        messages.error(request, 'Permission denied.')
+        return redirect('projects:project_detail', pk=pk)
+
+    if project.status == 'completed':
+        messages.info(request, f'{project.project_code} is already Completed.')
+        return redirect('projects:project_detail', pk=pk)
+
+    if project.edit_approval_status == 'pending':
+        messages.warning(request, 'Completion is already pending approval.')
+        return redirect('projects:project_detail', pk=pk)
+
+    from .completion_approval import queue_project_completion_approval
+
+    queue_project_completion_approval(request.user, project)
+    messages.info(
+        request,
+        'Completion request submitted. The project approver must click '
+        'Approve completion before status changes to Completed.',
+    )
+    return redirect('projects:project_detail', pk=pk)
+
+
 class ProjectDetailView(PermissionRequiredMixin, DetailView):
     model = Project
     template_name = 'projects/project_detail.html'
@@ -470,7 +505,7 @@ class ProjectDetailView(PermissionRequiredMixin, DetailView):
         item_line_qs = ProjectItemLine.objects.select_related('inventory_item').order_by(
             'sort_order', 'id'
         )
-        qs = Project.objects.select_related('customer', 'manager', 'created_by').prefetch_related(
+        qs = Project.objects.filter(is_active=True).select_related('customer', 'manager', 'created_by').prefetch_related(
             Prefetch(
                 'members',
                 queryset=User.objects.select_related(
@@ -587,6 +622,11 @@ class ProjectDetailView(PermissionRequiredMixin, DetailView):
         context['can_approve_project_completion'] = user_can_approve_project_completion(
             self.request.user, self.object
         )
+        context['can_request_project_completion'] = (
+            context['can_edit']
+            and self.object.status != 'completed'
+            and self.object.edit_approval_status != 'pending'
+        )
         context['can_create_projects'] = self.request.user.is_superuser or PermissionChecker.has_permission(
             self.request.user, 'projects', 'create'
         )
@@ -656,6 +696,7 @@ class ProjectDetailView(PermissionRequiredMixin, DetailView):
         context['project_team'] = build_project_team_display(self.object)
         context['item_delivery_groups'] = project_delivery_summary_groups(self.object)
         context['item_return_rows'] = project_return_history_rows(self.object)
+        context['item_activity_timeline'] = project_item_activity_timeline(self.object)
         can_deliver = self.request.user.is_superuser or PermissionChecker.has_permission(
             self.request.user, 'inventory', 'edit'
         )
@@ -1247,11 +1288,20 @@ def project_gatepass_delete(request, project_pk, pk):
 
 @login_required
 def project_report_pdf(request, pk):
-    """Printable project report (HTML for print/PDF), layout aligned with estimate PDF."""
-    from apps.settings_app.models import CompanySettings
+    """Printable full project report (scope, team, inventory, costs, tasks)."""
+    from apps.reports.project_report_internal import build_project_report_internal
+    from apps.projects.member_roles import build_project_team_display
 
     project = get_object_or_404(
-        Project.objects.select_related('customer', 'manager'),
+        Project.objects.select_related('customer', 'manager')
+        .prefetch_related(
+            'members',
+            'technicians',
+            'members__employee_profile__designation',
+            'members__employee_profile__department',
+            'technicians__employee_profile__designation',
+            'technicians__employee_profile__department',
+        ),
         pk=pk,
         is_active=True,
     )
@@ -1259,7 +1309,8 @@ def project_report_pdf(request, pk):
         messages.error(request, 'Permission denied.')
         return redirect('projects:project_detail', pk=pk)
 
-    company = CompanySettings.get_settings()
+    report = build_project_report_internal(project=project, user=request.user)
+    company = report['company']
     logo_absolute_url = ''
     if company.logo:
         logo_absolute_url = request.build_absolute_uri(company.logo.url)
@@ -1275,6 +1326,8 @@ def project_report_pdf(request, pk):
             'project': project,
             'company': company,
             'logo_absolute_url': logo_absolute_url,
+            'report': report,
+            'team': build_project_team_display(project),
             'tasks': tasks,
             'page_title': f'Project report — {project.project_code}',
             'print_button_label': 'Print report',

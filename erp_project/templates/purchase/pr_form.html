@@ -299,7 +299,7 @@ function addItemRow() {
     const idx = formCount;
     newRow.innerHTML = `
         <td class="td-inv"></td>
-        <td><input type="number" name="items-${idx}-quantity" class="form-control item-qty" value="0" step="0.01" min="0"></td>
+        <td><input type="number" name="items-${idx}-quantity" class="form-control item-qty" value="0" step="1" min="0"></td>
         <td><select name="items-${idx}-unit" class="form-select"><option value="pcs">Pcs</option><option value="box">Box</option><option value="kg">Kg</option><option value="ltr">Ltr</option><option value="set">Set</option><option value="other">Other</option></select></td>
         <td><input type="number" name="items-${idx}-estimated_price" class="form-control item-cost" value="0" step="0.01" min="0"></td>
         <td class="item-total align-middle">0.00</td>

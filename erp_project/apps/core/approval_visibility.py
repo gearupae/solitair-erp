@@ -78,13 +78,15 @@ def purchase_request_approver_records_q(user):
 
 
 def project_approver_records_q(user):
-    """Projects the user may see as configured completion approver."""
+    """Projects the user may see as configured completion approver (pending or completed)."""
     config = ApprovalConfiguration.objects.filter(module='project', is_active=True).first()
     if not config:
         return Q(pk__in=[])
-    pending = Q(edit_approval_status='pending')
     amount_q = _build_amount_tier_q(config, user, '_approval_amount')
-    return pending & amount_q
+    pending = Q(edit_approval_status='pending') & amount_q
+    # Keep completed projects visible after approval (avoid 404 on redirect).
+    completed = Q(status='completed') & amount_q
+    return pending | completed
 
 
 def annotate_project_approval_amount(queryset):
@@ -112,8 +114,18 @@ def user_is_purchase_request_approver_for(user, purchase_request):
 
 
 def user_is_project_approver_for(user, project):
-    from apps.projects.approval_rules import user_can_approve_project_completion
+    from apps.projects.approval_rules import (
+        get_configured_project_approver,
+        user_can_approve_project_completion,
+    )
 
-    if not project or project.edit_approval_status != 'pending':
+    if not project:
         return False
-    return user_can_approve_project_completion(user, project)
+    if project.edit_approval_status == 'pending':
+        return user_can_approve_project_completion(user, project)
+    if project.status == 'completed':
+        approver = get_configured_project_approver(project)
+        if approver is not None:
+            return approver.pk == user.pk
+        return bool(user.is_superuser)
+    return False

@@ -5,6 +5,10 @@
 #employee-form-root input[type="date"].form-control {
     min-height: calc(1.5em + 0.75rem + 2px);
 }
+.employee-form-actions {
+    top: 56px;
+    z-index: 1020;
+}
 </style>
 {% endblock %}
 {% block content %}
@@ -12,6 +16,9 @@
     <nav aria-label="breadcrumb"><ol class="breadcrumb mb-2"><li class="breadcrumb-item"><a href="{% url 'hr:employee_list' %}">Employees</a></li><li class="breadcrumb-item active">{{ title }}</li></ol></nav>
     <h4 class="mb-0 fw-bold">{{ title }}</h4>
 </div>
+{% if object %}
+<a href="{% url 'hr:employee_detail' object.pk %}" class="btn btn-sm btn-outline-secondary mb-2">View profile</a>
+{% endif %}
 <form method="post" id="employee-form-root">
     {% csrf_token %}
     {% if form.errors %}
@@ -27,11 +34,35 @@
     </div>
     {% endif %}
     {% if uae_form.errors %}
-    <div class="alert alert-warning"><strong>UAE compliance:</strong> please review highlighted fields.</div>
+    <div class="alert alert-warning">
+        <strong>UAE compliance:</strong> please review the fields below.
+        <ul class="mb-0 mt-1 small">
+            {% for field, errors in uae_form.errors.items %}
+                {% for error in errors %}
+                <li><strong>{{ field|title }}:</strong> {{ error }}</li>
+                {% endfor %}
+            {% endfor %}
+        </ul>
+    </div>
     {% endif %}
     {% if bank_form.errors %}
-    <div class="alert alert-warning"><strong>Bank details:</strong> please review highlighted fields.</div>
+    <div class="alert alert-warning">
+        <strong>Bank details:</strong> please review the fields below.
+        <ul class="mb-0 mt-1 small">
+            {% for field, errors in bank_form.errors.items %}
+                {% for error in errors %}
+                <li><strong>{{ field|title }}:</strong> {{ error }}</li>
+                {% endfor %}
+            {% endfor %}
+        </ul>
+    </div>
     {% endif %}
+
+    <div class="employee-form-actions sticky-top bg-body border rounded shadow-sm px-3 py-2 mb-3 d-flex flex-wrap align-items-center gap-2">
+        <button type="submit" class="btn btn-primary"><i class="fas fa-save me-2"></i>Save employee</button>
+        <a href="{% if object %}{% url 'hr:employee_detail' object.pk %}{% else %}{% url 'hr:employee_list' %}{% endif %}" class="btn btn-light">Cancel</a>
+        <span class="text-muted small ms-md-2">Changes are saved for all sections below (personal, employment, bank, UAE).</span>
+    </div>
 
     <div class="card mb-4">
         <div class="card-header"><h6 class="mb-0 fw-semibold">Personal Information</h6></div>
@@ -84,7 +115,7 @@
                     <select name="department" id="id_department" class="form-select">
                         <option value="">-- Select Department --</option>
                         {% for dept in departments %}
-                        <option value="{{ dept.pk }}" {% if form.department.value == dept.pk %}selected{% endif %}>{{ dept.name }}</option>
+                        <option value="{{ dept.pk }}" {% if form.department.value|stringformat:"s" == dept.pk|stringformat:"s" %}selected{% endif %}>{{ dept.name }}</option>
                         {% endfor %}
                     </select>
                     {% if form.department.errors %}<div class="text-danger small mt-1">{{ form.department.errors|join:", " }}</div>{% endif %}
@@ -195,8 +226,10 @@
         </div>
     </div>
 
-    <button type="submit" class="btn btn-primary"><i class="fas fa-save me-2"></i>Save</button>
-    <a href="{% url 'hr:employee_list' %}" class="btn btn-light">Cancel</a>
+    <div class="border-top pt-3 mb-4 d-flex flex-wrap gap-2">
+        <button type="submit" class="btn btn-primary"><i class="fas fa-save me-2"></i>Save employee</button>
+        <a href="{% if object %}{% url 'hr:employee_detail' object.pk %}{% else %}{% url 'hr:employee_list' %}{% endif %}" class="btn btn-light">Cancel</a>
+    </div>
 </form>
 {% endblock %}
 

@@ -20,7 +20,10 @@
             <div class="card-body">
                 <p class="text-muted small mb-3">
                     Quotation subtotal (excl. VAT): <strong>AED {{ estimate.subtotal|floatformat:2 }}</strong>
+                    · Quotation total (incl. VAT): <strong>AED {{ billing_limits.est_total|floatformat:2 }}</strong>
                     · VAT rate: <strong>{{ estimate.proforma_vat_rate_percent|floatformat:2 }}%</strong>
+                    · Available to bill: <strong>AED {{ billing_limits.remaining_total|floatformat:2 }}</strong>
+                    (incl. VAT; other proformas: AED {{ billing_limits.billed_total|floatformat:2 }})
                 </p>
                 <form method="post" id="proformaEditForm" novalidate>
                     {% csrf_token %}
@@ -45,7 +48,7 @@
                         <div class="col-md-6" id="proformaValuePercentWrap">
                             <label class="form-label" for="proformaValuePercent">Percentage of quotation subtotal</label>
                             <div class="input-group">
-                                <input type="number" class="form-control proforma-value-input" id="proformaValuePercent" min="0.01" max="100" step="0.01"
+                                <input type="number" class="form-control proforma-value-input" id="proformaValuePercent" min="0.01" max="{{ billing_limits.max_percent }}" step="0.01"
                                     value="{% if proforma.charge_type == 'percent' %}{{ proforma.charge_value }}{% endif %}">
                                 <span class="input-group-text">%</span>
                             </div>
@@ -54,7 +57,7 @@
                             <label class="form-label" for="proformaValueAmount">Amount (excl. VAT)</label>
                             <div class="input-group">
                                 <span class="input-group-text">AED</span>
-                                <input type="number" class="form-control proforma-value-input" id="proformaValueAmount" min="0.01" step="0.01"
+                                <input type="number" class="form-control proforma-value-input" id="proformaValueAmount" min="0.01" max="{{ billing_limits.remaining_subtotal }}" step="0.01"
                                     value="{% if proforma.charge_type == 'amount' %}{{ proforma.charge_value }}{% endif %}">
                             </div>
                         </div>
@@ -98,6 +101,9 @@
     var estSubtotal = {{ estimate.subtotal|default:0 }};
     var estVat = {{ estimate.vat_amount|default:0 }};
     var estVatRate = {{ estimate.proforma_vat_rate_percent|default:0 }};
+    var remainingTotal = {{ billing_limits.remaining_total|default:0 }};
+    var remainingSubtotal = {{ billing_limits.remaining_subtotal|default:0 }};
+    var maxPercent = {{ billing_limits.max_percent|default:0 }};
     var form = document.getElementById('proformaEditForm');
     if (!form) return;
 
@@ -138,8 +144,33 @@
     form.querySelectorAll('.proforma-value-input').forEach(function (el) {
         el.addEventListener('input', syncUi);
     });
-    form.addEventListener('submit', function () {
-        document.getElementById('proformaChargeValueHidden').value = String(activeValue());
+    form.addEventListener('submit', function (e) {
+        var type = activeChargeType();
+        var value = activeValue();
+        var lineSub = type === 'percent' ? estSubtotal * value / 100 : value;
+        var lineVat = lineVatAmount(lineSub);
+        var total = lineSub + lineVat;
+        if (remainingTotal <= 0) {
+            e.preventDefault();
+            window.alert('This quotation is already fully covered by proforma invoice(s).');
+            return;
+        }
+        if (type === 'percent' && value > maxPercent + 0.001) {
+            e.preventDefault();
+            window.alert('Percentage cannot exceed ' + maxPercent.toFixed(2) + '%.');
+            return;
+        }
+        if (type === 'amount' && value > remainingSubtotal + 0.001) {
+            e.preventDefault();
+            window.alert('Amount cannot exceed AED ' + remainingSubtotal.toFixed(2) + '.');
+            return;
+        }
+        if (total > remainingTotal + 0.01) {
+            e.preventDefault();
+            window.alert('Proforma total exceeds available AED ' + remainingTotal.toFixed(2) + ' (incl. VAT).');
+            return;
+        }
+        document.getElementById('proformaChargeValueHidden').value = String(value);
     });
     syncUi();
 })();

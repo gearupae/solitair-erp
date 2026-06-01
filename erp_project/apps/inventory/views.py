@@ -89,7 +89,7 @@ class CategoryListView(PermissionRequiredMixin, ListView):
             queryset = queryset.filter(
                 Q(name__icontains=search) | Q(code__icontains=search)
             )
-        return queryset
+        return queryset.order_by('-created_at', '-pk')
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -161,7 +161,7 @@ class WarehouseListView(PermissionRequiredMixin, ListView):
             queryset = queryset.filter(
                 Q(name__icontains=search) | Q(code__icontains=search)
             )
-        return queryset
+        return queryset.order_by('-created_at', '-pk')
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -265,12 +265,12 @@ class ItemListView(PermissionRequiredMixin, ListView):
         elif group.isdigit():
             queryset = queryset.filter(item_groups__pk=int(group)).distinct()
 
-        return queryset
+        return queryset.order_by('-created_at', '-pk')
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['title'] = 'Items'
-        context['categories'] = Category.objects.filter(is_active=True)
+        context['categories'] = Category.objects.filter(is_active=True).order_by('name')
         context['type_choices'] = Item.TYPE_CHOICES
         context['can_create'] = self.request.user.is_superuser or PermissionChecker.has_permission(self.request.user, 'inventory', 'create')
         context['can_edit'] = self.request.user.is_superuser or PermissionChecker.has_permission(self.request.user, 'inventory', 'edit')
@@ -634,7 +634,7 @@ class ItemDetailView(PermissionRequiredMixin, DetailView):
         context['unregistered_on_hand_count'] = unregistered_on_hand_count(self.object)
         # Transfer form
         context['transfer_form'] = StockTransferForm(initial={'item': self.object.pk})
-        context['warehouses'] = Warehouse.objects.filter(is_active=True, status='active')
+        context['warehouses'] = Warehouse.objects.filter(is_active=True, status='active').order_by('name')
         return context
 
 
@@ -711,7 +711,7 @@ class StockListView(PermissionRequiredMixin, ListView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['title'] = 'Stock Levels'
-        context['warehouses'] = Warehouse.objects.filter(is_active=True, status='active')
+        context['warehouses'] = Warehouse.objects.filter(is_active=True, status='active').order_by('name')
         context['can_adjust'] = self.request.user.is_superuser or PermissionChecker.has_permission(self.request.user, 'inventory', 'edit')
         return context
 

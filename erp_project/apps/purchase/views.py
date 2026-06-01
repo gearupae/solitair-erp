@@ -110,7 +110,7 @@ class VendorListView(PermissionRequiredMixin, ListView):
     paginate_by = 25
     
     def get_queryset(self):
-        queryset = Vendor.objects.filter(is_active=True)
+        queryset = Vendor.objects.filter(is_active=True).order_by('-created_at', '-pk')
         search = self.request.GET.get('search')
         if search:
             queryset = queryset.filter(
@@ -145,6 +145,7 @@ class VendorListView(PermissionRequiredMixin, ListView):
         if form.is_valid():
             vendor = form.save()
             messages.success(request, f'Vendor {vendor.name} created successfully.')
+            return redirect('purchase:vendor_list')
         else:
             for field, errors in form.errors.items():
                 for error in errors:

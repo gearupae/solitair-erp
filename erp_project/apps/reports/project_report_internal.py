@@ -94,6 +94,9 @@ def _utilization_rows(project):
         .select_related('item', 'delivered_by')
         .order_by('-delivered_date', '-pk')
     ):
+        # Serial-tracked deliveries are listed per unit below (model number).
+        if delivery.item.track_by_serial:
+            continue
         rows.append(
             {
                 'item_name': delivery.item.name,
@@ -123,32 +126,6 @@ def _utilization_rows(project):
             {
                 'item_name': sn.item.name,
                 'item_code': sn.item.item_code,
-                'detail': sn.model_number,
-                'quantity': Decimal('1'),
-                'delivered_date': sn.delivered_date,
-                'delivered_by': (
-                    sn.delivered_by.get_full_name() or sn.delivered_by.username
-                    if sn.delivered_by
-                    else '—'
-                ),
-                'sort_date': sn.delivered_date,
-            }
-        )
-
-    seen_serial_pks = set()
-    for ret in (
-        ProjectItemReturn.objects.filter(project=project, serial_number__isnull=False)
-        .select_related('item', 'serial_number', 'serial_number__delivered_by')
-        .order_by('-returned_date', '-pk')
-    ):
-        sn = ret.serial_number
-        if not sn or sn.pk in seen_serial_pks:
-            continue
-        seen_serial_pks.add(sn.pk)
-        rows.append(
-            {
-                'item_name': ret.item.name,
-                'item_code': ret.item.item_code,
                 'detail': sn.model_number,
                 'quantity': Decimal('1'),
                 'delivered_date': sn.delivered_date,

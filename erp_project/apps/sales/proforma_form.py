@@ -16,8 +16,12 @@ def apply_proforma_form_data(proforma, estimate, post_data):
     if charge_type not in ('percent', 'amount'):
         raise ValueError('Select percentage or amount.')
 
+    exclude_pk = proforma.pk if getattr(proforma, 'pk', None) else None
     line_subtotal, vat_amount, total_amount = compute_proforma_amounts(
-        estimate, charge_type, charge_value
+        estimate,
+        charge_type,
+        charge_value,
+        exclude_proforma_pk=exclude_pk,
     )
 
     proforma.name = name

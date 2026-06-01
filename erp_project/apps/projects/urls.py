@@ -14,6 +14,7 @@ urlpatterns = [
     path('<int:project_pk>/gatepass/<int:pk>/delete/', views.project_gatepass_delete, name='project_gatepass_delete'),
     path('<int:pk>/', views.ProjectDetailView.as_view(), name='project_detail'),
     path('<int:pk>/edit/', views.ProjectUpdateView.as_view(), name='project_edit'),
+    path('<int:pk>/request-completion/', views.project_request_completion, name='project_request_completion'),
     path('<int:pk>/approve-completion/', views.project_approve_completion, name='project_approve_completion'),
     path('<int:pk>/reject-completion/', views.project_reject_completion, name='project_reject_completion'),
     

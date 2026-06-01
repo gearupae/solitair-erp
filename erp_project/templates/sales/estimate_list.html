@@ -594,8 +594,12 @@
                                     <i class="fas fa-eye"></i>
                                 </a>
                                 {% endif %}
-                                {% if can_create and estimate.allows_follow_on_conversion %}
-                                <a href="{% url 'sales:estimate_convert' estimate.pk %}" class="btn btn-action btn-outline-success" title="Convert to Invoice" onclick="return confirm('Create invoice from this estimate?');">
+                                {% if estimate.can_convert_follow_on and estimate.can_create_invoice_from_estimate %}
+                                <a href="{% url 'sales:estimate_convert' estimate.pk %}" class="btn btn-action btn-outline-success" title="Convert to Invoice" onclick="return confirm('Create invoice from this estimate? Each estimate can only be converted once.');">
+                                    <i class="fas fa-file-invoice"></i>
+                                </a>
+                                {% elif estimate.primary_invoice %}
+                                <a href="{% url 'sales:invoice_detail' estimate.primary_invoice.pk %}" class="btn btn-action btn-outline-success" title="View invoice {{ estimate.primary_invoice.invoice_number }}">
                                     <i class="fas fa-file-invoice"></i>
                                 </a>
                                 {% endif %}
@@ -615,19 +619,24 @@
                                 <a href="{% url 'sales:estimate_pdf' estimate.pk %}" class="btn btn-action btn-outline-secondary" title="Quotation PDF" target="_blank" rel="noopener">
                                     <i class="fas fa-file-pdf"></i>
                                 </a>
-                                {% if estimate.status == 'quotation_won' %}
+                                {% if estimate.status == 'quotation_won' and not estimate.has_invoice %}
                                 {% with latest=estimate.proforma_invoices.all|first %}
                                 {% if latest %}
                                 <a href="{% url 'sales:estimate_proforma_invoice_pdf' estimate.pk latest.pk %}" class="btn btn-action btn-outline-warning" title="View proforma PDF">
                                     <i class="fas fa-file-invoice-dollar"></i>
                                 </a>
                                 {% else %}
-                                <button type="button" class="btn btn-action btn-outline-warning" title="Create proforma invoice"
+                                <button type="button" class="btn btn-action btn-outline-warning" title="Create proforma invoice (advance billing — not customer payment)"
                                     data-bs-toggle="modal" data-bs-target="#proformaInvoiceModal"
                                     data-estimate-pk="{{ estimate.pk }}"
                                     data-estimate-number="{{ estimate.display_estimate_number }}"
                                     data-subtotal="{{ estimate.subtotal }}"
                                     data-vat="{{ estimate.vat_amount }}"
+                                    data-estimate-total="{{ estimate.total_amount }}"
+                                    data-billed-total="{{ estimate.proforma_billed_total }}"
+                                    data-remaining-total="{{ estimate.proforma_remaining_total }}"
+                                    data-remaining-subtotal="{{ estimate.proforma_remaining_subtotal }}"
+                                    data-max-percent="{{ estimate.proforma_max_percent }}"
                                     data-vat-rate="{{ estimate.proforma_vat_rate_percent }}">
                                     <i class="fas fa-file-invoice-dollar"></i>
                                 </button>
@@ -707,7 +716,7 @@
 
 {% block extra_js %}
 {{ block.super }}
-<script src="{% static 'js/proforma_modal.js' %}?v=4"></script>
+<script src="{% static 'js/proforma_modal.js' %}?v=5"></script>
 <script>
 (function () {
     var rejectModalEl = document.getElementById('rejectEstimateListModal');

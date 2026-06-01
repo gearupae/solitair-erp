@@ -121,6 +121,34 @@
                 </tbody>
             </table>
         </div>
+        {% if page_obj.paginator.num_pages > 1 %}
+        <div class="card-footer bg-white border-top py-3">
+            <nav aria-label="Employee list pages">
+                <ul class="pagination pagination-sm justify-content-center mb-0">
+                    {% if page_obj.has_previous %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% for key, value in request.GET.items %}{% if key != 'page' %}&amp;{{ key }}={{ value|urlencode }}{% endif %}{% endfor %}">
+                            <i class="fas fa-chevron-left me-1"></i>Previous
+                        </a>
+                    </li>
+                    {% endif %}
+                    <li class="page-item disabled">
+                        <span class="page-link">
+                            Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
+                            <span class="text-muted">({{ page_obj.paginator.count }} employees)</span>
+                        </span>
+                    </li>
+                    {% if page_obj.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ page_obj.next_page_number }}{% for key, value in request.GET.items %}{% if key != 'page' %}&amp;{{ key }}={{ value|urlencode }}{% endif %}{% endfor %}">
+                            Next<i class="fas fa-chevron-right ms-1"></i>
+                        </a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </nav>
+        </div>
+        {% endif %}
     </div>
 </div>
 {% endblock %}

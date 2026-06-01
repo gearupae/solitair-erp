@@ -27,6 +27,26 @@ def user_is_assigned_to_estimate(user, estimate) -> bool:
     return assignee_id is not None and assignee_id == user.pk
 
 
+def user_is_estimate_creator(user, estimate) -> bool:
+    """True when the user created the estimate record."""
+    if not user or not user.is_authenticated:
+        return False
+    creator_id = getattr(estimate, 'created_by_id', None)
+    return creator_id is not None and creator_id == user.pk
+
+
+def user_can_convert_estimate_follow_on(user, estimate) -> bool:
+    """
+    Who may convert an approved / quotation-won estimate to invoice or project.
+    Only the assigned salesperson or the creator (not every user with sales access).
+    """
+    if not user or not user.is_authenticated:
+        return False
+    if user.is_superuser:
+        return True
+    return user_is_assigned_to_estimate(user, estimate) or user_is_estimate_creator(user, estimate)
+
+
 def user_can_mark_estimate_won_lost(user, estimate) -> bool:
     """Only the assigned salesperson may mark an approved estimate won or lost."""
     if not user or not user.is_authenticated:
@@ -104,20 +124,12 @@ def user_is_configured_estimate_approver(user, estimate) -> bool:
 
 
 def user_can_approve_estimate_status(user, estimate) -> bool:
-    """Superuser or configured estimate approver may approve/reject sent estimates."""
-    if not user or not user.is_authenticated:
-        return False
-    if user.is_superuser:
-        return True
+    """Only the configured estimate approver may approve/reject sent estimates."""
     return user_is_configured_estimate_approver(user, estimate)
 
 
 def user_can_approve_estimate_edit(user, estimate) -> bool:
-    """Superuser or configured estimate approver may approve/reject pending edit review."""
-    if not user or not user.is_authenticated:
-        return False
-    if user.is_superuser:
-        return True
+    """Only the configured estimate approver may approve/reject pending edit review."""
     return user_is_configured_estimate_approver(user, estimate)
 
 
@@ -126,13 +138,21 @@ def estimate_status_change_allowed(current_status, new_status, *, user=None, est
     if current_status == new_status:
         return True
 
+    if current_status == 'quotation_won':
+        return False
+
+    if new_status in ('approved', 'rejected'):
+        return (
+            current_status == 'sent'
+            and user is not None
+            and estimate is not None
+            and user_can_approve_estimate_status(user, estimate)
+        )
+
     if user and user.is_superuser:
         if current_status == 'quotation_won' and new_status == 'draft':
             return False
         return True
-
-    if current_status == 'quotation_won':
-        return False
 
     if new_status in ('quotation_won', 'quotation_lost'):
         return (
@@ -148,14 +168,6 @@ def estimate_status_change_allowed(current_status, new_status, *, user=None, est
             and user is not None
             and estimate is not None
             and user_can_mark_estimate_won_lost(user, estimate)
-        )
-
-    if new_status in ('approved', 'rejected'):
-        return (
-            current_status == 'sent'
-            and user is not None
-            and estimate is not None
-            and user_can_approve_estimate_status(user, estimate)
         )
 
     if new_status == 'sent':
@@ -205,7 +217,7 @@ def get_estimate_status_actions(estimate, user):
                 'icon': 'fa-times',
             },
         ])
-        if is_configured_approver and not user.is_superuser:
+        if is_configured_approver:
             return actions
 
     if can_edit:

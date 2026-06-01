@@ -52,16 +52,49 @@ def project_item_delivered_qty(project: Project, item: Item) -> Decimal:
 
 
 def _item_unit_cost(item: Item, *, warehouse=None) -> Decimal:
-    """Inventory unit cost for project spend (purchase price or last receipt cost)."""
+    """Inventory unit cost (purchase price or last receipt cost) for stock movements."""
     cost = item.get_issue_unit_cost(warehouse)
     return cost if cost and cost > 0 else Decimal('0.00')
+
+
+def _project_item_budget_unit_cost(project: Project, item: Item, *, warehouse=None) -> Decimal:
+    """
+    Per-unit value for budget / inventory-on-site reporting (not stock COGS).
+
+    Priority:
+    1. Estimate scope base on the project (``ProjectItemLine.unit_price``) — same
+       as the estimate **Base** column; usually copied from ``Item.selling_price``.
+    2. Item master ``selling_price`` when there is no scoped line.
+    3. Never use ``purchase_price`` here (that stays on stock-out movements only).
+    """
+    from django.db.models import DecimalField, ExpressionWrapper, F, Sum
+
+    agg = ProjectItemLine.objects.filter(
+        project=project,
+        inventory_item=item,
+    ).aggregate(
+        qty=Sum('quantity'),
+        base=Sum(
+            ExpressionWrapper(
+                F('quantity') * F('unit_price'),
+                output_field=DecimalField(max_digits=15, decimal_places=2),
+            )
+        ),
+    )
+    qty = agg['qty'] or Decimal('0')
+    base = agg['base']
+    if qty > 0 and base is not None and base > 0:
+        return (base / qty).quantize(Decimal('0.01'))
+    if item.selling_price and item.selling_price > 0:
+        return item.selling_price.quantize(Decimal('0.01'))
+    return Decimal('0.00')
 
 
 def project_inventory_spend_total(project: Project) -> Decimal:
     """
     Value of inventory currently on the project (deliveries increase, returns decrease).
-    Serial items: sum unit cost per delivered serial still on site.
-    Non-serial: net qty × unit cost.
+    Serial items: sum scoped/base unit value per delivered serial still on site.
+    Non-serial: net qty × scoped/base unit value (or inventory cost if not scoped).
     """
     total = Decimal('0.00')
 
@@ -74,7 +107,7 @@ def project_inventory_spend_total(project: Project) -> Decimal:
         .select_related('item', 'warehouse')
     )
     for sn in serials:
-        total += _item_unit_cost(sn.item, warehouse=sn.warehouse)
+        total += _project_item_budget_unit_cost(project, sn.item, warehouse=sn.warehouse)
 
     non_serial_item_ids = (
         ProjectItemDelivery.objects.filter(project=project)
@@ -99,7 +132,7 @@ def project_inventory_spend_total(project: Project) -> Decimal:
             .first()
         )
         wh = last_out.warehouse if last_out else None
-        total += net_qty * _item_unit_cost(item, warehouse=wh)
+        total += net_qty * _project_item_budget_unit_cost(project, item, warehouse=wh)
 
     return total.quantize(Decimal('0.01'))
 
@@ -200,6 +233,13 @@ def deliver_items_to_project(
             raise ValidationError('Serial-tracked items require a whole-number quantity.')
         serials = deliver_serial_items_to_project(
             project, item, int(qty), delivery_date, user, warehouse=warehouse
+        )
+        ProjectItemDelivery.objects.create(
+            project=project,
+            item=item,
+            quantity=qty,
+            delivered_date=delivery_date,
+            delivered_by=user,
         )
         return {'serials': serials, 'quantity': qty}
 
@@ -472,6 +512,127 @@ def project_delivery_summary_groups(project):
 
     groups.sort(key=lambda g: (g['latest_date'] or date.min, g['item_name']), reverse=True)
     return groups
+
+
+def _activity_timeline_sort_key(*, event_date, event_dt, pk: int):
+    """Normalize sort keys so tuples never mix date, datetime, and int positions."""
+    from datetime import datetime as dt
+
+    from django.utils import timezone
+
+    if event_dt is not None:
+        ts = event_dt
+    elif event_date:
+        ts = dt.combine(event_date, dt.min.time())
+    else:
+        ts = dt.min
+    if timezone.is_naive(ts):
+        ts = timezone.make_aware(ts)
+    return (ts, pk)
+
+
+def project_item_activity_timeline(project, *, limit=40):
+    """
+    Chronological deliver / return history for the project detail page.
+    Includes serial deliveries via ``ProjectItemDelivery`` (logged since serial
+    deliver was fixed) and infers current on-site serials missing a log row.
+    """
+    events = []
+
+    for delivery in (
+        ProjectItemDelivery.objects.filter(project=project)
+        .select_related('item', 'delivered_by')
+        .order_by('-delivered_date', '-pk')
+    ):
+        by = (
+            delivery.delivered_by.get_full_name() or delivery.delivered_by.username
+            if delivery.delivered_by
+            else '—'
+        )
+        qty = delivery.quantity
+        if qty == qty.to_integral_value():
+            qty_display = int(qty)
+        else:
+            qty_display = qty
+        events.append({
+            'kind': 'delivery',
+            'date': delivery.delivered_date,
+            'sort_key': _activity_timeline_sort_key(
+                event_date=delivery.delivered_date,
+                event_dt=delivery.created_at,
+                pk=delivery.pk,
+            ),
+            'item_name': delivery.item.name,
+            'detail': f'Qty {qty_display}',
+            'by': by,
+        })
+
+    for ret in (
+        ProjectItemReturn.objects.filter(project=project)
+        .select_related('item', 'serial_number', 'returned_by')
+        .order_by('-returned_date', '-pk')
+    ):
+        if ret.serial_number_id:
+            detail = ret.serial_number.model_number
+        else:
+            qty = ret.quantity
+            if qty == qty.to_integral_value():
+                qty = int(qty)
+            detail = f'Qty {qty}'
+        by = (
+            ret.returned_by.get_full_name() or ret.returned_by.username
+            if ret.returned_by
+            else '—'
+        )
+        events.append({
+            'kind': 'return',
+            'date': ret.returned_date,
+            'sort_key': _activity_timeline_sort_key(
+                event_date=ret.returned_date,
+                event_dt=ret.created_at,
+                pk=ret.pk,
+            ),
+            'item_name': ret.item.name,
+            'detail': detail,
+            'by': by,
+        })
+
+    for sn in (
+        ItemSerialNumber.objects.filter(
+            assigned_project=project,
+            status=ItemSerialNumber.STATUS_DELIVERED,
+            is_active=True,
+        )
+        .select_related('item', 'delivered_by')
+        .order_by('-delivered_date', 'model_number')
+    ):
+        has_log = ProjectItemDelivery.objects.filter(
+            project=project,
+            item_id=sn.item_id,
+            delivered_date=sn.delivered_date,
+        ).exists()
+        if has_log:
+            continue
+        by = (
+            sn.delivered_by.get_full_name() or sn.delivered_by.username
+            if sn.delivered_by
+            else '—'
+        )
+        events.append({
+            'kind': 'delivery',
+            'date': sn.delivered_date,
+            'sort_key': _activity_timeline_sort_key(
+                event_date=sn.delivered_date,
+                event_dt=sn.updated_at,
+                pk=sn.pk,
+            ),
+            'item_name': sn.item.name,
+            'detail': sn.model_number,
+            'by': by,
+        })
+
+    events.sort(key=lambda e: e['sort_key'], reverse=True)
+    return events[:limit]
 
 
 def project_return_history_rows(project):

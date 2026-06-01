@@ -102,7 +102,7 @@ class Employee(BaseModel):
     visa_expiry = models.DateField(null=True, blank=True)
     
     class Meta:
-        ordering = ['first_name', 'last_name']
+        ordering = ['-created_at', '-pk']
     
     def __str__(self):
         return f"{self.employee_code} - {self.first_name} {self.last_name}"

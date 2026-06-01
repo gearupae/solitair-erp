@@ -1,6 +1,8 @@
 """
 Inventory Forms
 """
+from decimal import Decimal
+
 from django import forms
 from .models import (
     Category,
@@ -61,7 +63,7 @@ class CategoryForm(forms.ModelForm):
                 field.widget.attrs['class'] = 'form-select'
             else:
                 field.widget.attrs['class'] = 'form-control'
-        self.fields['parent'].queryset = Category.objects.filter(is_active=True)
+        self.fields['parent'].queryset = Category.objects.filter(is_active=True).order_by('name')
 
 
 class WarehouseForm(forms.ModelForm):
@@ -156,7 +158,7 @@ class ItemForm(forms.ModelForm):
                 field.widget.attrs['role'] = 'switch'
             else:
                 field.widget.attrs['class'] = 'form-control'
-        self.fields['category'].queryset = Category.objects.filter(is_active=True)
+        self.fields['category'].queryset = Category.objects.filter(is_active=True).order_by('name')
         self.fields['item_groups'].queryset = ItemGroup.objects.all().order_by('name')
         self.fields['item_groups'].required = False
         self.fields['storage_location_master'].queryset = StorageLocation.objects.filter(is_active=True)
@@ -367,8 +369,13 @@ class ConsumableRequestItemForm(forms.ModelForm):
             is_active=True, item_type='product', status='active'
         ).order_by('name')
         self.fields['item'].widget.attrs['class'] = 'form-select'
-        self.fields['quantity'].widget.attrs['class'] = 'form-control'
-        self.fields['quantity'].widget.attrs['min'] = '0.01'
+        self.fields['quantity'].widget.attrs.update({
+            'class': 'form-control',
+            'step': '1',
+            'min': '1',
+        })
+        if not self.instance.pk:
+            self.fields['quantity'].initial = Decimal('1')
 
     def clean(self):
         cleaned = super().clean()
@@ -388,9 +395,9 @@ ConsumableRequestItemFormSet = forms.inlineformset_factory(
     ConsumableRequest,
     ConsumableRequestItem,
     form=ConsumableRequestItemForm,
-    extra=1,
+    extra=0,
     can_delete=True,
-    min_num=1
+    min_num=1,
 )
 
 

@@ -10,7 +10,7 @@ from django.contrib.auth.decorators import login_required
 from django.views.decorators.http import require_POST
 from django.contrib import messages
 from django.views.generic import ListView, CreateView, UpdateView, DetailView
-from django.urls import reverse_lazy
+from django.urls import reverse, reverse_lazy
 from django.db import transaction
 from django.db.models import Count, Q, Sum
 from django.core.exceptions import ValidationError
@@ -124,7 +124,8 @@ class EmployeeListView(PermissionRequiredMixin, ListView):
     context_object_name = 'employees'
     module_name = 'hr'
     permission_type = 'view'
-    
+    paginate_by = 25
+
     def get_queryset(self):
         queryset = Employee.objects.filter(is_active=True).select_related(
             'company', 'department', 'designation'
@@ -145,7 +146,7 @@ class EmployeeListView(PermissionRequiredMixin, ListView):
         if did and str(did).isdigit():
             queryset = queryset.filter(department_id=int(did))
 
-        return queryset
+        return queryset.order_by('-created_at', '-pk')
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -269,8 +270,10 @@ class EmployeeUpdateView(UpdatePermissionMixin, UpdateView):
     model = Employee
     form_class = EmployeeForm
     template_name = 'hr/employee_form.html'
-    success_url = reverse_lazy('hr:employee_list')
     module_name = 'hr'
+
+    def get_success_url(self):
+        return reverse('hr:employee_detail', kwargs={'pk': self.object.pk})
 
     def _compliance_forms(self):
         from apps.hr.forms_extended import UAEComplianceForm
@@ -363,7 +366,8 @@ class EmployeeUpdateView(UpdatePermissionMixin, UpdateView):
             raise
 
         messages.success(request, 'Employee updated.')
-        return redirect(self.success_url)
+        self.object = employee
+        return redirect(self.get_success_url())
 
 
 class EmployeeDetailView(PermissionRequiredMixin, DetailView):

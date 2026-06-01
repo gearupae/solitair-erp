@@ -57,18 +57,18 @@ def build_sales_report(*, start_date, end_date):
             status__in=INVOICE_REVENUE_STATUSES,
         )
         .annotate(
-            balance=ExpressionWrapper(
+            outstanding_balance=ExpressionWrapper(
                 F('total_amount') - F('paid_amount'),
                 output_field=DecimalField(max_digits=15, decimal_places=2),
             ),
         )
-        .filter(balance__gt=zero)
+        .filter(outstanding_balance__gt=zero)
         .select_related('customer')
         .order_by('-invoice_date', '-id')
     )
     outstanding_agg = outstanding_qs.aggregate(
         count=Count('id'),
-        total=Coalesce(Sum('balance'), zero),
+        total=Coalesce(Sum('outstanding_balance'), zero),
     )
 
     # --- Collections in period ---

@@ -11,7 +11,7 @@ class DocumentType(BaseModel):
     alert_days_before = models.PositiveIntegerField(default=30)  # Days before expiry to alert
     
     class Meta:
-        ordering = ['name']
+        ordering = ['-created_at', '-pk']
     
     def __str__(self):
         return self.name
@@ -44,7 +44,7 @@ class Document(BaseModel):
     file = models.FileField(upload_to='documents/', null=True, blank=True)
     
     class Meta:
-        ordering = ['expiry_date']
+        ordering = ['-created_at', '-pk']
     
     def __str__(self):
         return f"{self.document_type.name} - {self.entity_name}"
