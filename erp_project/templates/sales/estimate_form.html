@@ -1070,6 +1070,30 @@ function isEstimateRowFilled(row) {
     return Boolean(inv || desc || base > 0);
 }
 
+function isEstimateRowEmpty(row) {
+    return !isEstimateRowFilled(row);
+}
+
+function isTrailingEmptyRow(row) {
+    if (!row || row.style.display === 'none') return false;
+    const visibleRows = getVisibleEstimateRows();
+    if (!visibleRows.length) return false;
+    return visibleRows[visibleRows.length - 1] === row && isEstimateRowEmpty(row);
+}
+
+function syncFormsetManagementCounts() {
+    const rows = document.querySelectorAll('#itemsBody .item-row');
+    const totalEl = document.getElementById('id_items-TOTAL_FORMS');
+    if (totalEl) totalEl.value = rows.length;
+    let maxIdx = -1;
+    rows.forEach(r => {
+        const el = r.querySelector('[name^="items-"][name$="-quantity"], [name^="items-"][name$="-description"]');
+        const m = (el?.name || '').match(/^items-(\d+)-/);
+        if (m) maxIdx = Math.max(maxIdx, parseInt(m[1], 10));
+    });
+    formCount = maxIdx + 1;
+}
+
 /** Keep one blank line ready after the last filled row. */
 function ensureTrailingEmptyRow() {
     const rows = getVisibleEstimateRows();
@@ -1085,16 +1109,29 @@ function ensureTrailingEmptyRow() {
 
 function removeItemRow(btn) {
     const row = btn.closest('tr');
-    const del = row.querySelector('input[name$="-DELETE"]');
-    if (del) {
-        del.checked = true;
-        row.style.display = 'none';
-    } else {
+    if (!row) return;
+    const skipTrailingEnsure = isTrailingEmptyRow(row);
+    const idInput = row.querySelector('input[name$="-id"]');
+    const hasSavedId = idInput && String(idInput.value || '').trim() !== '';
+
+    if (!hasSavedId && isEstimateRowEmpty(row)) {
         row.remove();
+        syncFormsetManagementCounts();
+    } else {
+        const del = row.querySelector('input[name$="-DELETE"]');
+        if (del) {
+            del.checked = true;
+            row.style.display = 'none';
+        } else {
+            row.remove();
+            syncFormsetManagementCounts();
+        }
     }
     refreshGroupQtyMultDisplay();
     calculateTotals();
-    ensureTrailingEmptyRow();
+    if (!skipTrailingEnsure) {
+        ensureTrailingEmptyRow();
+    }
 }
 
 function calculateRowTotal(input) {
