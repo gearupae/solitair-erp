@@ -70,11 +70,16 @@ def _sales_employee_base_filter():
     )
 
 
-def get_sales_employee_queryset():
-    """Active HR employees available for CRM assigned salesman dropdowns."""
+def get_sales_employee_queryset(*, include_employee_id=None):
+    """HR employees for CRM assigned salesman dropdowns (same pool as HR → Employees list)."""
     from apps.hr.models import Employee
 
-    return Employee.objects.filter(is_active=True, status='active').select_related(
+    qs = Employee.objects.filter(is_active=True)
+    if include_employee_id:
+        qs = Employee.objects.filter(
+            Q(is_active=True) | Q(pk=include_employee_id)
+        )
+    return qs.select_related(
         'department', 'designation', 'user'
     ).order_by('first_name', 'last_name', 'employee_code')
 

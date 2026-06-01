@@ -61,11 +61,16 @@ class CustomerForm(forms.ModelForm):
         if not self.instance.pk:
             self.fields['phone'].required = True
 
-        self.fields['assigned_salesperson'].queryset = get_sales_employee_queryset()
+        include_salesperson_id = None
+        if self.instance.pk and self.instance.assigned_salesperson_id:
+            include_salesperson_id = self.instance.assigned_salesperson_id
+        self.fields['assigned_salesperson'].queryset = get_sales_employee_queryset(
+            include_employee_id=include_salesperson_id,
+        )
         self.fields['assigned_salesperson'].required = True
         self.fields['assigned_salesperson'].empty_label = '— Select salesman —'
         self.fields['assigned_salesperson'].label_from_instance = salesperson_display_name
-        self.fields['assigned_salesperson'].widget.attrs['class'] = 'form-select'
+        self.fields['assigned_salesperson'].widget.attrs['class'] = 'form-select select2'
         self.fields['assigned_salesperson'].label = 'Assigned salesman'
         self.fields['name'].required = False
         self.fields['company'].required = True

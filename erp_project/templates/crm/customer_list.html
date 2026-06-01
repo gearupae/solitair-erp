@@ -281,9 +281,11 @@
                     <option value="">— Select salesman —</option>
                     {% for item in salesman_choice_options %}
                     <option value="{{ item.id }}"{% if default_assigned_salesperson_id == item.id %} selected{% endif %}>{{ item.label }}</option>
+                    {% empty %}
+                    <option value="" disabled>No employees yet — add them under HR → Employees</option>
                     {% endfor %}
                 </select>
-                <div class="form-text small mb-0">Defaults to you; change if needed.</div>
+                <div class="form-text small mb-0">Lists active HR employee records. Defaults to you when linked.</div>
             </div>
             <div class="col-md-3" id="crmBusinessSegmentWrap">
                 <label class="form-label">Business type <span class="text-danger">*</span></label>
@@ -528,6 +530,8 @@
                     <option value="">All salesmen</option>
                     {% for item in salesman_choice_options %}
                     <option value="{{ item.id }}" {% if request.GET.salesman == item.id|stringformat:'s' %}selected{% endif %}>{{ item.label }}</option>
+                    {% empty %}
+                    <option value="" disabled>No employees yet</option>
                     {% endfor %}
                 </select>
             </div>
