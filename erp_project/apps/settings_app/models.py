@@ -277,13 +277,13 @@ class CompanySettings(models.Model):
         upload_to='company/estimate_pdf/',
         blank=True,
         null=True,
-        help_text='Image 1 — bottom-left on estimate quotation PDFs.',
+        help_text='Image 1 — shown under company VAT / TRN on estimate quotation PDFs (left).',
     )
     estimate_pdf_footer_image = models.ImageField(
         upload_to='company/estimate_pdf/',
         blank=True,
         null=True,
-        help_text='Image 2 — bottom-right on estimate quotation PDFs.',
+        help_text='Image 2 — shown under company VAT / TRN on estimate quotation PDFs (right).',
     )
 
     class Meta:

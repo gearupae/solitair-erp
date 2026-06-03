@@ -33,6 +33,31 @@ from .estimate_edit_flow import apply_after_estimate_save, EstimateEditApplyResu
 from .estimate_revision_snapshot import maybe_snapshot_before_revision
 
 
+def _pdf_media_absolute_url(request, file_field, *, for_weasyprint=False):
+    """
+    URL for images in quotation PDF templates.
+    Browser preview needs http(s) URLs; WeasyPrint can use local file:// paths.
+    """
+    if not file_field:
+        return ''
+    url = file_field.url
+    if url.startswith(('http://', 'https://')):
+        return url
+    if not for_weasyprint:
+        return request.build_absolute_uri(url)
+
+    import os
+    from pathlib import Path
+
+    try:
+        path = file_field.path
+        if path and os.path.isfile(path):
+            return Path(path).resolve().as_uri()
+    except (ValueError, NotImplementedError):
+        pass
+    return request.build_absolute_uri(url)
+
+
 def _estimate_save_success_message(
     estimate,
     *,
@@ -1297,7 +1322,7 @@ def estimate_convert_to_project(request, pk):
     return redirect('projects:project_detail', pk=project.pk)
 
 
-def _build_estimate_pdf_context(request, estimate, *, proforma_invoice=None):
+def _build_estimate_pdf_context(request, estimate, *, proforma_invoice=None, for_weasyprint=False):
     """
     Shared context for proposal and proforma invoice HTML (print/PDF).
     Caller adds document_heading, document_number, print_button_label, page_title.
@@ -1360,23 +1385,16 @@ def _build_estimate_pdf_context(request, estimate, *, proforma_invoice=None):
     else:
         vat_summary = estimate.build_vat_summary()
 
-    logo_absolute_url = ''
-    if company.logo:
-        logo_absolute_url = request.build_absolute_uri(company.logo.url)
+    media_kw = {'for_weasyprint': for_weasyprint}
+    logo_absolute_url = _pdf_media_absolute_url(request, company.logo, **media_kw)
 
-    authorized_signature_url = ''
-    if estimate.authorized_signature:
-        authorized_signature_url = request.build_absolute_uri(estimate.authorized_signature.url)
-    customer_signature_url = ''
-    if estimate.customer_signature:
-        customer_signature_url = request.build_absolute_uri(estimate.customer_signature.url)
+    authorized_sig = estimate.authorized_signature or company.estimate_default_authorized_signature
+    customer_sig = estimate.customer_signature or company.estimate_default_customer_signature
+    authorized_signature_url = _pdf_media_absolute_url(request, authorized_sig, **media_kw)
+    customer_signature_url = _pdf_media_absolute_url(request, customer_sig, **media_kw)
 
-    pdf_image_1_url = ''
-    if company.estimate_pdf_stamp_image:
-        pdf_image_1_url = request.build_absolute_uri(company.estimate_pdf_stamp_image.url)
-    pdf_image_2_url = ''
-    if company.estimate_pdf_footer_image:
-        pdf_image_2_url = request.build_absolute_uri(company.estimate_pdf_footer_image.url)
+    pdf_image_1_url = _pdf_media_absolute_url(request, company.estimate_pdf_stamp_image, **media_kw)
+    pdf_image_2_url = _pdf_media_absolute_url(request, company.estimate_pdf_footer_image, **media_kw)
 
     return {
         'estimate': estimate,
@@ -1423,6 +1441,42 @@ def estimate_pdf(request, pk):
         'pdf_date_label': 'Quotation date',
     })
     return render(request, 'sales/estimate_pdf.html', context)
+
+
+@login_required
+def estimate_pdf_download(request, pk):
+    """Download quotation as a PDF file (WeasyPrint)."""
+    items_qs = EstimateItem.objects.select_related('inventory_item', 'tax_code').order_by('sort_order', 'id')
+    estimate = get_object_or_404(
+        Estimate.objects.select_related('customer', 'assigned_to', 'project').prefetch_related(
+            Prefetch('items', queryset=items_qs)
+        ),
+        pk=pk,
+    )
+
+    if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'sales', 'view')):
+        messages.error(request, 'Permission denied.')
+        return redirect('sales:estimate_list')
+
+    from apps.core.visibility import user_can_access_estimate
+
+    if not user_can_access_estimate(request.user, estimate):
+        messages.error(request, 'You do not have permission to view this estimate.')
+        return redirect('sales:estimate_list')
+
+    pdf_bytes, err = render_estimate_quotation_pdf_bytes(request, estimate)
+    if not pdf_bytes:
+        messages.error(request, err or 'Could not generate PDF.')
+        return redirect('sales:estimate_pdf', pk=estimate.pk)
+
+    safe_name = ''.join(
+        c for c in estimate.display_estimate_number if c.isalnum() or c in ('-', '_')
+    ) or str(estimate.pk)
+    from django.http import HttpResponse
+
+    response = HttpResponse(pdf_bytes, content_type='application/pdf')
+    response['Content-Disposition'] = f'attachment; filename="Quotation_{safe_name}.pdf"'
+    return response
 
 
 def _get_estimate_revision_snapshot(request, pk, snapshot_id):

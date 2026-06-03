@@ -155,7 +155,7 @@ def render_revision_snapshot_pdf_bytes(request, snapshot: EstimateRevisionSnapsh
     data = snapshot.snapshot_data or {}
     line_items = [snapshot_item_from_dict(r) for r in data.get('items', [])]
 
-    context = _build_estimate_pdf_context(request, proxy)
+    context = _build_estimate_pdf_context(request, proxy, for_weasyprint=True)
     context['pdf_item_groups'] = build_pdf_item_groups_for_line_items(line_items)
     context.update(
         {

@@ -17,7 +17,7 @@ def render_estimate_quotation_pdf_bytes(request, estimate):
     # Lazy import avoids circular imports (views imports this module).
     from .views import _build_estimate_pdf_context
 
-    context = _build_estimate_pdf_context(request, estimate)
+    context = _build_estimate_pdf_context(request, estimate, for_weasyprint=True)
     context.update(
         {
             'document_heading': 'QUOTATION',

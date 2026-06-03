@@ -423,39 +423,27 @@
             white-space: nowrap;
         }
 
-        .pdf-bottom-images {
+        .addr-from-cert-images {
             display: flex;
+            flex-direction: row;
+            align-items: center;
             justify-content: space-between;
-            align-items: flex-end;
-            gap: 24px;
-            margin-top: 20px;
-            padding-top: 14px;
-            border-top: 1px solid var(--mist);
-            min-height: 110px;
+            gap: 8px;
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px dashed var(--mist);
+            max-height: 60px;
+            overflow: hidden;
         }
 
-        .pdf-bottom-images-left,
-        .pdf-bottom-images-right {
-            flex: 1;
-            min-width: 0;
-            max-width: 45%;
-        }
-
-        .pdf-bottom-images-left {
-            text-align: left;
-        }
-
-        .pdf-bottom-images-right {
-            text-align: right;
-        }
-
-        .pdf-bottom-image {
-            max-height: 120px;
-            max-width: 100%;
+        .addr-from-cert-images img {
+            max-height: 52px;
+            max-width: 48%;
             width: auto;
             height: auto;
             object-fit: contain;
-            vertical-align: bottom;
+            flex: 1 1 0;
+            min-width: 0;
         }
 
         @media print {
@@ -498,6 +486,11 @@
 <body>
     <div class="print-actions no-print">
         <button type="button" class="print-btn" onclick="window.print()">{{ print_button_label|default:"Print quotation" }}</button>
+        {% if pdf_variant == 'quotation' %}
+        <a href="{% url 'sales:estimate_pdf_download' estimate.pk %}" class="print-btn print-btn-secondary">
+            <i class="fas fa-download me-1"></i>Download PDF
+        </a>
+        {% endif %}
         {% if proforma_single_line and proforma_can_edit %}
         <a href="{{ proforma_edit_url }}" class="print-btn print-btn-secondary">Edit proforma</a>
         {% endif %}
@@ -624,6 +617,16 @@
                     <div class="trn">VAT / TRN: {{ company.tax_id }}</div>
                     {% endif %}
                 </div>
+                {% if pdf_image_1_url or pdf_image_2_url %}
+                <div class="addr-from-cert-images">
+                    {% if pdf_image_1_url %}
+                    <img src="{{ pdf_image_1_url }}" alt="Image 1">
+                    {% endif %}
+                    {% if pdf_image_2_url %}
+                    <img src="{{ pdf_image_2_url }}" alt="Image 2">
+                    {% endif %}
+                </div>
+                {% endif %}
             </div>
         </div>
 
@@ -902,21 +905,6 @@
                 <div class="signature-label">Name &amp; title</div>
             </div>
         </div>
-
-        {% if pdf_image_1_url or pdf_image_2_url %}
-        <div class="pdf-bottom-images">
-            <div class="pdf-bottom-images-left">
-                {% if pdf_image_1_url %}
-                <img src="{{ pdf_image_1_url }}" alt="Image 1" class="pdf-bottom-image">
-                {% endif %}
-            </div>
-            <div class="pdf-bottom-images-right">
-                {% if pdf_image_2_url %}
-                <img src="{{ pdf_image_2_url }}" alt="Image 2" class="pdf-bottom-image">
-                {% endif %}
-            </div>
-        </div>
-        {% endif %}
 
         <footer class="doc-footer">
             <div class="doc-footer-line">
