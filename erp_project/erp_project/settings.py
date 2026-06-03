@@ -24,7 +24,7 @@ NAV_HIDDEN_MODULES = frozenset(
 
 ALLOWED_HOSTS = config(
     'ALLOWED_HOSTS',
-    default='localhost,127.0.0.1,37.27.16.210',
+    default='localhost,127.0.0.1,89.167.54.227,gear.telldb.com',
     cast=Csv(),
 )
 
@@ -32,7 +32,11 @@ ALLOWED_HOSTS = config(
 # Override in .env if needed: CSRF_TRUSTED_ORIGINS=https://yourdomain.com
 CSRF_TRUSTED_ORIGINS = config(
     'CSRF_TRUSTED_ORIGINS',
-    default='http://127.0.0.1:8001,http://localhost:8001,http://37.27.16.210,https://37.27.16.210',
+    default=(
+        'http://127.0.0.1:8001,http://localhost:8001,'
+        'http://89.167.54.227,https://89.167.54.227,'
+        'http://gear.telldb.com,https://gear.telldb.com'
+    ),
     cast=Csv(),
 )
 
