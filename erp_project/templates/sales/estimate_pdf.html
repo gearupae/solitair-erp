@@ -481,15 +481,53 @@
             color: var(--ink-soft);
             border: 1px solid var(--mist);
         }
+
+        .pdf-flash-messages {
+            position: fixed;
+            top: 64px;
+            left: 16px;
+            right: 240px;
+            z-index: 1001;
+        }
+
+        .pdf-flash {
+            padding: 10px 14px;
+            margin-bottom: 8px;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 600;
+            border: 1px solid #fecaca;
+            background: #fef2f2;
+            color: #991b1b;
+        }
+
+        .pdf-flash.alert-success {
+            border-color: #bbf7d0;
+            background: #f0fdf4;
+            color: #166534;
+        }
+
+        .print-btn:disabled {
+            opacity: 0.65;
+            cursor: wait;
+        }
     </style>
 </head>
 <body>
+    {% if messages %}
+    <div class="no-print pdf-flash-messages">
+        {% for message in messages %}
+        <div class="pdf-flash alert-{{ message.tags|default:'warning' }}">{{ message }}</div>
+        {% endfor %}
+    </div>
+    {% endif %}
     <div class="print-actions no-print">
         <button type="button" class="print-btn" onclick="window.print()">{{ print_button_label|default:"Print quotation" }}</button>
         {% if pdf_variant == 'quotation' %}
-        <a href="{% url 'sales:estimate_pdf_download' estimate.pk %}" class="print-btn print-btn-secondary">
+        <button type="button" class="print-btn print-btn-secondary" id="btn-download-pdf"
+                data-download-url="{% url 'sales:estimate_pdf_download' estimate.pk %}">
             <i class="fas fa-download me-1"></i>Download PDF
-        </a>
+        </button>
         {% endif %}
         {% if proforma_single_line and proforma_can_edit %}
         <a href="{{ proforma_edit_url }}" class="print-btn print-btn-secondary">Edit proforma</a>
@@ -931,6 +969,43 @@
         if (urlParams.get('print') === '1') {
             window.onload = function() { window.print(); };
         }
+
+        (function () {
+            const btn = document.getElementById('btn-download-pdf');
+            if (!btn) return;
+            btn.addEventListener('click', async function () {
+                const url = btn.dataset.downloadUrl;
+                if (!url) return;
+                const label = btn.innerHTML;
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Generating…';
+                try {
+                    const res = await fetch(url, { credentials: 'same-origin' });
+                    const contentType = (res.headers.get('Content-Type') || '').toLowerCase();
+                    if (!res.ok || !contentType.includes('pdf')) {
+                        window.location.href = url;
+                        return;
+                    }
+                    const blob = await res.blob();
+                    const cd = res.headers.get('Content-Disposition') || '';
+                    let filename = 'Quotation.pdf';
+                    const match = cd.match(/filename="?([^";\n]+)"?/i);
+                    if (match) filename = match[1].trim();
+                    const link = document.createElement('a');
+                    link.href = URL.createObjectURL(blob);
+                    link.download = filename;
+                    document.body.appendChild(link);
+                    link.click();
+                    link.remove();
+                    setTimeout(function () { URL.revokeObjectURL(link.href); }, 3000);
+                } catch (err) {
+                    window.location.href = url;
+                } finally {
+                    btn.disabled = false;
+                    btn.innerHTML = label;
+                }
+            });
+        })();
     </script>
 </body>
 </html>

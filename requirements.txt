@@ -17,6 +17,7 @@ django-filter==24.3
 django-widget-tweaks==1.5.0
 qrcode==8.0
 reportlab==4.2.5
+weasyprint==69.0
 openpyxl==3.1.5
 
 # Date/Time

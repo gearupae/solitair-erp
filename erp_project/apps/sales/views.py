@@ -1464,7 +1464,12 @@ def estimate_pdf_download(request, pk):
         messages.error(request, 'You do not have permission to view this estimate.')
         return redirect('sales:estimate_list')
 
-    pdf_bytes, err = render_estimate_quotation_pdf_bytes(request, estimate)
+    try:
+        pdf_bytes, err = render_estimate_quotation_pdf_bytes(request, estimate)
+    except Exception as exc:
+        messages.error(request, f'Could not generate PDF: {exc}')
+        return redirect('sales:estimate_pdf', pk=estimate.pk)
+
     if not pdf_bytes:
         messages.error(request, err or 'Could not generate PDF.')
         return redirect('sales:estimate_pdf', pk=estimate.pk)
@@ -1472,11 +1477,17 @@ def estimate_pdf_download(request, pk):
     safe_name = ''.join(
         c for c in estimate.display_estimate_number if c.isalnum() or c in ('-', '_')
     ) or str(estimate.pk)
-    from django.http import HttpResponse
+    from io import BytesIO
 
-    response = HttpResponse(pdf_bytes, content_type='application/pdf')
-    response['Content-Disposition'] = f'attachment; filename="Quotation_{safe_name}.pdf"'
-    return response
+    from django.http import FileResponse
+
+    filename = f'Quotation_{safe_name}.pdf'
+    return FileResponse(
+        BytesIO(pdf_bytes),
+        as_attachment=True,
+        filename=filename,
+        content_type='application/pdf',
+    )
 
 
 def _get_estimate_revision_snapshot(request, pk, snapshot_id):

@@ -32,6 +32,11 @@ def render_estimate_quotation_pdf_bytes(request, estimate):
     )
     template = get_template('sales/estimate_pdf.html')
     html_string = template.render(context)
-    html = HTML(string=html_string, base_url=request.build_absolute_uri('/'))
-    pdf = html.write_pdf()
+    try:
+        html = HTML(string=html_string, base_url=request.build_absolute_uri('/'))
+        pdf = html.write_pdf()
+    except Exception as exc:
+        return None, f'PDF generation failed: {exc}'
+    if not pdf:
+        return None, 'PDF generation returned empty output.'
     return pdf, None
