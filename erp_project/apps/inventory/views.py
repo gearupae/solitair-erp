@@ -27,6 +27,7 @@ from .models import (
     StorageLocation,
     Item,
     ItemGroup,
+    ItemBaseGroup,
     ItemGroupMembership,
     ItemSerialNumber,
     Stock,
@@ -361,7 +362,7 @@ def item_export_csv(request):
 
 @login_required
 def item_group_manage(request):
-    """Manage item groups: members, default estimate qty, rename, PDF settings."""
+    """Manage item sub-groups and base groups: members, default estimate qty, rename, PDF settings."""
     can_edit = request.user.is_superuser or PermissionChecker.has_permission(
         request.user, 'inventory', 'edit'
     )
@@ -369,11 +370,20 @@ def item_group_manage(request):
         messages.error(request, 'Permission denied.')
         return redirect('inventory:item_list')
 
-    def _redirect(group=None):
+    active_tab = (request.GET.get('tab') or 'base').strip().lower()
+    if active_tab not in ('sub', 'base'):
+        active_tab = 'base'
+
+    def _redirect(group=None, tab=None, base=None):
+        tab = tab or active_tab
         url = reverse('inventory:item_group_manage')
-        if group:
-            return redirect(f'{url}?group={group.pk}')
-        return redirect(url)
+        params = [f'tab={tab}']
+        if tab == 'base':
+            if base:
+                params.append(f'base={base.pk}')
+        elif group:
+            params.append(f'group={group.pk}')
+        return redirect(f'{url}?{"&".join(params)}')
 
     if request.method == 'POST':
         if not can_edit:
@@ -381,37 +391,109 @@ def item_group_manage(request):
             return redirect('inventory:item_list')
 
         action = (request.POST.get('action') or '').strip()
+        post_tab = (request.POST.get('tab') or active_tab).strip().lower()
+        if post_tab not in ('sub', 'base'):
+            post_tab = active_tab
+
+        if action == 'create_base_group':
+            name = (request.POST.get('new_base_group_name') or '').strip()[:200]
+            if not name:
+                messages.warning(request, 'Enter a base group name.')
+                return _redirect(tab='base')
+            if ItemBaseGroup.objects.filter(name__iexact=name).exists():
+                messages.error(request, 'A base group with that name already exists.')
+                return _redirect(tab='base')
+            bg = ItemBaseGroup.objects.create(name=name)
+            sub_ids = [int(x) for x in request.POST.getlist('sub_group_ids') if str(x).isdigit()]
+            if sub_ids:
+                ItemGroup.objects.filter(pk__in=sub_ids).update(base_group=bg)
+            if sub_ids:
+                messages.success(
+                    request,
+                    f'Base group "{bg.name}" created with {len(sub_ids)} sub-group(s).',
+                )
+            else:
+                messages.success(request, f'Base group "{bg.name}" created.')
+            return _redirect(tab='base', base=bg)
+
+        base_pk = request.POST.get('base_id')
+
+        if action == 'save_base_group':
+            if not base_pk or not str(base_pk).isdigit():
+                messages.warning(request, 'Choose a base group first.')
+                return _redirect(tab='base')
+            base_group = get_object_or_404(ItemBaseGroup, pk=int(base_pk))
+            new_name = (request.POST.get('new_base_group_name') or '').strip()[:200]
+            if not new_name:
+                messages.warning(request, 'Enter a base group name.')
+                return _redirect(tab='base', base=base_group)
+            if ItemBaseGroup.objects.filter(name__iexact=new_name).exclude(pk=base_group.pk).exists():
+                messages.error(request, 'Another base group already uses that name.')
+                return _redirect(tab='base', base=base_group)
+            sub_ids = {int(x) for x in request.POST.getlist('sub_group_ids') if str(x).isdigit()}
+            base_group.name = new_name
+            base_group.save(update_fields=['name'])
+            ItemGroup.objects.filter(base_group=base_group).exclude(pk__in=sub_ids).update(base_group=None)
+            if sub_ids:
+                ItemGroup.objects.filter(pk__in=sub_ids).update(base_group=base_group)
+            messages.success(request, f'Base group "{base_group.name}" saved.')
+            return _redirect(tab='base', base=base_group)
+
+        if action in ('delete_base', 'remove_sub_group'):
+            if not base_pk or not str(base_pk).isdigit():
+                messages.warning(request, 'Choose a base group first.')
+                return _redirect(tab='base')
+            base_group = get_object_or_404(ItemBaseGroup, pk=int(base_pk))
+
+            if action == 'delete_base':
+                name = base_group.name
+                base_group.delete()
+                messages.success(request, f'Base group "{name}" deleted. Sub-groups are now unassigned.')
+                return _redirect(tab='base')
+
+            if action == 'remove_sub_group':
+                sub_pk = request.POST.get('sub_group_id')
+                if sub_pk and str(sub_pk).isdigit():
+                    sub = ItemGroup.objects.filter(pk=int(sub_pk), base_group=base_group).first()
+                    if sub:
+                        sub.base_group = None
+                        sub.save(update_fields=['base_group'])
+                        messages.success(request, f'Removed "{sub.name}" from base group.')
+                    else:
+                        messages.warning(request, 'Sub-group not found in this base group.')
+                return _redirect(tab='base', base=base_group)
+
         group_pk = request.POST.get('group_id')
 
         if action == 'create_group':
             name = (request.POST.get('new_group_name') or '').strip()[:200]
             if not name:
                 messages.warning(request, 'Enter a group name.')
-                return _redirect()
+                return _redirect(tab='sub')
             if ItemGroup.objects.filter(name__iexact=name).exists():
                 messages.error(request, 'A group with that name already exists.')
-                return _redirect()
+                return _redirect(tab='sub')
             g = ItemGroup.objects.create(name=name)
             messages.success(request, f'Group "{g.name}" created.')
-            return _redirect(g)
+            return _redirect(group=g, tab='sub')
 
         if not group_pk or not str(group_pk).isdigit():
             messages.warning(request, 'Choose a group first.')
-            return _redirect()
+            return _redirect(tab='sub')
         group = get_object_or_404(ItemGroup, pk=int(group_pk))
 
         if action == 'rename':
             new_name = (request.POST.get('rename_new_name') or '').strip()[:200]
             if not new_name:
                 messages.warning(request, 'Enter a new name.')
-                return _redirect(group)
+                return _redirect(group=group, tab='sub')
             if ItemGroup.objects.filter(name__iexact=new_name).exclude(pk=group.pk).exists():
                 messages.error(request, 'Another group already uses that name.')
-                return _redirect(group)
+                return _redirect(group=group, tab='sub')
             group.name = new_name
             group.save(update_fields=['name'])
             messages.success(request, 'Group renamed.')
-            return _redirect(group)
+            return _redirect(group=group, tab='sub')
 
         if action == 'set_pdf_hide':
             hide = request.POST.get('hide_items_on_pdf') == 'on'
@@ -427,7 +509,7 @@ def item_group_manage(request):
                     request,
                     f'"{group.name}" will show individual items on quotation PDFs.',
                 )
-            return _redirect(group)
+            return _redirect(group=group, tab='sub')
 
         if action == 'save_quantities':
             updated = 0
@@ -450,13 +532,13 @@ def item_group_manage(request):
                 membership.save(update_fields=['default_quantity'])
                 updated += 1
             messages.success(request, f'Saved quantities for {updated} item(s).')
-            return _redirect(group)
+            return _redirect(group=group, tab='sub')
 
         if action == 'add_item':
             item_id = request.POST.get('add_item_id')
             if not item_id or not str(item_id).isdigit():
                 messages.warning(request, 'Choose an item to add.')
-                return _redirect(group)
+                return _redirect(group=group, tab='sub')
             item = get_object_or_404(Item, pk=int(item_id), is_active=True)
             try:
                 qty = Decimal(str(request.POST.get('add_item_qty') or '1').strip().replace(',', ''))
@@ -473,7 +555,7 @@ def item_group_manage(request):
                 messages.info(request, f'{item.item_code} is already in this group.')
             else:
                 messages.success(request, f'Added {item.item_code} to "{group.name}".')
-            return _redirect(group)
+            return _redirect(group=group, tab='sub')
 
         if action == 'remove_member':
             mid = request.POST.get('membership_id')
@@ -483,19 +565,20 @@ def item_group_manage(request):
                     messages.success(request, 'Item removed from group.')
                 else:
                     messages.warning(request, 'Item not found in this group.')
-            return _redirect(group)
+            return _redirect(group=group, tab='sub')
 
         if action == 'delete_group':
             name = group.name
             group.delete()
             messages.success(request, f'Group "{name}" deleted.')
-            return _redirect()
+            return _redirect(tab='sub')
 
         messages.error(request, 'Invalid action.')
-        return _redirect(group)
+        return _redirect(group=group, tab='sub')
 
     groups = (
         ItemGroup.objects.annotate(member_count=Count('memberships'))
+        .select_related('base_group')
         .order_by('name')
     )
     selected = None
@@ -504,7 +587,7 @@ def item_group_manage(request):
     group_param = (request.GET.get('group') or '').strip()
     if group_param.isdigit():
         selected = ItemGroup.objects.filter(pk=int(group_param)).first()
-    if not selected and groups.exists():
+    if not selected and groups.exists() and active_tab == 'sub':
         selected = groups.first()
 
     if selected:
@@ -520,15 +603,65 @@ def item_group_manage(request):
             .order_by('item_code', 'name')[:500]
         )
 
+    base_groups = (
+        ItemBaseGroup.objects.annotate(sub_group_count=Count('sub_groups'))
+        .order_by('name')
+    )
+    selected_base = None
+    base_sub_groups = ItemGroup.objects.none()
+    all_sub_groups = (
+        ItemGroup.objects.annotate(member_count=Count('memberships'))
+        .select_related('base_group')
+        .order_by('name')
+    )
+    base_param = (request.GET.get('base') or '').strip()
+    if base_param.isdigit():
+        selected_base = ItemBaseGroup.objects.filter(pk=int(base_param)).first()
+    elif active_tab == 'base' and not request.GET.get('new') and base_groups.exists():
+        selected_base = base_groups.first()
+
+    if selected_base:
+        base_sub_groups = (
+            ItemGroup.objects.filter(base_group=selected_base)
+            .annotate(member_count=Count('memberships'))
+            .order_by('name')
+        )
+
+    sub_group_picker_data = {
+        'all': [],
+        'selected': [],
+    }
+    for sg in all_sub_groups:
+        other_base = None
+        if sg.base_group_id:
+            if not selected_base or request.GET.get('new') or sg.base_group_id != selected_base.pk:
+                other_base = sg.base_group.name if sg.base_group_id else None
+        sub_group_picker_data['all'].append({
+            'id': sg.pk,
+            'name': sg.name,
+            'member_count': sg.member_count,
+            'other_base': other_base,
+        })
+    if selected_base and not request.GET.get('new'):
+        sub_group_picker_data['selected'] = list(
+            ItemGroup.objects.filter(base_group=selected_base).values_list('pk', flat=True)
+        )
+
     return render(
         request,
         'inventory/item_group_manage.html',
         {
             'title': 'Item groups',
+            'active_tab': active_tab,
             'groups': groups,
             'selected_group': selected,
             'memberships': memberships,
             'available_items': available_items,
+            'base_groups': base_groups,
+            'selected_base_group': selected_base,
+            'base_sub_groups': base_sub_groups,
+            'all_sub_groups': all_sub_groups,
+            'sub_group_picker_data': sub_group_picker_data,
             'can_edit': can_edit,
         },
     )

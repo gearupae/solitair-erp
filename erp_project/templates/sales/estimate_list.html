@@ -511,17 +511,6 @@
                             {% endif %}
                         </td>
                         <td>
-                            {% if can_approve_status and estimate.allowed_status_choices|length > 1 %}
-                            <form method="post" action="{% url 'sales:estimate_set_status' estimate.pk %}" class="estimate-status-inline">
-                                {% csrf_token %}
-                                <input type="hidden" name="next" value="{{ request.get_full_path }}">
-                                <select name="status" class="form-select form-select-sm estimate-status-select estimate-status-{{ estimate.status }}" aria-label="Status" data-current-status="{{ estimate.status }}" onchange="window.estimateStatusSelectChange(this)">
-                                    {% for value, label in estimate.allowed_status_choices %}
-                                    <option value="{{ value }}" {% if estimate.status == value %}selected{% endif %}>{{ label }}</option>
-                                    {% endfor %}
-                                </select>
-                            </form>
-                            {% elif can_edit %}
                             {% if estimate.allowed_status_choices|length > 1 %}
                             <form method="post" action="{% url 'sales:estimate_set_status' estimate.pk %}" class="estimate-status-inline">
                                 {% csrf_token %}
@@ -532,25 +521,6 @@
                                     {% endfor %}
                                 </select>
                             </form>
-                            {% else %}
-                            {% if estimate.status == 'draft' %}
-                                <span class="badge bg-secondary">Draft</span>
-                            {% elif estimate.status == 'sent' %}
-                                <span class="badge" style="background-color: #dbeafe; color: #1e40af;">Sent</span>
-                            {% elif estimate.status == 'approved' %}
-                                <span class="badge estimate-status-badge-approved">{{ estimate.get_status_display }}</span>
-                            {% elif estimate.status == 'rejected' %}
-                                <span class="badge estimate-status-badge-rejected">{{ estimate.get_status_display }}</span>
-                            {% elif estimate.status == 'under_negotiation' %}
-                                <span class="badge estimate-status-badge-under-negotiation">{{ estimate.get_status_display }}</span>
-                            {% elif estimate.status == 'quotation_won' %}
-                                <span class="badge bg-success">{{ estimate.get_status_display }}</span>
-                            {% elif estimate.status == 'quotation_lost' %}
-                                <span class="badge bg-danger">{{ estimate.get_status_display }}</span>
-                            {% else %}
-                                <span class="badge bg-secondary">{{ estimate.get_status_display }}</span>
-                            {% endif %}
-                            {% endif %}
                             {% else %}
                             {% if estimate.status == 'draft' %}
                                 <span class="badge bg-secondary">Draft</span>

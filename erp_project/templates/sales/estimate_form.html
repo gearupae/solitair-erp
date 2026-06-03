@@ -316,6 +316,7 @@
         </div>
         <div class="card-body p-0">
             <p class="text-muted small px-3 pt-3 mb-2 mb-md-3">
+                <strong>Scope of work:</strong> choosing a main group loads all of its sub-groups and items below (group name = sub-group on each line).
                 <strong>How each line is calculated:</strong>
                 <strong>Rate</strong> = base per unit + profit — if profit is <strong>%</strong>, rate = base × (1 + %÷100) (e.g. base 10 and 100% → 20/unit).
                 If profit is <strong>Amt</strong>, rate = base + AED <em>per unit</em> (e.g. base 10 + 100 → 110/unit).
@@ -499,6 +500,7 @@ const profitChoices = [
 ];
 
 let formCount = {{ items_formset.total_form_count }};
+let suppressTrailingEmptyRow = false;
 
 function getTaxOptions(selectedId) {
     let o = '<option value="">-- No Tax --</option>';
@@ -535,15 +537,60 @@ function getInventoryMeta(invId) {
     return inventoryItems.find(x => String(x.id) === String(invId)) || null;
 }
 
-function getBasePriceBoundsMessage(meta, price) {
+/** Default profit from inventory item maximum selling price settings. */
+function applyProfitFromItemMaximum(row, meta) {
+    const ptSel = row.querySelector('.item-profit-type');
+    const pvInput = row.querySelector('.item-profit-value');
+    if (!ptSel || !pvInput || !meta) return;
+
+    const rawMax = parseFloat(meta.maximum_selling_price_value);
+    const maxType = meta.maximum_selling_price_type || 'amount';
+    const base = parseFloat(row.querySelector('.item-base-price')?.value)
+        || parseFloat(meta.selling_price) || 0;
+    if (!rawMax || rawMax <= 0 || Number.isNaN(rawMax)) {
+        ptSel.value = 'none';
+        pvInput.value = '0';
+        return;
+    }
+
+    if (maxType === 'percent') {
+        ptSel.value = 'percent';
+        pvInput.value = parseFloat(rawMax).toFixed(2);
+    } else {
+        ptSel.value = 'amount';
+        pvInput.value = Math.max(0, rawMax - base).toFixed(2);
+    }
+}
+
+function getQuoteRateBounds(meta, basePrice) {
+    const base = parseFloat(basePrice) || parseFloat(meta?.selling_price) || 0;
+    if (!meta || base <= 0) {
+        return { min: 0, max: 0 };
+    }
+    let min = 0;
+    let max = 0;
+    const rawMin = parseFloat(meta.minimum_selling_price_value);
+    const minType = meta.minimum_selling_price_type || 'amount';
+    if (rawMin > 0 && !Number.isNaN(rawMin)) {
+        min = minType === 'percent' ? base * rawMin / 100 : rawMin;
+    }
+    const rawMax = parseFloat(meta.maximum_selling_price_value);
+    const maxType = meta.maximum_selling_price_type || 'amount';
+    if (rawMax > 0 && !Number.isNaN(rawMax)) {
+        max = maxType === 'percent' ? base * (1 + rawMax / 100) : rawMax;
+    }
+    return { min, max };
+}
+
+function getBasePriceBoundsMessage(meta, price, basePrice) {
     if (!meta) return '';
-    const min = parseFloat(meta.minimum_selling_price) || 0;
-    const max = parseFloat(meta.maximum_selling_price) || 0;
+    const base = basePrice != null ? basePrice : meta.selling_price;
+    const bounds = getQuoteRateBounds(meta, base);
     const name = meta.name || 'item';
-    if (min > 0 && price > 0 && price < min) {
+    if (bounds.min > 0 && price > 0 && price < bounds.min) {
         return `Amount is low for ${name}.`;
     }
-    if (max > 0 && price > max) {
+    if (bounds.max > 0 && price > bounds.max) {
         return `Amount is high for ${name}.`;
     }
     return '';
@@ -579,7 +626,8 @@ function validateRowSellingRate(row, showToast, triggerEl) {
 
     const rate = computeRate(row);
     const meta = getInventoryMeta(invId);
-    const msg = getBasePriceBoundsMessage(meta, rate);
+    const base = parseFloat(row.querySelector('.item-base-price')?.value) || 0;
+    const msg = getBasePriceBoundsMessage(meta, rate, base);
     if (msg) {
         const highlight = triggerEl || getRowRateHighlightField(row);
         if (highlight) {
@@ -924,6 +972,7 @@ function populateRowFromInventory(row, invId, groupName, defaultQuantity) {
     if (desc) desc.value = meta.name || '';
     const bp = row.querySelector('.item-base-price');
     if (bp) bp.value = parseFloat(meta.selling_price || 0).toFixed(2);
+    applyProfitFromItemMaximum(row, meta);
     const tc = row.querySelector('.item-tax-code');
     if (tc) tc.value = meta.tax_code_id || defaultTaxCodeId || '';
     computeRate(row);
@@ -941,7 +990,9 @@ function populateRowFromInventory(row, invId, groupName, defaultQuantity) {
         calculateRowTotal(qtyInput);
     }
     validateRowBasePrice(row, true);
-    ensureTrailingEmptyRow();
+    if (!suppressTrailingEmptyRow) {
+        ensureTrailingEmptyRow();
+    }
 }
 
 function onInventoryChange(sel) {
@@ -967,15 +1018,157 @@ function fillInventoryGroupBulkSelect(sel) {
     sel.innerHTML = '';
     const o0 = document.createElement('option');
     o0.value = '';
-    o0.textContent = 'Group…';
+    o0.textContent = 'Pick group…';
     sel.appendChild(o0);
+
+    const byBase = new Map();
     inventoryGroups.forEach((g, idx) => {
-        const o = document.createElement('option');
-        o.value = String(idx);
-        const n = g.items ? g.items.length : 0;
-        o.textContent = `${g.name} (${n})`;
-        sel.appendChild(o);
+        const key = g.base_group || '';
+        if (!byBase.has(key)) byBase.set(key, []);
+        byBase.get(key).push({ g, idx });
     });
+
+    const keys = Array.from(byBase.keys()).sort((a, b) => {
+        if (!a) return 1;
+        if (!b) return -1;
+        return a.localeCompare(b);
+    });
+
+    keys.forEach((key) => {
+        let container = sel;
+        if (key) {
+            const og = document.createElement('optgroup');
+            og.label = key;
+            sel.appendChild(og);
+            container = og;
+        }
+        byBase.get(key).forEach(({ g, idx }) => {
+            const o = document.createElement('option');
+            o.value = String(idx);
+            const itemNames = (g.items || []).map((it) => it.name).join(', ');
+            o.textContent = `${g.name} (${(g.items || []).length} items)`;
+            o.title = itemNames;
+            container.appendChild(o);
+        });
+    });
+}
+
+function clearAllLineItems() {
+    document.querySelectorAll('#itemsBody .item-row').forEach(row => {
+        const idInput = row.querySelector('input[name$="-id"]');
+        const hasSavedId = idInput && String(idInput.value || '').trim() !== '';
+        if (hasSavedId) {
+            const del = row.querySelector('input[name$="-DELETE"]');
+            if (del) {
+                del.checked = true;
+                row.style.display = 'none';
+            }
+        } else {
+            row.remove();
+        }
+    });
+    syncFormsetManagementCounts();
+}
+
+function pruneEmptyLineRows() {
+    getVisibleEstimateRows().filter(isEstimateRowEmpty).forEach(row => {
+        const idInput = row.querySelector('input[name$="-id"]');
+        const hasSavedId = idInput && String(idInput.value || '').trim() !== '';
+        if (hasSavedId) {
+            const del = row.querySelector('input[name$="-DELETE"]');
+            if (del) {
+                del.checked = true;
+                row.style.display = 'none';
+            }
+        } else {
+            row.remove();
+        }
+    });
+    syncFormsetManagementCounts();
+}
+
+function removeInteriorEmptyRows() {
+    pruneEmptyLineRows();
+}
+
+function getOrCreateNextItemRow(preferredRow) {
+    if (preferredRow && isEstimateRowEmpty(preferredRow)) {
+        return preferredRow;
+    }
+    const rows = getVisibleEstimateRows();
+    const last = rows.length ? rows[rows.length - 1] : null;
+    if (last && isEstimateRowEmpty(last)) {
+        return last;
+    }
+    addItemRow();
+    return document.getElementById('itemsBody').lastElementChild;
+}
+
+function appendGroupItemsToEstimate(g, startRow, options) {
+    if (!g || !g.items || !g.items.length) return;
+    const deferTrailing = options && options.deferTrailing;
+    const tbody = document.getElementById('itemsBody');
+    let nextRow = startRow || null;
+    suppressTrailingEmptyRow = true;
+    try {
+        g.items.forEach(it => {
+            const targetRow = getOrCreateNextItemRow(nextRow);
+            nextRow = null;
+            applyInventoryItemToRow(targetRow, it.id, g.name, it.default_quantity);
+        });
+        const mult = findGroupQtyMultiplierForName(g.name);
+        document.querySelectorAll('#itemsBody .item-row').forEach(r => {
+            if (r.style.display === 'none') return;
+            if (getRowGroupName(r) !== normalizeGroupName(g.name)) return;
+            const inp = r.querySelector('.item-group-qty-mult');
+            if (inp) inp.value = mult;
+        });
+        refreshGroupQtyMultDisplay();
+        applyGroupMultiplier(normalizeGroupName(g.name), startRow || tbody.querySelector('.item-row'));
+    } finally {
+        suppressTrailingEmptyRow = false;
+        if (!deferTrailing) ensureTrailingEmptyRow();
+    }
+}
+
+function getSubGroupsForBaseGroup(baseGroupName) {
+    if (!baseGroupName) return [];
+    const key = baseGroupName.trim().toLowerCase();
+    return inventoryGroups
+        .filter(g => (g.base_group || '').trim().toLowerCase() === key)
+        .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function loadLineItemsForScopeOfWork(baseGroupName) {
+    if (!baseGroupName) return true;
+    const groups = getSubGroupsForBaseGroup(baseGroupName);
+    if (!groups.length) {
+        alert(`No sub-groups with items found for "${baseGroupName}". Add sub-groups under Inventory → Item groups.`);
+        return false;
+    }
+    const filled = getVisibleEstimateRows().filter(isEstimateRowFilled);
+    if (filled.length) {
+        const itemCount = groups.reduce((n, g) => n + (g.items ? g.items.length : 0), 0);
+        const ok = confirm(
+            `Replace ${filled.length} existing line(s) with ${itemCount} item(s) from ${groups.length} sub-group(s)?`
+        );
+        if (!ok) return false;
+    }
+    clearAllLineItems();
+    ensureTrailingEmptyRow();
+    const firstRow = getVisibleEstimateRows()[0] || null;
+    suppressTrailingEmptyRow = true;
+    try {
+        groups.forEach((g, idx) => {
+            appendGroupItemsToEstimate(g, idx === 0 ? firstRow : null, { deferTrailing: true });
+        });
+    } finally {
+        suppressTrailingEmptyRow = false;
+        removeInteriorEmptyRows();
+        calculateTotals();
+    }
+    document.getElementById('lineItemsCardHeader')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    return true;
 }
 
 function addLinesFromInventoryGroupSelect(sel) {
@@ -989,30 +1182,7 @@ function addLinesFromInventoryGroupSelect(sel) {
         return;
     }
     const row = sel.closest('tr.item-row');
-    const tbody = document.getElementById('itemsBody');
-    if (!row || !tbody) return;
-    let first = true;
-    g.items.forEach(it => {
-        let targetRow;
-        if (first) {
-            targetRow = row;
-            first = false;
-        } else {
-            addItemRow();
-            targetRow = tbody.lastElementChild;
-        }
-        applyInventoryItemToRow(targetRow, it.id, g.name, it.default_quantity);
-    });
-    const mult = findGroupQtyMultiplierForName(g.name);
-    document.querySelectorAll('#itemsBody .item-row').forEach(r => {
-        if (r.style.display === 'none') return;
-        if (getRowGroupName(r) !== normalizeGroupName(g.name)) return;
-        const inp = r.querySelector('.item-group-qty-mult');
-        if (inp) inp.value = mult;
-    });
-    refreshGroupQtyMultDisplay();
-    applyGroupMultiplier(normalizeGroupName(g.name), row);
-    ensureTrailingEmptyRow();
+    appendGroupItemsToEstimate(g, row);
 }
 
 function addItemRow() {
@@ -1055,7 +1225,9 @@ function addItemRow() {
     refreshGroupQtyMultDisplay();
     formCount++;
     document.getElementById('id_items-TOTAL_FORMS').value = formCount;
-    calculateRowTotal(tr.querySelector('.item-qty'));
+    if (!suppressTrailingEmptyRow) {
+        calculateRowTotal(tr.querySelector('.item-qty'));
+    }
 }
 
 function getVisibleEstimateRows() {
@@ -1096,6 +1268,7 @@ function syncFormsetManagementCounts() {
 
 /** Keep one blank line ready after the last filled row. */
 function ensureTrailingEmptyRow() {
+    if (suppressTrailingEmptyRow) return;
     const rows = getVisibleEstimateRows();
     if (!rows.length) {
         addItemRow();
@@ -1150,7 +1323,9 @@ function calculateRowTotal(input) {
     if (netEl) netEl.textContent = net.toFixed(2);
     if (grossEl) grossEl.textContent = gross.toFixed(2);
     calculateTotals();
-    ensureTrailingEmptyRow();
+    if (!suppressTrailingEmptyRow) {
+        ensureTrailingEmptyRow();
+    }
 }
 
 function calculateTotals() {
@@ -1346,13 +1521,36 @@ document.addEventListener('DOMContentLoaded', function() {
     initAllBaseQty();
     refreshGroupQtyMultDisplay();
     document.querySelectorAll('.estimate-add-from-group').forEach(fillInventoryGroupBulkSelect);
+    suppressTrailingEmptyRow = true;
     document.querySelectorAll('#itemsBody .item-row').forEach(row => {
         const q = row.querySelector('.item-qty');
         if (q) calculateRowTotal(q);
     });
+    suppressTrailingEmptyRow = false;
+    {% if object %}
+    pruneEmptyLineRows();
+    {% else %}
     ensureTrailingEmptyRow();
+    {% endif %}
     document.querySelector('[name="discount_type"]')?.addEventListener('change', calculateTotals);
     document.querySelector('[name="discount_value"]')?.addEventListener('input', calculateTotals);
+    const scopeSelect = document.getElementById('id_scope_of_work');
+    if (scopeSelect) {
+        let lastScopeOfWork = scopeSelect.value || '';
+        scopeSelect.addEventListener('change', function() {
+            const selected = this.value;
+            if (!selected) {
+                lastScopeOfWork = '';
+                return;
+            }
+            const ok = loadLineItemsForScopeOfWork(selected);
+            if (!ok) {
+                this.value = lastScopeOfWork;
+            } else {
+                lastScopeOfWork = selected;
+            }
+        });
+    }
     document.getElementById('estimateForm')?.addEventListener('submit', function(e) {
         if (!validateAllSellingRates(true)) {
             e.preventDefault();

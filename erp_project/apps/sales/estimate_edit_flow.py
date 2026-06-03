@@ -1,9 +1,18 @@
 """Post-save estimate edit workflow: re-approval and revision bumps."""
 from dataclasses import dataclass
 
-from apps.settings_app.document_edit_approval import apply_after_document_edit
+# Editing in these statuses requires re-approval and bumps R1, R2, …
+REVISION_RESUBMIT_STATUSES = frozenset({
+    'approved',
+    'rejected',
+    'under_negotiation',
+    'quotation_won',
+    'quotation_lost',
+    'sent',
+})
 
-RESUBMIT_AFTER_EDIT_STATUSES = frozenset({'approved', 'rejected'})
+# Backwards-compatible alias
+RESUBMIT_AFTER_EDIT_STATUSES = REVISION_RESUBMIT_STATUSES
 
 
 @dataclass
@@ -17,13 +26,12 @@ class EstimateEditApplyResult:
 def apply_after_estimate_save(request, estimate, *, pre_status: str) -> EstimateEditApplyResult:
     """
     After a successful estimate save with detected changes:
-    - approved/rejected → sent for approval + revision bump
-    - sent → optional edit-approval queue (Settings config)
+    - approved / under negotiation / quot won / quot lost / sent / rejected → sent + revision bump
     - draft → no approval action
     """
     result = EstimateEditApplyResult(changed=True)
 
-    if pre_status in RESUBMIT_AFTER_EDIT_STATUSES:
+    if pre_status in REVISION_RESUBMIT_STATUSES:
         estimate.revision_count = (estimate.revision_count or 0) + 1
         estimate.status = 'sent'
         estimate.approval_requested_by = request.user
@@ -48,19 +56,6 @@ def apply_after_estimate_save(request, estimate, *, pre_status: str) -> Estimate
         notify_approver_estimate_sent(estimate, requested_by=request.user)
         result.resubmitted_for_approval = True
         result.revision_bumped = True
-        return result
-
-    if pre_status == 'sent':
-        rev_before = estimate.revision_count or 0
-        apply_after_document_edit(
-            request,
-            module='estimate',
-            obj=estimate,
-            amount_accessor=lambda o: o.total_amount,
-        )
-        estimate.refresh_from_db()
-        result.edit_pending = estimate.edit_approval_status == 'pending'
-        result.revision_bumped = (estimate.revision_count or 0) > rev_before
         return result
 
     return result

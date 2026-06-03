@@ -18,7 +18,7 @@ from decimal import Decimal, InvalidOperation
 from collections import defaultdict
 import json
 
-from .models import Estimate, EstimateItem, EstimateProformaInvoice, Invoice, InvoiceItem
+from .models import Estimate, EstimateItem, EstimateProformaInvoice, EstimateRevisionSnapshot, Invoice, InvoiceItem
 from .forms import EstimateForm, EstimateItemFormSet, InvoiceForm, InvoiceItemFormSet
 from .estimate_csv import get_default_estimate_csv_tax_code
 from apps.crm.models import Customer
@@ -30,6 +30,7 @@ from apps.settings_app.models import CompanySettings
 from .estimate_pdf_render import render_estimate_quotation_pdf_bytes
 from .estimate_change_detection import estimate_form_has_changes
 from .estimate_edit_flow import apply_after_estimate_save, EstimateEditApplyResult
+from .estimate_revision_snapshot import maybe_snapshot_before_revision
 
 
 def _estimate_save_success_message(
@@ -59,8 +60,12 @@ def _inventory_item_estimate_json(item):
         'item_code': item.item_code,
         'name': item.name,
         'selling_price': item.selling_price,
-        'minimum_selling_price': item.get_effective_minimum_selling_price(),
-        'maximum_selling_price': item.get_effective_maximum_selling_price(),
+        'minimum_selling_price_value': item.minimum_selling_price,
+        'minimum_selling_price_type': item.minimum_selling_price_type,
+        'maximum_selling_price_value': item.maximum_selling_price,
+        'maximum_selling_price_type': item.maximum_selling_price_type,
+        'quote_maximum_rate': item.get_quote_maximum_rate(item.selling_price),
+        'quote_minimum_rate': item.get_quote_minimum_rate(item.selling_price),
         'tax_code_id': item.tax_code_id,
     }
 
@@ -78,10 +83,10 @@ def _estimate_form_inventory_groups_context():
     """
     Item groups with active items for estimate line-item bulk add + group name datalist.
     """
-    from apps.inventory.models import ItemGroup, Item, ItemGroupMembership
+    from apps.inventory.models import ItemGroup, ItemGroupMembership
 
     groups = []
-    for g in ItemGroup.objects.order_by('name'):
+    for g in ItemGroup.objects.select_related('base_group').order_by('name'):
         memberships = (
             ItemGroupMembership.objects.filter(
                 group=g,
@@ -95,6 +100,7 @@ def _estimate_form_inventory_groups_context():
             continue
         groups.append({
             'name': g.name,
+            'base_group': g.base_group.name if g.base_group_id else '',
             'items': [
                 {
                     **_inventory_item_estimate_json(m.item),
@@ -103,6 +109,7 @@ def _estimate_form_inventory_groups_context():
                 for m in memberships
             ],
         })
+
     return {
         'inventory_groups_json': json.dumps(groups, cls=DjangoJSONEncoder),
         'inventory_group_names': [entry['name'] for entry in groups],
@@ -723,6 +730,9 @@ class EstimateUpdateView(UpdatePermissionMixin, UpdateView):
                 old_assignee_id = self.object.assigned_to_id
                 pre_status = self.object.status
                 rev_before = self.object.revision_count or 0
+                maybe_snapshot_before_revision(
+                    request, self.object, pre_status=pre_status, has_changes=True,
+                )
                 self.object = form.save()
                 bulk_create_estimate_items(self.object, rows, replace_existing=True)
                 self.object.calculate_totals()
@@ -782,6 +792,10 @@ class EstimateUpdateView(UpdatePermissionMixin, UpdateView):
         old_assignee_id = self.object.assigned_to_id
         pre_status = self.object.status
         rev_before = self.object.revision_count or 0
+        if has_changes:
+            maybe_snapshot_before_revision(
+                self.request, self.object, pre_status=pre_status, has_changes=True,
+            )
         self.object = form.save()
         items_formset.instance = self.object
         items_formset.save()
@@ -844,6 +858,10 @@ class EstimateDetailView(PermissionRequiredMixin, DetailView):
             Prefetch(
                 'invoices',
                 queryset=Invoice.objects.exclude(status='cancelled').order_by('-created_at'),
+            ),
+            Prefetch(
+                'revision_snapshots',
+                queryset=EstimateRevisionSnapshot.objects.select_related('created_by').order_by('-revision_number', '-created_at'),
             ),
         )
         from apps.core.visibility import filter_estimates_for_user
@@ -919,6 +937,7 @@ class EstimateDetailView(PermissionRequiredMixin, DetailView):
         )
         from .estimate_pdf_groups import build_pdf_item_groups
         context['item_groups'] = build_pdf_item_groups(self.object)
+        context['revision_snapshots'] = list(self.object.revision_snapshots.all())
         return context
 
 
@@ -1117,10 +1136,10 @@ def estimate_update_status(request, pk, status):
         if status in ('quotation_won', 'quotation_lost'):
             from .approval_rules import user_can_mark_estimate_won_lost
 
-            if estimate.status != 'under_negotiation':
+            if estimate.status not in ('approved', 'under_negotiation'):
                 messages.error(
                     request,
-                    'Mark estimate won or lost only when the estimate is under negotiation.',
+                    'Mark estimate won or lost only when the estimate is approved or under negotiation.',
                 )
             elif not user_can_mark_estimate_won_lost(request.user, estimate):
                 messages.error(
@@ -1352,6 +1371,13 @@ def _build_estimate_pdf_context(request, estimate, *, proforma_invoice=None):
     if estimate.customer_signature:
         customer_signature_url = request.build_absolute_uri(estimate.customer_signature.url)
 
+    pdf_image_1_url = ''
+    if company.estimate_pdf_stamp_image:
+        pdf_image_1_url = request.build_absolute_uri(company.estimate_pdf_stamp_image.url)
+    pdf_image_2_url = ''
+    if company.estimate_pdf_footer_image:
+        pdf_image_2_url = request.build_absolute_uri(company.estimate_pdf_footer_image.url)
+
     return {
         'estimate': estimate,
         'proforma_invoice': proforma_invoice,
@@ -1359,6 +1385,8 @@ def _build_estimate_pdf_context(request, estimate, *, proforma_invoice=None):
         'logo_absolute_url': logo_absolute_url,
         'authorized_signature_url': authorized_signature_url,
         'customer_signature_url': customer_signature_url,
+        'pdf_image_1_url': pdf_image_1_url,
+        'pdf_image_2_url': pdf_image_2_url,
         'amount_words': amount_words,
         'vat_summary': vat_summary,
         'pdf_item_groups': build_pdf_item_groups(estimate),
@@ -1395,6 +1423,69 @@ def estimate_pdf(request, pk):
         'pdf_date_label': 'Quotation date',
     })
     return render(request, 'sales/estimate_pdf.html', context)
+
+
+def _get_estimate_revision_snapshot(request, pk, snapshot_id):
+    """Load estimate + revision snapshot with view permission checks."""
+    estimate = get_object_or_404(Estimate.objects.filter(is_active=True), pk=pk)
+    if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'sales', 'view')):
+        messages.error(request, 'Permission denied.')
+        return None, None
+    from apps.core.visibility import user_can_access_estimate
+
+    if not user_can_access_estimate(request.user, estimate):
+        messages.error(request, 'You do not have permission to view this estimate.')
+        return None, None
+
+    snapshot = get_object_or_404(
+        EstimateRevisionSnapshot.objects.filter(estimate=estimate),
+        pk=snapshot_id,
+    )
+    return estimate, snapshot
+
+
+@login_required
+def estimate_revision_detail(request, pk, snapshot_id):
+    """Read-only view of a saved revision (line items and totals from snapshot JSON)."""
+    estimate, snapshot = _get_estimate_revision_snapshot(request, pk, snapshot_id)
+    if snapshot is None:
+        return redirect('sales:estimate_list')
+
+    from .revision_snapshot_render import revision_snapshot_detail_context
+
+    context = {
+        'estimate': estimate,
+        'snapshot': snapshot,
+        **revision_snapshot_detail_context(snapshot),
+    }
+    return render(request, 'sales/estimate_revision_snapshot.html', context)
+
+
+@login_required
+def estimate_revision_pdf(request, pk, snapshot_id):
+    """View PDF for a revision; generates from snapshot data if not yet stored."""
+    estimate, snapshot = _get_estimate_revision_snapshot(request, pk, snapshot_id)
+    if snapshot is None:
+        return redirect('sales:estimate_list')
+
+    from .revision_snapshot_render import ensure_revision_snapshot_pdf
+
+    if not ensure_revision_snapshot_pdf(request, snapshot):
+        messages.warning(
+            request,
+            'Could not generate PDF for this revision. Open View for the saved details.',
+        )
+        return redirect('sales:estimate_revision_detail', pk=estimate.pk, snapshot_id=snapshot.pk)
+
+    from django.http import FileResponse
+
+    snapshot.refresh_from_db()
+    return FileResponse(
+        snapshot.pdf_file.open('rb'),
+        content_type='application/pdf',
+        as_attachment=False,
+        filename=snapshot.pdf_file.name.rsplit('/', 1)[-1],
+    )
 
 
 @login_required
@@ -1678,10 +1769,10 @@ def estimate_set_status(request, pk):
         if status in ('quotation_won', 'quotation_lost'):
             from .approval_rules import user_can_mark_estimate_won_lost
 
-            if estimate.status != 'under_negotiation':
+            if estimate.status not in ('approved', 'under_negotiation'):
                 messages.error(
                     request,
-                    'Mark estimate won or lost only when the estimate is under negotiation.',
+                    'Mark estimate won or lost only when the estimate is approved or under negotiation.',
                 )
             elif not user_can_mark_estimate_won_lost(request.user, estimate):
                 messages.error(

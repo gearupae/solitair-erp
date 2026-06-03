@@ -74,3 +74,62 @@ def build_pdf_item_groups(estimate):
         })
 
     return groups
+
+
+def build_pdf_item_groups_for_line_items(line_items):
+    """Same grouping as build_pdf_item_groups, for snapshot / mock line rows."""
+    hide_by_name = _itemgroup_hide_by_name()
+    group_order = []
+    groups_by_name = {}
+
+    for item in line_items:
+        name = (getattr(item, 'group_name', None) or '').strip()
+        line_amt = (getattr(item, 'total', None) or Decimal('0.00')) + (
+            getattr(item, 'vat_amount', None) or Decimal('0.00')
+        )
+
+        if name not in groups_by_name:
+            group_order.append(name)
+            groups_by_name[name] = {
+                'name': name,
+                'items': [],
+                'line_total': Decimal('0.00'),
+                'line_subtotal': Decimal('0.00'),
+            }
+
+        groups_by_name[name]['items'].append(item)
+        groups_by_name[name]['line_total'] += line_amt
+        groups_by_name[name]['line_subtotal'] += getattr(item, 'total', None) or Decimal('0.00')
+
+    groups = []
+    row_index = 0
+    for name in group_order:
+        data = groups_by_name[name]
+        hide_items = bool(name and hide_by_name.get(name.lower(), False))
+
+        if hide_items:
+            row_index += 1
+            groups.append({
+                'name': data['name'],
+                'items': [],
+                'line_total': data['line_total'],
+                'line_subtotal': data['line_subtotal'],
+                'hide_items_on_pdf': True,
+                'collapsed_index': row_index,
+            })
+            continue
+
+        numbered_items = []
+        for item in data['items']:
+            row_index += 1
+            numbered_items.append({'item': item, 'index': row_index})
+
+        groups.append({
+            'name': data['name'],
+            'items': numbered_items,
+            'line_total': data['line_total'],
+            'line_subtotal': data['line_subtotal'],
+            'hide_items_on_pdf': False,
+        })
+
+    return groups

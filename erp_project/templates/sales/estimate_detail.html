@@ -146,7 +146,7 @@
                     {% if estimate.scope_of_work %}
                     <div class="col">
                         <h6 class="text-muted mb-2 text-uppercase small fw-semibold">Scope of work</h6>
-                        <p class="mb-0">{{ estimate.get_scope_of_work_display }}</p>
+                        <p class="mb-0">{{ estimate.scope_of_work_label }}</p>
                     </div>
                     {% elif estimate.scope %}
                     <div class="col-12">
@@ -335,6 +335,37 @@
                 {% endif %}
             </div>
         </div>
+
+        {% if revision_snapshots %}
+        <div class="card mb-4">
+            <div class="card-header bg-transparent py-3">
+                <h6 class="mb-0 fw-semibold"><i class="fas fa-code-branch me-2 text-dark"></i>Revision history</h6>
+            </div>
+            <div class="card-body pt-0">
+                <p class="text-muted small mb-3">Previous versions saved automatically before each edit while approved, under negotiation, or quot won/lost.</p>
+                <ul class="list-group list-group-flush">
+                    {% for snap in revision_snapshots %}
+                    <li class="list-group-item px-0 d-flex justify-content-between align-items-center gap-2">
+                        <div class="small">
+                            <span class="fw-semibold">{{ snap.display_number }}</span>
+                            <span class="text-muted"> · {{ snap.get_status_at_snapshot_display }}</span>
+                            <br>
+                            <span class="text-muted">AED {{ snap.total_amount|floatformat:2 }} · {{ snap.created_at|date:"d/m/Y H:i" }}</span>
+                        </div>
+                        <div class="d-flex gap-1 flex-shrink-0">
+                            <a href="{% url 'sales:estimate_revision_detail' estimate.pk snap.pk %}" class="btn btn-sm btn-outline-secondary" title="View details">
+                                <i class="fas fa-eye"></i>
+                            </a>
+                            <a href="{% url 'sales:estimate_revision_pdf' estimate.pk snap.pk %}" class="btn btn-sm btn-outline-danger" target="_blank" title="PDF">
+                                <i class="fas fa-file-pdf"></i>
+                            </a>
+                        </div>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+        {% endif %}
         
         <!-- Summary -->
         <div class="card mb-4">

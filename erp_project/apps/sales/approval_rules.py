@@ -139,6 +139,12 @@ def estimate_status_change_allowed(current_status, new_status, *, user=None, est
         return True
 
     if current_status == 'quotation_won':
+        if new_status in ('under_negotiation', 'quotation_lost'):
+            return (
+                user is not None
+                and estimate is not None
+                and user_can_mark_estimate_won_lost(user, estimate)
+            )
         return False
 
     if new_status in ('approved', 'rejected'):
@@ -156,7 +162,7 @@ def estimate_status_change_allowed(current_status, new_status, *, user=None, est
 
     if new_status in ('quotation_won', 'quotation_lost'):
         return (
-            current_status == 'under_negotiation'
+            current_status in ('approved', 'under_negotiation', 'quotation_won')
             and user is not None
             and estimate is not None
             and user_can_mark_estimate_won_lost(user, estimate)
@@ -164,7 +170,7 @@ def estimate_status_change_allowed(current_status, new_status, *, user=None, est
 
     if new_status == 'under_negotiation':
         return (
-            current_status == 'approved'
+            current_status in ('approved', 'quotation_won')
             and user is not None
             and estimate is not None
             and user_can_mark_estimate_won_lost(user, estimate)
@@ -242,6 +248,20 @@ def get_estimate_status_actions(estimate, user):
                 'btn_class': 'btn-outline-info',
                 'icon': 'fa-handshake',
             })
+            actions.extend([
+                {
+                    'status': 'quotation_won',
+                    'label': 'Mark estimate won',
+                    'btn_class': 'btn-outline-success',
+                    'icon': 'fa-trophy',
+                },
+                {
+                    'status': 'quotation_lost',
+                    'label': 'Mark estimate lost',
+                    'btn_class': 'btn-outline-secondary',
+                    'icon': 'fa-times-circle',
+                },
+            ])
         elif current == 'under_negotiation' and can_mark_won_lost:
             actions.extend([
                 {
@@ -270,6 +290,22 @@ def get_estimate_status_actions(estimate, user):
                 'btn_class': 'btn-outline-primary',
                 'icon': 'fa-paper-plane',
             })
+
+    if current == 'quotation_won' and can_mark_won_lost:
+        actions.extend([
+            {
+                'status': 'under_negotiation',
+                'label': 'Mark under negotiation',
+                'btn_class': 'btn-outline-info',
+                'icon': 'fa-handshake',
+            },
+            {
+                'status': 'quotation_lost',
+                'label': 'Mark estimate lost',
+                'btn_class': 'btn-outline-secondary',
+                'icon': 'fa-times-circle',
+            },
+        ])
 
     return actions
 

@@ -177,6 +177,7 @@ class CompanySettingsForm(forms.ModelForm):
             'contract_default_terms',
             'estimate_to_project_prompt_include_lines',
             'estimate_default_authorized_signature', 'estimate_default_customer_signature',
+            'estimate_pdf_stamp_image', 'estimate_pdf_footer_image',
         ]
     
     def __init__(self, *args, **kwargs):
@@ -193,6 +194,8 @@ class CompanySettingsForm(forms.ModelForm):
             elif field_name in (
                 'estimate_default_authorized_signature',
                 'estimate_default_customer_signature',
+                'estimate_pdf_stamp_image',
+                'estimate_pdf_footer_image',
             ):
                 field.widget.attrs['class'] = 'form-control'
                 field.widget.attrs['accept'] = 'image/*'

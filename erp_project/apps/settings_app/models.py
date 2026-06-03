@@ -273,6 +273,18 @@ class CompanySettings(models.Model):
         null=True,
         help_text='Default customer signature image for new estimates.',
     )
+    estimate_pdf_stamp_image = models.ImageField(
+        upload_to='company/estimate_pdf/',
+        blank=True,
+        null=True,
+        help_text='Image 1 — bottom-left on estimate quotation PDFs.',
+    )
+    estimate_pdf_footer_image = models.ImageField(
+        upload_to='company/estimate_pdf/',
+        blank=True,
+        null=True,
+        help_text='Image 2 — bottom-right on estimate quotation PDFs.',
+    )
 
     class Meta:
         verbose_name = 'Company Settings'

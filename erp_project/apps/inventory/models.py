@@ -85,11 +85,32 @@ class Warehouse(BaseModel):
         super().save(*args, **kwargs)
 
 
+class ItemBaseGroup(models.Model):
+    """Top-level grouping; item groups (sub-groups) can belong to one base group."""
+    name = models.CharField(max_length=200, unique=True)
+
+    class Meta:
+        ordering = ['name']
+        verbose_name = 'Item base group'
+        verbose_name_plural = 'Item base groups'
+
+    def __str__(self):
+        return self.name
+
+
 class ItemGroup(models.Model):
     """
-    Named group; items can belong to many groups (M2M).
+    Named sub-group; items can belong to many groups (M2M).
     """
     name = models.CharField(max_length=200, unique=True)
+    base_group = models.ForeignKey(
+        ItemBaseGroup,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='sub_groups',
+        help_text='Optional parent base group for organizing sub-groups.',
+    )
     hide_items_on_pdf = models.BooleanField(
         default=False,
         help_text=(
@@ -100,8 +121,8 @@ class ItemGroup(models.Model):
 
     class Meta:
         ordering = ['name']
-        verbose_name = 'Item group'
-        verbose_name_plural = 'Item groups'
+        verbose_name = 'Item sub-group'
+        verbose_name_plural = 'Item sub-groups'
 
     def __str__(self):
         return self.name
@@ -327,6 +348,48 @@ class Item(BaseModel):
             self.maximum_selling_price_type,
             self.selling_price,
         )
+
+    def get_quote_maximum_rate(self, base_price=None):
+        """
+        Highest allowed unit rate on estimate lines.
+        Percent = markup on base (same as estimate profit %); amount = AED cap.
+        """
+        from decimal import ROUND_HALF_UP
+
+        base = base_price if base_price is not None else self.selling_price
+        base = base if isinstance(base, Decimal) else Decimal(str(base or '0'))
+        val = self.maximum_selling_price
+        if val <= 0:
+            return Decimal('0.00')
+        if self.maximum_selling_price_type == self.SELLING_PRICE_BOUND_PERCENT:
+            if base <= 0:
+                return Decimal('0.00')
+            return (base * (Decimal('1') + val / Decimal('100'))).quantize(
+                Decimal('0.01'), rounding=ROUND_HALF_UP
+            )
+        return val if isinstance(val, Decimal) else Decimal(str(val))
+
+    def get_quote_minimum_rate(self, base_price=None):
+        """Lowest allowed unit rate on estimate lines (uses inventory bound rules)."""
+        base = base_price if base_price is not None else self.selling_price
+        return self.resolve_selling_price_bound(
+            self.minimum_selling_price,
+            self.minimum_selling_price_type,
+            base,
+        )
+
+    def quote_rate_bounds_error(self, base_price, rate):
+        """Validate estimate line rate against item min/max (quote profit semantics for max %)."""
+        p = rate if isinstance(rate, Decimal) else Decimal(str(rate or '0'))
+        base = base_price if base_price is not None else self.selling_price
+        base = base if isinstance(base, Decimal) else Decimal(str(base or '0'))
+        min_r = self.get_quote_minimum_rate(base)
+        max_r = self.get_quote_maximum_rate(base)
+        if min_r > 0 and p > 0 and p < min_r:
+            return f'Amount is low for {self.name}.'
+        if max_r > 0 and p > max_r:
+            return f'Amount is high for {self.name}.'
+        return None
 
     def clean(self):
         super().clean()

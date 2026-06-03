@@ -12,6 +12,7 @@ from decimal import Decimal
 from .models import Estimate, EstimateItem, Invoice, InvoiceItem
 from apps.crm.models import Customer
 from apps.finance.models import TaxCode
+from apps.inventory.models import ItemBaseGroup
 from .estimate_csv import get_default_estimate_csv_tax_code
 
 User = get_user_model()
@@ -19,6 +20,13 @@ User = get_user_model()
 
 class EstimateForm(forms.ModelForm):
     """Form for creating/editing estimates."""
+
+    scope_of_work = forms.ChoiceField(
+        required=False,
+        label='Scope of work',
+        choices=[],
+        widget=forms.Select(attrs={'class': 'form-select'}),
+    )
 
     class Meta:
         model = Estimate
@@ -74,13 +82,20 @@ class EstimateForm(forms.ModelForm):
         self.fields['client_note'].required = False
         self.fields['terms_and_conditions'].required = False
         self.fields['prepared_by'].required = False
-        for field_name in ('type_of_occupancy', 'type_of_work', 'scope_of_work'):
+        for field_name in ('type_of_occupancy', 'type_of_work'):
             field = self.fields[field_name]
             field.required = False
             field.widget.attrs['class'] = 'form-select'
         self.fields['type_of_occupancy'].label = 'Type of occupancy'
         self.fields['type_of_work'].label = 'Type of work'
-        self.fields['scope_of_work'].label = 'Scope of work'
+        scope_choices = [('', '---------')] + [
+            (bg.name, bg.name) for bg in ItemBaseGroup.objects.order_by('name')
+        ]
+        if self.instance and self.instance.pk and self.instance.scope_of_work:
+            current_scope = self.instance.scope_of_work
+            if current_scope not in {value for value, _ in scope_choices if value}:
+                scope_choices.append((current_scope, self.instance.scope_of_work_label))
+        self.fields['scope_of_work'].choices = scope_choices
         self.fields['show_rates_on_pdf'].label = 'Show rates & line totals on PDF'
         self.fields['show_rates_on_pdf'].required = False
         self.fields['show_group_totals_on_pdf'].label = 'Show group totals on PDF'
@@ -178,13 +193,39 @@ class EstimateItemForm(forms.ModelForm):
         inv = cleaned.get('inventory_item')
         unit_price = cleaned.get('unit_price')
         if inv and unit_price is not None:
-            err = inv.selling_price_bounds_error(unit_price)
+            item = EstimateItem(
+                unit_price=unit_price,
+                profit_type=cleaned.get('profit_type') or 'none',
+                profit_value=cleaned.get('profit_value') or Decimal('0'),
+            )
+            rate = item.compute_rate()
+            err = inv.quote_rate_bounds_error(unit_price, rate)
             if err:
-                self.add_error('unit_price', err)
+                highlight = 'profit_value' if (
+                    (cleaned.get('profit_type') or 'none') != 'none'
+                    and (cleaned.get('profit_value') or 0) > 0
+                ) else 'unit_price'
+                self.add_error(highlight, err)
         mult = cleaned.get('group_qty_multiplier')
         if mult is not None and mult < Decimal('1'):
             self.add_error('group_qty_multiplier', 'Group multiplier must be at least 1.')
         return cleaned
+
+
+def estimate_line_is_empty(cleaned_data, instance=None):
+    """True when a line has no inventory, description, or base price."""
+    if not cleaned_data or cleaned_data.get('DELETE'):
+        return False
+    inv = cleaned_data.get('inventory_item')
+    desc = (cleaned_data.get('description') or '').strip()
+    unit_price = cleaned_data.get('unit_price')
+    if unit_price is None and instance is not None:
+        unit_price = instance.unit_price
+    try:
+        price = Decimal(str(unit_price or '0'))
+    except Exception:
+        price = Decimal('0')
+    return not inv and not desc and price <= 0
 
 
 class EstimateItemInlineFormSet(BaseInlineFormSet):
@@ -203,6 +244,29 @@ class EstimateItemInlineFormSet(BaseInlineFormSet):
             form.initial['tax_code'] = default_tax_code.pk
             form.fields['tax_code'].initial = default_tax_code.pk
 
+    def clean(self):
+        super().clean()
+        for form in self.forms:
+            if not form.cleaned_data or form.cleaned_data.get('DELETE'):
+                continue
+            if estimate_line_is_empty(form.cleaned_data, form.instance):
+                if form.instance.pk:
+                    form.cleaned_data['DELETE'] = True
+
+    def save_new_objects(self, commit=True):
+        self.new_objects = []
+        for form in self.extra_forms:
+            if not form.has_changed():
+                continue
+            if not form.cleaned_data or form.cleaned_data.get('DELETE'):
+                continue
+            if estimate_line_is_empty(form.cleaned_data):
+                continue
+            self.new_objects.append(self.save_new(form, commit=commit))
+            if not commit:
+                self.saved_forms.append(form)
+        return self.new_objects
+
     def add_fields(self, form, index):
         super().add_fields(form, index)
         if self.can_delete and 'DELETE' in form.fields:
@@ -217,7 +281,7 @@ EstimateItemFormSet = forms.inlineformset_factory(
     EstimateItem,
     form=EstimateItemForm,
     formset=EstimateItemInlineFormSet,
-    extra=1,
+    extra=0,
     can_delete=True,
     validate_min=False,
     min_num=0,
