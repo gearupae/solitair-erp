@@ -14,7 +14,7 @@ def global_context(request):
     Add global context variables to all templates.
     """
     context = {
-        'app_name': 'Al Najah',
+        'app_name': 'Gearup ERP',
         'current_year': __import__('datetime').datetime.now().year,
         'nav_hidden_modules': settings.NAV_HIDDEN_MODULES,
     }

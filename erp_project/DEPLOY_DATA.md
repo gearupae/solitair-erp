@@ -1,8 +1,8 @@
-# Deploy Local Data to Main Server (Al Najah)
+# Deploy Local Data to Main Server (Gearup ERP)
 
-**Server:** `root@37.27.16.210`  
-**App path:** `/var/www/alnajahfireerp`  
-**Git repo:** https://github.com/gearupae/alnajahfireerp.git
+**Server:** `root@89.167.54.227`  
+**App path:** `/var/www/gearuperp`  
+**Git repo:** https://github.com/gearupae/gearuperp.git
 
 For **full production deploy** (code, no `.env` overwrite, optional DB), use from repo root:
 
@@ -24,12 +24,12 @@ To replace the main server database with your local data:
 
 2. **Copy to server**:
    ```bash
-   scp erp_project/db.sqlite3 root@37.27.16.210:/var/www/alnajahfireerp/erp_project/
+   scp erp_project/db.sqlite3 root@89.167.54.227:/var/www/gearuperp/erp_project/
    ```
 
 3. **On the server**, stop the app, replace the DB, run migrations, restart:
    ```bash
-   cd /var/www/alnajahfireerp/erp_project
+   cd /var/www/gearuperp/erp_project
    # Backup existing server DB first (optional)
    mv db.sqlite3 db.sqlite3.old
    # Copy the uploaded file as db.sqlite3 (or it was uploaded directly)

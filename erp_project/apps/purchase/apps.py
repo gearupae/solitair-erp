@@ -6,6 +6,10 @@ class PurchaseConfig(AppConfig):
     name = 'apps.purchase'
     verbose_name = 'Purchase'
 
+    def ready(self):
+        import apps.purchase.models_grn  # noqa: F401
+        import apps.purchase.models_rfq  # noqa: F401
+
 
 
 

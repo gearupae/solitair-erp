@@ -1,0 +1,10 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-header mb-4"><h4 class="fw-bold">{{ title }}</h4></div>
+<div class="card"><div class="table-responsive"><table class="table mb-0">
+<thead><tr><th>Entity</th><th>Interco receivable acct</th><th>Interco payable acct</th><th>Notes</th></tr></thead>
+<tbody>{% for row in rows %}
+<tr><td>{{ row.entity }}</td><td>{{ row.intercompany_receivable|default:"—" }}</td>
+<td>{{ row.intercompany_payable|default:"—" }}</td><td>{{ row.net }}</td></tr>
+{% endfor %}</tbody></table></div></div>
+{% endblock %}

@@ -1,5 +1,4 @@
 from django.urls import path
-from django.views.generic import RedirectView
 from . import views
 
 app_name = 'assets'
@@ -10,8 +9,8 @@ urlpatterns = [
     path('categories/create/', views.AssetCategoryCreateView.as_view(), name='category_create'),
     path('categories/<int:pk>/edit/', views.AssetCategoryUpdateView.as_view(), name='category_edit'),
     
-    # Fixed Assets — hidden from nav; root redirects to Fleet
-    path('', RedirectView.as_view(pattern_name='fleet:vehicle_list', permanent=False), name='asset_list'),
+    # Fixed Assets
+    path('', views.FixedAssetListView.as_view(), name='asset_list'),
     path('create/', views.FixedAssetCreateView.as_view(), name='asset_create'),
     path('<int:pk>/', views.FixedAssetDetailView.as_view(), name='asset_detail'),
     path('<int:pk>/edit/', views.FixedAssetUpdateView.as_view(), name='asset_edit'),

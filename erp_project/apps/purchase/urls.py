@@ -3,6 +3,7 @@ Purchase URL configuration - Including Expense Claims and Recurring Expenses
 """
 from django.urls import path
 from . import views
+from . import views_procurement
 
 app_name = 'purchase'
 
@@ -74,5 +75,17 @@ urlpatterns = [
     path('recurring-expenses/<int:pk>/execute/', views.recurringexpense_execute, name='recurringexpense_execute'),
     path('recurring-expenses/<int:pk>/pause/', views.recurringexpense_pause, name='recurringexpense_pause'),
     path('recurring-expenses/<int:pk>/resume/', views.recurringexpense_resume, name='recurringexpense_resume'),
+
+    # Goods Receipt Notes (formal GRN)
+    path('grn/', views_procurement.GRNListView.as_view(), name='grn_list'),
+    path('grn/<int:pk>/', views_procurement.GRNDetailView.as_view(), name='grn_detail'),
+    path('grn/<int:pk>/cancel/', views_procurement.grn_cancel, name='grn_cancel'),
+
+    # RFQ / Competitive Purchase Analysis
+    path('rfq/', views_procurement.RFQListView.as_view(), name='rfq_list'),
+    path('rfq/<int:pk>/', views_procurement.RFQDetailView.as_view(), name='rfq_detail'),
+    path('rfq/<int:pk>/award/', views_procurement.rfq_award, name='rfq_award'),
+    path('rfq/<int:pk>/convert-po/', views_procurement.rfq_convert_po, name='rfq_convert_po'),
+    path('rfq/<int:pk>/pull-mr/', views_procurement.rfq_pull_mr, name='rfq_pull_mr'),
 ]
 

@@ -1,0 +1,22 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-header mb-4">
+    <h4 class="fw-bold">{{ grn.grn_number }}</h4>
+    <p class="text-muted">Status: {{ grn.get_status_display }} · {{ grn.received_on|date:"d/m/Y" }}</p>
+</div>
+<div class="card mb-3"><div class="table-responsive"><table class="table mb-0">
+<thead><tr><th>Item</th><th class="text-end">Ordered</th><th class="text-end">Received</th><th class="text-end">Accepted</th><th class="text-end">Rejected</th><th>QC</th></tr></thead>
+<tbody>{% for line in grn.lines.all %}
+<tr><td>{{ line.item.name }}</td>
+<td class="text-end">{{ line.ordered_qty }}</td><td class="text-end">{{ line.received_qty }}</td>
+<td class="text-end">{{ line.accepted_qty }}</td><td class="text-end">{{ line.rejected_qty }}</td>
+<td>{{ line.get_qc_status_display }}</td></tr>
+{% endfor %}</tbody></table></div></div>
+{% if grn.status == 'posted' %}
+<form method="post" action="{% url 'purchase:grn_cancel' grn.pk %}">{% csrf_token %}
+<input name="reason" class="form-control mb-2" placeholder="Cancellation reason">
+<button class="btn btn-danger">Cancel GRN</button>
+</form>
+{% endif %}
+<a href="{% url 'purchase:grn_list' %}" class="btn btn-light mt-2">Back</a>
+{% endblock %}

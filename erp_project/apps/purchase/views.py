@@ -947,7 +947,8 @@ def po_receive(request, pk):
     """Goods receipt against PO — partial/full receive, stock in, audit trail."""
     from apps.inventory.models import Warehouse
 
-    from .receiving import purchase_order_can_receive, process_goods_receipt
+    from .receiving import purchase_order_can_receive
+    from .services.grn_service import post_grn_from_po
 
     po = get_object_or_404(
         PurchaseOrder.objects.filter(is_active=True).prefetch_related('items__inventory_item'),
@@ -988,13 +989,14 @@ def po_receive(request, pk):
             )
 
         try:
-            process_goods_receipt(
+            grn = post_grn_from_po(
                 po.pk,
                 warehouse_pk,
                 recv_date,
                 notes,
                 payloads,
                 request.user,
+                supplier_delivery_note=(request.POST.get('supplier_delivery_note') or '').strip(),
             )
         except ValidationError as exc:
             errs = getattr(exc, 'messages', None)
@@ -1016,8 +1018,11 @@ def po_receive(request, pk):
                 ),
             )
 
-        messages.success(request, f'Goods received for PO {po.po_number}. Inventory updated.')
-        return redirect('purchase:po_detail', pk=po.pk)
+        messages.success(
+            request,
+            f'Goods received for PO {po.po_number}. GRN {grn.grn_number} posted.',
+        )
+        return redirect('purchase:grn_detail', pk=grn.pk)
 
     return render(
         request,

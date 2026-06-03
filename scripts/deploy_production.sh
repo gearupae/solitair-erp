@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
-# Deploy Al Najah Fire ERP to production over SSH + rsync.
+# Deploy Gearup ERP to production over SSH + rsync.
 # - Never uploads local .env (server keeps its own secrets).
 # - By default syncs code only; use --with-db to also push SQLite (dev/small setups).
 #
 # Usage:
-#   export DEPLOY_HOST=root@37.27.16.210
-#   export DEPLOY_PATH=/var/www/alnajahfireerp
+#   export DEPLOY_HOST=root@89.167.54.227
+#   export DEPLOY_PATH=/var/www/gearuperp
 #   ./scripts/deploy_production.sh
 #   ./scripts/deploy_production.sh --with-db
 #
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-HOST="${DEPLOY_HOST:-root@37.27.16.210}"
-REMOTE="${DEPLOY_PATH:-/var/www/alnajahfireerp}"
+HOST="${DEPLOY_HOST:-root@89.167.54.227}"
+REMOTE="${DEPLOY_PATH:-/var/www/gearuperp}"
 WITH_DB=false
 
 for arg in "$@"; do
@@ -21,8 +21,8 @@ for arg in "$@"; do
     --with-db) WITH_DB=true ;;
     -h|--help)
       echo "Usage: $0 [--with-db]"
-      echo "  DEPLOY_HOST (default root@37.27.16.210)  DEPLOY_PATH (default /var/www/alnajahfireerp)"
-      echo "  Git repo: https://github.com/gearupae/alnajahfireerp.git"
+      echo "  DEPLOY_HOST (default root@89.167.54.227)  DEPLOY_PATH (default /var/www/gearuperp)"
+      echo "  Git repo: https://github.com/gearupae/gearuperp.git"
       exit 0
       ;;
   esac

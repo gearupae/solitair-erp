@@ -4,6 +4,7 @@ Inventory URL configuration.
 from django.urls import path
 from . import views
 from . import aging_views
+from . import views_procurement
 
 app_name = 'inventory'
 
@@ -69,6 +70,22 @@ urlpatterns = [
     path('consumables/reports/inventory/aging/', aging_views.inventory_aging_report, name='inventory_aging_report'),
     path('consumables/reports/inventory/aging/export/xlsx/', aging_views.inventory_aging_report_xlsx, name='inventory_aging_report_xlsx'),
     path('consumables/reports/inventory/aging/export/pdf/', aging_views.inventory_aging_report_pdf, name='inventory_aging_report_pdf'),
+
+    # Material Requisitions (generalized internal issue)
+    path('requisitions/', views_procurement.MaterialRequisitionListView.as_view(), name='material_requisition_list'),
+    path('requisitions/new/', views_procurement.material_requisition_create, name='material_requisition_create'),
+    path('requisitions/<int:pk>/', views_procurement.MaterialRequisitionDetailView.as_view(), name='material_requisition_detail'),
+    path('requisitions/<int:pk>/submit/', views_procurement.material_requisition_submit, name='material_requisition_submit'),
+    path('requisitions/<int:pk>/approve/', views_procurement.material_requisition_approve, name='material_requisition_approve'),
+    path('requisitions/<int:pk>/issue/', views_procurement.material_requisition_issue, name='material_requisition_issue'),
+    path('requisitions/<int:pk>/reject/', views_procurement.material_requisition_reject, name='material_requisition_reject'),
+    path('requisitions/<int:pk>/close/', views_procurement.material_requisition_close, name='material_requisition_close'),
+
+    # Inter-entity transfers
+    path('inter-entity/', views_procurement.InterEntityTransferListView.as_view(), name='inter_entity_transfer_list'),
+    path('inter-entity/<int:pk>/', views_procurement.InterEntityTransferDetailView.as_view(), name='inter_entity_transfer_detail'),
+    path('inter-entity/<int:pk>/<str:action>/', views_procurement.inter_entity_transfer_action, name='inter_entity_transfer_action'),
+    path('inter-entity/reconciliation/', views_procurement.inter_entity_reconciliation, name='inter_entity_reconciliation'),
 ]
 
 

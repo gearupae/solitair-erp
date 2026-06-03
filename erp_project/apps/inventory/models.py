@@ -72,6 +72,14 @@ class Warehouse(BaseModel):
     contact_person = models.CharField(max_length=200, blank=True)
     phone = models.CharField(max_length=20, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active')
+    legal_entity = models.ForeignKey(
+        'settings_app.Company',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='warehouses',
+        help_text='Legal entity that owns this warehouse.',
+    )
     
     class Meta:
         ordering = ['-created_at', '-pk']
@@ -875,10 +883,20 @@ class ConsumableRequest(BaseModel):
     Supports multiple line items via ConsumableRequestItem.
     """
     STATUS_CHOICES = [
-        ('pending', 'Pending'),
+        ('draft', 'Draft'),
+        ('submitted', 'Submitted'),
+        ('pending', 'Pending'),  # legacy alias
         ('approved', 'Approved'),
-        ('dispensed', 'Dispensed'),
+        ('partially_issued', 'Partially Issued'),
+        ('issued', 'Issued'),
+        ('dispensed', 'Dispensed'),  # legacy alias for issued
+        ('closed', 'Closed'),
         ('rejected', 'Rejected'),
+    ]
+
+    REQUEST_KIND_CHOICES = [
+        ('consumable', 'Consumable'),
+        ('material', 'Material'),
     ]
     
     PRIORITY_CHOICES = [
@@ -889,6 +907,11 @@ class ConsumableRequest(BaseModel):
     ]
     
     request_number = models.CharField(max_length=50, unique=True, editable=False)
+    request_kind = models.CharField(
+        max_length=20,
+        choices=REQUEST_KIND_CHOICES,
+        default='consumable',
+    )
     
     # Requested by (Nurse)
     requested_by = models.ForeignKey(
@@ -935,6 +958,16 @@ class ConsumableRequest(BaseModel):
         blank=True,
         related_name='consumable_requests'
     )
+    source_warehouse = models.ForeignKey(
+        Warehouse,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='material_requisitions_source',
+        help_text='Preferred warehouse to issue stock from.',
+    )
+    submitted_at = models.DateTimeField(null=True, blank=True)
+    closed_at = models.DateTimeField(null=True, blank=True)
     
     # Cost tracking (hidden from nurses)
     unit_cost = models.DecimalField(
@@ -1190,6 +1223,16 @@ class ConsumableRequestItem(models.Model):
         limit_choices_to={'item_type': 'product', 'status': 'active'}
     )
     quantity = models.DecimalField(max_digits=10, decimal_places=2)
+    qty_approved = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    qty_issued = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
+    line_notes = models.TextField(blank=True)
+    storage_location = models.ForeignKey(
+        'StorageLocation',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='requisition_lines',
+    )
     unit_cost = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     total_cost = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     

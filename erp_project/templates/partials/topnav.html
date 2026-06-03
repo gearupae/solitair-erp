@@ -140,10 +140,10 @@
                 </li>
                 {% endif %}{% endif %}
                 
-                <!-- Purchase -->
-                {% if is_superuser or 'purchase' in user_permissions %}
+                <!-- Purchase (includes Service Requests) -->
+                {% if is_superuser or 'purchase' in user_permissions or 'service_request' in user_permissions %}
                 <li class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle {% if 'purchase' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
+                    <a class="nav-link dropdown-toggle {% if 'purchase' in request.path or 'service-request' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
                         <i class="fas fa-truck me-1"></i>Purchase
                     </a>
                     <ul class="dropdown-menu dropdown-menu-dark">
@@ -158,9 +158,26 @@
                                 <i class="fas fa-clipboard-list me-2"></i>Purchase Requests
                             </a>
                         </li>
+                        {% if is_superuser or 'service_request' in user_permissions %}
+                        <li>
+                            <a class="dropdown-item" href="{% url 'service_request:sr_list' %}">
+                                <i class="fas fa-tools me-2"></i>Service Requests
+                            </a>
+                        </li>
+                        {% endif %}
                         <li>
                             <a class="dropdown-item" href="{% url 'purchase:po_list' %}">
                                 <i class="fas fa-file-alt me-2"></i>Purchase Orders
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'purchase:grn_list' %}">
+                                <i class="fas fa-dolly-flatbed me-2"></i>Goods Receipt Notes
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'purchase:rfq_list' %}">
+                                <i class="fas fa-balance-scale me-2"></i>RFQ / Competitive Analysis
                             </a>
                         </li>
                         <li>
@@ -420,18 +437,52 @@
                 </li>
                 {% endif %}{% endif %}
                 
-                <!-- Assets (Fleet only) -->
-                {% if 'assets' not in nav_hidden_modules %}{% if is_superuser or 'fleet' in user_permissions %}
+                <!-- Assets (Fixed Assets + Fleet) -->
+                {% if 'assets' not in nav_hidden_modules %}{% if is_superuser or 'assets' in user_permissions or 'finance' in user_permissions or 'fleet' in user_permissions %}
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle {% if 'assets' in request.path or '/fleet/' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
                         <i class="fas fa-building me-1"></i>Assets
                     </a>
                     <ul class="dropdown-menu dropdown-menu-dark">
+                        {% if is_superuser or 'assets' in user_permissions or 'finance' in user_permissions %}
+                        <li>
+                            <a class="dropdown-item" href="{% url 'assets:asset_list' %}">
+                                <i class="fas fa-building me-2"></i>Fixed Assets
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'assets:category_list' %}">
+                                <i class="fas fa-tags me-2"></i>Categories
+                            </a>
+                        </li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'assets:run_depreciation' %}">
+                                <i class="fas fa-calculator me-2"></i>Run Depreciation
+                            </a>
+                        </li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'assets:register_report' %}">
+                                <i class="fas fa-list me-2"></i>Asset Register
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'assets:depreciation_report' %}">
+                                <i class="fas fa-chart-line me-2"></i>Depreciation Report
+                            </a>
+                        </li>
+                        {% endif %}
+                        {% if is_superuser or 'fleet' in user_permissions %}
+                        {% if is_superuser or 'assets' in user_permissions or 'finance' in user_permissions %}
+                        <li><hr class="dropdown-divider"></li>
+                        {% endif %}
                         <li>
                             <a class="dropdown-item" href="{% url 'fleet:vehicle_list' %}">
                                 <i class="fas fa-truck me-2"></i>Fleet
                             </a>
                         </li>
+                        {% endif %}
                     </ul>
                 </li>
                 {% endif %}{% endif %}
@@ -446,6 +497,11 @@
                         <li>
                             <a class="dropdown-item" href="{% url 'inventory:item_list' %}">
                                 <i class="fas fa-box me-2"></i>Items
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'inventory:item_group_manage' %}">
+                                <i class="fas fa-object-group me-2"></i>Item Groups
                             </a>
                         </li>
                         <li>
@@ -469,8 +525,23 @@
                             </a>
                         </li>
                         <li>
+                            <a class="dropdown-item" href="{% url 'inventory:stock_transfer' %}">
+                                <i class="fas fa-dolly me-2"></i>Stock Transfer
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'inventory:stock_adjustment' %}">
+                                <i class="fas fa-sliders-h me-2"></i>Stock Adjustment
+                            </a>
+                        </li>
+                        <li>
                             <a class="dropdown-item" href="{% url 'stock_take:session_list' %}">
                                 <i class="fas fa-clipboard-check me-2"></i>Stock Take
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'inventory:inter_entity_transfer_list' %}">
+                                <i class="fas fa-building-circle-arrow-right me-2"></i>Inter-entity Transfers
                             </a>
                         </li>
                         <li><hr class="dropdown-divider"></li>
@@ -481,8 +552,33 @@
                             </a>
                         </li>
                         <li>
+                            <a class="dropdown-item" href="{% url 'inventory:material_requisition_list' %}">
+                                <i class="fas fa-file-signature me-2"></i>Material Requisitions
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'inventory:consumable_dashboard' %}">
+                                <i class="fas fa-chart-line me-2"></i>Consumables Dashboard
+                            </a>
+                        </li>
+                        <li>
                             <a class="dropdown-item" href="{% url 'inventory:consumable_inventory_reports' %}">
                                 <i class="fas fa-file-alt me-2"></i>Inventory Reports
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'inventory:consumable_monthly_request_report' %}">
+                                <i class="fas fa-users me-2"></i>Monthly Requests
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'inventory:consumable_monthly_consumption_report' %}">
+                                <i class="fas fa-chart-bar me-2"></i>Monthly Consumption
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'inventory:consumable_monthly_cost_report' %}">
+                                <i class="fas fa-coins me-2"></i>Monthly Cost
                             </a>
                         </li>
                         <li>

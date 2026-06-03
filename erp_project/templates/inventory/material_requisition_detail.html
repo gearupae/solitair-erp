@@ -1,0 +1,76 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-header mb-4">
+    <h4 class="fw-bold mb-1">{{ title }}</h4>
+    <p class="text-muted mb-0">Status: <span class="badge bg-secondary">{{ req.get_status_display }}</span></p>
+</div>
+<div class="row g-4">
+    <div class="col-lg-8">
+        <div class="card mb-3">
+            <div class="card-header fw-semibold">Lines</div>
+            <div class="table-responsive">
+                <table class="table mb-0">
+                    <thead><tr><th>Item</th><th class="text-end">Requested</th><th class="text-end">Approved</th><th class="text-end">Issued</th></tr></thead>
+                    <tbody>
+                    {% for line in req.items.all %}
+                    <tr>
+                        <td>{{ line.item.name }}</td>
+                        <td class="text-end">{{ line.quantity }}</td>
+                        <td class="text-end">{{ line.qty_approved|default:"—" }}</td>
+                        <td class="text-end">{{ line.qty_issued }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="4" class="text-muted">No lines.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% if can_edit and req.status == 'approved' or req.status == 'partially_issued' %}
+        <div class="card">
+            <div class="card-header fw-semibold">Issue stock</div>
+            <div class="card-body">
+                <form method="post" action="{% url 'inventory:material_requisition_issue' req.pk %}">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label class="form-label">Warehouse</label>
+                        <select name="warehouse" class="form-select" required>
+                            {% for w in warehouses %}<option value="{{ w.pk }}">{{ w.name }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    {% for line in req.items.all %}
+                    <div class="mb-2">
+                        <label class="form-label">{{ line.item.name }}</label>
+                        <input type="number" step="any" min="0" name="issue_{{ line.pk }}" class="form-control" placeholder="Qty to issue now">
+                    </div>
+                    {% endfor %}
+                    <button type="submit" class="btn btn-primary">Issue</button>
+                </form>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+    <div class="col-lg-4">
+        <div class="card">
+            <div class="card-body">
+                {% if req.status == 'draft' %}
+                <form method="post" action="{% url 'inventory:material_requisition_submit' req.pk %}">{% csrf_token %}
+                    <button class="btn btn-primary w-100 mb-2">Submit</button>
+                </form>
+                {% endif %}
+                {% if can_approve and req.status in 'submitted,pending,approved' %}
+                <form method="post" action="{% url 'inventory:material_requisition_approve' req.pk %}">{% csrf_token %}
+                    <select name="warehouse" class="form-select mb-2">{% for w in warehouses %}<option value="{{ w.pk }}">{{ w.name }}</option>{% endfor %}</select>
+                    <button class="btn btn-success w-100 mb-2">Approve</button>
+                </form>
+                <form method="post" action="{% url 'inventory:material_requisition_reject' req.pk %}">{% csrf_token %}
+                    <input name="reason" class="form-control mb-2" placeholder="Rejection reason">
+                    <button class="btn btn-outline-danger w-100">Reject</button>
+                </form>
+                {% endif %}
+                <a href="{% url 'inventory:material_requisition_list' %}" class="btn btn-light w-100 mt-2">Back to list</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

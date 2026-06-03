@@ -1,0 +1,1 @@
+# Inventory procurement extension tests

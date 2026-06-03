@@ -1,0 +1,12 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-header mb-4"><h4 class="fw-bold">{{ title }}</h4></div>
+<div class="card"><div class="table-responsive"><table class="table mb-0">
+<thead><tr><th>RFQ #</th><th>Title</th><th>Required by</th><th>Status</th></tr></thead>
+<tbody>{% for r in rfqs %}
+<tr><td><a href="{% url 'purchase:rfq_detail' r.pk %}">{{ r.rfq_number }}</a></td>
+<td>{{ r.title }}</td><td>{{ r.required_by_date|date:"d/m/Y"|default:"—" }}</td>
+<td>{{ r.get_status_display }}</td></tr>
+{% empty %}<tr><td colspan="4" class="text-center text-muted py-4">No RFQs yet.</td></tr>{% endfor %}
+</tbody></table></div></div>
+{% endblock %}

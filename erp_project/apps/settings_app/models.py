@@ -1,6 +1,8 @@
 """
 Settings app models - Users, Roles, Permissions, Company Settings.
 """
+from decimal import Decimal
+
 from django.db import models
 from django.conf import settings
 from django.contrib.auth.models import User
@@ -189,6 +191,22 @@ class Company(BaseModel):
     )
     address = models.TextField(blank=True)
     logo = models.ImageField(upload_to='company_entities/', blank=True, null=True)
+    trn = models.CharField(max_length=20, blank=True, verbose_name='Tax Registration Number (TRN)')
+    base_currency = models.CharField(max_length=10, default='AED')
+    intercompany_receivable_account = models.ForeignKey(
+        'finance.Account',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='legal_entities_interco_recv',
+    )
+    intercompany_payable_account = models.ForeignKey(
+        'finance.Account',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='legal_entities_interco_pay',
+    )
 
     class Meta:
         ordering = ['name']
@@ -239,6 +257,12 @@ class CompanySettings(models.Model):
         choices=INVENTORY_VALUATION_CHOICES,
         default='weighted_average',
         help_text='Shown on inventory valuation reports.',
+    )
+    grn_over_receipt_tolerance_pct = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        help_text='Allow receipt up to this % over PO qty (0 = strict).',
     )
 
     # Defaults for new sales estimates (editable per estimate; users append text here over time)
