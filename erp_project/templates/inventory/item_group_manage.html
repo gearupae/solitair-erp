@@ -105,20 +105,20 @@
 <div class="row g-3">
     <div class="col-lg-3">
         <div class="card item-group-sidebar">
-            <div class="card-header py-2 d-flex justify-content-between align-items-center gap-2">
-                <h6 class="mb-0 fw-semibold small">Groups</h6>
-            </div>
-            {% if can_edit %}
-            <div class="item-group-sidebar-create border-bottom px-3 py-2">
-                <form method="post" class="d-flex gap-2">
+            <div class="card-header py-2 item-group-sidebar-create">
+                <h6 class="mb-0 fw-semibold small">Sub-groups</h6>
+                {% if can_edit %}
+                <form method="post" class="d-flex gap-2 mt-2 mb-0">
                     {% csrf_token %}
                     <input type="hidden" name="tab" value="sub">
                     <input type="hidden" name="action" value="create_group">
-                    <input type="text" name="new_group_name" class="form-control form-control-sm" placeholder="New group name" maxlength="200" required>
-                    <button type="submit" class="btn btn-dark btn-sm text-nowrap" title="Add sub-group"><i class="fas fa-plus"></i></button>
+                    <input type="text" name="new_group_name" class="form-control form-control-sm" placeholder="New sub-group name" maxlength="200" required aria-label="New sub-group name">
+                    <button type="submit" class="btn btn-dark btn-sm text-nowrap flex-shrink-0" title="Add sub-group">
+                        <i class="fas fa-plus me-1"></i>Add
+                    </button>
                 </form>
+                {% endif %}
             </div>
-            {% endif %}
             <div class="list-group list-group-flush item-group-sidebar-list">
                 {% for g in groups %}
                 <a href="?tab=sub&group={{ g.pk }}"
@@ -127,7 +127,7 @@
                     <span class="badge bg-secondary">{{ g.member_count }}</span>
                 </a>
                 {% empty %}
-                <div class="list-group-item text-muted small">No groups yet</div>
+                <div class="list-group-item text-muted small">No sub-groups yet — add one above</div>
                 {% endfor %}
             </div>
         </div>
@@ -186,9 +186,38 @@
         </div>
 
         <div class="card mb-3">
-            <div class="card-header py-2">
+            <div class="card-header py-2 d-flex flex-wrap justify-content-between align-items-center gap-2">
                 <h6 class="mb-0 fw-semibold small">Items in group</h6>
             </div>
+            {% if can_edit %}
+            <div class="card-body border-bottom py-3">
+                <form method="post" class="row g-2 align-items-end mb-0">
+                    {% csrf_token %}
+                    <input type="hidden" name="tab" value="sub">
+                    <input type="hidden" name="action" value="add_item">
+                    <input type="hidden" name="group_id" value="{{ selected_group.pk }}">
+                    <div class="col-md-7">
+                        <label class="form-label small mb-1">Add item</label>
+                        <select name="add_item_id" class="form-select form-select-sm" required>
+                            <option value="">— Choose item —</option>
+                            {% for item in available_items %}
+                            <option value="{{ item.pk }}">{{ item.item_code }} — {{ item.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small mb-1">Qty</label>
+                        <input type="number" name="add_item_qty" value="1" min="1" step="1" class="form-control form-control-sm">
+                    </div>
+                    <div class="col-md-3">
+                        <button type="submit" class="btn btn-primary btn-sm w-100"><i class="fas fa-plus me-1"></i>Add</button>
+                    </div>
+                </form>
+                {% if not available_items %}
+                <p class="small text-muted mb-0 mt-2">All active items are already in this group.</p>
+                {% endif %}
+            </div>
+            {% endif %}
             <div class="card-body p-0">
                 {% if memberships %}
                 <form method="post" id="saveGroupQtyForm">
@@ -250,46 +279,11 @@
             </div>
         </div>
 
-        {% if can_edit %}
-        <div class="card">
-            <div class="card-header py-2">
-                <h6 class="mb-0 fw-semibold small">Add item to group</h6>
-            </div>
-            <div class="card-body">
-                <form method="post" class="row g-2 align-items-end">
-                    {% csrf_token %}
-                    <input type="hidden" name="tab" value="sub">
-                    <input type="hidden" name="action" value="add_item">
-                    <input type="hidden" name="group_id" value="{{ selected_group.pk }}">
-                    <div class="col-md-7">
-                        <label class="form-label small mb-1">Item</label>
-                        <select name="add_item_id" class="form-select form-select-sm" required>
-                            <option value="">— Choose item —</option>
-                            {% for item in available_items %}
-                            <option value="{{ item.pk }}">{{ item.item_code }} — {{ item.name }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    <div class="col-md-2">
-                        <label class="form-label small mb-1">Qty</label>
-                        <input type="number" name="add_item_qty" value="1" min="1" step="1" class="form-control form-control-sm">
-                    </div>
-                    <div class="col-md-3">
-                        <button type="submit" class="btn btn-primary btn-sm w-100"><i class="fas fa-plus me-1"></i>Add</button>
-                    </div>
-                </form>
-                {% if not available_items %}
-                <p class="small text-muted mb-0 mt-2">All active items are already in this group.</p>
-                {% endif %}
-            </div>
-        </div>
-        {% endif %}
-
         {% else %}
         <div class="card">
             <div class="card-body text-center text-muted py-5">
                 <i class="fas fa-object-group fa-2x mb-3 opacity-50"></i>
-                <p class="mb-0">Create a group on the left to get started.</p>
+                <p class="mb-0">Add a sub-group above the list on the left to get started.</p>
             </div>
         </div>
         {% endif %}
