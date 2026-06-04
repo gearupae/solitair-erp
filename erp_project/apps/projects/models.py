@@ -27,11 +27,18 @@ class Project(BaseModel):
     ]
 
     STATUS_CHOICES = [
+        ('draft', 'Draft'),
         ('planning', 'Planning'),
         ('in_progress', 'In Progress'),
         ('on_hold', 'On Hold'),
         ('completed', 'Completed'),
         ('cancelled', 'Cancelled'),
+    ]
+
+    CONVERSION_APPROVAL_STATUS_CHOICES = [
+        ('none', 'No pending conversion approval'),
+        ('pending', 'Pending conversion approval'),
+        ('rejected', 'Conversion rejected'),
     ]
     
     BILLING_TYPE_CHOICES = [
@@ -46,6 +53,20 @@ class Project(BaseModel):
     customer = models.ForeignKey(Customer, on_delete=models.SET_NULL, null=True, blank=True, related_name='projects')
     manager = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='managed_projects')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='planning')
+    conversion_approval_status = models.CharField(
+        max_length=20,
+        choices=CONVERSION_APPROVAL_STATUS_CHOICES,
+        default='none',
+        help_text='When set from estimate conversion, project stays in Draft until approved.',
+    )
+    conversion_approval_submitted_at = models.DateTimeField(null=True, blank=True)
+    conversion_approval_submitted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='project_conversion_approval_submissions',
+    )
     edit_approval_status = models.CharField(
         max_length=20,
         choices=EDIT_APPROVAL_STATUS_CHOICES,

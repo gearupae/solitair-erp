@@ -467,6 +467,7 @@ class ApprovalConfiguration(BaseModel):
         ('service_request', 'Service Request'),
         ('estimate', 'Sales Estimate'),
         ('project', 'Project'),
+        ('project_conversion', 'Project from estimate (draft)'),
         ('leave', 'Leave Request'),
     ]
     
@@ -540,6 +541,7 @@ class ApprovalConfiguration(BaseModel):
                 'inventory_request': f'/inventory/consumables/{pk}/' if pk else '',
                 'estimate': f'/sales/estimates/{pk}/' if pk else '',
                 'project': f'/projects/{pk}/' if pk else '',
+                'project_conversion': f'/projects/{pk}/' if pk else '',
                 'leave': f'/hr/leave/{pk}/' if pk else '',
             }
             link = link_map.get(module, str(pk) if pk else '')
@@ -548,6 +550,8 @@ class ApprovalConfiguration(BaseModel):
                 msg = f'{ref} was edited and needs your approval to clear the review queue.'
             elif module == 'project':
                 msg = f'{ref} completion was requested and needs your approval.'
+            elif module == 'project_conversion':
+                msg = f'{ref} was created from a quotation and needs your approval to leave Draft status.'
             elif module == 'leave':
                 msg = f'Leave request {ref} requires your approval.'
             else:

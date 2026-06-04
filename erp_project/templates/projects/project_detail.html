@@ -41,10 +41,25 @@
     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
         <div><h4 class="mb-1 fw-bold">{{ project.name }}</h4><span class="text-muted">{{ project.project_code }}</span></div>
         <div class="d-flex flex-wrap gap-2 align-items-center">
+            {% if conversion_approval_pending %}
+            <span class="badge bg-warning text-dark"><i class="fas fa-clock me-1"></i>Conversion from quotation pending approval</span>
+            {% elif project.conversion_approval_status == 'rejected' %}
+            <span class="badge bg-danger"><i class="fas fa-times-circle me-1"></i>Conversion rejected</span>
+            {% endif %}
             {% if project.edit_approval_status == 'pending' %}
             <span class="badge bg-warning text-dark"><i class="fas fa-clock me-1"></i>Completion pending approval</span>
             {% elif project.edit_approval_status == 'rejected' %}
             <span class="badge bg-danger"><i class="fas fa-times-circle me-1"></i>Completion rejected</span>
+            {% endif %}
+            {% if can_approve_project_conversion and conversion_approval_pending %}
+            <form method="post" action="{% url 'projects:project_approve_conversion' project.pk %}" class="d-inline" onsubmit="return confirm('Approve this project and move it to Planning?');">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-success btn-sm"><i class="fas fa-check me-1"></i>Approve conversion</button>
+            </form>
+            <form method="post" action="{% url 'projects:project_reject_conversion' project.pk %}" class="d-inline">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-outline-danger btn-sm" onclick="return confirm('Reject this project conversion? The quotation will be unlinked.');"><i class="fas fa-times me-1"></i>Reject conversion</button>
+            </form>
             {% endif %}
             {% if can_request_project_completion %}
             <form method="post" action="{% url 'projects:project_request_completion' project.pk %}" class="d-inline" onsubmit="return confirm('Submit this project for completion approval? Status will stay {{ project.get_status_display }} until an approver confirms.');">
@@ -621,7 +636,9 @@
                 {% if project.status == 'completed' %}<span class="badge badge-active fs-6">Completed</span>
                 {% elif project.status == 'in_progress' %}<span class="badge fs-6" style="background:#dbeafe;color:#1e40af;">In Progress</span>
                 {% else %}<span class="badge bg-secondary fs-6">{{ project.get_status_display }}</span>{% endif %}
-                {% if project.edit_approval_status == 'pending' %}
+                {% if conversion_approval_pending %}
+                <p class="small text-warning mb-0 mt-2"><i class="fas fa-lock me-1"></i>Locked at <strong>Draft</strong> until conversion is approved. Status changes to <strong>Planning</strong> when the approver confirms.</p>
+                {% elif project.edit_approval_status == 'pending' %}
                 <p class="small text-warning mb-0 mt-2"><i class="fas fa-info-circle me-1"></i>Completion approval is pending — status will update once the approver confirms.</p>
                 {% elif project.edit_approval_status == 'rejected' %}
                 <p class="small text-danger mb-2 mt-2"><i class="fas fa-info-circle me-1"></i>Completion was rejected. Use <strong>Mark as completed</strong> to resubmit.</p>

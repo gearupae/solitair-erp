@@ -514,11 +514,9 @@
     </style>
 </head>
 <body>
-    {% if messages %}
+    {% if request.GET.pdf_error %}
     <div class="no-print pdf-flash-messages">
-        {% for message in messages %}
-        <div class="pdf-flash alert-{{ message.tags|default:'warning' }}">{{ message }}</div>
-        {% endfor %}
+        <div class="pdf-flash">{{ request.GET.pdf_error }}</div>
     </div>
     {% endif %}
     <div class="print-actions no-print">

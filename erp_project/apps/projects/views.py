@@ -64,6 +64,11 @@ class ProjectListView(PermissionRequiredMixin, ListView):
         status = self.request.GET.get('status')
         if status == 'completion_pending':
             queryset = queryset.filter(edit_approval_status='pending')
+        elif status == 'conversion_pending':
+            queryset = queryset.filter(
+                status='draft',
+                conversion_approval_status='pending',
+            )
         elif status:
             queryset = queryset.filter(status=status)
         # Sum manual project expenses (active, not rejected, not from a vendor bill)
@@ -102,14 +107,23 @@ class ProjectListView(PermissionRequiredMixin, ListView):
 
         from .approval_rules import (
             pending_completion_projects_for_user,
+            pending_conversion_projects_for_user,
             user_is_project_completion_approver,
+            user_is_project_conversion_approver,
         )
 
         pending_completion = pending_completion_projects_for_user(self.request.user)
         context['pending_completion_projects'] = pending_completion
         context['pending_completion_count'] = len(pending_completion)
         context['is_project_completion_approver'] = user_is_project_completion_approver(self.request.user)
+
+        pending_conversion = pending_conversion_projects_for_user(self.request.user)
+        context['pending_conversion_projects'] = pending_conversion
+        context['pending_conversion_count'] = len(pending_conversion)
+        context['is_project_conversion_approver'] = user_is_project_conversion_approver(self.request.user)
+
         context['status_filter_choices'] = list(Project.STATUS_CHOICES) + [
+            ('conversion_pending', 'Pending conversion approval'),
             ('completion_pending', 'Pending completion approval'),
         ]
         
@@ -329,10 +343,23 @@ class ProjectUpdateView(UpdatePermissionMixin, UpdateView):
         return filter_projects_for_user(Project.objects.filter(is_active=True), self.request.user)
 
     def form_valid(self, form):
-        # form.is_valid() already mutates self.object.status from POST data — read DB for original
+        from .conversion_approval import project_awaiting_conversion_approval
+
         prior = Project.objects.filter(pk=self.object.pk).values(
-            'status', 'edit_approval_status'
+            'status', 'edit_approval_status', 'conversion_approval_status'
         ).first() or {}
+        if project_awaiting_conversion_approval(self.object):
+            attempted = form.cleaned_data.get('status')
+            if attempted and attempted != 'draft':
+                messages.error(
+                    self.request,
+                    'Project status cannot change until conversion from quotation is approved. '
+                    'Use Approve conversion on the project page.',
+                )
+                return redirect('projects:project_detail', pk=self.object.pk)
+            form.cleaned_data['status'] = 'draft'
+
+        # form.is_valid() already mutates self.object.status from POST data — read DB for original
         old_status = prior.get('status') or form.initial.get('status')
         prior_edit_approval = prior.get('edit_approval_status') or 'none'
         new_status = form.cleaned_data['status']
@@ -465,6 +492,76 @@ def project_reject_completion(request, pk):
 
 
 @login_required
+def project_approve_conversion(request, pk):
+    if request.method != 'POST':
+        return HttpResponseNotAllowed(['POST'])
+    project = get_object_or_404(Project, pk=pk, is_active=True)
+    from .approval_rules import user_can_approve_project_conversion
+
+    if not user_can_approve_project_conversion(request.user, project):
+        messages.error(request, 'Permission denied.')
+        return redirect('projects:project_detail', pk=pk)
+
+    submitter = project.conversion_approval_submitted_by
+    from .conversion_approval import approve_project_conversion
+    from apps.settings_app.models import ApprovalAuditLog
+    from .project_approval_notifications import notify_submitter_project_conversion_approved
+
+    approve_project_conversion(project)
+    ApprovalAuditLog.objects.create(
+        module='project_conversion',
+        reference=project.project_code,
+        approver=request.user,
+        action='approve',
+        comment='Project conversion from estimate approved',
+    )
+    if submitter:
+        notify_submitter_project_conversion_approved(
+            project, approver=request.user, submitter=submitter
+        )
+    messages.success(
+        request,
+        f'{project.project_code} approved — project is now Planning.',
+    )
+    return redirect('projects:project_detail', pk=pk)
+
+
+@login_required
+def project_reject_conversion(request, pk):
+    if request.method != 'POST':
+        return HttpResponseNotAllowed(['POST'])
+    project = get_object_or_404(Project, pk=pk, is_active=True)
+    from .approval_rules import user_can_approve_project_conversion
+
+    if not user_can_approve_project_conversion(request.user, project):
+        messages.error(request, 'Permission denied.')
+        return redirect('projects:project_detail', pk=pk)
+
+    submitter = project.conversion_approval_submitted_by
+    from .conversion_approval import reject_project_conversion
+    from apps.settings_app.models import ApprovalAuditLog
+    from .project_approval_notifications import notify_submitter_project_conversion_rejected
+
+    reject_project_conversion(project)
+    ApprovalAuditLog.objects.create(
+        module='project_conversion',
+        reference=project.project_code,
+        approver=request.user,
+        action='reject',
+        comment=(request.POST.get('comment') or 'Project conversion rejected').strip()[:2000],
+    )
+    if submitter:
+        notify_submitter_project_conversion_rejected(
+            project, approver=request.user, submitter=submitter
+        )
+    messages.warning(
+        request,
+        f'Conversion for {project.project_code} was rejected. The quotation can be converted again after updating the customer if needed.',
+    )
+    return redirect('projects:project_detail', pk=pk)
+
+
+@login_required
 def project_request_completion(request, pk):
     """Submit a completion request from the project detail page (no edit form required)."""
     if request.method != 'POST':
@@ -481,6 +578,15 @@ def project_request_completion(request, pk):
 
     if project.edit_approval_status == 'pending':
         messages.warning(request, 'Completion is already pending approval.')
+        return redirect('projects:project_detail', pk=pk)
+
+    from .conversion_approval import project_awaiting_conversion_approval
+
+    if project_awaiting_conversion_approval(project):
+        messages.warning(
+            request,
+            'Approve the quotation conversion first before requesting completion.',
+        )
         return redirect('projects:project_detail', pk=pk)
 
     from .completion_approval import queue_project_completion_approval
@@ -501,11 +607,13 @@ class ProjectDetailView(PermissionRequiredMixin, DetailView):
     module_name = 'projects'
     permission_type = 'view'
 
-    def get_queryset(self):
+    def _base_queryset(self):
         item_line_qs = ProjectItemLine.objects.select_related('inventory_item').order_by(
             'sort_order', 'id'
         )
-        qs = Project.objects.filter(is_active=True).select_related('customer', 'manager', 'created_by').prefetch_related(
+        return Project.objects.filter(is_active=True).select_related(
+            'customer', 'manager', 'created_by'
+        ).prefetch_related(
             Prefetch(
                 'members',
                 queryset=User.objects.select_related(
@@ -526,9 +634,26 @@ class ProjectDetailView(PermissionRequiredMixin, DetailView):
             'public_uploads',
             Prefetch('item_lines', queryset=item_line_qs),
         )
+
+    def get_queryset(self):
         from apps.core.visibility import filter_projects_for_user
 
-        return filter_projects_for_user(qs, self.request.user)
+        return filter_projects_for_user(self._base_queryset(), self.request.user)
+
+    def get_object(self, queryset=None):
+        from django.http import Http404
+        from apps.core.visibility import user_can_access_project
+
+        pk = self.kwargs.get('pk')
+        if queryset is None:
+            queryset = self.get_queryset()
+        obj = queryset.filter(pk=pk).first()
+        if obj is not None:
+            return obj
+        project = self._base_queryset().filter(pk=pk).first()
+        if not project or not user_can_access_project(self.request.user, project):
+            raise Http404('No project found matching the query')
+        return project
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -622,10 +747,20 @@ class ProjectDetailView(PermissionRequiredMixin, DetailView):
         context['can_approve_project_completion'] = user_can_approve_project_completion(
             self.request.user, self.object
         )
+        from .approval_rules import user_can_approve_project_conversion
+
+        context['can_approve_project_conversion'] = user_can_approve_project_conversion(
+            self.request.user, self.object
+        )
+        context['conversion_approval_pending'] = (
+            self.object.status == 'draft'
+            and self.object.conversion_approval_status == 'pending'
+        )
         context['can_request_project_completion'] = (
             context['can_edit']
-            and self.object.status != 'completed'
+            and self.object.status not in ('completed', 'draft', 'cancelled')
             and self.object.edit_approval_status != 'pending'
+            and self.object.conversion_approval_status != 'pending'
         )
         context['can_create_projects'] = self.request.user.is_superuser or PermissionChecker.has_permission(
             self.request.user, 'projects', 'create'

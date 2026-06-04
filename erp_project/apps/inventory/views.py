@@ -360,7 +360,20 @@ def item_export_csv(request):
     return response
 
 
-@login_required
+def _apply_base_group_sub_groups(base_group, sub_ids):
+    """Link sub-groups to a base group preserving POST / UI list order."""
+    ordered = [int(x) for x in sub_ids if str(x).isdigit()]
+    ItemGroup.objects.filter(base_group=base_group).exclude(pk__in=ordered).update(
+        base_group=None,
+        base_group_sort_order=0,
+    )
+    for order, pk in enumerate(ordered):
+        ItemGroup.objects.filter(pk=pk).update(
+            base_group=base_group,
+            base_group_sort_order=order,
+        )
+
+
 def item_group_manage(request):
     """Manage item sub-groups and base groups: members, default estimate qty, rename, PDF settings."""
     can_edit = request.user.is_superuser or PermissionChecker.has_permission(
@@ -404,9 +417,8 @@ def item_group_manage(request):
                 messages.error(request, 'A base group with that name already exists.')
                 return _redirect(tab='base')
             bg = ItemBaseGroup.objects.create(name=name)
-            sub_ids = [int(x) for x in request.POST.getlist('sub_group_ids') if str(x).isdigit()]
-            if sub_ids:
-                ItemGroup.objects.filter(pk__in=sub_ids).update(base_group=bg)
+            sub_ids = request.POST.getlist('sub_group_ids')
+            _apply_base_group_sub_groups(bg, sub_ids)
             if sub_ids:
                 messages.success(
                     request,
@@ -430,12 +442,10 @@ def item_group_manage(request):
             if ItemBaseGroup.objects.filter(name__iexact=new_name).exclude(pk=base_group.pk).exists():
                 messages.error(request, 'Another base group already uses that name.')
                 return _redirect(tab='base', base=base_group)
-            sub_ids = {int(x) for x in request.POST.getlist('sub_group_ids') if str(x).isdigit()}
+            sub_ids = request.POST.getlist('sub_group_ids')
             base_group.name = new_name
             base_group.save(update_fields=['name'])
-            ItemGroup.objects.filter(base_group=base_group).exclude(pk__in=sub_ids).update(base_group=None)
-            if sub_ids:
-                ItemGroup.objects.filter(pk__in=sub_ids).update(base_group=base_group)
+            _apply_base_group_sub_groups(base_group, sub_ids)
             messages.success(request, f'Base group "{base_group.name}" saved.')
             return _redirect(tab='base', base=base_group)
 
@@ -624,7 +634,7 @@ def item_group_manage(request):
         base_sub_groups = (
             ItemGroup.objects.filter(base_group=selected_base)
             .annotate(member_count=Count('memberships'))
-            .order_by('name')
+            .order_by('base_group_sort_order', 'name')
         )
 
     sub_group_picker_data = {
@@ -644,7 +654,9 @@ def item_group_manage(request):
         })
     if selected_base and not request.GET.get('new'):
         sub_group_picker_data['selected'] = list(
-            ItemGroup.objects.filter(base_group=selected_base).values_list('pk', flat=True)
+            ItemGroup.objects.filter(base_group=selected_base)
+            .order_by('base_group_sort_order', 'name')
+            .values_list('pk', flat=True)
         )
 
     return render(

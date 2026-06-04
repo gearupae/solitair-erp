@@ -15,6 +15,12 @@
     background-color: #cffafe !important;
     color: #0e7490 !important;
 }
+.convert-project-popover {
+    max-width: 22rem;
+}
+.convert-project-popover .popover-body {
+    padding: 0.75rem;
+}
 </style>
 {% endblock %}
 
@@ -69,9 +75,9 @@
             {% endif %}
             {% if estimate.project %}
             <a href="{% url 'projects:project_detail' estimate.project.pk %}" class="btn btn-outline-primary">
-                <i class="fas fa-project-diagram me-2"></i>View linked project
+                <i class="fas fa-project-diagram me-2"></i>{% if estimate.project.status == 'draft' and estimate.project.conversion_approval_status == 'pending' %}View project (awaiting approval){% else %}View linked project{% endif %}
             </a>
-            {% elif can_convert_estimate_follow_on and estimate.allows_follow_on_conversion and estimate.is_active %}
+            {% elif can_convert_to_project %}
                 {% if estimate_to_project_prompt_include_lines %}
                 <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#convertProjectModal">
                     <i class="fas fa-project-diagram me-2"></i>Convert to Project
@@ -84,6 +90,20 @@
                     </button>
                 </form>
                 {% endif %}
+            {% elif can_convert_estimate_follow_on and estimate.allows_follow_on_conversion and estimate.is_active and convert_to_project_block_reason %}
+            <span class="d-inline-block convert-project-blocked-wrap" tabindex="0" role="button" aria-label="Why convert to project is unavailable">
+                <button type="button" class="btn btn-outline-primary" disabled>
+                    <i class="fas fa-project-diagram me-2"></i>Convert to Project
+                </button>
+            </span>
+            <div class="d-none" id="convertProjectPopoverBody">
+                <p class="small mb-0">{{ convert_to_project_block_reason }}</p>
+                {% if customer_edit_url %}
+                <a href="{{ customer_edit_url }}" class="btn btn-sm btn-primary mt-2 w-100">
+                    <i class="fas fa-user-edit me-1"></i>Edit customer
+                </a>
+                {% endif %}
+            </div>
             {% endif %}
             <a href="{% url 'sales:estimate_pdf' estimate.pk %}" class="btn btn-outline-danger" target="_blank">
                 <i class="fas fa-file-pdf me-2"></i>PDF
@@ -91,6 +111,17 @@
         </div>
     </div>
 </div>
+
+{% if show_b2b_compliance_banner %}
+<div class="alert alert-warning mb-4">
+    <i class="fas fa-exclamation-triangle me-2"></i>
+    <strong>B2B customer documents required.</strong>
+    Add VAT (TRN), TRN document, and trade license on the customer record before you can convert this quotation to a project.
+    {% if customer_edit_url %}
+    <a href="{{ customer_edit_url }}" class="alert-link ms-1">Edit customer</a>
+    {% endif %}
+</div>
+{% endif %}
 
 <div class="row g-4">
     <div class="col-lg-8">
@@ -529,7 +560,7 @@
     </div>
 </div>
 
-{% if can_convert_estimate_follow_on and estimate.allows_follow_on_conversion and estimate.is_active and not estimate.project and estimate_to_project_prompt_include_lines %}
+{% if can_convert_to_project and estimate_to_project_prompt_include_lines %}
 <div class="modal fade" id="convertProjectModal" tabindex="-1" aria-labelledby="convertProjectModalLabel" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -632,6 +663,24 @@
 {% endif %}
 {% if can_create_proforma %}
 <script src="{% static 'js/proforma_modal.js' %}?v=5"></script>
+{% endif %}
+{% if convert_to_project_block_reason %}
+<script>
+(function() {
+    const wrap = document.querySelector('.convert-project-blocked-wrap');
+    const body = document.getElementById('convertProjectPopoverBody');
+    if (!wrap || !body || !window.bootstrap) return;
+    new bootstrap.Popover(wrap, {
+        html: true,
+        sanitize: false,
+        title: 'Convert to project',
+        content: body.innerHTML,
+        trigger: 'hover focus',
+        placement: 'bottom',
+        customClass: 'convert-project-popover',
+    });
+})();
+</script>
 {% endif %}
 {% endblock %}
 

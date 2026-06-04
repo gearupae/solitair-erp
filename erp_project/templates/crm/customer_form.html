@@ -1,4 +1,21 @@
 {% extends 'base.html' %}
+{% load crm_extras %}
+
+{% block extra_css %}
+<style>
+.crm-doc-card {
+    background: var(--bs-tertiary-bg, #f8f9fa);
+    border: 1px solid var(--bs-border-color);
+    border-radius: 0.5rem;
+    padding: 1rem;
+    height: 100%;
+}
+.crm-doc-card .crm-doc-filename {
+    word-break: break-all;
+    font-size: 0.8125rem;
+}
+</style>
+{% endblock %}
 
 {% block extra_js %}
 <script>
@@ -15,19 +32,24 @@ $(function () {
         var licRequired = document.getElementById('crmEditLicenseRequired');
         var licOptional = document.getElementById('crmEditLicenseOptional');
         var docsHelp = document.getElementById('crmEditB2bDocsHelp');
+        var hasTradeLicense = document.getElementById('crmHasTradeLicense');
         var isCustomer = customerType === 'customer';
         var isB2b = seg && seg.value === 'b2b';
+        var hasLicOnFile = hasTradeLicense && hasTradeLicense.value === '1';
         if (trnWrap) trnWrap.style.display = isB2b ? '' : 'none';
         if (trnInput && !isB2b) trnInput.value = '';
         if (docs) docs.classList.toggle('d-none', !isB2b);
-        if (licInput) licInput.required = isB2b && isCustomer;
+        if (licInput) {
+            licInput.required = isB2b && isCustomer && !hasLicOnFile;
+            licInput.removeAttribute('aria-required');
+        }
         if (licRequired) licRequired.classList.toggle('d-none', !isB2b || !isCustomer);
         if (licOptional) licOptional.classList.toggle('d-none', !isB2b || isCustomer);
         if (docsHelp) {
             if (isB2b && isCustomer) {
-                docsHelp.textContent = 'B2B customers must upload a trade license (TRN certificate upload is optional).';
+                docsHelp.textContent = 'Trade license is required for B2B customers. TRN document is optional. Uploaded files are kept when you save unless you remove them.';
             } else if (isB2b) {
-                docsHelp.textContent = 'B2B leads may upload a trade license now (optional). TRN certificate upload is optional.';
+                docsHelp.textContent = 'B2B leads may upload documents now (optional).';
             }
         }
     }
@@ -35,6 +57,11 @@ $(function () {
     var seg = document.querySelector('[name="business_segment"]');
     if (typeSel) typeSel.addEventListener('change', crmEditToggleCustomerFields);
     if (seg) seg.addEventListener('change', crmEditToggleCustomerFields);
+    document.getElementById('id_trade_license_document-clear')?.addEventListener('change', function() {
+        var el = document.getElementById('crmHasTradeLicense');
+        if (el) el.value = this.checked ? '0' : '1';
+        crmEditToggleCustomerFields();
+    });
     crmEditToggleCustomerFields();
 });
 </script>
@@ -60,7 +87,7 @@ $(function () {
             {% csrf_token %}
 
             <h6 class="fw-semibold mb-3">
-                <i class="fas fa-user me-2 text-primary"></i>Basic Information
+                <i class="fas fa-user me-2 text-dark"></i>Basic Information
             </h6>
             <div class="row g-3 mb-4">
                 <div class="col-md-4">
@@ -137,30 +164,70 @@ $(function () {
             <hr class="my-4">
 
             <h6 class="fw-semibold mb-3">
-                <i class="fas fa-briefcase me-2 text-primary"></i>Business Details
+                <i class="fas fa-briefcase me-2 text-dark"></i>Business Details
             </h6>
             <div class="row g-3 mb-3 d-none" id="crmEditB2bDocs">
                 <div class="col-12">
                     <p class="small text-muted mb-0" id="crmEditB2bDocsHelp">B2B customers must upload a trade license (TRN certificate upload is optional).</p>
                 </div>
-                <div class="col-md-4">
-                    <label class="form-label" for="{{ form.trn_document.id_for_label }}">{{ form.trn_document.label }} <span class="text-muted small">(optional)</span></label>
-                    {{ form.trn_document }}
-                    {% for err in form.trn_document.errors %}<div class="text-danger small">{{ err }}</div>{% endfor %}
-                    {% if object.trn_document %}
-                    <div class="small mt-1"><a href="{{ object.trn_document.url }}" target="_blank" rel="noopener"><i class="fas fa-paperclip me-1"></i>Current TRN document</a></div>
-                    {% endif %}
+                <input type="hidden" id="crmHasTradeLicense" value="{% if object.trade_license_document %}1{% else %}0{% endif %}">
+                <input type="hidden" id="crmHasTrnDocument" value="{% if object.trn_document %}1{% else %}0{% endif %}">
+                <div class="col-md-6">
+                    <div class="crm-doc-card">
+                        <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+                            <label class="form-label mb-0" for="{{ form.trn_document.id_for_label }}">{{ form.trn_document.label }}</label>
+                            <span class="badge bg-secondary">Optional</span>
+                        </div>
+                        {% if object.trn_document %}
+                        <div class="d-flex align-items-center gap-2 mb-2 p-2 bg-white rounded border">
+                            <i class="fas fa-file-image text-dark fa-lg"></i>
+                            <div class="flex-grow-1 min-w-0">
+                                <div class="crm-doc-filename text-muted">{{ object.trn_document|file_basename }}</div>
+                                <a href="{{ object.trn_document.url }}" class="btn btn-sm btn-outline-dark mt-1" target="_blank" rel="noopener">
+                                    <i class="fas fa-external-link-alt me-1"></i>View
+                                </a>
+                            </div>
+                        </div>
+                        <div class="form-check mb-2">
+                            <input type="checkbox" name="trn_document-clear" id="id_trn_document-clear" class="form-check-input" value="1">
+                            <label class="form-check-label small" for="id_trn_document-clear">Remove current file</label>
+                        </div>
+                        <label class="form-label small text-muted mb-1">Replace with new file</label>
+                        {% else %}
+                        <label class="form-label small text-muted mb-1">Upload file</label>
+                        {% endif %}
+                        {{ form.trn_document }}
+                        {% for err in form.trn_document.errors %}<div class="text-danger small mt-1">{{ err }}</div>{% endfor %}
+                    </div>
                 </div>
-                <div class="col-md-4">
-                    <label class="form-label" for="{{ form.trade_license_document.id_for_label }}">{{ form.trade_license_document.label }}
-                        <span class="text-danger" id="crmEditLicenseRequired">*</span>
-                        <span class="text-muted small d-none" id="crmEditLicenseOptional">(optional)</span>
-                    </label>
-                    {{ form.trade_license_document }}
-                    {% for err in form.trade_license_document.errors %}<div class="text-danger small">{{ err }}</div>{% endfor %}
-                    {% if object.trade_license_document %}
-                    <div class="small mt-1"><a href="{{ object.trade_license_document.url }}" target="_blank" rel="noopener"><i class="fas fa-paperclip me-1"></i>Current trade license</a></div>
-                    {% endif %}
+                <div class="col-md-6">
+                    <div class="crm-doc-card">
+                        <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+                            <label class="form-label mb-0" for="{{ form.trade_license_document.id_for_label }}">{{ form.trade_license_document.label }}</label>
+                            <span class="text-danger small fw-semibold" id="crmEditLicenseRequired">Required</span>
+                            <span class="badge bg-secondary d-none" id="crmEditLicenseOptional">Optional</span>
+                        </div>
+                        {% if object.trade_license_document %}
+                        <div class="d-flex align-items-center gap-2 mb-2 p-2 bg-white rounded border">
+                            <i class="fas fa-file-image text-dark fa-lg"></i>
+                            <div class="flex-grow-1 min-w-0">
+                                <div class="crm-doc-filename text-muted">{{ object.trade_license_document|file_basename }}</div>
+                                <a href="{{ object.trade_license_document.url }}" class="btn btn-sm btn-outline-dark mt-1" target="_blank" rel="noopener">
+                                    <i class="fas fa-external-link-alt me-1"></i>View
+                                </a>
+                            </div>
+                        </div>
+                        <div class="form-check mb-2">
+                            <input type="checkbox" name="trade_license_document-clear" id="id_trade_license_document-clear" class="form-check-input" value="1">
+                            <label class="form-check-label small" for="id_trade_license_document-clear">Remove current file</label>
+                        </div>
+                        <label class="form-label small text-muted mb-1">Replace with new file</label>
+                        {% else %}
+                        <label class="form-label small text-muted mb-1">Upload file <span class="text-danger">*</span></label>
+                        {% endif %}
+                        {{ form.trade_license_document }}
+                        {% for err in form.trade_license_document.errors %}<div class="text-danger small mt-1">{{ err }}</div>{% endfor %}
+                    </div>
                 </div>
             </div>
             <div class="row g-3 mb-4">
@@ -179,7 +246,7 @@ $(function () {
             <hr class="my-4">
 
             <h6 class="fw-semibold mb-3">
-                <i class="fas fa-address-card me-2 text-primary"></i>Contact Details
+                <i class="fas fa-address-card me-2 text-dark"></i>Contact Details
             </h6>
             <div class="row g-3 mb-4">
                 <div class="col-md-4">
@@ -199,7 +266,7 @@ $(function () {
             <hr class="my-4">
 
             <h6 class="fw-semibold mb-3">
-                <i class="fas fa-sticky-note me-2 text-primary"></i>Additional Information
+                <i class="fas fa-sticky-note me-2 text-dark"></i>Additional Information
             </h6>
             <div class="row g-3">
                 <div class="col-12">
@@ -223,7 +290,7 @@ $(function () {
 <div class="card border-0 shadow-sm mt-4">
     <div class="card-header bg-transparent py-3">
         <h6 class="mb-0 fw-semibold">
-            <i class="fas fa-history me-2 text-primary"></i>Audit Information
+            <i class="fas fa-history me-2 text-dark"></i>Audit Information
         </h6>
     </div>
     <div class="card-body">

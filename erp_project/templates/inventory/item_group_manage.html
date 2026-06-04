@@ -445,7 +445,8 @@
     var allItems = (payload.all || []).slice().sort(function (a, b) {
         return a.name.localeCompare(b.name);
     });
-    var selectedIds = new Set((payload.selected || []).map(String));
+    var selectedOrder = (payload.selected || []).map(String);
+    var selectedIds = new Set(selectedOrder);
     var byId = {};
     allItems.forEach(function (item) {
         byId[String(item.id)] = item;
@@ -479,14 +480,8 @@
     function renderSelected() {
         listEl.innerHTML = '';
         hiddenEl.innerHTML = '';
-        var ids = Array.from(selectedIds);
-        ids.sort(function (a, b) {
-            var ia = byId[a];
-            var ib = byId[b];
-            return (ia ? ia.name : '').localeCompare(ib ? ib.name : '');
-        });
 
-        ids.forEach(function (id) {
+        selectedOrder.forEach(function (id) {
             var item = byId[id];
             if (!item) return;
 
@@ -498,6 +493,7 @@
                 '<button type="button" class="btn btn-sm btn-outline-danger flex-shrink-0">Remove</button>';
             li.querySelector('button').addEventListener('click', function () {
                 selectedIds.delete(id);
+                selectedOrder = selectedOrder.filter(function (x) { return x !== id; });
                 renderAll();
             });
             listEl.appendChild(li);
@@ -523,7 +519,11 @@
     addBtn.addEventListener('click', function () {
         var id = selectEl.value;
         if (!id) return;
-        selectedIds.add(String(id));
+        var sid = String(id);
+        if (!selectedIds.has(sid)) {
+            selectedIds.add(sid);
+            selectedOrder.push(sid);
+        }
         selectEl.value = '';
         renderAll();
     });

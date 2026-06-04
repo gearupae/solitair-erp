@@ -111,6 +111,10 @@ class ItemGroup(models.Model):
         related_name='sub_groups',
         help_text='Optional parent base group for organizing sub-groups.',
     )
+    base_group_sort_order = models.PositiveIntegerField(
+        default=0,
+        help_text='Order of this sub-group within its base group (scope of work / estimates).',
+    )
     hide_items_on_pdf = models.BooleanField(
         default=False,
         help_text=(
@@ -378,18 +382,34 @@ class Item(BaseModel):
             base,
         )
 
-    def quote_rate_bounds_error(self, base_price, rate):
-        """Validate estimate line rate against item min/max (quote profit semantics for max %)."""
-        p = rate if isinstance(rate, Decimal) else Decimal(str(rate or '0'))
+    def _quote_rate_bounds_issue(self, base_price, rate):
+        """Return 'low'|'high'|None comparing quantized line rate to quote min/max."""
+        from decimal import ROUND_HALF_UP
+
+        def _q2(v):
+            d = v if isinstance(v, Decimal) else Decimal(str(v or '0'))
+            return d.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+
+        p = _q2(rate)
         base = base_price if base_price is not None else self.selling_price
         base = base if isinstance(base, Decimal) else Decimal(str(base or '0'))
-        min_r = self.get_quote_minimum_rate(base)
-        max_r = self.get_quote_maximum_rate(base)
+        min_r = _q2(self.get_quote_minimum_rate(base))
+        max_r = _q2(self.get_quote_maximum_rate(base))
         if min_r > 0 and p > 0 and p < min_r:
-            return f'Amount is low for {self.name}.'
+            return 'low', p, base, min_r, max_r
         if max_r > 0 and p > max_r:
-            return f'Amount is high for {self.name}.'
+            return 'high', p, base, min_r, max_r
         return None
+
+    def quote_rate_bounds_error(self, base_price, rate):
+        """Validate estimate line rate against item min/max (quote profit semantics for max %)."""
+        issue = self._quote_rate_bounds_issue(base_price, rate)
+        if not issue:
+            return None
+        kind, p, base, min_r, max_r = issue
+        if kind == 'low':
+            return f'Rate AED {p} is below minimum AED {min_r} for {self.name}.'
+        return f'Rate AED {p} exceeds maximum AED {max_r} for {self.name}.'
 
     def clean(self):
         super().clean()

@@ -95,11 +95,17 @@ def user_can_access_estimate(user, estimate):
 def filter_projects_for_user(queryset, user):
     if not user_data_scope_restricted(user, 'projects'):
         return queryset
-    from apps.core.approval_visibility import annotate_project_approval_amount, project_approver_records_q
+    from apps.core.approval_visibility import (
+        annotate_project_approval_amount,
+        project_approver_records_q,
+        project_conversion_approver_records_q,
+    )
 
     own_q = Q(created_by=user) | Q(manager=user) | Q(members=user) | Q(technicians=user)
     qs = annotate_project_approval_amount(queryset)
-    return qs.filter(own_q | project_approver_records_q(user)).distinct()
+    return qs.filter(
+        own_q | project_approver_records_q(user) | project_conversion_approver_records_q(user)
+    ).distinct()
 
 
 def user_can_access_project(user, project):
@@ -111,9 +117,15 @@ def user_can_access_project(user, project):
         return True
     if project.members.filter(pk=user.pk).exists() or project.technicians.filter(pk=user.pk).exists():
         return True
-    from apps.core.approval_visibility import user_is_project_approver_for
+    from apps.core.approval_visibility import (
+        user_is_project_approver_for,
+        user_is_project_conversion_approver_for,
+    )
 
-    return user_is_project_approver_for(user, project)
+    return (
+        user_is_project_approver_for(user, project)
+        or user_is_project_conversion_approver_for(user, project)
+    )
 
 
 def filter_purchase_requests_for_user(queryset, user):

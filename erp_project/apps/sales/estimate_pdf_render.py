@@ -1,7 +1,20 @@
 """
 Shared estimate quotation/proposal PDF context + WeasyPrint rendering (estimate PDF view + send-email attachment).
 """
+from django.conf import settings
 from django.template.loader import get_template
+
+
+def _estimate_pdf_base_url(request):
+    """Base URL for WeasyPrint assets; avoids DisallowedHost on odd test hosts."""
+    try:
+        return request.build_absolute_uri('/')
+    except Exception:
+        pass
+    origins = getattr(settings, 'CSRF_TRUSTED_ORIGINS', None) or []
+    if origins:
+        return str(origins[0]).rstrip('/') + '/'
+    return 'http://127.0.0.1:8001/'
 
 
 def render_estimate_quotation_pdf_bytes(request, estimate):
@@ -33,7 +46,7 @@ def render_estimate_quotation_pdf_bytes(request, estimate):
     template = get_template('sales/estimate_pdf.html')
     html_string = template.render(context)
     try:
-        html = HTML(string=html_string, base_url=request.build_absolute_uri('/'))
+        html = HTML(string=html_string, base_url=_estimate_pdf_base_url(request))
         pdf = html.write_pdf()
     except Exception as exc:
         return None, f'PDF generation failed: {exc}'

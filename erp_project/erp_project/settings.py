@@ -214,3 +214,18 @@ HR_EMPLOYEE_DEFAULT_PASSWORD = config(
     default='AlNajahEmployee123!',
 )
 
+# Outbound email (quotations, POs, HR). Company Settings SMTP overrides when filled in.
+# In DEBUG, default backend prints messages to the runserver console if EMAIL_HOST is unset.
+_default_email_backend = (
+    'django.core.mail.backends.console.EmailBackend'
+    if DEBUG
+    else 'django.core.mail.backends.smtp.EmailBackend'
+)
+EMAIL_BACKEND = config('EMAIL_BACKEND', default=_default_email_backend)
+EMAIL_HOST = config('EMAIL_HOST', default='')
+EMAIL_PORT = config('EMAIL_PORT', default=587, cast=int)
+EMAIL_HOST_USER = config('EMAIL_HOST_USER', default='')
+EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='')
+EMAIL_USE_TLS = config('EMAIL_USE_TLS', default=True, cast=bool)
+DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='')
+

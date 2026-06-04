@@ -87,8 +87,13 @@ class CustomerForm(forms.ModelForm):
             if field_name in ('scope', 'primary_project', 'business_segment', 'assigned_salesperson'):
                 continue
             if field_name in ('trn_document', 'trade_license_document'):
-                field.widget.attrs.setdefault('class', 'form-control')
-                field.widget.attrs.setdefault('accept', '.pdf,.jpg,.jpeg,.png,.webp,.heic')
+                field.widget = forms.FileInput(
+                    attrs={
+                        'class': 'form-control form-control-sm',
+                        'accept': '.pdf,.jpg,.jpeg,.png,.webp,.heic',
+                    }
+                )
+                field.widget.attrs['data-crm-doc-field'] = field_name
                 continue
             if field_name in ['address', 'notes']:
                 field.widget.attrs['class'] = 'form-control'
@@ -159,14 +164,20 @@ class CustomerForm(forms.ModelForm):
         if seg == 'b2c':
             cleaned['trn'] = ''
         elif seg == 'b2b' and ctype == 'customer':
+            if self.data.get('trade_license_document-clear') in ('on', 'true', '1'):
+                cleaned['trade_license_document'] = False
             lic_f = cleaned.get('trade_license_document')
             has_lic = bool(lic_f) or (
-                self.instance.pk and bool(self.instance.trade_license_document)
+                self.instance.pk
+                and bool(self.instance.trade_license_document)
+                and self.data.get('trade_license_document-clear') not in ('on', 'true', '1')
             )
             if not has_lic:
                 self.add_error(
                     'trade_license_document',
                     'Trade license upload is required for B2B customers.',
                 )
+            if self.data.get('trn_document-clear') in ('on', 'true', '1'):
+                cleaned['trn_document'] = False
 
         return cleaned

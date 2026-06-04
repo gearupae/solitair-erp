@@ -126,6 +126,7 @@ def _estimate_form_inventory_groups_context():
         groups.append({
             'name': g.name,
             'base_group': g.base_group.name if g.base_group_id else '',
+            'base_group_sort_order': g.base_group_sort_order,
             'items': [
                 {
                     **_inventory_item_estimate_json(m.item),
@@ -933,6 +934,24 @@ class EstimateDetailView(PermissionRequiredMixin, DetailView):
         context['can_reject_estimate_edit'] = context['can_approve_estimate_edit']
         co = CompanySettings.get_settings()
         context['estimate_to_project_prompt_include_lines'] = co.estimate_to_project_prompt_include_lines
+        from .estimate_conversion import (
+            estimate_convert_to_project_block_reason,
+            estimate_show_b2b_compliance_banner,
+        )
+
+        block_reason = estimate_convert_to_project_block_reason(self.object)
+        context['can_convert_to_project'] = (
+            context['can_convert_estimate_follow_on']
+            and self.object.allows_follow_on_conversion
+            and self.object.is_active
+            and not block_reason
+        )
+        context['convert_to_project_block_reason'] = block_reason
+        context['show_b2b_compliance_banner'] = estimate_show_b2b_compliance_banner(self.object)
+        if self.object.customer_id:
+            context['customer_edit_url'] = reverse(
+                'crm:customer_edit', args=[self.object.customer_id]
+            )
 
         context['estimate_email_hint'] = outgoing_mail_hint(co)
         context['can_send_estimate_email'] = (
@@ -1209,6 +1228,13 @@ def estimate_update_status(request, pk, status):
         rejection_reason=rejection_reason,
     )
 
+    if status == 'quotation_won' and old_status != 'quotation_won':
+        from .estimate_conversion import warn_on_quotation_won_if_b2b_incomplete
+
+        warn = warn_on_quotation_won_if_b2b_incomplete(estimate)
+        if warn:
+            messages.warning(request, warn)
+
     status_display = dict(Estimate.STATUS_CHOICES).get(status, status)
     messages.success(request, f'Estimate {estimate.estimate_number} status updated to {status_display}.')
     
@@ -1301,8 +1327,11 @@ def estimate_convert_to_project(request, pk):
         messages.error(request, 'Only approved or quotation-won estimates can be converted to a project.')
         return redirect('sales:estimate_detail', pk=pk)
 
-    if estimate.project_id:
-        messages.error(request, 'This estimate is already linked to a project.')
+    from .estimate_conversion import estimate_convert_to_project_block_reason
+
+    block = estimate_convert_to_project_block_reason(estimate)
+    if block:
+        messages.error(request, block)
         return redirect('sales:estimate_detail', pk=pk)
 
     from .estimate_to_project import create_project_from_estimate
@@ -1314,11 +1343,21 @@ def estimate_convert_to_project(request, pk):
     else:
         include_items = False
 
-    project = create_project_from_estimate(estimate=estimate, include_items=include_items)
-    messages.success(
-        request,
-        f'Project {project.project_code} created from estimate {estimate.estimate_number}.',
+    project = create_project_from_estimate(
+        estimate=estimate,
+        include_items=include_items,
+        submitted_by=request.user,
     )
+    if project.status == 'draft' and project.conversion_approval_status == 'pending':
+        messages.success(
+            request,
+            f'Project {project.project_code} created in Draft and sent for conversion approval.',
+        )
+    else:
+        messages.success(
+            request,
+            f'Project {project.project_code} created from estimate {estimate.estimate_number}.',
+        )
     return redirect('projects:project_detail', pk=project.pk)
 
 
@@ -1464,15 +1503,19 @@ def estimate_pdf_download(request, pk):
         messages.error(request, 'You do not have permission to view this estimate.')
         return redirect('sales:estimate_list')
 
+    from urllib.parse import urlencode
+
+    def _pdf_download_error_redirect(detail: str):
+        base = reverse('sales:estimate_pdf', kwargs={'pk': estimate.pk})
+        return redirect(f'{base}?{urlencode({"pdf_error": detail[:500]})}')
+
     try:
         pdf_bytes, err = render_estimate_quotation_pdf_bytes(request, estimate)
     except Exception as exc:
-        messages.error(request, f'Could not generate PDF: {exc}')
-        return redirect('sales:estimate_pdf', pk=estimate.pk)
+        return _pdf_download_error_redirect(f'Could not generate PDF: {exc}')
 
     if not pdf_bytes:
-        messages.error(request, err or 'Could not generate PDF.')
-        return redirect('sales:estimate_pdf', pk=estimate.pk)
+        return _pdf_download_error_redirect(err or 'Could not generate PDF.')
 
     safe_name = ''.join(
         c for c in estimate.display_estimate_number if c.isalnum() or c in ('-', '_')
@@ -1721,7 +1764,10 @@ def estimate_send_email(request, pk):
 
     from apps.purchase.email_outbound import (
         company_outgoing_from_email,
+        email_sent_via_console,
         get_smtp_connection_or_default,
+        outgoing_mail_configured,
+        outgoing_mail_hint,
         validate_cc_addresses,
         validate_to_addresses,
     )
@@ -1757,6 +1803,12 @@ def estimate_send_email(request, pk):
         return JsonResponse({'ok': False, 'error': str(exc)}, status=400)
 
     company = CompanySettings.get_settings()
+    if not outgoing_mail_configured(company):
+        return JsonResponse(
+            {'ok': False, 'error': outgoing_mail_hint(company) or 'Email is not configured.'},
+            status=400,
+        )
+
     pdf, pdf_err = render_estimate_quotation_pdf_bytes(request, estimate)
     if not pdf:
         return JsonResponse(
@@ -1788,6 +1840,11 @@ def estimate_send_email(request, pk):
     except Exception as exc:
         return JsonResponse({'ok': False, 'error': f'Could not send email: {exc}'}, status=502)
 
+    if email_sent_via_console(company):
+        return JsonResponse({
+            'ok': True,
+            'message': 'Email logged to the server console (development). Configure SMTP under Settings → Company for real delivery.',
+        })
     return JsonResponse({'ok': True, 'message': 'Email sent.'})
 
 
@@ -1887,6 +1944,13 @@ def estimate_set_status(request, pk):
         user=request.user,
         rejection_reason=rejection_reason,
     )
+
+    if status == 'quotation_won' and old_status != 'quotation_won':
+        from .estimate_conversion import warn_on_quotation_won_if_b2b_incomplete
+
+        warn = warn_on_quotation_won_if_b2b_incomplete(estimate)
+        if warn:
+            messages.warning(request, warn)
 
     status_display = dict(Estimate.STATUS_CHOICES).get(status, status)
     messages.success(request, f'Estimate {estimate.estimate_number} status updated to {status_display}.')

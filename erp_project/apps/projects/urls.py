@@ -17,6 +17,8 @@ urlpatterns = [
     path('<int:pk>/request-completion/', views.project_request_completion, name='project_request_completion'),
     path('<int:pk>/approve-completion/', views.project_approve_completion, name='project_approve_completion'),
     path('<int:pk>/reject-completion/', views.project_reject_completion, name='project_reject_completion'),
+    path('<int:pk>/approve-conversion/', views.project_approve_conversion, name='project_approve_conversion'),
+    path('<int:pk>/reject-conversion/', views.project_reject_conversion, name='project_reject_conversion'),
     
     # Tasks
     path('tasks/<int:pk>/set-status/', views.task_set_status, name='task_set_status'),
