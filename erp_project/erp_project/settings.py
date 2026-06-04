@@ -36,6 +36,9 @@ CSRF_TRUSTED_ORIGINS = config(
     cast=Csv(),
 )
 
+# Estimates with scope-of-work can POST 100+ line rows (Django default limit is 1000 fields).
+DATA_UPLOAD_MAX_NUMBER_FIELDS = config('DATA_UPLOAD_MAX_NUMBER_FIELDS', default=20000, cast=int)
+
 # Application definition
 INSTALLED_APPS = [
     'django.contrib.admin',
