@@ -6,14 +6,19 @@
 # Usage:
 #   export DEPLOY_HOST=root@37.27.16.210
 #   export DEPLOY_PATH=/var/www/alnajahfireerp
+#   export RSYNC_RSH='ssh -i ~/.ssh/alnajah_hetzner -o IdentitiesOnly=yes'
+#   export DEPLOY_SSH_OPTS='-i ~/.ssh/alnajah_hetzner -o IdentitiesOnly=yes'
 #   ./scripts/deploy_production.sh
 #   ./scripts/deploy_production.sh --with-db
+#   DEPLOY_RUN_PIP=1 ./scripts/deploy_production.sh   # optional pip install on server
 #
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HOST="${DEPLOY_HOST:-root@37.27.16.210}"
 REMOTE="${DEPLOY_PATH:-/var/www/alnajahfireerp}"
+SSH_OPTS="${DEPLOY_SSH_OPTS:--o StrictHostKeyChecking=accept-new}"
+RSYNC_SSH="${RSYNC_RSH:-ssh ${SSH_OPTS}}"
 WITH_DB=false
 
 for arg in "$@"; do
@@ -29,7 +34,7 @@ for arg in "$@"; do
 done
 
 RSYNC_EXCLUDES=(
-  -e "ssh -o StrictHostKeyChecking=accept-new"
+  -e "${RSYNC_SSH}"
   --archive
   --delete
   --exclude '.git'
@@ -53,8 +58,8 @@ echo "==> Rsync to ${HOST}:${REMOTE}"
 echo "    with-db: ${WITH_DB}"
 rsync "${RSYNC_EXCLUDES[@]}" "${ROOT}/" "${HOST}:${REMOTE}/"
 
-echo "==> Remote: pip, migrate, collectstatic, restart"
-ssh -o StrictHostKeyChecking=accept-new "$HOST" bash -s << EOF
+echo "==> Remote: migrate, collectstatic, restart (pip: ${DEPLOY_RUN_PIP:-0})"
+ssh ${SSH_OPTS} "$HOST" bash -s << EOF
 set -euo pipefail
 APP="${REMOTE}"
 
@@ -63,7 +68,9 @@ APP="${REMOTE}"
 chown -R www-data:www-data "\${APP}"
 cd "\${APP}"
 source venv/bin/activate
-pip install -q -r requirements.txt
+if [[ "\${DEPLOY_RUN_PIP:-}" == "1" ]]; then
+  pip install -q -r requirements.txt || echo "WARN: pip install failed; continuing with existing venv"
+fi
 cd "\${APP}/erp_project"
 python manage.py migrate --no-input
 python manage.py collectstatic --no-input
