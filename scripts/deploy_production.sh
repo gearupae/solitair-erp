@@ -56,6 +56,8 @@ fi
 
 echo "==> Rsync to ${HOST}:${REMOTE}"
 echo "    with-db: ${WITH_DB}"
+echo "    NEVER overwrites: erp_project/.env, .env, venv/, media/, staticfiles/"
+echo "    NEVER overwrites: db.sqlite3 (unless --with-db)"
 rsync "${RSYNC_EXCLUDES[@]}" "${ROOT}/" "${HOST}:${REMOTE}/"
 
 echo "==> Remote: migrate, collectstatic, restart (pip: ${DEPLOY_RUN_PIP:-0})"

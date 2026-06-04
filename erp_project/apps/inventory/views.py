@@ -360,9 +360,30 @@ def item_export_csv(request):
     return response
 
 
-def _apply_base_group_sub_groups(base_group, sub_ids):
-    """Link sub-groups to a base group preserving POST / UI list order."""
+def _ordered_base_group_sub_ids(sub_ids, post=None):
+    """Sort sub-group PKs by optional sub_group_order_<pk> fields from POST."""
     ordered = [int(x) for x in sub_ids if str(x).isdigit()]
+    if not post:
+        return ordered
+    orders = {}
+    for pk in ordered:
+        raw = post.get(f'sub_group_order_{pk}')
+        try:
+            orders[pk] = int(str(raw).strip())
+        except (TypeError, ValueError):
+            orders[pk] = 999999
+    return [
+        ordered[i]
+        for i in sorted(
+            range(len(ordered)),
+            key=lambda idx: (orders.get(ordered[idx], 999999), idx),
+        )
+    ]
+
+
+def _apply_base_group_sub_groups(base_group, sub_ids, post=None):
+    """Link sub-groups to a base group preserving explicit order from POST / UI."""
+    ordered = _ordered_base_group_sub_ids(sub_ids, post)
     ItemGroup.objects.filter(base_group=base_group).exclude(pk__in=ordered).update(
         base_group=None,
         base_group_sort_order=0,
@@ -418,7 +439,7 @@ def item_group_manage(request):
                 return _redirect(tab='base')
             bg = ItemBaseGroup.objects.create(name=name)
             sub_ids = request.POST.getlist('sub_group_ids')
-            _apply_base_group_sub_groups(bg, sub_ids)
+            _apply_base_group_sub_groups(bg, sub_ids, request.POST)
             if sub_ids:
                 messages.success(
                     request,
@@ -445,7 +466,7 @@ def item_group_manage(request):
             sub_ids = request.POST.getlist('sub_group_ids')
             base_group.name = new_name
             base_group.save(update_fields=['name'])
-            _apply_base_group_sub_groups(base_group, sub_ids)
+            _apply_base_group_sub_groups(base_group, sub_ids, request.POST)
             messages.success(request, f'Base group "{base_group.name}" saved.')
             return _redirect(tab='base', base=base_group)
 
@@ -541,7 +562,32 @@ def item_group_manage(request):
                 membership.default_quantity = qty.quantize(Decimal('0.01'))
                 membership.save(update_fields=['default_quantity'])
                 updated += 1
-            messages.success(request, f'Saved quantities for {updated} item(s).')
+            order_updated = 0
+            for key, val in request.POST.items():
+                if not key.startswith('order_'):
+                    continue
+                mid = key[6:]
+                if not str(mid).isdigit():
+                    continue
+                membership = ItemGroupMembership.objects.filter(pk=int(mid), group=group).first()
+                if not membership:
+                    continue
+                try:
+                    order = int(str(val).strip())
+                except (TypeError, ValueError):
+                    continue
+                if order < 0:
+                    order = 0
+                membership.sort_order = order
+                membership.save(update_fields=['sort_order'])
+                order_updated += 1
+            if order_updated:
+                messages.success(
+                    request,
+                    f'Saved quantities for {updated} item(s) and order for {order_updated} item(s).',
+                )
+            else:
+                messages.success(request, f'Saved quantities for {updated} item(s).')
             return _redirect(group=group, tab='sub')
 
         if action == 'add_item':
@@ -556,10 +602,20 @@ def item_group_manage(request):
                 qty = Decimal('1')
             if qty < Decimal('1'):
                 qty = Decimal('1')
+            next_order = (
+                ItemGroupMembership.objects.filter(group=group)
+                .order_by('-sort_order')
+                .values_list('sort_order', flat=True)
+                .first()
+            )
+            next_order = (next_order or 0) + 1
             membership, created = ItemGroupMembership.objects.get_or_create(
                 group=group,
                 item=item,
-                defaults={'default_quantity': qty.quantize(Decimal('0.01'))},
+                defaults={
+                    'default_quantity': qty.quantize(Decimal('0.01')),
+                    'sort_order': next_order,
+                },
             )
             if not created:
                 messages.info(request, f'{item.item_code} is already in this group.')
@@ -653,11 +709,14 @@ def item_group_manage(request):
             'other_base': other_base,
         })
     if selected_base and not request.GET.get('new'):
-        sub_group_picker_data['selected'] = list(
-            ItemGroup.objects.filter(base_group=selected_base)
+        sub_group_picker_data['selected'] = [
+            {
+                'id': sg.pk,
+                'order': (sg.base_group_sort_order or 0) + 1,
+            }
+            for sg in ItemGroup.objects.filter(base_group=selected_base)
             .order_by('base_group_sort_order', 'name')
-            .values_list('pk', flat=True)
-        )
+        ]
 
     return render(
         request,

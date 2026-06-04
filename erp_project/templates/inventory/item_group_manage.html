@@ -232,6 +232,7 @@
                                 <tr>
                                     <th>Code</th>
                                     <th>Name</th>
+                                    <th style="width:70px;">Order</th>
                                     <th style="width:100px;">Est. qty</th>
                                     {% if can_edit %}<th style="width:60px;"></th>{% endif %}
                                 </tr>
@@ -241,6 +242,13 @@
                                 <tr>
                                     <td class="small fw-medium">{{ m.item.item_code }}</td>
                                     <td class="small">{{ m.item.name }}</td>
+                                    <td>
+                                        {% if can_edit %}
+                                        <input type="number" form="saveGroupQtyForm" name="order_{{ m.pk }}" value="{{ m.sort_order }}" min="0" step="1" class="form-control form-control-sm" title="Line order when this sub-group is added to an estimate">
+                                        {% else %}
+                                        {{ m.sort_order }}
+                                        {% endif %}
+                                    </td>
                                     <td>
                                         {% if can_edit %}
                                         <input type="number" form="saveGroupQtyForm" name="qty_{{ m.pk }}" value="{{ m.default_quantity|floatformat:0 }}" min="1" step="1" class="form-control form-control-sm" title="Default quantity when this group is added to an estimate">
@@ -269,8 +277,8 @@
                     </div>
                     {% if can_edit %}
                     <div class="p-3 border-top d-flex justify-content-between align-items-center flex-wrap gap-2">
-                        <span class="small text-muted">Default qty used when adding this group to an estimate (default 1).</span>
-                        <button type="submit" form="saveGroupQtyForm" class="btn btn-primary btn-sm"><i class="fas fa-save me-1"></i>Save quantities</button>
+                        <span class="small text-muted">Order and default qty apply when this sub-group is added to an estimate (scope of work or pick group).</span>
+                        <button type="submit" form="saveGroupQtyForm" class="btn btn-primary btn-sm"><i class="fas fa-save me-1"></i>Save</button>
                     </div>
                     {% endif %}
                 {% else %}
@@ -377,8 +385,14 @@
                                 </div>
                             </div>
                             <p class="small fw-semibold mb-2">Added to this base group <span class="text-muted fw-normal" id="simpleSubGroupCount"></span></p>
+                            <div class="d-none row g-2 small text-muted fw-semibold px-2 mb-1" id="simpleSubGroupListHeader">
+                                <div class="col">Sub-group</div>
+                                <div class="col-auto" style="width:4.5rem;">Order</div>
+                                <div class="col-auto" style="width:5.5rem;"></div>
+                            </div>
                             <ul class="list-group base-sub-group-added-list mb-0" id="simpleSubGroupList"></ul>
                             <p class="small text-muted mt-2 mb-0" id="simpleSubGroupEmpty">None added yet — optional; you can add sub-groups later.</p>
+                            <p class="small text-muted mt-1 mb-0 d-none" id="simpleSubGroupOrderHint">Order controls sub-group sequence when loading scope of work on an estimate.</p>
                             <div id="simpleSubGroupHidden"></div>
                         </div>
                         {{ sub_group_picker_data|json_script:"sub-group-picker-data" }}
@@ -427,6 +441,9 @@
     var emptyEl = document.getElementById('simpleSubGroupEmpty');
     var countEl = document.getElementById('simpleSubGroupCount');
     var addBtn = document.getElementById('simpleSubGroupAddBtn');
+    var listHeaderEl = document.getElementById('simpleSubGroupListHeader');
+    var orderHintEl = document.getElementById('simpleSubGroupOrderHint');
+    var baseForm = document.getElementById('baseGroupForm');
     if (!dataEl || !selectEl || !listEl || !hiddenEl || !addBtn) return;
 
     var payload = { all: [], selected: [] };
@@ -439,8 +456,29 @@
     var allItems = (payload.all || []).slice().sort(function (a, b) {
         return a.name.localeCompare(b.name);
     });
-    var selectedOrder = (payload.selected || []).map(String);
-    var selectedIds = new Set(selectedOrder);
+
+    function normalizeSelectedEntry(entry) {
+        if (entry && typeof entry === 'object' && entry.id != null) {
+            return { id: String(entry.id), order: Number(entry.order) || 1 };
+        }
+        return { id: String(entry), order: 1 };
+    }
+
+    var selectedEntries = (payload.selected || []).map(normalizeSelectedEntry);
+
+    function nextOrderValue() {
+        var max = 0;
+        selectedEntries.forEach(function (e) {
+            if (e.order > max) max = e.order;
+        });
+        return max + 1;
+    }
+
+    function selectedIdsSet() {
+        var s = new Set();
+        selectedEntries.forEach(function (e) { s.add(e.id); });
+        return s;
+    }
     var byId = {};
     allItems.forEach(function (item) {
         byId[String(item.id)] = item;
@@ -453,6 +491,7 @@
     }
 
     function renderDropdown() {
+        var selectedIds = selectedIdsSet();
         var current = selectEl.value;
         selectEl.innerHTML = '';
         var blank = document.createElement('option');
@@ -475,19 +514,39 @@
         listEl.innerHTML = '';
         hiddenEl.innerHTML = '';
 
-        selectedOrder.forEach(function (id) {
+        var sorted = selectedEntries.slice().sort(function (a, b) {
+            if (a.order !== b.order) return a.order - b.order;
+            return a.id.localeCompare(b.id);
+        });
+
+        sorted.forEach(function (entry) {
+            var id = entry.id;
             var item = byId[id];
             if (!item) return;
 
             var li = document.createElement('li');
-            li.className = 'list-group-item d-flex justify-content-between align-items-center gap-2';
+            li.className = 'list-group-item';
+            li.setAttribute('data-sub-group-id', id);
             li.innerHTML =
-                '<div><span class="fw-medium">' + item.name + '</span>' +
-                '<div class="small text-muted">' + itemSubtitle(item) + '</div></div>' +
-                '<button type="button" class="btn btn-sm btn-outline-danger flex-shrink-0">Remove</button>';
+                '<div class="row g-2 align-items-center">' +
+                '<div class="col">' +
+                '<span class="fw-medium">' + item.name + '</span>' +
+                '<div class="small text-muted">' + itemSubtitle(item) + '</div>' +
+                '</div>' +
+                '<div class="col-auto" style="width:4.5rem;">' +
+                '<input type="number" class="form-control form-control-sm sub-group-order-input" min="1" step="1" value="' + entry.order + '" title="Display order on estimates (scope of work)">' +
+                '</div>' +
+                '<div class="col-auto">' +
+                '<button type="button" class="btn btn-sm btn-outline-danger">Remove</button>' +
+                '</div></div>';
+            var orderInput = li.querySelector('.sub-group-order-input');
+            orderInput.addEventListener('change', function () {
+                var v = parseInt(orderInput.value, 10);
+                entry.order = (v > 0) ? v : 1;
+                orderInput.value = entry.order;
+            });
             li.querySelector('button').addEventListener('click', function () {
-                selectedIds.delete(id);
-                selectedOrder = selectedOrder.filter(function (x) { return x !== id; });
+                selectedEntries = selectedEntries.filter(function (x) { return x.id !== id; });
                 renderAll();
             });
             listEl.appendChild(li);
@@ -497,12 +556,45 @@
             hidden.name = 'sub_group_ids';
             hidden.value = id;
             hiddenEl.appendChild(hidden);
+
+            var orderHidden = document.createElement('input');
+            orderHidden.type = 'hidden';
+            orderHidden.name = 'sub_group_order_' + id;
+            orderHidden.value = String(entry.order);
+            orderHidden.className = 'sub-group-order-hidden';
+            hiddenEl.appendChild(orderHidden);
         });
 
-        var n = selectedIds.size;
+        var n = selectedEntries.length;
         if (emptyEl) emptyEl.classList.toggle('d-none', n > 0);
         if (countEl) countEl.textContent = n ? '(' + n + ')' : '';
+        if (listHeaderEl) listHeaderEl.classList.toggle('d-none', n === 0);
+        if (orderHintEl) orderHintEl.classList.toggle('d-none', n === 0);
         listEl.classList.toggle('d-none', n === 0);
+    }
+
+    function syncHiddenOrderFields() {
+        selectedEntries.forEach(function (entry) {
+            var h = hiddenEl.querySelector('input.sub-group-order-hidden[name="sub_group_order_' + entry.id + '"]');
+            if (h) h.value = String(entry.order);
+        });
+        var sorted = selectedEntries.slice().sort(function (a, b) {
+            if (a.order !== b.order) return a.order - b.order;
+            return a.id.localeCompare(b.id);
+        });
+        hiddenEl.innerHTML = '';
+        sorted.forEach(function (entry) {
+            var hidden = document.createElement('input');
+            hidden.type = 'hidden';
+            hidden.name = 'sub_group_ids';
+            hidden.value = entry.id;
+            hiddenEl.appendChild(hidden);
+            var orderHidden = document.createElement('input');
+            orderHidden.type = 'hidden';
+            orderHidden.name = 'sub_group_order_' + entry.id;
+            orderHidden.value = String(entry.order);
+            hiddenEl.appendChild(orderHidden);
+        });
     }
 
     function renderAll() {
@@ -514,13 +606,27 @@
         var id = selectEl.value;
         if (!id) return;
         var sid = String(id);
-        if (!selectedIds.has(sid)) {
-            selectedIds.add(sid);
-            selectedOrder.push(sid);
+        var ids = selectedIdsSet();
+        if (!ids.has(sid)) {
+            selectedEntries.push({ id: sid, order: nextOrderValue() });
         }
         selectEl.value = '';
         renderAll();
     });
+
+    if (baseForm) {
+        baseForm.addEventListener('submit', function () {
+            listEl.querySelectorAll('li[data-sub-group-id]').forEach(function (li) {
+                var id = li.getAttribute('data-sub-group-id');
+                var inp = li.querySelector('.sub-group-order-input');
+                var entry = selectedEntries.find(function (e) { return e.id === id; });
+                if (!entry || !inp) return;
+                var v = parseInt(inp.value, 10);
+                entry.order = (v > 0) ? v : 1;
+            });
+            syncHiddenOrderFields();
+        });
+    }
 
     renderAll();
 })();
