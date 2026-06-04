@@ -529,15 +529,22 @@
                 {% if estimate_email_hint %}
                 <div class="alert alert-warning py-2 small mb-3">{{ estimate_email_hint }}</div>
                 {% endif %}
+                {% if estimate_email_missing_customer_email %}
+                <div class="alert alert-info py-2 small mb-3">
+                    This customer has no email on file. Enter a recipient below
+                    {% if customer_edit_url %}or <a href="{{ customer_edit_url }}">add email on the customer record</a>{% endif %}.
+                </div>
+                {% endif %}
                 {% csrf_token %}
                 <div class="row g-3">
                     <div class="col-12">
                         <label class="form-label small fw-semibold" for="estimate-email-subject">Subject</label>
-                        <input type="text" class="form-control form-control-sm" id="estimate-email-subject" value="{{ estimate_email_default_subject }}">
+                        <input type="text" class="form-control form-control-sm" id="estimate-email-subject" value="{{ estimate_email_default_subject }}" required>
                     </div>
                     <div class="col-12">
-                        <label class="form-label small fw-semibold" for="estimate-email-to">To</label>
-                        <input type="text" class="form-control form-control-sm" id="estimate-email-to" value="{{ estimate_email_default_to }}" placeholder="email@example.com (comma-separated for multiple)">
+                        <label class="form-label small fw-semibold" for="estimate-email-to">To <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control form-control-sm{% if estimate_email_missing_customer_email %} border-warning{% endif %}" id="estimate-email-to" name="estimate-email-to" value="{{ estimate_email_default_to }}" placeholder="customer@example.com" required autocomplete="email" inputmode="email">
+                        <div class="form-text">Comma-separated for multiple recipients.</div>
                     </div>
                     <div class="col-12">
                         <label class="form-label small fw-semibold" for="estimate-email-cc">Cc</label>
@@ -627,8 +634,17 @@
         var to = document.getElementById('estimate-email-to')?.value?.trim() || '';
         var cc = document.getElementById('estimate-email-cc')?.value?.trim() || '';
         var body = document.getElementById('estimate-email-body')?.value?.trim() || '';
-        if (!subject || !to || !body) {
-            toastr.error('Please fill in subject, To, and message.');
+        if (!subject) {
+            toastr.error('Please enter a subject.');
+            return;
+        }
+        if (!to) {
+            toastr.error('Please enter at least one recipient in To (the customer has no email saved).');
+            document.getElementById('estimate-email-to')?.focus();
+            return;
+        }
+        if (!body) {
+            toastr.error('Please enter a message.');
             return;
         }
         btn.disabled = true;

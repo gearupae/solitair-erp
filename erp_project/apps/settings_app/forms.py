@@ -216,6 +216,18 @@ class CompanySettingsForm(forms.ModelForm):
             else:
                 field.widget.attrs['class'] = 'form-control'
 
+    def clean_smtp_host(self):
+        host = (self.cleaned_data.get('smtp_host') or '').strip()
+        if not host:
+            return ''
+        lowered = host.lower()
+        if '.' not in host or lowered in ('smtp', 'mail', 'imap', 'pop'):
+            raise forms.ValidationError(
+                'Enter the full SMTP server hostname (e.g. smtp.office365.com or '
+                'smtp.gmail.com), not a single word like "smtp".'
+            )
+        return host
+
     def clean_smtp_password(self):
         val = self.cleaned_data.get('smtp_password')
         if val:

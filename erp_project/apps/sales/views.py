@@ -965,16 +965,19 @@ class EstimateDetailView(PermissionRequiredMixin, DetailView):
             f'Estimate — {self.object.estimate_number}'
         )
         cust = self.object.customer
-        who = cust.company.strip() if (cust.company or '').strip() else cust.name
+        who = 'Customer'
+        to_addr = ''
+        if cust:
+            who = (cust.company or '').strip() or cust.name
+            if (cust.email or '').strip():
+                to_addr = cust.email.strip()
         context['estimate_email_default_body'] = (
             f'Dear {who},\n\n'
             f'Please find attached our estimate document ({self.object.estimate_number}) for your reference.\n\n'
             f'Kind regards,\n{co.company_name}'
         )
-        to_addr = ''
-        if (cust.email or '').strip():
-            to_addr = cust.email.strip()
         context['estimate_email_default_to'] = to_addr
+        context['estimate_email_missing_customer_email'] = bool(cust) and not to_addr
         context['can_create_proforma'] = self.object.status == 'quotation_won'
         context['proforma_invoices'] = list(
             self.object.proforma_invoices.select_related('created_by').all()[:20]
@@ -1803,6 +1806,11 @@ def estimate_send_email(request, pk):
         return JsonResponse({'ok': False, 'error': str(exc)}, status=400)
 
     company = CompanySettings.get_settings()
+    from apps.purchase.email_outbound import smtp_host_configuration_error
+
+    smtp_err = smtp_host_configuration_error(company)
+    if smtp_err:
+        return JsonResponse({'ok': False, 'error': smtp_err}, status=400)
     if not outgoing_mail_configured(company):
         return JsonResponse(
             {'ok': False, 'error': outgoing_mail_hint(company) or 'Email is not configured.'},
@@ -1838,7 +1846,11 @@ def estimate_send_email(request, pk):
     try:
         msg.send(fail_silently=False)
     except Exception as exc:
-        return JsonResponse({'ok': False, 'error': f'Could not send email: {exc}'}, status=502)
+        from apps.purchase.email_outbound import smtp_host_configuration_error
+
+        friendly = smtp_host_configuration_error(company, exc)
+        detail = friendly or f'Could not send email: {exc}'
+        return JsonResponse({'ok': False, 'error': detail}, status=502)
 
     if email_sent_via_console(company):
         return JsonResponse({
