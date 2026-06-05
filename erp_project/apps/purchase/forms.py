@@ -223,7 +223,7 @@ class PurchaseOrderItemForm(forms.ModelForm):
         model = PurchaseOrderItem
         fields = ['inventory_item', 'quantity', 'unit_price', 'tax_code', 'is_vat_inclusive']
         widgets = {
-            'quantity': forms.NumberInput(attrs={'step': '0.01', 'min': '0'}),
+            'quantity': forms.NumberInput(attrs={'step': '1', 'min': '0'}),
             'unit_price': forms.NumberInput(attrs={'step': '0.01', 'min': '0'}),
         }
     
@@ -251,7 +251,7 @@ class PurchaseOrderItemForm(forms.ModelForm):
         self.fields['is_vat_inclusive'].initial = False
 
         self.fields['quantity'].widget.attrs.update(
-            {'class': 'form-control form-control-sm item-qty', 'step': '0.01', 'min': '0'}
+            {'class': 'form-control form-control-sm item-qty', 'step': '1', 'min': '0'}
         )
         self.fields['unit_price'].widget.attrs.update(
             {'class': 'form-control form-control-sm item-price', 'step': '0.01', 'min': '0'}
@@ -264,6 +264,12 @@ class PurchaseOrderItemForm(forms.ModelForm):
             if default_tax_code:
                 self.fields['tax_code'].initial = default_tax_code
     
+    def clean_quantity(self):
+        qty = self.cleaned_data.get('quantity')
+        if qty is None:
+            return qty
+        return qty.quantize(Decimal('1'))
+
     def clean(self):
         cleaned = super().clean()
         if cleaned.get('DELETE'):
