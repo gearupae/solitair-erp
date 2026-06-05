@@ -7454,12 +7454,22 @@ def account_mapping_list(request):
     
     # Get all active accounts for the dropdown
     accounts = Account.objects.filter(is_active=True).order_by('code')
+
+    missing_core = AccountMapping.validate_core_mappings()
+    missing_core_labels = [
+        label
+        for code, label in AccountMapping.CORE_REQUIRED_MAPPINGS
+        if code in missing_core
+    ]
     
     return render(request, 'finance/account_mapping_list.html', {
         'title': 'Account Mapping',
         'mappings_by_module': mappings_by_module,
         'accounts': accounts,
         'can_edit': can_edit,
+        'missing_core_mappings': missing_core,
+        'missing_core_labels': missing_core_labels,
+        'core_mappings_complete': not missing_core,
     })
 
 

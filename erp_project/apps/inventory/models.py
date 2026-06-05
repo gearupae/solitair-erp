@@ -818,12 +818,18 @@ class StockMovement(BaseModel):
         if self.total_cost <= 0:
             raise ValidationError("Movement cost must be greater than zero for accounting.")
         
-        inventory_account = AccountMapping.get_account_or_default('inventory_asset', '1500')
-        cogs_account = AccountMapping.get_account_or_default('inventory_cogs', '5100')
-        grn_clearing = AccountMapping.get_account_or_default('inventory_grn_clearing', '2010')
-
-        if not inventory_account:
-            raise ValidationError("Inventory Asset account not configured in Account Mapping.")
+        inventory_account = AccountMapping.require_account(
+            'inventory_asset',
+            not_configured_message='Inventory Asset account not configured in Account Mapping.',
+        )
+        cogs_account = AccountMapping.require_account(
+            'inventory_cogs',
+            not_configured_message='COGS account not configured in Account Mapping.',
+        )
+        grn_clearing = AccountMapping.require_account(
+            'inventory_grn_clearing',
+            not_configured_message=AccountMapping.GRN_CLEARING_NOT_CONFIGURED,
+        )
         
         # Create journal entry
         journal = JournalEntry.objects.create(
@@ -835,9 +841,7 @@ class StockMovement(BaseModel):
         )
         
         if self.movement_type == 'in':
-            # Stock In: Dr Inventory Asset, Cr GRN Clearing
-            if not grn_clearing:
-                raise ValidationError("GRN Clearing account not configured.")
+            # Stock In (GRN): Dr Inventory Asset, Cr GRN Clearing
             JournalEntryLine.objects.create(
                 journal_entry=journal,
                 account=inventory_account,
@@ -855,8 +859,6 @@ class StockMovement(BaseModel):
         
         elif self.movement_type == 'out':
             # Stock Out: Dr COGS, Cr Inventory Asset
-            if not cogs_account:
-                raise ValidationError("COGS account not configured.")
             JournalEntryLine.objects.create(
                 journal_entry=journal,
                 account=cogs_account,

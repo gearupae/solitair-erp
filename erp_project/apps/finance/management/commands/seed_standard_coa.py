@@ -23,6 +23,7 @@ CHART_OF_ACCOUNTS = [
     ('1400', 'Fixed Assets', AccountType.ASSET, AccountCategory.FIXED_ASSETS_OTHER, {}),
     ('1490', 'Accumulated Depreciation', AccountType.ASSET, AccountCategory.ACCUMULATED_DEPRECIATION, {'is_contra_account': True}),
     # LIABILITIES
+    ('2010', 'GRN Clearing', AccountType.LIABILITY, AccountCategory.ACCRUED_LIABILITIES, {}),
     ('2100', 'Accounts Payable', AccountType.LIABILITY, AccountCategory.TRADE_PAYABLES, {}),
     ('2200', 'VAT Payable', AccountType.LIABILITY, AccountCategory.TAX_PAYABLES, {}),
     ('2300', 'Accrued Expenses', AccountType.LIABILITY, AccountCategory.ACCRUED_LIABILITIES, {}),
@@ -51,6 +52,7 @@ CHART_OF_ACCOUNTS = [
 ACCOUNT_MAPPINGS = [
     ('inventory_asset', '1200', 'inventory'),
     ('inventory_cogs', '5100', 'inventory'),
+    ('inventory_grn_clearing', '2010', 'inventory'),
     ('sales_invoice_revenue', '4100', 'sales'),
     ('sales_invoice_receivable', '1100', 'sales'),
     ('customer_receipt_ar_clear', '1100', 'sales'),
