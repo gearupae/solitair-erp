@@ -395,6 +395,17 @@ def _apply_base_group_sub_groups(base_group, sub_ids, post=None):
         )
 
 
+def _resolve_subgroup_expense_type(raw):
+    """Return active ItemSubGroupExpenseType from POST value, or None to clear."""
+    from apps.settings_app.models import ItemSubGroupExpenseType
+
+    if raw is None or str(raw).strip() == '':
+        return None
+    if not str(raw).isdigit():
+        return None
+    return ItemSubGroupExpenseType.objects.filter(pk=int(raw), is_active=True).first()
+
+
 def item_group_manage(request):
     """Manage item sub-groups and base groups: members, default estimate qty, rename, PDF settings."""
     can_edit = request.user.is_superuser or PermissionChecker.has_permission(
@@ -504,7 +515,8 @@ def item_group_manage(request):
             if ItemGroup.objects.filter(name__iexact=name).exists():
                 messages.error(request, 'A group with that name already exists.')
                 return _redirect(tab='sub')
-            g = ItemGroup.objects.create(name=name)
+            expense_type = _resolve_subgroup_expense_type(request.POST.get('new_group_expense_type'))
+            g = ItemGroup.objects.create(name=name, expense_type=expense_type)
             messages.success(request, f'Group "{g.name}" created.')
             return _redirect(group=g, tab='sub')
 
@@ -524,6 +536,16 @@ def item_group_manage(request):
             group.name = new_name
             group.save(update_fields=['name'])
             messages.success(request, 'Group renamed.')
+            return _redirect(group=group, tab='sub')
+
+        if action == 'set_expense_type':
+            expense_type = _resolve_subgroup_expense_type(request.POST.get('expense_type_id'))
+            group.expense_type = expense_type
+            group.save(update_fields=['expense_type'])
+            if expense_type:
+                messages.success(request, f'Expense type set to “{expense_type.name}”.')
+            else:
+                messages.success(request, 'Expense type cleared.')
             return _redirect(group=group, tab='sub')
 
         if action == 'set_pdf_hide':
@@ -642,9 +664,12 @@ def item_group_manage(request):
         messages.error(request, 'Invalid action.')
         return _redirect(group=group, tab='sub')
 
+    from apps.settings_app.models import ItemSubGroupExpenseType
+
+    expense_types = list(ItemSubGroupExpenseType.active_choices())
     groups = (
         ItemGroup.objects.annotate(member_count=Count('memberships'))
-        .select_related('base_group')
+        .select_related('base_group', 'expense_type')
         .order_by('name')
     )
     selected = None
@@ -733,6 +758,7 @@ def item_group_manage(request):
             'base_sub_groups': base_sub_groups,
             'all_sub_groups': all_sub_groups,
             'sub_group_picker_data': sub_group_picker_data,
+            'expense_types': expense_types,
             'can_edit': can_edit,
         },
     )

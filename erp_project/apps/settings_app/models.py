@@ -300,6 +300,29 @@ class CompanySettings(models.Model):
         return settings
 
 
+class ItemSubGroupExpenseType(models.Model):
+    """
+    Configurable expense categories for inventory sub-groups (e.g. Labour, Other).
+    Managed in Settings; optional on each sub-group, not on base groups.
+    """
+
+    name = models.CharField(max_length=120, unique=True)
+    sort_order = models.PositiveIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ['sort_order', 'name']
+        verbose_name = 'Sub-group expense type'
+        verbose_name_plural = 'Sub-group expense types'
+
+    def __str__(self):
+        return self.name
+
+    @classmethod
+    def active_choices(cls):
+        return cls.objects.filter(is_active=True).order_by('sort_order', 'name')
+
+
 class EstimateTextTemplate(models.Model):
     """Reusable client note or terms & conditions templates for sales estimates."""
 

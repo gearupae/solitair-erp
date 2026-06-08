@@ -24,6 +24,7 @@ from .models import (
     ApprovalConfigurationLevel,
     Company,
     EstimateTextTemplate,
+    ItemSubGroupExpenseType,
 )
 from .forms import UserForm, RoleForm, CompanySettingsForm, CompanyForm
 from apps.core.mixins import PermissionRequiredMixin
@@ -628,4 +629,66 @@ class CrmKanbanSettingsView(PermissionRequiredMixin, TemplateView):
         else:
             messages.error(request, 'Invalid request.')
         return redirect('settings:crm_kanban')
+
+
+class SubGroupExpenseTypeSettingsView(PermissionRequiredMixin, TemplateView):
+    """Configure expense type options used on inventory sub-groups."""
+
+    template_name = 'settings/sub_group_expense_types.html'
+    module_name = 'settings'
+    permission_type = 'edit'
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx['title'] = 'Expense types'
+        ctx['expense_types'] = ItemSubGroupExpenseType.objects.all().order_by('sort_order', 'name')
+        return ctx
+
+    def post(self, request, *args, **kwargs):
+        action = request.POST.get('action')
+
+        if action == 'add':
+            name = (request.POST.get('name') or '').strip()[:120]
+            if not name:
+                messages.error(request, 'Expense type name is required.')
+                return redirect('settings:sub_group_expense_types')
+            if ItemSubGroupExpenseType.objects.filter(name__iexact=name).exists():
+                messages.error(request, 'An expense type with that name already exists.')
+                return redirect('settings:sub_group_expense_types')
+            sort_order = int(request.POST.get('sort_order') or 0)
+            if not sort_order:
+                sort_order = (
+                    ItemSubGroupExpenseType.objects.order_by('-sort_order')
+                    .values_list('sort_order', flat=True)
+                    .first()
+                    or 0
+                ) + 1
+            ItemSubGroupExpenseType.objects.create(name=name, sort_order=sort_order)
+            messages.success(request, f'Expense type “{name}” added.')
+
+        elif action == 'save' and request.POST.get('type_id'):
+            row = get_object_or_404(ItemSubGroupExpenseType, pk=int(request.POST['type_id']))
+            name = (request.POST.get('name') or '').strip()[:120]
+            if not name:
+                messages.error(request, 'Expense type name is required.')
+                return redirect('settings:sub_group_expense_types')
+            if ItemSubGroupExpenseType.objects.filter(name__iexact=name).exclude(pk=row.pk).exists():
+                messages.error(request, 'Another expense type already uses that name.')
+                return redirect('settings:sub_group_expense_types')
+            row.name = name
+            row.sort_order = int(request.POST.get('sort_order') or 0)
+            row.is_active = request.POST.get('is_active') == 'on'
+            row.save()
+            messages.success(request, f'Expense type “{row.name}” saved.')
+
+        elif action == 'delete' and request.POST.get('type_id'):
+            row = get_object_or_404(ItemSubGroupExpenseType, pk=int(request.POST['type_id']))
+            name = row.name
+            row.delete()
+            messages.success(request, f'Expense type “{name}” deleted.')
+
+        else:
+            messages.error(request, 'Invalid request.')
+
+        return redirect('settings:sub_group_expense_types')
 

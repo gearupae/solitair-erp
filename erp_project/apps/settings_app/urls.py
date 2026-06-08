@@ -31,6 +31,11 @@ urlpatterns = [
     # Approval Configuration
     path('approval-configuration/', views.ApprovalConfigurationView.as_view(), name='approval_configuration'),
     path('crm-kanban/', views.CrmKanbanSettingsView.as_view(), name='crm_kanban'),
+    path(
+        'sub-group-expense-types/',
+        views.SubGroupExpenseTypeSettingsView.as_view(),
+        name='sub_group_expense_types',
+    ),
 ]
 
 

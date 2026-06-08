@@ -1,0 +1,78 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <div>
+        <h4 class="mb-1 fw-bold">Expense types</h4>
+        <p class="text-muted mb-0">
+            Define expense categories for <strong>sub-groups</strong> (e.g. Labour expenses, Other expenses).
+            Base groups do not use these — assign a type when creating or editing a sub-group under Inventory → Item groups.
+        </p>
+    </div>
+    <a href="{% url 'inventory:item_group_manage' %}?tab=sub" class="btn btn-outline-primary btn-sm">Item groups</a>
+</div>
+
+<div class="row g-3">
+    {% for t in expense_types %}
+    <div class="col-12">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <form method="post" class="row g-3 align-items-end">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="save">
+                    <input type="hidden" name="type_id" value="{{ t.pk }}">
+                    <div class="col-md-4">
+                        <label class="form-label small text-muted">Name</label>
+                        <input type="text" name="name" class="form-control" value="{{ t.name }}" required maxlength="120">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small text-muted">Order</label>
+                        <input type="number" name="sort_order" class="form-control" value="{{ t.sort_order }}" min="0" step="1">
+                    </div>
+                    <div class="col-md-2 d-flex align-items-center pt-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="is_active" id="act{{ t.pk }}" {% if t.is_active %}checked{% endif %}>
+                            <label class="form-check-label" for="act{{ t.pk }}">Active</label>
+                        </div>
+                    </div>
+                    <div class="col-md-4 text-md-end">
+                        <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-save me-1"></i>Save</button>
+                    </div>
+                </form>
+                <form method="post" class="mt-2 text-end" onsubmit="return confirm('Delete “{{ t.name }}”? Sub-groups using this type will be cleared.');">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="delete">
+                    <input type="hidden" name="type_id" value="{{ t.pk }}">
+                    <button type="submit" class="btn btn-link btn-sm text-danger p-0">Delete</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    {% empty %}
+    <div class="col-12"><p class="text-muted">No expense types yet — add one below.</p></div>
+    {% endfor %}
+</div>
+
+<div class="card border-0 shadow-sm mt-3">
+    <div class="card-header bg-transparent py-3">
+        <h6 class="mb-0 fw-semibold">Add expense type</h6>
+    </div>
+    <div class="card-body">
+        <form method="post" class="row g-3 align-items-end">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="add">
+            <div class="col-md-5">
+                <label class="form-label small">Name</label>
+                <input type="text" name="name" class="form-control" placeholder="e.g. Labour expenses" required maxlength="120">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small">Order</label>
+                <input type="number" name="sort_order" class="form-control" value="0" min="0" step="1">
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-success"><i class="fas fa-plus me-1"></i>Add</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

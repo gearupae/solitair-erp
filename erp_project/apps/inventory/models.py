@@ -122,6 +122,14 @@ class ItemGroup(models.Model):
             'price (no individual line items) for estimate lines using this group name.'
         ),
     )
+    expense_type = models.ForeignKey(
+        'settings_app.ItemSubGroupExpenseType',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='sub_groups',
+        help_text='Optional expense category (configured in Settings).',
+    )
 
     class Meta:
         ordering = ['name']
