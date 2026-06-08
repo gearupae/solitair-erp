@@ -608,9 +608,12 @@ class ProjectDetailView(PermissionRequiredMixin, DetailView):
     permission_type = 'view'
 
     def _base_queryset(self):
+        from apps.sales.models import Estimate
+
         item_line_qs = ProjectItemLine.objects.select_related('inventory_item').order_by(
             'sort_order', 'id'
         )
+        estimate_qs = Estimate.objects.filter(is_active=True).order_by('-date', '-pk')
         return Project.objects.filter(is_active=True).select_related(
             'customer', 'manager', 'created_by'
         ).prefetch_related(
@@ -633,6 +636,7 @@ class ProjectDetailView(PermissionRequiredMixin, DetailView):
             'gatepasses',
             'public_uploads',
             Prefetch('item_lines', queryset=item_line_qs),
+            Prefetch('estimates', queryset=estimate_qs),
         )
 
     def get_queryset(self):
@@ -656,8 +660,25 @@ class ProjectDetailView(PermissionRequiredMixin, DetailView):
         return project
 
     def get_context_data(self, **kwargs):
+        from apps.projects.member_roles import get_project_source_estimate
+
         context = super().get_context_data(**kwargs)
         context['title'] = f'Project: {self.object.name}'
+        source_estimate = get_project_source_estimate(self.object)
+        context['source_estimate'] = source_estimate
+        if source_estimate:
+            name = self.object.name or ''
+            suffix = ''
+            for prefix in (
+                f'{source_estimate.display_estimate_number} — ',
+                f'{source_estimate.estimate_number} — ',
+            ):
+                if name.startswith(prefix):
+                    suffix = name[len(prefix):]
+                    break
+            if not suffix and ' — ' in name:
+                suffix = name.split(' — ', 1)[1]
+            context['project_title_suffix'] = suffix
         context['tasks'] = self.object.tasks.filter(is_active=True).select_related(
             'assigned_to', 'assigned_to__employee_profile'
         )
@@ -825,6 +846,18 @@ class ProjectDetailView(PermissionRequiredMixin, DetailView):
         context['labour_total_cost'] = labour_cost
         context['show_labour_card'] = (
             self.object.technicians.exists() or labour_hours > 0 or labour_cost > 0
+        )
+        from .project_expense_comparison import build_project_expense_comparison_context
+
+        context.update(
+            build_project_expense_comparison_context(
+                project=self.object,
+                source_estimate=source_estimate,
+                manual_expenses_total=manual_expenses_total,
+                bills_total=bills_total,
+                inventory_spend=inventory_spend,
+                labour_cost=labour_cost,
+            )
         )
         from .member_roles import build_project_team_display
 

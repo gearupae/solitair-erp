@@ -157,77 +157,63 @@
         {% if selected_group %}
         <div class="card mb-3">
             <div class="card-header py-2 d-flex justify-content-between align-items-center flex-wrap gap-2">
-                <div>
-                    <h6 class="mb-0 fw-semibold">{{ selected_group.name }}</h6>
-                    {% if selected_group.expense_type %}
-                    <small class="text-muted">{{ selected_group.expense_type.name }}</small>
-                    {% endif %}
-                </div>
+                <h6 class="mb-0 fw-semibold">Sub-group settings</h6>
                 {% if can_edit %}
-                <form method="post" class="d-inline" onsubmit="return confirm('Delete this group and all its item links?');">
-                    {% csrf_token %}
-                    <input type="hidden" name="tab" value="sub">
-                    <input type="hidden" name="action" value="delete_group">
-                    <input type="hidden" name="group_id" value="{{ selected_group.pk }}">
-                    <button type="submit" class="btn btn-outline-danger btn-sm">Delete group</button>
-                </form>
+                <div class="d-flex flex-wrap gap-2">
+                    <button type="submit" form="subGroupSettingsForm" class="btn btn-dark btn-sm">
+                        <i class="fas fa-save me-1"></i>Save
+                    </button>
+                    <form method="post" class="d-inline m-0" onsubmit="return confirm('Delete this group and all its item links?');">
+                        {% csrf_token %}
+                        <input type="hidden" name="tab" value="sub">
+                        <input type="hidden" name="action" value="delete_group">
+                        <input type="hidden" name="group_id" value="{{ selected_group.pk }}">
+                        <button type="submit" class="btn btn-outline-danger btn-sm">Delete group</button>
+                    </form>
+                </div>
                 {% endif %}
             </div>
             <div class="card-body">
                 {% if can_edit %}
-                <form method="post" class="row g-2 align-items-end mb-3">
+                <form method="post" id="subGroupSettingsForm">
                     {% csrf_token %}
                     <input type="hidden" name="tab" value="sub">
-                    <input type="hidden" name="action" value="rename">
+                    <input type="hidden" name="action" value="save_subgroup">
                     <input type="hidden" name="group_id" value="{{ selected_group.pk }}">
-                    <div class="col-md-8">
-                        <label class="form-label small mb-1">Rename group</label>
+
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold mb-1">Group name</label>
                         <input type="text" name="rename_new_name" class="form-control form-control-sm" value="{{ selected_group.name }}" maxlength="200" required>
                     </div>
-                    <div class="col-md-4">
-                        <button type="submit" class="btn btn-outline-secondary btn-sm w-100">Rename</button>
-                    </div>
-                </form>
 
-                {% if expense_types %}
-                <form method="post" class="border rounded p-3 mb-3 bg-light">
-                    {% csrf_token %}
-                    <input type="hidden" name="tab" value="sub">
-                    <input type="hidden" name="action" value="set_expense_type">
-                    <input type="hidden" name="group_id" value="{{ selected_group.pk }}">
-                    <label class="form-label small fw-semibold mb-1">Expense type</label>
-                    <p class="small text-muted mb-2">Optional category for this sub-group (e.g. labour, materials). Configure options in Settings → Expense types.</p>
-                    <div class="row g-2 align-items-end">
-                        <div class="col-md-8">
-                            <select name="expense_type_id" class="form-select form-select-sm">
-                                <option value="">— None —</option>
-                                {% for et in expense_types %}
-                                <option value="{{ et.pk }}" {% if selected_group.expense_type_id == et.pk %}selected{% endif %}>{{ et.name }}</option>
-                                {% endfor %}
-                            </select>
-                        </div>
-                        <div class="col-md-4">
-                            <button type="submit" class="btn btn-outline-secondary btn-sm w-100">Save type</button>
+                    {% if expense_types %}
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold mb-1">Expense type</label>
+                        <p class="small text-muted mb-2">Optional (e.g. labour, materials). Configure in Settings → Expense types.</p>
+                        <select name="expense_type_id" class="form-select form-select-sm">
+                            <option value="">— None —</option>
+                            {% for et in expense_types %}
+                            <option value="{{ et.pk }}" {% if selected_group.expense_type_id == et.pk %}selected{% endif %}>{{ et.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    {% endif %}
+
+                    <div class="mb-0">
+                        <label class="form-label small fw-semibold mb-1">Quotation PDF</label>
+                        <p class="small text-muted mb-2">When this group name is used on an estimate.</p>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="hide_items_on_pdf" id="hideItemsOnPdfCheck" value="on" {% if selected_group.hide_items_on_pdf %}checked{% endif %}>
+                            <label class="form-check-label small" for="hideItemsOnPdfCheck">Hide items — show group name and consolidated price only</label>
                         </div>
                     </div>
-                </form>
-                {% endif %}
-
-                <form method="post" class="border rounded p-3 mb-3 bg-light">
-                    {% csrf_token %}
-                    <input type="hidden" name="tab" value="sub">
-                    <input type="hidden" name="action" value="set_pdf_hide">
-                    <input type="hidden" name="group_id" value="{{ selected_group.pk }}">
-                    <label class="form-label small fw-semibold mb-1">Quotation PDF</label>
-                    <p class="small text-muted mb-2">When this group name is used on an estimate.</p>
-                    <div class="form-check mb-2">
-                        <input class="form-check-input" type="checkbox" name="hide_items_on_pdf" id="hideItemsOnPdfCheck" value="on" {% if selected_group.hide_items_on_pdf %}checked{% endif %}>
-                        <label class="form-check-label small" for="hideItemsOnPdfCheck">Hide items — show group name and consolidated price only</label>
-                    </div>
-                    <button type="submit" class="btn btn-outline-primary btn-sm">Save PDF setting</button>
                 </form>
                 {% else %}
-                <p class="small text-muted mb-3">
+                <p class="small mb-2"><strong>Name:</strong> {{ selected_group.name }}</p>
+                {% if selected_group.expense_type %}
+                <p class="small mb-2"><strong>Expense type:</strong> {{ selected_group.expense_type.name }}</p>
+                {% endif %}
+                <p class="small text-muted mb-0">
                     PDF: {% if selected_group.hide_items_on_pdf %}Items hidden on quotation PDF{% else %}Individual items shown on quotation PDF{% endif %}
                 </p>
                 {% endif %}

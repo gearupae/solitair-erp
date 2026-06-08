@@ -213,6 +213,33 @@
     max-width: 12rem;
     overflow: hidden;
 }
+.estimate-expense-cell {
+    border: 1px solid #e2e8f0;
+    border-radius: 0.5rem;
+    background: #f8fafc;
+    padding: 0.75rem 1rem;
+    height: 100%;
+}
+.estimate-expense-name {
+    color: #64748b;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    margin-bottom: 0.3rem;
+    line-height: 1.3;
+}
+.estimate-expense-amount {
+    font-weight: 700;
+    color: #0f172a;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.2;
+}
+.estimate-expenses-total {
+    border-top: 1px solid #e2e8f0;
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+}
 </style>
 {% endblock %}
 
@@ -341,6 +368,16 @@
         </div>
     </div>
     
+    <div id="estimateExpensesCard" class="card mb-4 d-none">
+        <div class="card-header bg-transparent py-3">
+            <h6 class="mb-0 fw-semibold"><i class="fas fa-tags me-2 text-dark"></i>Expenses</h6>
+        </div>
+        <div class="card-body pt-0">
+            <div id="estimateExpensesList" class="row row-cols-1 g-2"></div>
+            <div id="estimateExpensesFooter" class="estimate-expenses-total d-none justify-content-between align-items-center"></div>
+        </div>
+    </div>
+
     <!-- Line Items -->
     <div class="card mb-4">
         <div id="lineItemsCardHeader" class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
@@ -1596,6 +1633,93 @@ function calculateRowTotal(input) {
     }
 }
 
+const groupExpenseMetaByName = {};
+inventoryGroups.forEach(g => {
+    if (!g.expense_type_name) return;
+    groupExpenseMetaByName[normalizeGroupName(g.name).toLowerCase()] = {
+        groupName: g.name,
+        expenseTypeName: g.expense_type_name,
+        expenseTypeOrder: g.expense_type_order || 0,
+    };
+});
+
+function updateExpenseTypeTotals() {
+    const card = document.getElementById('estimateExpensesCard');
+    const list = document.getElementById('estimateExpensesList');
+    const footer = document.getElementById('estimateExpensesFooter');
+    if (!card || !list) return;
+
+    const totalsByType = {};
+    document.querySelectorAll('#itemsBody .item-row').forEach(row => {
+        if (row.style.display === 'none') return;
+        const groupName = getRowGroupName(row);
+        if (!groupName) return;
+        const meta = groupExpenseMetaByName[groupName.toLowerCase()];
+        if (!meta) return;
+
+        const qty = parseFloat(row.querySelector('.item-qty')?.value) || 0;
+        const rate = computeRate(row);
+        const taxSel = row.querySelector('.item-tax-code');
+        const vatRate = getVatRatePercent(taxSel);
+        const net = qty * rate;
+        const gross = net + net * (vatRate / 100);
+        const key = meta.expenseTypeName;
+        if (!totalsByType[key]) {
+            totalsByType[key] = {
+                expenseTypeName: meta.expenseTypeName,
+                expenseTypeOrder: meta.expenseTypeOrder,
+                total: 0,
+            };
+        }
+        totalsByType[key].total += gross;
+    });
+
+    const rows = Object.values(totalsByType).sort((a, b) => {
+        if (a.expenseTypeOrder !== b.expenseTypeOrder) {
+            return a.expenseTypeOrder - b.expenseTypeOrder;
+        }
+        return a.expenseTypeName.localeCompare(b.expenseTypeName);
+    });
+
+    if (!rows.length) {
+        card.classList.add('d-none');
+        list.innerHTML = '';
+        if (footer) {
+            footer.classList.add('d-none');
+            footer.innerHTML = '';
+        }
+        return;
+    }
+
+    const grandTotal = rows.reduce((sum, row) => sum + money2(row.total), 0);
+    const colCount = rows.length === 1 ? 1 : rows.length === 2 ? 2 : 3;
+    card.classList.remove('d-none');
+    list.className = `row row-cols-1 g-2${colCount > 1 ? ` row-cols-md-${colCount}` : ''}`;
+    list.innerHTML = rows.map(row => (
+        `<div class="col">`
+        + `<div class="estimate-expense-cell">`
+        + `<div class="estimate-expense-name">${escapeHtml(row.expenseTypeName)}</div>`
+        + `<div class="estimate-expense-amount">AED ${money2(row.total).toFixed(2)}</div>`
+        + `</div>`
+        + `</div>`
+    )).join('');
+
+    if (footer) {
+        if (rows.length > 1) {
+            footer.classList.remove('d-none');
+            footer.classList.add('d-flex');
+            footer.innerHTML = (
+                `<span class="text-muted text-uppercase small fw-semibold">Total expenses</span>`
+                + `<span class="fw-bold text-dark">AED ${grandTotal.toFixed(2)}</span>`
+            );
+        } else {
+            footer.classList.add('d-none');
+            footer.classList.remove('d-flex');
+            footer.innerHTML = '';
+        }
+    }
+}
+
 function calculateTotals() {
     const rows = [];
     let subtotal = 0;
@@ -1637,6 +1761,7 @@ function calculateTotals() {
     document.getElementById('discountDisplay').textContent = disc.toFixed(2);
     document.getElementById('vatTotal').textContent = vatTotal.toFixed(2);
     document.getElementById('grandTotal').textContent = grand.toFixed(2);
+    updateExpenseTypeTotals();
 }
 
 function bindLineItemsTableEvents() {

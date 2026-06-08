@@ -111,7 +111,7 @@ def _estimate_form_inventory_groups_context():
     from apps.inventory.models import ItemGroup, ItemGroupMembership
 
     groups = []
-    for g in ItemGroup.objects.select_related('base_group').order_by('name'):
+    for g in ItemGroup.objects.select_related('base_group', 'expense_type').order_by('name'):
         memberships = (
             ItemGroupMembership.objects.filter(
                 group=g,
@@ -127,6 +127,9 @@ def _estimate_form_inventory_groups_context():
             'name': g.name,
             'base_group': g.base_group.name if g.base_group_id else '',
             'base_group_sort_order': g.base_group_sort_order,
+            'expense_type_id': g.expense_type_id,
+            'expense_type_name': g.expense_type.name if g.expense_type_id else '',
+            'expense_type_order': g.expense_type.sort_order if g.expense_type_id else 0,
             'items': [
                 {
                     **_inventory_item_estimate_json(m.item),
@@ -982,8 +985,16 @@ class EstimateDetailView(PermissionRequiredMixin, DetailView):
         context['proforma_invoices'] = list(
             self.object.proforma_invoices.select_related('created_by').all()[:20]
         )
-        from .estimate_pdf_groups import build_pdf_item_groups
-        context['item_groups'] = build_pdf_item_groups(self.object)
+        from .estimate_pdf_groups import build_expense_type_totals, build_pdf_item_groups
+        item_groups = build_pdf_item_groups(self.object)
+        expense_type_totals = build_expense_type_totals(item_groups)
+        context['item_groups'] = item_groups
+        context['expense_type_totals'] = expense_type_totals
+        if expense_type_totals:
+            context['expense_type_grand_total'] = sum(
+                (row['line_total'] for row in expense_type_totals),
+                Decimal('0.00'),
+            )
         context['revision_snapshots'] = list(self.object.revision_snapshots.all())
         return context
 

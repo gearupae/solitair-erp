@@ -525,43 +525,56 @@ def item_group_manage(request):
             return _redirect(tab='sub')
         group = get_object_or_404(ItemGroup, pk=int(group_pk))
 
-        if action == 'rename':
+        if action in ('save_subgroup', 'rename', 'set_expense_type', 'set_pdf_hide'):
             new_name = (request.POST.get('rename_new_name') or '').strip()[:200]
             if not new_name:
-                messages.warning(request, 'Enter a new name.')
+                messages.warning(request, 'Enter a group name.')
                 return _redirect(group=group, tab='sub')
             if ItemGroup.objects.filter(name__iexact=new_name).exclude(pk=group.pk).exists():
                 messages.error(request, 'Another group already uses that name.')
                 return _redirect(group=group, tab='sub')
-            group.name = new_name
-            group.save(update_fields=['name'])
-            messages.success(request, 'Group renamed.')
-            return _redirect(group=group, tab='sub')
 
-        if action == 'set_expense_type':
             expense_type = _resolve_subgroup_expense_type(request.POST.get('expense_type_id'))
-            group.expense_type = expense_type
-            group.save(update_fields=['expense_type'])
-            if expense_type:
-                messages.success(request, f'Expense type set to “{expense_type.name}”.')
-            else:
-                messages.success(request, 'Expense type cleared.')
-            return _redirect(group=group, tab='sub')
+            hide_pdf = request.POST.get('hide_items_on_pdf') == 'on'
 
-        if action == 'set_pdf_hide':
-            hide = request.POST.get('hide_items_on_pdf') == 'on'
-            group.hide_items_on_pdf = hide
-            group.save(update_fields=['hide_items_on_pdf'])
-            if hide:
-                messages.success(
-                    request,
-                    f'"{group.name}" will show as one consolidated line on quotation PDFs.',
-                )
-            else:
-                messages.success(
-                    request,
-                    f'"{group.name}" will show individual items on quotation PDFs.',
-                )
+            if action == 'rename':
+                group.name = new_name
+                group.save(update_fields=['name'])
+                messages.success(request, 'Group renamed.')
+                return _redirect(group=group, tab='sub')
+
+            if action == 'set_expense_type':
+                group.expense_type = expense_type
+                group.save(update_fields=['expense_type'])
+                if expense_type:
+                    messages.success(request, f'Expense type set to “{expense_type.name}”.')
+                else:
+                    messages.success(request, 'Expense type cleared.')
+                return _redirect(group=group, tab='sub')
+
+            if action == 'set_pdf_hide':
+                group.hide_items_on_pdf = hide_pdf
+                group.save(update_fields=['hide_items_on_pdf'])
+                if hide_pdf:
+                    messages.success(
+                        request,
+                        f'"{group.name}" will show as one consolidated line on quotation PDFs.',
+                    )
+                else:
+                    messages.success(
+                        request,
+                        f'"{group.name}" will show individual items on quotation PDFs.',
+                    )
+                return _redirect(group=group, tab='sub')
+
+            group.name = new_name
+            group.hide_items_on_pdf = hide_pdf
+            update_fields = ['name', 'hide_items_on_pdf']
+            if 'expense_type_id' in request.POST:
+                group.expense_type = expense_type
+                update_fields.append('expense_type')
+            group.save(update_fields=update_fields)
+            messages.success(request, f'Sub-group "{group.name}" saved.')
             return _redirect(group=group, tab='sub')
 
         if action == 'save_quantities':
