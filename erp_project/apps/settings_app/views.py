@@ -301,13 +301,44 @@ class CompanySettingsView(PermissionRequiredMixin, UpdateView):
         from apps.inventory.utils import openai_key_status
 
         context['openai_key_status'] = openai_key_status()
-        context['openai_key_masked'] = self.get_object().openai_api_key_masked()
+        try:
+            context['openai_key_masked'] = self.get_object().openai_api_key_masked()
+        except Exception:
+            context['openai_key_masked'] = ''
         return context
 
     def post(self, request, *args, **kwargs):
+        if request.POST.get('openai_key_action'):
+            return self._handle_openai_key_post(request)
         if request.POST.get('estimate_template_action'):
             return self._handle_estimate_template_post(request)
         return super().post(request, *args, **kwargs)
+
+    def _handle_openai_key_post(self, request):
+        action = request.POST.get('openai_key_action')
+        cs = CompanySettings.get_settings()
+        redirect_url = f'{reverse("settings:company")}#openai-key-settings'
+
+        if action == 'clear':
+            cs.openai_api_key = ''
+            cs.save(update_fields=['openai_api_key'])
+            messages.success(request, 'OpenAI API key removed.')
+            return redirect(redirect_url)
+
+        raw_key = (request.POST.get('openai_api_key') or '').strip()
+        if not raw_key:
+            messages.warning(request, 'Enter an OpenAI API key, then click Save API Key.')
+            return redirect(redirect_url)
+
+        try:
+            cs.set_openai_api_key(raw_key)
+            cs.save(update_fields=['openai_api_key'])
+        except Exception as exc:
+            messages.error(request, f'OpenAI key could not be saved: {exc}')
+            return redirect(redirect_url)
+
+        messages.success(request, 'OpenAI API key saved for AI forecasting.')
+        return redirect(redirect_url)
 
     def _handle_estimate_template_post(self, request):
         action = request.POST.get('estimate_template_action')
@@ -377,25 +408,8 @@ class CompanySettingsView(PermissionRequiredMixin, UpdateView):
         return redirect('settings:company')
     
     def form_valid(self, form):
-        raw_key = (self.request.POST.get('openai_api_key') or '').strip()
-        if raw_key:
-            try:
-                form.instance.set_openai_api_key(raw_key)
-            except Exception as exc:
-                messages.error(self.request, f'OpenAI key could not be saved: {exc}')
-                return self.form_invalid(form)
-        response = super().form_valid(form)
-        if raw_key:
-            CompanySettings.objects.filter(pk=form.instance.pk).update(
-                openai_api_key=form.instance.openai_api_key,
-            )
-            messages.success(
-                self.request,
-                'Company settings updated successfully. OpenAI API key saved for AI forecasting.',
-            )
-        else:
-            messages.success(self.request, 'Company settings updated successfully.')
-        return response
+        messages.success(self.request, 'Company settings updated successfully.')
+        return super().form_valid(form)
 
     def form_invalid(self, form):
         messages.error(self.request, 'Could not save company settings. Please check the form and try again.')
