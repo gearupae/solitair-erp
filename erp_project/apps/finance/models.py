@@ -3756,6 +3756,21 @@ class AccountMapping(models.Model):
     def __str__(self):
         return f"{self.get_transaction_type_display()} → {self.account.code}"
     
+    # Core mappings required before finance-driven posting (GRN, sales, purchase, VAT).
+    CORE_REQUIRED_MAPPINGS = [
+        ('inventory_asset', 'Inventory Asset'),
+        ('inventory_cogs', 'COGS'),
+        ('inventory_grn_clearing', 'GRN Clearing'),
+        ('sales_invoice_receivable', 'Accounts Receivable'),
+        ('vendor_bill_payable', 'Accounts Payable'),
+        ('sales_invoice_vat', 'VAT Payable (Sales)'),
+        ('vendor_bill_vat', 'VAT Recoverable (Purchase)'),
+    ]
+
+    GRN_CLEARING_NOT_CONFIGURED = (
+        'GRN Clearing account not configured in Account Mapping.'
+    )
+
     @classmethod
     def get_account(cls, transaction_type, raise_error=True):
         """
@@ -3769,11 +3784,56 @@ class AccountMapping(models.Model):
             return mapping.account
         except cls.DoesNotExist:
             if raise_error:
+                if transaction_type == 'inventory_grn_clearing':
+                    raise ValidationError(cls.GRN_CLEARING_NOT_CONFIGURED)
                 raise ValidationError(
                     f"Account mapping not configured for '{transaction_type}'. "
                     f"Please configure in Finance → Account Mapping."
                 )
             return None
+
+    @classmethod
+    def require_account(cls, transaction_type, *, not_configured_message=None):
+        """Return mapped account or raise ValidationError with a clear message."""
+        account = cls.get_account(transaction_type, raise_error=False)
+        if account:
+            return account
+        if not_configured_message:
+            raise ValidationError(not_configured_message)
+        if transaction_type == 'inventory_grn_clearing':
+            raise ValidationError(cls.GRN_CLEARING_NOT_CONFIGURED)
+        raise ValidationError(
+            f"Account mapping not configured for '{transaction_type}'. "
+            f"Please configure in Finance → Account Mapping."
+        )
+
+    @classmethod
+    def get_missing_core_mappings(cls):
+        """Return transaction_type codes missing from CORE_REQUIRED_MAPPINGS."""
+        configured = set(
+            cls.objects.filter(
+                transaction_type__in=[code for code, _ in cls.CORE_REQUIRED_MAPPINGS]
+            ).values_list('transaction_type', flat=True)
+        )
+        return [code for code, _ in cls.CORE_REQUIRED_MAPPINGS if code not in configured]
+
+    @classmethod
+    def validate_core_mappings(cls, raise_error=False):
+        """
+        Validate core account mappings used across inventory GRN, sales, purchase, and VAT.
+        Called on finance module initialization and Account Mapping screen.
+        """
+        missing = cls.get_missing_core_mappings()
+        if missing and raise_error:
+            labels = [
+                label for code, label in cls.CORE_REQUIRED_MAPPINGS if code in missing
+            ]
+            raise ValidationError(
+                'Required account mappings are not configured: '
+                + ', '.join(labels)
+                + '. Configure them in Finance → Account Mapping.'
+            )
+        return missing
     
     @classmethod
     def get_account_or_default(cls, transaction_type, default_code=None):
@@ -3802,12 +3862,15 @@ class AccountMapping(models.Model):
         """Check if all mandatory mappings for a module are configured."""
         required_mappings = {
             'sales': [
-                'sales_invoice_receivable', 'sales_invoice_revenue', 
+                'sales_invoice_receivable', 'sales_invoice_revenue',
                 'sales_invoice_vat', 'customer_receipt'
             ],
             'purchase': [
                 'vendor_bill_payable', 'vendor_bill_expense',
                 'vendor_bill_vat', 'vendor_payment'
+            ],
+            'inventory': [
+                'inventory_asset', 'inventory_cogs', 'inventory_grn_clearing',
             ],
             'expense_claim': [
                 'expense_claim_expense', 'expense_claim_payable',

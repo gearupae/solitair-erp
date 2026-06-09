@@ -33,18 +33,68 @@
         border-left-width: 1px;
     }
 }
+.project-expense-cell {
+    border: 1px solid #e2e8f0;
+    border-radius: 0.5rem;
+    background: #f8fafc;
+    padding: 0.75rem 1rem;
+}
+.project-expense-label {
+    color: #64748b;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    margin-bottom: 0.3rem;
+    line-height: 1.3;
+}
+.project-expense-amount {
+    font-weight: 700;
+    color: #0f172a;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.2;
+}
+.project-expense-section-total {
+    border-top: 1px solid #e2e8f0;
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+}
 </style>
 {% endblock %}
 {% block content %}
 <div class="page-header">
     <nav aria-label="breadcrumb"><ol class="breadcrumb mb-2"><li class="breadcrumb-item"><a href="{% url 'projects:project_list' %}">Projects</a></li><li class="breadcrumb-item active">{{ project.project_code }}</li></ol></nav>
     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-        <div><h4 class="mb-1 fw-bold">{{ project.name }}</h4><span class="text-muted">{{ project.project_code }}</span></div>
+        <div>
+            <h4 class="mb-1 fw-bold">
+                {% if source_estimate %}
+                <a href="{% url 'sales:estimate_detail' source_estimate.pk %}" target="_blank" rel="noopener" class="text-reset text-decoration-none">{{ source_estimate.display_estimate_number }}</a>{% if project_title_suffix %} — {{ project_title_suffix }}{% endif %}
+                {% else %}
+                {{ project.name }}
+                {% endif %}
+            </h4>
+            <span class="text-muted">{{ project.project_code }}</span>
+        </div>
         <div class="d-flex flex-wrap gap-2 align-items-center">
+            {% if conversion_approval_pending %}
+            <span class="badge bg-warning text-dark"><i class="fas fa-clock me-1"></i>Conversion from quotation pending approval</span>
+            {% elif project.conversion_approval_status == 'rejected' %}
+            <span class="badge bg-danger"><i class="fas fa-times-circle me-1"></i>Conversion rejected</span>
+            {% endif %}
             {% if project.edit_approval_status == 'pending' %}
             <span class="badge bg-warning text-dark"><i class="fas fa-clock me-1"></i>Completion pending approval</span>
             {% elif project.edit_approval_status == 'rejected' %}
             <span class="badge bg-danger"><i class="fas fa-times-circle me-1"></i>Completion rejected</span>
+            {% endif %}
+            {% if can_approve_project_conversion and conversion_approval_pending %}
+            <form method="post" action="{% url 'projects:project_approve_conversion' project.pk %}" class="d-inline" onsubmit="return confirm('Approve this project and move it to Planning?');">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-success btn-sm"><i class="fas fa-check me-1"></i>Approve conversion</button>
+            </form>
+            <form method="post" action="{% url 'projects:project_reject_conversion' project.pk %}" class="d-inline">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-outline-danger btn-sm" onclick="return confirm('Reject this project conversion? The quotation will be unlinked.');"><i class="fas fa-times me-1"></i>Reject conversion</button>
+            </form>
             {% endif %}
             {% if can_request_project_completion %}
             <form method="post" action="{% url 'projects:project_request_completion' project.pk %}" class="d-inline" onsubmit="return confirm('Submit this project for completion approval? Status will stay {{ project.get_status_display }} until an approver confirms.');">
@@ -100,7 +150,7 @@
                 </div>
             </div>
         </div>
-        
+
         {% if public_uploads %}
         <div class="card mb-4">
             <div class="card-header">
@@ -521,6 +571,37 @@
     </div>
     
     <div class="col-lg-4">
+        {% if show_expense_comparison_card %}
+        <div class="card mb-4 border-0 shadow-sm">
+            <div class="card-header bg-transparent py-3 border-bottom">
+                <h6 class="mb-0 fw-semibold"><i class="fas fa-tags me-2 text-dark"></i>Estimated vs actual expenses</h6>
+            </div>
+            <div class="card-body pt-3">
+                <h6 class="text-muted text-uppercase small fw-semibold mb-2">Estimated <span class="fw-normal text-lowercase">(from quotation)</span></h6>
+                {% if estimated_expense_rows %}
+                {% include 'projects/partials/expense_amount_grid.html' with rows=estimated_expense_rows %}
+                {% if estimated_expense_rows|length > 1 %}
+                <div class="project-expense-section-total d-flex justify-content-between align-items-center mb-3">
+                    <span class="text-muted text-uppercase small fw-semibold">Total estimated</span>
+                    <span class="fw-bold text-dark">AED {{ estimated_expense_grand_total|floatformat:2 }}</span>
+                </div>
+                {% else %}
+                <div class="mb-3"></div>
+                {% endif %}
+                {% elif source_estimate %}
+                <p class="text-muted small mb-3">No expense types on the linked quotation.</p>
+                {% else %}
+                <p class="text-muted small mb-3">No quotation linked to this project.</p>
+                {% endif %}
+                <h6 class="text-muted text-uppercase small fw-semibold mb-2">Actual</h6>
+                {% include 'projects/partials/expense_amount_grid.html' with rows=actual_expense_rows %}
+                <div class="project-expense-section-total d-flex justify-content-between align-items-center">
+                    <span class="text-muted text-uppercase small fw-semibold">Total actual</span>
+                    <span class="fw-bold text-dark">AED {{ actual_expense_grand_total|floatformat:2 }}</span>
+                </div>
+            </div>
+        </div>
+        {% endif %}
         <div class="card mb-4 border-0 shadow-sm">
             <div class="card-header bg-transparent py-3 border-bottom">
                 <h6 class="mb-0 fw-semibold"><i class="fas fa-scale-balanced me-2 text-dark"></i>Budget comparison</h6>
@@ -621,7 +702,9 @@
                 {% if project.status == 'completed' %}<span class="badge badge-active fs-6">Completed</span>
                 {% elif project.status == 'in_progress' %}<span class="badge fs-6" style="background:#dbeafe;color:#1e40af;">In Progress</span>
                 {% else %}<span class="badge bg-secondary fs-6">{{ project.get_status_display }}</span>{% endif %}
-                {% if project.edit_approval_status == 'pending' %}
+                {% if conversion_approval_pending %}
+                <p class="small text-warning mb-0 mt-2"><i class="fas fa-lock me-1"></i>Locked at <strong>Draft</strong> until conversion is approved. Status changes to <strong>Planning</strong> when the approver confirms.</p>
+                {% elif project.edit_approval_status == 'pending' %}
                 <p class="small text-warning mb-0 mt-2"><i class="fas fa-info-circle me-1"></i>Completion approval is pending — status will update once the approver confirms.</p>
                 {% elif project.edit_approval_status == 'rejected' %}
                 <p class="small text-danger mb-2 mt-2"><i class="fas fa-info-circle me-1"></i>Completion was rejected. Use <strong>Mark as completed</strong> to resubmit.</p>

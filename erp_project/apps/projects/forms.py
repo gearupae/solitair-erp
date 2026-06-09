@@ -85,6 +85,23 @@ class ProjectForm(forms.ModelForm):
         self.fields['budget'].widget.attrs.setdefault('step', '0.01')
         self.fields['estimated_cost'].widget.attrs.setdefault('step', '0.01')
 
+        from .conversion_approval import project_awaiting_conversion_approval
+
+        if self.instance.pk and project_awaiting_conversion_approval(self.instance):
+            self.fields['status'].disabled = True
+            self.fields['status'].help_text = (
+                'Status stays Draft until a configured approver approves the conversion from quotation.'
+            )
+
+    def clean_status(self):
+        from .conversion_approval import project_awaiting_conversion_approval
+
+        status = self.cleaned_data.get('status')
+        if self.instance.pk and project_awaiting_conversion_approval(self.instance):
+            return 'draft'
+        return status
+
+
 class CustomerTaskCreateForm(forms.Form):
     """Quick task create from CRM customer detail (one task per selected member)."""
 

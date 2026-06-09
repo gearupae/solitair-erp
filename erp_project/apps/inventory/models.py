@@ -93,11 +93,36 @@ class Warehouse(BaseModel):
         super().save(*args, **kwargs)
 
 
+class ItemBaseGroup(models.Model):
+    """Top-level grouping; item groups (sub-groups) can belong to one base group."""
+    name = models.CharField(max_length=200, unique=True)
+
+    class Meta:
+        ordering = ['name']
+        verbose_name = 'Item base group'
+        verbose_name_plural = 'Item base groups'
+
+    def __str__(self):
+        return self.name
+
+
 class ItemGroup(models.Model):
     """
-    Named group; items can belong to many groups (M2M).
+    Named sub-group; items can belong to many groups (M2M).
     """
     name = models.CharField(max_length=200, unique=True)
+    base_group = models.ForeignKey(
+        ItemBaseGroup,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='sub_groups',
+        help_text='Optional parent base group for organizing sub-groups.',
+    )
+    base_group_sort_order = models.PositiveIntegerField(
+        default=0,
+        help_text='Order of this sub-group within its base group (scope of work / estimates).',
+    )
     hide_items_on_pdf = models.BooleanField(
         default=False,
         help_text=(
@@ -105,11 +130,19 @@ class ItemGroup(models.Model):
             'price (no individual line items) for estimate lines using this group name.'
         ),
     )
+    expense_type = models.ForeignKey(
+        'settings_app.ItemSubGroupExpenseType',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='sub_groups',
+        help_text='Optional expense category (configured in Settings).',
+    )
 
     class Meta:
         ordering = ['name']
-        verbose_name = 'Item group'
-        verbose_name_plural = 'Item groups'
+        verbose_name = 'Item sub-group'
+        verbose_name_plural = 'Item sub-groups'
 
     def __str__(self):
         return self.name
@@ -335,6 +368,64 @@ class Item(BaseModel):
             self.maximum_selling_price_type,
             self.selling_price,
         )
+
+    def get_quote_maximum_rate(self, base_price=None):
+        """
+        Highest allowed unit rate on estimate lines.
+        Percent = markup on base (same as estimate profit %); amount = AED cap.
+        """
+        from decimal import ROUND_HALF_UP
+
+        base = base_price if base_price is not None else self.selling_price
+        base = base if isinstance(base, Decimal) else Decimal(str(base or '0'))
+        val = self.maximum_selling_price
+        if val <= 0:
+            return Decimal('0.00')
+        if self.maximum_selling_price_type == self.SELLING_PRICE_BOUND_PERCENT:
+            if base <= 0:
+                return Decimal('0.00')
+            return (base * (Decimal('1') + val / Decimal('100'))).quantize(
+                Decimal('0.01'), rounding=ROUND_HALF_UP
+            )
+        return val if isinstance(val, Decimal) else Decimal(str(val))
+
+    def get_quote_minimum_rate(self, base_price=None):
+        """Lowest allowed unit rate on estimate lines (uses inventory bound rules)."""
+        base = base_price if base_price is not None else self.selling_price
+        return self.resolve_selling_price_bound(
+            self.minimum_selling_price,
+            self.minimum_selling_price_type,
+            base,
+        )
+
+    def _quote_rate_bounds_issue(self, base_price, rate):
+        """Return 'low'|'high'|None comparing quantized line rate to quote min/max."""
+        from decimal import ROUND_HALF_UP
+
+        def _q2(v):
+            d = v if isinstance(v, Decimal) else Decimal(str(v or '0'))
+            return d.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+
+        p = _q2(rate)
+        base = base_price if base_price is not None else self.selling_price
+        base = base if isinstance(base, Decimal) else Decimal(str(base or '0'))
+        min_r = _q2(self.get_quote_minimum_rate(base))
+        max_r = _q2(self.get_quote_maximum_rate(base))
+        if min_r > 0 and p > 0 and p < min_r:
+            return 'low', p, base, min_r, max_r
+        if max_r > 0 and p > max_r:
+            return 'high', p, base, min_r, max_r
+        return None
+
+    def quote_rate_bounds_error(self, base_price, rate):
+        """Validate estimate line rate against item min/max (quote profit semantics for max %)."""
+        issue = self._quote_rate_bounds_issue(base_price, rate)
+        if not issue:
+            return None
+        kind, p, base, min_r, max_r = issue
+        if kind == 'low':
+            return f'Rate AED {p} is below minimum AED {min_r} for {self.name}.'
+        return f'Rate AED {p} exceeds maximum AED {max_r} for {self.name}.'
 
     def clean(self):
         super().clean()
@@ -743,12 +834,18 @@ class StockMovement(BaseModel):
         if self.total_cost <= 0:
             raise ValidationError("Movement cost must be greater than zero for accounting.")
         
-        inventory_account = AccountMapping.get_account_or_default('inventory_asset', '1500')
-        cogs_account = AccountMapping.get_account_or_default('inventory_cogs', '5100')
-        grn_clearing = AccountMapping.get_account_or_default('inventory_grn_clearing', '2010')
-
-        if not inventory_account:
-            raise ValidationError("Inventory Asset account not configured in Account Mapping.")
+        inventory_account = AccountMapping.require_account(
+            'inventory_asset',
+            not_configured_message='Inventory Asset account not configured in Account Mapping.',
+        )
+        cogs_account = AccountMapping.require_account(
+            'inventory_cogs',
+            not_configured_message='COGS account not configured in Account Mapping.',
+        )
+        grn_clearing = AccountMapping.require_account(
+            'inventory_grn_clearing',
+            not_configured_message=AccountMapping.GRN_CLEARING_NOT_CONFIGURED,
+        )
         
         # Create journal entry
         journal = JournalEntry.objects.create(
@@ -760,9 +857,7 @@ class StockMovement(BaseModel):
         )
         
         if self.movement_type == 'in':
-            # Stock In: Dr Inventory Asset, Cr GRN Clearing
-            if not grn_clearing:
-                raise ValidationError("GRN Clearing account not configured.")
+            # Stock In (GRN): Dr Inventory Asset, Cr GRN Clearing
             JournalEntryLine.objects.create(
                 journal_entry=journal,
                 account=inventory_account,
@@ -780,8 +875,6 @@ class StockMovement(BaseModel):
         
         elif self.movement_type == 'out':
             # Stock Out: Dr COGS, Cr Inventory Asset
-            if not cogs_account:
-                raise ValidationError("COGS account not configured.")
             JournalEntryLine.objects.create(
                 journal_entry=journal,
                 account=cogs_account,

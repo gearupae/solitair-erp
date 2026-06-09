@@ -107,6 +107,26 @@ class Command(BaseCommand):
                 defaults={"module": "project", "account": acc_2000},
             )
 
+        # Inventory / GRN three-way match mappings
+        inv_asset = Account.objects.filter(code="1500").first() or Account.objects.filter(code="1200").first()
+        inv_cogs = Account.objects.filter(code="5000").first() or Account.objects.filter(code="5100").first()
+        grn_clearing = Account.objects.filter(code="2010").first()
+        if inv_asset:
+            AccountMapping.objects.get_or_create(
+                transaction_type="inventory_asset",
+                defaults={"module": "inventory", "account": inv_asset, "is_mandatory": True},
+            )
+        if inv_cogs:
+            AccountMapping.objects.get_or_create(
+                transaction_type="inventory_cogs",
+                defaults={"module": "inventory", "account": inv_cogs, "is_mandatory": True},
+            )
+        if grn_clearing:
+            AccountMapping.objects.get_or_create(
+                transaction_type="inventory_grn_clearing",
+                defaults={"module": "inventory", "account": grn_clearing, "is_mandatory": True},
+            )
+
         # Bank account for payroll
         bank_acc = Account.objects.filter(code="1100").first()
         if bank_acc and not BankAccount.objects.filter(is_active=True).exists():

@@ -177,6 +177,7 @@ class CompanySettingsForm(forms.ModelForm):
             'contract_default_terms',
             'estimate_to_project_prompt_include_lines',
             'estimate_default_authorized_signature', 'estimate_default_customer_signature',
+            'estimate_pdf_stamp_image', 'estimate_pdf_footer_image',
         ]
     
     def __init__(self, *args, **kwargs):
@@ -193,6 +194,8 @@ class CompanySettingsForm(forms.ModelForm):
             elif field_name in (
                 'estimate_default_authorized_signature',
                 'estimate_default_customer_signature',
+                'estimate_pdf_stamp_image',
+                'estimate_pdf_footer_image',
             ):
                 field.widget.attrs['class'] = 'form-control'
                 field.widget.attrs['accept'] = 'image/*'
@@ -212,6 +215,18 @@ class CompanySettingsForm(forms.ModelForm):
                 field.widget.attrs['class'] = 'form-control'
             else:
                 field.widget.attrs['class'] = 'form-control'
+
+    def clean_smtp_host(self):
+        host = (self.cleaned_data.get('smtp_host') or '').strip()
+        if not host:
+            return ''
+        lowered = host.lower()
+        if '.' not in host or lowered in ('smtp', 'mail', 'imap', 'pop'):
+            raise forms.ValidationError(
+                'Enter the full SMTP server hostname (e.g. smtp.office365.com or '
+                'smtp.gmail.com), not a single word like "smtp".'
+            )
+        return host
 
     def clean_smtp_password(self):
         val = self.cleaned_data.get('smtp_password')

@@ -66,6 +66,26 @@
 }
 #itemsTable .items-col-inventory {
     width: 12%;
+    position: relative;
+}
+/* Select2 keeps the native <select> for submit; hide it whenever the Select2 UI is present (avoids a second visible dropdown) */
+#itemsTable .items-col-inventory:has(.select2-container) select.item-inventory,
+#itemsTable .items-col-inventory select.item-inventory.select2-hidden-accessible {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    padding: 0 !important;
+    margin: -1px !important;
+    overflow: hidden !important;
+    clip: rect(0, 0, 0, 0) !important;
+    white-space: nowrap !important;
+    border: 0 !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+#itemsTable .items-col-inventory .select2-container {
+    display: block;
+    margin: 0;
 }
 #itemsTable .items-col-desc .form-control {
     font-size: 0.875rem;
@@ -115,7 +135,7 @@
     width: 7%;
 }
 #itemsTable .items-col-base {
-    width: 7%;
+    width: 9%;
 }
 #itemsTable .items-col-profit {
     width: 7%;
@@ -145,6 +165,10 @@
 #itemsTable .items-col-gross {
     width: 6%;
 }
+#itemsTable .items-col-base,
+#itemsTable .items-col-profit-num {
+    overflow: visible;
+}
 #itemsTable .items-col-actions {
     width: 3%;
     padding-left: 0.15rem !important;
@@ -154,6 +178,29 @@
 #itemsTable .items-col-actions .btn {
     padding: 0.15rem 0.25rem;
     line-height: 1;
+}
+/* Base: number spinners stay on the input; eye sits in its own button to the right */
+#itemsTable .estimate-price-input-group .item-base-price {
+    min-width: 0;
+}
+#itemsTable .estimate-price-input-group .item-bounds-help {
+    padding: 0.2rem 0.4rem;
+    flex-shrink: 0;
+    line-height: 1;
+    pointer-events: auto;
+    position: relative;
+    z-index: 2;
+}
+#itemsTable .estimate-price-input-group .item-bounds-help:not(.d-none) {
+    animation: bounds-help-pulse 1.5s ease-in-out 2;
+}
+#itemsTable .item-base-price.estimate-price-out-of-bounds,
+#itemsTable .item-profit-value.estimate-price-out-of-bounds {
+    border-color: var(--bs-danger) !important;
+}
+@keyframes bounds-help-pulse {
+    0%, 100% { box-shadow: none; }
+    50% { box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.35); }
 }
 .estimate-internal-notes {
     min-height: 8rem;
@@ -165,6 +212,33 @@
 #lineItemsCardHeader label.btn {
     max-width: 12rem;
     overflow: hidden;
+}
+.estimate-expense-cell {
+    border: 1px solid #e2e8f0;
+    border-radius: 0.5rem;
+    background: #f8fafc;
+    padding: 0.75rem 1rem;
+    height: 100%;
+}
+.estimate-expense-name {
+    color: #64748b;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    margin-bottom: 0.3rem;
+    line-height: 1.3;
+}
+.estimate-expense-amount {
+    font-weight: 700;
+    color: #0f172a;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.2;
+}
+.estimate-expenses-total {
+    border-top: 1px solid #e2e8f0;
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
 }
 </style>
 {% endblock %}
@@ -294,6 +368,16 @@
         </div>
     </div>
     
+    <div id="estimateExpensesCard" class="card mb-4 d-none">
+        <div class="card-header bg-transparent py-3">
+            <h6 class="mb-0 fw-semibold"><i class="fas fa-tags me-2 text-dark"></i>Expenses</h6>
+        </div>
+        <div class="card-body pt-0">
+            <div id="estimateExpensesList" class="row row-cols-1 g-2"></div>
+            <div id="estimateExpensesFooter" class="estimate-expenses-total d-none justify-content-between align-items-center"></div>
+        </div>
+    </div>
+
     <!-- Line Items -->
     <div class="card mb-4">
         <div id="lineItemsCardHeader" class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
@@ -316,6 +400,7 @@
         </div>
         <div class="card-body p-0">
             <p class="text-muted small px-3 pt-3 mb-2 mb-md-3">
+                <strong>Scope of work:</strong> choosing a main group loads all of its sub-groups and items below (group name = sub-group on each line).
                 <strong>How each line is calculated:</strong>
                 <strong>Rate</strong> = base per unit + profit — if profit is <strong>%</strong>, rate = base × (1 + %÷100) (e.g. base 10 and 100% → 20/unit).
                 If profit is <strong>Amt</strong>, rate = base + AED <em>per unit</em> (e.g. base 10 + 100 → 110/unit).
@@ -478,6 +563,22 @@
     </div>
 </form>
 
+<div class="modal fade" id="estimatePriceBoundsModal" tabindex="-1" aria-labelledby="estimatePriceBoundsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="estimatePriceBoundsModalLabel"><i class="fas fa-eye me-2"></i>Selling price limits</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body small" id="estimatePriceBoundsModalBody"></div>
+            <div class="modal-footer">
+                <a href="#" id="estimatePriceBoundsItemLink" class="btn btn-outline-primary btn-sm" target="_blank" rel="noopener">Open item in Inventory</a>
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 {% endblock %}
 
 {% block extra_js %}
@@ -488,6 +589,7 @@ const taxCodes = [
     {% endfor %}
 ];
 const inventoryItems = {{ inventory_items_json|safe }};
+const inventoryItemEditUrl = (id) => '{% url "inventory:item_edit" 0 %}'.replace('/0/edit/', `/${id}/edit/`);
 const inventoryGroups = {{ inventory_groups_json|safe }};
 const estimateClientNoteTemplates = {{ estimate_client_note_templates_json|safe }};
 const estimateTermsTemplates = {{ estimate_terms_templates_json|safe }};
@@ -499,6 +601,7 @@ const profitChoices = [
 ];
 
 let formCount = {{ items_formset.total_form_count }};
+let suppressTrailingEmptyRow = false;
 
 function getTaxOptions(selectedId) {
     let o = '<option value="">-- No Tax --</option>';
@@ -535,24 +638,232 @@ function getInventoryMeta(invId) {
     return inventoryItems.find(x => String(x.id) === String(invId)) || null;
 }
 
-function getBasePriceBoundsMessage(meta, price) {
-    if (!meta) return '';
-    const min = parseFloat(meta.minimum_selling_price) || 0;
-    const max = parseFloat(meta.maximum_selling_price) || 0;
-    const name = meta.name || 'item';
-    if (min > 0 && price > 0 && price < min) {
-        return `Amount is low for ${name}.`;
-    }
-    if (max > 0 && price > max) {
-        return `Amount is high for ${name}.`;
-    }
-    return '';
+/** Round to 2 decimal places (avoids float errors e.g. 21.60 + 8.64 > 30.24). */
+function money2(n) {
+    const x = parseFloat(n);
+    if (Number.isNaN(x)) return 0;
+    return Math.round(x * 100) / 100;
 }
 
-function clearSellingRateFieldValidity(el) {
-    if (!el) return;
-    el.setCustomValidity('');
-    el.classList.remove('is-invalid');
+/** Default profit from inventory item maximum selling price settings. */
+function applyProfitFromItemMaximum(row, meta) {
+    const ptSel = row.querySelector('.item-profit-type');
+    const pvInput = row.querySelector('.item-profit-value');
+    if (!ptSel || !pvInput || !meta) return;
+
+    const rawMax = parseFloat(meta.maximum_selling_price_value);
+    const maxType = meta.maximum_selling_price_type || 'amount';
+    const base = parseFloat(row.querySelector('.item-base-price')?.value)
+        || parseFloat(meta.selling_price) || 0;
+    if (!rawMax || rawMax <= 0 || Number.isNaN(rawMax)) {
+        ptSel.value = 'none';
+        pvInput.value = '0';
+        return;
+    }
+
+    if (maxType === 'percent') {
+        ptSel.value = 'percent';
+        pvInput.value = parseFloat(rawMax).toFixed(2);
+    } else {
+        ptSel.value = 'amount';
+        pvInput.value = Math.max(0, rawMax - base).toFixed(2);
+    }
+}
+
+function getQuoteRateBounds(meta, basePrice) {
+    const base = parseFloat(basePrice) || parseFloat(meta?.selling_price) || 0;
+    if (!meta || base <= 0) {
+        return { min: 0, max: 0 };
+    }
+    let min = 0;
+    let max = 0;
+    const rawMin = parseFloat(meta.minimum_selling_price_value);
+    const minType = meta.minimum_selling_price_type || 'amount';
+    if (rawMin > 0 && !Number.isNaN(rawMin)) {
+        min = minType === 'percent' ? base * rawMin / 100 : rawMin;
+    }
+    const rawMax = parseFloat(meta.maximum_selling_price_value);
+    const maxType = meta.maximum_selling_price_type || 'amount';
+    if (rawMax > 0 && !Number.isNaN(rawMax)) {
+        max = maxType === 'percent' ? base * (1 + rawMax / 100) : rawMax;
+    }
+    return { min: money2(min), max: money2(max) };
+}
+
+function formatBoundRuleLabel(meta, which, base) {
+    const raw = parseFloat(which === 'min' ? meta.minimum_selling_price_value : meta.maximum_selling_price_value);
+    const type = which === 'min' ? (meta.minimum_selling_price_type || 'amount') : (meta.maximum_selling_price_type || 'amount');
+    const b = money2(base);
+    const bounds = getQuoteRateBounds(meta, b);
+    if (!raw || raw <= 0 || Number.isNaN(raw)) {
+        return which === 'max' ? 'No maximum cap on this item' : 'No minimum set';
+    }
+    if (which === 'min') {
+        return type === 'percent'
+            ? `${raw}% of base → min rate AED ${bounds.min.toFixed(2)} (at base AED ${b.toFixed(2)})`
+            : `Minimum line rate AED ${bounds.min.toFixed(2)}`;
+    }
+    return type === 'percent'
+        ? `${raw}% markup on base → max rate AED ${bounds.max.toFixed(2)} (at base AED ${b.toFixed(2)})`
+        : `Maximum line rate AED ${bounds.max.toFixed(2)}`;
+}
+
+function getRowPricingContext(row, meta) {
+    const base = money2(row.querySelector('.item-base-price')?.value || 0);
+    const pt = row.querySelector('.item-profit-type')?.value || 'none';
+    const pv = money2(row.querySelector('.item-profit-value')?.value || 0);
+    const rate = computeRate(row);
+    const bounds = getQuoteRateBounds(meta, base);
+    return { base, pt, pv, rate, bounds };
+}
+
+function buildBoundsDetailHtml(meta, ctx, issueKind) {
+    const name = escapeHtml(meta.name || 'item');
+    const code = escapeHtml(meta.item_code || '');
+    const ptLabel = profitChoices.find(p => p.v === ctx.pt)?.l || ctx.pt;
+    const profitPart = ctx.pt === 'percent'
+        ? `${ctx.pv.toFixed(2)}% on base`
+        : (ctx.pt === 'amount' ? `AED ${ctx.pv.toFixed(2)} per unit` : 'none');
+    const rangeParts = [];
+    if (ctx.bounds.min > 0) rangeParts.push(`AED ${ctx.bounds.min.toFixed(2)} minimum`);
+    if (ctx.bounds.max > 0) rangeParts.push(`AED ${ctx.bounds.max.toFixed(2)} maximum`);
+    const rangeText = rangeParts.length ? rangeParts.join(' · ') : 'No min/max limits';
+    const issueLead = issueKind === 'low'
+        ? `<p class="text-danger mb-2"><strong>Too low:</strong> The selling <strong>rate</strong> (after profit) is below the allowed minimum for this item.</p>`
+        : (issueKind === 'high'
+            ? `<p class="text-danger mb-2"><strong>Too high:</strong> The selling <strong>rate</strong> (after profit) is above the allowed maximum for this item.</p>`
+            : '');
+    return `
+        ${issueLead}
+        <p class="mb-2"><strong>${name}</strong>${code ? ` <span class="text-muted">(${code})</span>` : ''}</p>
+        <table class="table table-sm table-bordered mb-3">
+            <tbody>
+                <tr><th scope="row">Base (unit cost)</th><td>AED ${ctx.base.toFixed(2)}</td></tr>
+                <tr><th scope="row">Profit</th><td>${escapeHtml(ptLabel)} — ${escapeHtml(profitPart)}</td></tr>
+                <tr><th scope="row">Rate (base + profit)</th><td class="fw-semibold">AED ${ctx.rate.toFixed(2)}</td></tr>
+                <tr><th scope="row">Allowed rate on quotes</th><td>${escapeHtml(rangeText)}</td></tr>
+            </tbody>
+        </table>
+        <p class="mb-1 text-muted">Inventory rules for this base price:</p>
+        <ul class="mb-0">
+            <li>${escapeHtml(formatBoundRuleLabel(meta, 'min', ctx.base))}</li>
+            <li>${escapeHtml(formatBoundRuleLabel(meta, 'max', ctx.base))}</li>
+        </ul>
+        <p class="mt-3 mb-0 text-muted">Adjust <strong>Base</strong> and/or <strong>Profit value</strong> so the <strong>Rate</strong> stays within the allowed range. Limits are set on the inventory item (Pricing &amp; Stock).</p>
+    `;
+}
+
+function analyzeQuoteRateBounds(meta, price, basePrice) {
+    if (!meta) return null;
+    const base = money2(basePrice != null ? basePrice : meta.selling_price);
+    const bounds = getQuoteRateBounds(meta, base);
+    const p = money2(price);
+    const name = meta.name || 'item';
+    if (bounds.min > 0 && p > 0 && p < bounds.min) {
+        const ctx = { base, pt: 'none', pv: 0, rate: p, bounds };
+        return {
+            kind: 'low',
+            short: `Rate AED ${p.toFixed(2)} is below minimum AED ${bounds.min.toFixed(2)} for ${name}.`,
+            detailHtml: buildBoundsDetailHtml(meta, ctx, 'low'),
+        };
+    }
+    if (bounds.max > 0 && p > bounds.max) {
+        const ctx = { base, pt: 'none', pv: 0, rate: p, bounds };
+        return {
+            kind: 'high',
+            short: `Rate AED ${p.toFixed(2)} exceeds maximum AED ${bounds.max.toFixed(2)} for ${name}.`,
+            detailHtml: buildBoundsDetailHtml(meta, ctx, 'high'),
+        };
+    }
+    return null;
+}
+
+function getBasePriceBoundsMessage(meta, price, basePrice) {
+    const issue = analyzeQuoteRateBounds(meta, price, basePrice);
+    return issue ? issue.short : '';
+}
+
+let estimatePriceBoundsModal = null;
+
+function openEstimatePriceBoundsModal(row, issueKind) {
+    const invId = row?.querySelector('.item-inventory')?.value;
+    const meta = getInventoryMeta(invId);
+    if (!meta || !row) return;
+    const ctx = getRowPricingContext(row, meta);
+    const issue = analyzeQuoteRateBounds(meta, ctx.rate, ctx.base);
+    const body = document.getElementById('estimatePriceBoundsModalBody');
+    const link = document.getElementById('estimatePriceBoundsItemLink');
+    const title = document.getElementById('estimatePriceBoundsModalLabel');
+    if (!body || !estimatePriceBoundsModal) return;
+    const kind = issueKind || issue?.kind;
+    title.innerHTML = kind
+        ? '<i class="fas fa-exclamation-circle text-danger me-2"></i>Selling price limits'
+        : '<i class="fas fa-eye me-2"></i>Selling price limits';
+    body.innerHTML = buildBoundsDetailHtml(meta, ctx, kind || null);
+    if (link && invId) {
+        link.href = inventoryItemEditUrl(invId);
+        link.classList.remove('d-none');
+    } else if (link) {
+        link.href = '#';
+        link.classList.add('d-none');
+    }
+    estimatePriceBoundsModal.show();
+}
+
+/** Eye button beside base price (not inside the input — avoids spinner overlap). */
+function initBasePriceBoundsUI(row) {
+    if (!row) return;
+    const cell = row.querySelector('.items-col-base');
+    const input = row.querySelector('.item-base-price');
+    if (!cell || !input) return;
+
+    let group = cell.querySelector('.estimate-price-input-group');
+    if (!group) {
+        group = document.createElement('div');
+        group.className = 'input-group input-group-sm estimate-price-input-group flex-nowrap';
+        cell.insertBefore(group, input);
+        group.appendChild(input);
+    } else if (input.parentElement !== group) {
+        group.appendChild(input);
+    }
+
+    let btn = group.querySelector('.item-bounds-help');
+    if (!btn) {
+        btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn btn-sm btn-outline-info item-bounds-help d-none';
+        btn.title = 'Selling price limits';
+        btn.innerHTML = '<i class="fas fa-eye"></i>';
+        group.appendChild(btn);
+    }
+
+    row.querySelectorAll('.items-col-actions .item-bounds-help').forEach(el => el.remove());
+}
+
+function setRowBoundsHelpVisible(row, visible) {
+    const btn = row?.querySelector('.item-bounds-help');
+    if (!btn) return;
+    btn.classList.toggle('d-none', !visible);
+}
+
+function clearRowBoundsHighlight(row) {
+    if (!row) return;
+    row.querySelectorAll('.item-base-price, .item-profit-value').forEach(el => {
+        el.classList.remove('estimate-price-out-of-bounds');
+        el.removeAttribute('title');
+    });
+}
+
+let lastBoundsToastMsg = '';
+let lastBoundsToastAt = 0;
+
+function showBoundsToastOnce(msg) {
+    if (!msg || !window.toastr) return;
+    const now = Date.now();
+    if (msg === lastBoundsToastMsg && now - lastBoundsToastAt < 4000) return;
+    lastBoundsToastMsg = msg;
+    lastBoundsToastAt = now;
+    toastr.error(msg);
 }
 
 function getRowRateHighlightField(row) {
@@ -571,22 +882,27 @@ function validateRowSellingRate(row, showToast, triggerEl) {
     const pv = row.querySelector('.item-profit-value');
     if (!invSel || row.style.display === 'none') return true;
 
-    clearSellingRateFieldValidity(bp);
-    clearSellingRateFieldValidity(pv);
+    initBasePriceBoundsUI(row);
+    clearRowBoundsHighlight(row);
+    setRowBoundsHelpVisible(row, false);
 
     const invId = invSel.value;
     if (!invId) return true;
 
     const rate = computeRate(row);
     const meta = getInventoryMeta(invId);
-    const msg = getBasePriceBoundsMessage(meta, rate);
-    if (msg) {
+    const base = parseFloat(row.querySelector('.item-base-price')?.value) || 0;
+    const issue = analyzeQuoteRateBounds(meta, rate, base);
+    if (issue) {
+        const ctx = getRowPricingContext(row, meta);
+        issue.detailHtml = buildBoundsDetailHtml(meta, ctx, issue.kind);
         const highlight = triggerEl || getRowRateHighlightField(row);
         if (highlight) {
-            highlight.setCustomValidity(msg);
-            highlight.classList.add('is-invalid');
+            highlight.setAttribute('title', issue.short);
+            highlight.classList.add('estimate-price-out-of-bounds');
         }
-        if (showToast !== false && window.toastr) toastr.error(msg);
+        setRowBoundsHelpVisible(row, true);
+        if (showToast) showBoundsToastOnce(issue.short);
         return false;
     }
     return true;
@@ -598,9 +914,20 @@ function validateRowBasePrice(row, showToast) {
 
 function validateAllSellingRates(showToast) {
     let ok = true;
+    let firstIssueMsg = '';
     document.querySelectorAll('#itemsBody .item-row').forEach(row => {
-        if (!validateRowSellingRate(row, showToast)) ok = false;
+        if (!validateRowSellingRate(row, false)) {
+            ok = false;
+            if (!firstIssueMsg) {
+                const invId = row.querySelector('.item-inventory')?.value;
+                const meta = getInventoryMeta(invId);
+                const base = parseFloat(row.querySelector('.item-base-price')?.value) || 0;
+                const issue = meta && analyzeQuoteRateBounds(meta, computeRate(row), base);
+                if (issue) firstIssueMsg = issue.short;
+            }
+        }
     });
+    if (!ok && showToast && firstIssueMsg) showBoundsToastOnce(firstIssueMsg);
     return ok;
 }
 
@@ -620,14 +947,24 @@ function syncAllInventoryFieldHeights() {
     document.querySelectorAll('#itemsBody .item-row').forEach(syncInventoryFieldHeight);
 }
 
+function destroyInventorySelect2(selectEl) {
+    if (!selectEl || typeof $ === 'undefined' || !$.fn.select2) return;
+    const $el = $(selectEl);
+    if ($el.data('select2')) {
+        $el.select2('destroy');
+    }
+    const cell = selectEl.closest('.items-col-inventory');
+    if (cell) {
+        cell.querySelectorAll('.select2-container').forEach((node) => node.remove());
+    }
+}
+
 function initInventorySelect2(selectEl) {
     if (!selectEl || typeof $ === 'undefined' || !$.fn.select2) return;
     if (!Array.isArray(inventoryItems) || !inventoryItems.length) return;
     const $el = $(selectEl);
     const current = selectEl.value || '';
-    if ($el.data('select2')) {
-        $el.select2('destroy');
-    }
+    destroyInventorySelect2(selectEl);
     selectEl.innerHTML = getInventoryOptions(current);
     $el.select2({
         theme: 'bootstrap-5',
@@ -898,6 +1235,7 @@ function computeRate(row) {
     let rate = base;
     if (pt === 'percent') rate = base * (1 + pv / 100);
     else if (pt === 'amount') rate = base + pv;
+    rate = money2(rate);
     const r = row.querySelector('.item-rate');
     if (r) r.value = rate.toFixed(2);
     return rate;
@@ -924,6 +1262,7 @@ function populateRowFromInventory(row, invId, groupName, defaultQuantity) {
     if (desc) desc.value = meta.name || '';
     const bp = row.querySelector('.item-base-price');
     if (bp) bp.value = parseFloat(meta.selling_price || 0).toFixed(2);
+    applyProfitFromItemMaximum(row, meta);
     const tc = row.querySelector('.item-tax-code');
     if (tc) tc.value = meta.tax_code_id || defaultTaxCodeId || '';
     computeRate(row);
@@ -940,8 +1279,10 @@ function populateRowFromInventory(row, invId, groupName, defaultQuantity) {
     } else {
         calculateRowTotal(qtyInput);
     }
-    validateRowBasePrice(row, true);
-    ensureTrailingEmptyRow();
+    validateRowSellingRate(row, false);
+    if (!suppressTrailingEmptyRow) {
+        ensureTrailingEmptyRow();
+    }
 }
 
 function onInventoryChange(sel) {
@@ -967,15 +1308,166 @@ function fillInventoryGroupBulkSelect(sel) {
     sel.innerHTML = '';
     const o0 = document.createElement('option');
     o0.value = '';
-    o0.textContent = 'Group…';
+    o0.textContent = 'Pick group…';
     sel.appendChild(o0);
+
+    const byBase = new Map();
     inventoryGroups.forEach((g, idx) => {
-        const o = document.createElement('option');
-        o.value = String(idx);
-        const n = g.items ? g.items.length : 0;
-        o.textContent = `${g.name} (${n})`;
-        sel.appendChild(o);
+        const key = g.base_group || '';
+        if (!byBase.has(key)) byBase.set(key, []);
+        byBase.get(key).push({ g, idx });
     });
+
+    const keys = Array.from(byBase.keys()).sort((a, b) => {
+        if (!a) return 1;
+        if (!b) return -1;
+        return a.localeCompare(b);
+    });
+
+    keys.forEach((key) => {
+        let container = sel;
+        if (key) {
+            const og = document.createElement('optgroup');
+            og.label = key;
+            sel.appendChild(og);
+            container = og;
+        }
+        byBase.get(key)
+            .sort((a, b) => compareSubGroupsInBaseGroup(a.g, b.g))
+            .forEach(({ g, idx }) => {
+            const o = document.createElement('option');
+            o.value = String(idx);
+            const itemNames = (g.items || []).map((it) => it.name).join(', ');
+            o.textContent = `${g.name} (${(g.items || []).length} items)`;
+            o.title = itemNames;
+            container.appendChild(o);
+        });
+    });
+}
+
+function clearAllLineItems() {
+    document.querySelectorAll('#itemsBody .item-row').forEach(row => {
+        const idInput = row.querySelector('input[name$="-id"]');
+        const hasSavedId = idInput && String(idInput.value || '').trim() !== '';
+        if (hasSavedId) {
+            const del = row.querySelector('input[name$="-DELETE"]');
+            if (del) {
+                del.checked = true;
+                row.style.display = 'none';
+            }
+        } else {
+            row.remove();
+        }
+    });
+    syncFormsetManagementCounts();
+}
+
+function pruneEmptyLineRows() {
+    getVisibleEstimateRows().filter(isEstimateRowEmpty).forEach(row => {
+        const idInput = row.querySelector('input[name$="-id"]');
+        const hasSavedId = idInput && String(idInput.value || '').trim() !== '';
+        if (hasSavedId) {
+            const del = row.querySelector('input[name$="-DELETE"]');
+            if (del) {
+                del.checked = true;
+                row.style.display = 'none';
+            }
+        } else {
+            row.remove();
+        }
+    });
+    syncFormsetManagementCounts();
+}
+
+function removeInteriorEmptyRows() {
+    pruneEmptyLineRows();
+}
+
+function getOrCreateNextItemRow(preferredRow) {
+    if (preferredRow && isEstimateRowEmpty(preferredRow)) {
+        return preferredRow;
+    }
+    const rows = getVisibleEstimateRows();
+    const last = rows.length ? rows[rows.length - 1] : null;
+    if (last && isEstimateRowEmpty(last)) {
+        return last;
+    }
+    addItemRow();
+    return document.getElementById('itemsBody').lastElementChild;
+}
+
+function appendGroupItemsToEstimate(g, startRow, options) {
+    if (!g || !g.items || !g.items.length) return;
+    const deferTrailing = options && options.deferTrailing;
+    const tbody = document.getElementById('itemsBody');
+    let nextRow = startRow || null;
+    suppressTrailingEmptyRow = true;
+    try {
+        g.items.forEach(it => {
+            const targetRow = getOrCreateNextItemRow(nextRow);
+            nextRow = null;
+            applyInventoryItemToRow(targetRow, it.id, g.name, it.default_quantity);
+        });
+        const mult = findGroupQtyMultiplierForName(g.name);
+        document.querySelectorAll('#itemsBody .item-row').forEach(r => {
+            if (r.style.display === 'none') return;
+            if (getRowGroupName(r) !== normalizeGroupName(g.name)) return;
+            const inp = r.querySelector('.item-group-qty-mult');
+            if (inp) inp.value = mult;
+        });
+        refreshGroupQtyMultDisplay();
+        applyGroupMultiplier(normalizeGroupName(g.name), startRow || tbody.querySelector('.item-row'));
+    } finally {
+        suppressTrailingEmptyRow = false;
+        if (!deferTrailing) ensureTrailingEmptyRow();
+    }
+}
+
+function compareSubGroupsInBaseGroup(a, b) {
+    const oa = Number(a.base_group_sort_order) || 0;
+    const ob = Number(b.base_group_sort_order) || 0;
+    if (oa !== ob) return oa - ob;
+    return (a.name || '').localeCompare(b.name || '');
+}
+
+function getSubGroupsForBaseGroup(baseGroupName) {
+    if (!baseGroupName) return [];
+    const key = baseGroupName.trim().toLowerCase();
+    return inventoryGroups
+        .filter(g => (g.base_group || '').trim().toLowerCase() === key)
+        .sort(compareSubGroupsInBaseGroup);
+}
+
+function loadLineItemsForScopeOfWork(baseGroupName) {
+    if (!baseGroupName) return true;
+    const groups = getSubGroupsForBaseGroup(baseGroupName);
+    if (!groups.length) {
+        alert(`No sub-groups with items found for "${baseGroupName}". Add sub-groups under Inventory → Item groups.`);
+        return false;
+    }
+    const filled = getVisibleEstimateRows().filter(isEstimateRowFilled);
+    if (filled.length) {
+        const itemCount = groups.reduce((n, g) => n + (g.items ? g.items.length : 0), 0);
+        const ok = confirm(
+            `Replace ${filled.length} existing line(s) with ${itemCount} item(s) from ${groups.length} sub-group(s)?`
+        );
+        if (!ok) return false;
+    }
+    clearAllLineItems();
+    ensureTrailingEmptyRow();
+    const firstRow = getVisibleEstimateRows()[0] || null;
+    suppressTrailingEmptyRow = true;
+    try {
+        groups.forEach((g, idx) => {
+            appendGroupItemsToEstimate(g, idx === 0 ? firstRow : null, { deferTrailing: true });
+        });
+    } finally {
+        suppressTrailingEmptyRow = false;
+        removeInteriorEmptyRows();
+        calculateTotals();
+    }
+    document.getElementById('lineItemsCardHeader')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    return true;
 }
 
 function addLinesFromInventoryGroupSelect(sel) {
@@ -989,30 +1481,7 @@ function addLinesFromInventoryGroupSelect(sel) {
         return;
     }
     const row = sel.closest('tr.item-row');
-    const tbody = document.getElementById('itemsBody');
-    if (!row || !tbody) return;
-    let first = true;
-    g.items.forEach(it => {
-        let targetRow;
-        if (first) {
-            targetRow = row;
-            first = false;
-        } else {
-            addItemRow();
-            targetRow = tbody.lastElementChild;
-        }
-        applyInventoryItemToRow(targetRow, it.id, g.name, it.default_quantity);
-    });
-    const mult = findGroupQtyMultiplierForName(g.name);
-    document.querySelectorAll('#itemsBody .item-row').forEach(r => {
-        if (r.style.display === 'none') return;
-        if (getRowGroupName(r) !== normalizeGroupName(g.name)) return;
-        const inp = r.querySelector('.item-group-qty-mult');
-        if (inp) inp.value = mult;
-    });
-    refreshGroupQtyMultDisplay();
-    applyGroupMultiplier(normalizeGroupName(g.name), row);
-    ensureTrailingEmptyRow();
+    appendGroupItemsToEstimate(g, row);
 }
 
 function addItemRow() {
@@ -1032,7 +1501,12 @@ function addItemRow() {
         <td class="items-col-inventory"><select name="items-${formCount}-inventory_item" class="form-select form-select-sm item-inventory">${getInventoryOptions()}</select></td>
         <td class="items-col-desc"><input type="text" name="items-${formCount}-description" class="form-control form-control-sm"></td>
         <td class="items-col-qty"><input type="number" name="items-${formCount}-quantity" value="1" step="1" min="1" class="form-control form-control-sm item-qty"></td>
-        <td class="items-col-base"><input type="number" name="items-${formCount}-unit_price" value="0" step="0.01" min="0" class="form-control form-control-sm item-base-price"></td>
+        <td class="items-col-base">
+            <div class="input-group input-group-sm estimate-price-input-group flex-nowrap">
+                <input type="number" name="items-${formCount}-unit_price" value="0" step="0.01" min="0" class="form-control form-control-sm item-base-price">
+                <button type="button" class="btn btn-sm btn-outline-info item-bounds-help d-none" title="Selling price limits"><i class="fas fa-eye"></i></button>
+            </div>
+        </td>
         <td class="items-col-profit"><select name="items-${formCount}-profit_type" class="form-select form-select-sm item-profit-type">${getProfitTypeOptions('none')}</select></td>
         <td class="items-col-profit-num"><input type="number" name="items-${formCount}-profit_value" value="0" step="0.01" min="0" class="form-control form-control-sm item-profit-value"></td>
         <td class="items-col-rate"><input type="number" name="items-${formCount}-rate" value="0" step="0.01" class="form-control form-control-sm item-rate" readonly></td>
@@ -1046,6 +1520,7 @@ function addItemRow() {
         </td>
     `;
     tbody.appendChild(tr);
+    initBasePriceBoundsUI(tr);
     fillInventoryGroupBulkSelect(tr.querySelector('.estimate-add-from-group'));
     initInventorySelect2(tr.querySelector('.item-inventory'));
     syncInventoryFieldHeight(tr);
@@ -1055,7 +1530,9 @@ function addItemRow() {
     refreshGroupQtyMultDisplay();
     formCount++;
     document.getElementById('id_items-TOTAL_FORMS').value = formCount;
-    calculateRowTotal(tr.querySelector('.item-qty'));
+    if (!suppressTrailingEmptyRow) {
+        calculateRowTotal(tr.querySelector('.item-qty'));
+    }
 }
 
 function getVisibleEstimateRows() {
@@ -1096,6 +1573,7 @@ function syncFormsetManagementCounts() {
 
 /** Keep one blank line ready after the last filled row. */
 function ensureTrailingEmptyRow() {
+    if (suppressTrailingEmptyRow) return;
     const rows = getVisibleEstimateRows();
     if (!rows.length) {
         addItemRow();
@@ -1150,7 +1628,96 @@ function calculateRowTotal(input) {
     if (netEl) netEl.textContent = net.toFixed(2);
     if (grossEl) grossEl.textContent = gross.toFixed(2);
     calculateTotals();
-    ensureTrailingEmptyRow();
+    if (!suppressTrailingEmptyRow) {
+        ensureTrailingEmptyRow();
+    }
+}
+
+const groupExpenseMetaByName = {};
+inventoryGroups.forEach(g => {
+    if (!g.expense_type_name) return;
+    groupExpenseMetaByName[normalizeGroupName(g.name).toLowerCase()] = {
+        groupName: g.name,
+        expenseTypeName: g.expense_type_name,
+        expenseTypeOrder: g.expense_type_order || 0,
+    };
+});
+
+function updateExpenseTypeTotals() {
+    const card = document.getElementById('estimateExpensesCard');
+    const list = document.getElementById('estimateExpensesList');
+    const footer = document.getElementById('estimateExpensesFooter');
+    if (!card || !list) return;
+
+    const totalsByType = {};
+    document.querySelectorAll('#itemsBody .item-row').forEach(row => {
+        if (row.style.display === 'none') return;
+        const groupName = getRowGroupName(row);
+        if (!groupName) return;
+        const meta = groupExpenseMetaByName[groupName.toLowerCase()];
+        if (!meta) return;
+
+        const qty = parseFloat(row.querySelector('.item-qty')?.value) || 0;
+        const rate = computeRate(row);
+        const taxSel = row.querySelector('.item-tax-code');
+        const vatRate = getVatRatePercent(taxSel);
+        const net = qty * rate;
+        const gross = net + net * (vatRate / 100);
+        const key = meta.expenseTypeName;
+        if (!totalsByType[key]) {
+            totalsByType[key] = {
+                expenseTypeName: meta.expenseTypeName,
+                expenseTypeOrder: meta.expenseTypeOrder,
+                total: 0,
+            };
+        }
+        totalsByType[key].total += gross;
+    });
+
+    const rows = Object.values(totalsByType).sort((a, b) => {
+        if (a.expenseTypeOrder !== b.expenseTypeOrder) {
+            return a.expenseTypeOrder - b.expenseTypeOrder;
+        }
+        return a.expenseTypeName.localeCompare(b.expenseTypeName);
+    });
+
+    if (!rows.length) {
+        card.classList.add('d-none');
+        list.innerHTML = '';
+        if (footer) {
+            footer.classList.add('d-none');
+            footer.innerHTML = '';
+        }
+        return;
+    }
+
+    const grandTotal = rows.reduce((sum, row) => sum + money2(row.total), 0);
+    const colCount = rows.length === 1 ? 1 : rows.length === 2 ? 2 : 3;
+    card.classList.remove('d-none');
+    list.className = `row row-cols-1 g-2${colCount > 1 ? ` row-cols-md-${colCount}` : ''}`;
+    list.innerHTML = rows.map(row => (
+        `<div class="col">`
+        + `<div class="estimate-expense-cell">`
+        + `<div class="estimate-expense-name">${escapeHtml(row.expenseTypeName)}</div>`
+        + `<div class="estimate-expense-amount">AED ${money2(row.total).toFixed(2)}</div>`
+        + `</div>`
+        + `</div>`
+    )).join('');
+
+    if (footer) {
+        if (rows.length > 1) {
+            footer.classList.remove('d-none');
+            footer.classList.add('d-flex');
+            footer.innerHTML = (
+                `<span class="text-muted text-uppercase small fw-semibold">Total expenses</span>`
+                + `<span class="fw-bold text-dark">AED ${grandTotal.toFixed(2)}</span>`
+            );
+        } else {
+            footer.classList.add('d-none');
+            footer.classList.remove('d-flex');
+            footer.innerHTML = '';
+        }
+    }
 }
 
 function calculateTotals() {
@@ -1194,6 +1761,7 @@ function calculateTotals() {
     document.getElementById('discountDisplay').textContent = disc.toFixed(2);
     document.getElementById('vatTotal').textContent = vatTotal.toFixed(2);
     document.getElementById('grandTotal').textContent = grand.toFixed(2);
+    updateExpenseTypeTotals();
 }
 
 function bindLineItemsTableEvents() {
@@ -1230,7 +1798,7 @@ function bindLineItemsTableEvents() {
         const q = row.querySelector('.item-qty');
         if (q) calculateRowTotal(q);
         if (t.matches('.item-base-price, .item-profit-value')) {
-            validateRowSellingRate(row, true, t);
+            validateRowSellingRate(row, false, t);
         }
     });
 
@@ -1242,7 +1810,7 @@ function bindLineItemsTableEvents() {
         }
         if (t.matches('.item-base-price, .item-profit-value')) {
             const row = t.closest('tr.item-row');
-            if (row) validateRowSellingRate(row, true, t);
+            if (row) validateRowSellingRate(row, false, t);
             return;
         }
         if (t.matches('.item-group-qty-mult')) {
@@ -1266,7 +1834,7 @@ function bindLineItemsTableEvents() {
             if (!row) return;
             const q = row.querySelector('.item-qty');
             if (q) calculateRowTotal(q);
-            validateRowSellingRate(row, true, row.querySelector('.item-profit-value'));
+            validateRowSellingRate(row, false, row.querySelector('.item-profit-value'));
             return;
         }
         if (!t.matches('.item-qty, .item-tax-code')) return;
@@ -1346,21 +1914,62 @@ document.addEventListener('DOMContentLoaded', function() {
     initAllBaseQty();
     refreshGroupQtyMultDisplay();
     document.querySelectorAll('.estimate-add-from-group').forEach(fillInventoryGroupBulkSelect);
+    suppressTrailingEmptyRow = true;
     document.querySelectorAll('#itemsBody .item-row').forEach(row => {
         const q = row.querySelector('.item-qty');
         if (q) calculateRowTotal(q);
     });
+    suppressTrailingEmptyRow = false;
+    {% if object %}
+    pruneEmptyLineRows();
+    {% else %}
     ensureTrailingEmptyRow();
+    {% endif %}
     document.querySelector('[name="discount_type"]')?.addEventListener('change', calculateTotals);
     document.querySelector('[name="discount_value"]')?.addEventListener('input', calculateTotals);
+    const scopeSelect = document.getElementById('id_scope_of_work');
+    if (scopeSelect) {
+        let lastScopeOfWork = scopeSelect.value || '';
+        scopeSelect.addEventListener('change', function() {
+            const selected = this.value;
+            if (!selected) {
+                lastScopeOfWork = '';
+                return;
+            }
+            const ok = loadLineItemsForScopeOfWork(selected);
+            if (!ok) {
+                this.value = lastScopeOfWork;
+            } else {
+                lastScopeOfWork = selected;
+            }
+        });
+    }
+    const boundsModalEl = document.getElementById('estimatePriceBoundsModal');
+    if (boundsModalEl && window.bootstrap) {
+        estimatePriceBoundsModal = new bootstrap.Modal(boundsModalEl);
+    }
+    document.querySelectorAll('#itemsBody .item-row').forEach(row => initBasePriceBoundsUI(row));
+    document.getElementById('itemsBody')?.addEventListener('click', function(e) {
+        const btn = e.target.closest('.item-bounds-help');
+        if (!btn) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const row = btn.closest('tr.item-row');
+        if (row) openEstimatePriceBoundsModal(row);
+    });
+
     document.getElementById('estimateForm')?.addEventListener('submit', function(e) {
         if (!validateAllSellingRates(true)) {
             e.preventDefault();
             const firstInvalid = document.querySelector(
-                '#itemsBody .item-base-price.is-invalid, #itemsBody .item-profit-value.is-invalid'
+                '#itemsBody .estimate-price-out-of-bounds'
             );
+            const row = firstInvalid?.closest('tr.item-row');
             firstInvalid?.focus();
             firstInvalid?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            if (row && estimatePriceBoundsModal) {
+                openEstimatePriceBoundsModal(row);
+            }
         }
     });
 });

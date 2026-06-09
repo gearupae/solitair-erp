@@ -21,8 +21,13 @@ class Command(BaseCommand):
         
         # Purchase Mappings
         '2000': ['vendor_bill_payable', 'vendor_payment_ap_clear'],
+        '2010': ['inventory_grn_clearing'],
         '5000': ['vendor_bill_expense', 'expense_claim_expense'],
         '1300': ['vendor_bill_vat', 'expense_claim_vat'],
+
+        # Inventory Mappings
+        '1500': ['inventory_asset'],
+        '5100': ['inventory_cogs'],
         
         # Expense Claim Mappings (Employee Payable - may use different code)
         '2200': ['expense_claim_payable'],  # If 2200 doesn't exist, try 2100
@@ -71,6 +76,8 @@ class Command(BaseCommand):
                   'sales_invoice_discount', 'customer_receipt', 'customer_receipt_ar_clear'],
         'purchase': ['vendor_bill_payable', 'vendor_bill_expense', 'vendor_bill_vat',
                      'vendor_payment', 'vendor_payment_ap_clear'],
+        'inventory': ['inventory_asset', 'inventory_cogs', 'inventory_grn_clearing',
+                      'inventory_variance', 'inventory_damage_expense'],
         'expense_claim': ['expense_claim_expense', 'expense_claim_vat', 'expense_claim_payable',
                          'expense_claim_payment', 'expense_claim_clear'],
         'payroll': ['payroll_salary_expense', 'payroll_salary_payable', 'payroll_gratuity_expense',

@@ -8,6 +8,7 @@ from .models import (
     CompanySettings,
     Company,
     EstimateTextTemplate,
+    ItemSubGroupExpenseType,
     NumberSeries,
     AuditLog,
     ApprovalWorkflow,
@@ -58,6 +59,13 @@ class CompanyAdmin(admin.ModelAdmin):
     list_display = ['name', 'country', 'mol_number', 'trade_license_number', 'is_active']
     list_filter = ['country', 'is_active']
     search_fields = ['name', 'trade_license_number']
+
+
+@admin.register(ItemSubGroupExpenseType)
+class ItemSubGroupExpenseTypeAdmin(admin.ModelAdmin):
+    list_display = ['name', 'sort_order', 'is_active']
+    list_filter = ['is_active']
+    search_fields = ['name']
 
 
 @admin.register(EstimateTextTemplate)

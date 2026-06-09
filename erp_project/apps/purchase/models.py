@@ -551,20 +551,19 @@ class VendorBill(BaseModel):
                 "Set the PO reference or uncheck 'Goods Received'."
             )
 
-        ap_account = AccountMapping.get_account_or_default('vendor_bill_payable', '2000')
-        if not ap_account:
-            raise ValidationError(
-                "Accounts Payable account not configured. "
-                "Expected account 2000 or set up 'vendor_bill_payable' in Finance → Account Mapping."
-            )
+        ap_account = AccountMapping.require_account(
+            'vendor_bill_payable',
+            not_configured_message=(
+                'Accounts Payable account not configured in Account Mapping.'
+            ),
+        )
 
         if self.goods_received:
-            debit_account = AccountMapping.get_account_or_default('inventory_grn_clearing', '2010')
-            if not debit_account:
-                raise ValidationError(
-                    "GRN Clearing account not configured. "
-                    "Expected account 2010 or set up 'inventory_grn_clearing' in Finance → Account Mapping."
-                )
+            # GRN-matched bill: Dr GRN Clearing, Cr AP (closes GRN liability from stock-in)
+            debit_account = AccountMapping.require_account(
+                'inventory_grn_clearing',
+                not_configured_message=AccountMapping.GRN_CLEARING_NOT_CONFIGURED,
+            )
             debit_label = "GRN Clearing"
         else:
             debit_account = AccountMapping.get_account_or_default('vendor_bill_expense', '5000')

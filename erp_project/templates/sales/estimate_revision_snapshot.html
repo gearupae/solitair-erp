@@ -1,0 +1,166 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="page-header">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb mb-2">
+            <li class="breadcrumb-item"><a href="{% url 'sales:estimate_list' %}">Estimates</a></li>
+            <li class="breadcrumb-item"><a href="{% url 'sales:estimate_detail' estimate.pk %}">{{ estimate.display_estimate_number }}</a></li>
+            <li class="breadcrumb-item active">{{ snapshot.display_number }}</li>
+        </ol>
+    </nav>
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div>
+            <h4 class="mb-1 fw-bold">{{ snapshot.display_number }}</h4>
+            <span class="text-muted">Saved revision · {{ snapshot.get_status_at_snapshot_display }} · {{ snapshot.created_at|date:"d/m/Y H:i" }}</span>
+            <span class="badge bg-secondary ms-2">Archived</span>
+        </div>
+        <div class="d-flex gap-2">
+            <a href="{% url 'sales:estimate_revision_pdf' estimate.pk snapshot.pk %}" class="btn btn-outline-danger btn-sm" target="_blank">
+                <i class="fas fa-file-pdf me-1"></i>PDF
+            </a>
+            <a href="{% url 'sales:estimate_detail' estimate.pk %}" class="btn btn-outline-secondary btn-sm">
+                <i class="fas fa-arrow-left me-1"></i>Current estimate
+            </a>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card mb-4">
+            <div class="card-header bg-transparent py-3">
+                <h6 class="mb-0 fw-semibold"><i class="fas fa-info-circle me-2 text-dark"></i>Estimate details (at save time)</h6>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <div class="text-muted small">Customer</div>
+                        <div class="fw-medium">{{ data.customer_name|default:"—" }}</div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="text-muted small">Date</div>
+                        <div>{% if snapshot_date %}{{ snapshot_date|date:"d/m/Y" }}{% else %}—{% endif %}</div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="text-muted small">Valid until</div>
+                        <div>{% if snapshot_valid_until %}{{ snapshot_valid_until|date:"d/m/Y" }}{% else %}—{% endif %}</div>
+                    </div>
+                    {% if data.type_of_occupancy %}
+                    <div class="col-md-4">
+                        <div class="text-muted small">Type of occupancy</div>
+                        <div>{{ data.type_of_occupancy }}</div>
+                    </div>
+                    {% endif %}
+                    {% if data.type_of_work %}
+                    <div class="col-md-4">
+                        <div class="text-muted small">Type of work</div>
+                        <div>{{ data.type_of_work }}</div>
+                    </div>
+                    {% endif %}
+                    {% if data.scope_of_work %}
+                    <div class="col-md-4">
+                        <div class="text-muted small">Scope of work</div>
+                        <div>{{ data.scope_of_work }}</div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header bg-transparent py-3">
+                <h6 class="mb-0 fw-semibold"><i class="fas fa-list-ul me-2 text-dark"></i>Line items</h6>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table mb-0 table-sm align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Description</th>
+                                <th class="text-center">Qty</th>
+                                <th class="text-end">Base</th>
+                                <th class="text-center">Profit</th>
+                                <th class="text-end">Rate</th>
+                                <th class="text-end">Net</th>
+                                <th class="text-end">Line</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for group in item_groups %}
+                            {% if group.name %}
+                            <tr class="table-secondary">
+                                <td colspan="7" class="fw-semibold small text-uppercase">{{ group.name }}</td>
+                            </tr>
+                            {% endif %}
+                            {% for item in group.items %}
+                            <tr>
+                                <td>
+                                    {{ item.description }}
+                                    {% if item.inventory_item %}<br><small class="text-muted">{{ item.inventory_item.item_code }}</small>{% endif %}
+                                </td>
+                                <td class="text-center">{{ item.quantity|floatformat:2 }}</td>
+                                <td class="text-end">{{ item.unit_price|floatformat:2 }}</td>
+                                <td class="text-center small">
+                                    {% if item.profit_type == 'percent' %}{{ item.profit_value|floatformat:2 }}%{% elif item.profit_type == 'amount' %}AED {{ item.profit_value|floatformat:2 }}{% else %}—{% endif %}
+                                </td>
+                                <td class="text-end">{{ item.rate|floatformat:2 }}</td>
+                                <td class="text-end">{{ item.total|floatformat:2 }}</td>
+                                <td class="text-end fw-medium">{{ item.total|add:item.vat_amount|floatformat:2 }}</td>
+                            </tr>
+                            {% endfor %}
+                            {% empty %}
+                            <tr>
+                                <td colspan="7" class="text-center text-muted py-4">No items in this revision</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        {% if data.client_note %}
+        <div class="card mb-4">
+            <div class="card-header bg-transparent py-3">
+                <h6 class="mb-0 fw-semibold">Client note</h6>
+            </div>
+            <div class="card-body">{{ data.client_note|linebreaks }}</div>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card mb-4">
+            <div class="card-header bg-transparent py-3">
+                <h6 class="mb-0 fw-semibold">Summary</h6>
+            </div>
+            <div class="card-body">
+                <div class="d-flex justify-content-between mb-2">
+                    <span class="text-muted">Subtotal (excl. VAT)</span>
+                    <span>AED {{ subtotal|floatformat:2 }}</span>
+                </div>
+                {% if discount_applied and discount_applied > 0 %}
+                <div class="d-flex justify-content-between mb-2">
+                    <span class="text-muted">Discount (excl. VAT)</span>
+                    <span class="text-danger">− AED {{ discount_applied|floatformat:2 }}</span>
+                </div>
+                {% endif %}
+                <div class="d-flex justify-content-between mb-2">
+                    <span class="text-muted">VAT</span>
+                    <span>AED {{ vat_amount|floatformat:2 }}</span>
+                </div>
+                <hr>
+                <div class="d-flex justify-content-between fw-bold">
+                    <span>Total</span>
+                    <span>AED {{ total_amount|floatformat:2 }}</span>
+                </div>
+            </div>
+        </div>
+        <p class="text-muted small">
+            This is a frozen copy saved before the estimate was edited and re-submitted.
+            The current live estimate is <a href="{% url 'sales:estimate_detail' estimate.pk %}">{{ estimate.display_estimate_number }}</a>.
+        </p>
+    </div>
+</div>
+{% endblock %}

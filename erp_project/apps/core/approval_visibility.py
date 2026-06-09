@@ -89,6 +89,20 @@ def project_approver_records_q(user):
     return pending | completed
 
 
+def project_conversion_approver_records_q(user):
+    """Projects the conversion approver may view (pending queue + quotation-sourced)."""
+    config = ApprovalConfiguration.objects.filter(
+        module='project_conversion', is_active=True
+    ).first()
+    if not config:
+        return Q(pk__in=[])
+    amount_q = _build_amount_tier_q(config, user, '_approval_amount')
+    pending = Q(status='draft', conversion_approval_status='pending') & amount_q
+    # Quotation-sourced projects stay visible after approval (notification links, review).
+    from_estimate = Q(estimates__isnull=False) & amount_q
+    return pending | from_estimate
+
+
 def annotate_project_approval_amount(queryset):
     """Annotate Coalesce(contract_value, budget) for approval tier matching."""
     return queryset.annotate(
@@ -128,4 +142,25 @@ def user_is_project_approver_for(user, project):
         if approver is not None:
             return approver.pk == user.pk
         return bool(user.is_superuser)
+    return False
+
+
+def user_is_project_conversion_approver_for(user, project):
+    from apps.projects.approval_rules import (
+        user_can_approve_project_conversion,
+        user_is_configured_project_conversion_approver,
+    )
+
+    if not project:
+        return False
+    if not user_is_configured_project_conversion_approver(user, project):
+        return False
+    if user_can_approve_project_conversion(user, project):
+        return True
+    if project.estimates.exists():
+        return True
+    if project.conversion_approval_submitted_at:
+        return True
+    if project.conversion_approval_status == 'rejected':
+        return True
     return False

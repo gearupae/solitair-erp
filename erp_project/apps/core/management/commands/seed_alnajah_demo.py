@@ -69,9 +69,9 @@ VENDORS = [
 ]
 
 ESTIMATES = [
-    ("001", "001", "approved", "commercial", "installation_with_amc", "two_way_manifold"),
-    ("002", "002", "sent", "restaurants", "amc", "central_tank"),
-    ("003", "004", "draft", "factories_industries", "maintenance", "rectification"),
+    ("001", "001", "approved", "commercial", "installation_with_amc", ""),
+    ("002", "002", "sent", "restaurants", "amc", ""),
+    ("003", "004", "draft", "factories_industries", "maintenance", ""),
 ]
 
 PR_SPECS = [

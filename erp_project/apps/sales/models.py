@@ -72,7 +72,7 @@ class Estimate(BaseModel):
         ('direct_sale', 'Direct Sale'),
     ]
 
-    SCOPE_OF_WORK_CHOICES = [
+    LEGACY_SCOPE_OF_WORK_CHOICES = [
         ('two_way_manifold', '2 Way Manifold System'),
         ('four_way_manifold', '4 Way Manifold System'),
         ('central_tank', 'Central Tank System'),
@@ -117,11 +117,11 @@ class Estimate(BaseModel):
         verbose_name='Type of work',
     )
     scope_of_work = models.CharField(
-        max_length=40,
+        max_length=200,
         blank=True,
         default='',
-        choices=SCOPE_OF_WORK_CHOICES,
         verbose_name='Scope of work',
+        help_text='Inventory base group name (main group).',
     )
     date = models.DateField()
     valid_until = models.DateField(null=True, blank=True)
@@ -355,13 +355,20 @@ class Estimate(BaseModel):
         if self.type_of_work:
             labels.append(self.get_type_of_work_display())
         if self.scope_of_work:
-            labels.append(self.get_scope_of_work_display())
+            labels.append(self.scope_of_work_label)
         if labels:
             return labels
         if not self.scope:
             return []
         legacy = dict(self.SCOPE_CHOICES)
         return [legacy.get(code, code) for code in self.scope]
+
+    @property
+    def scope_of_work_label(self):
+        if not self.scope_of_work:
+            return ''
+        legacy = dict(self.LEGACY_SCOPE_OF_WORK_CHOICES)
+        return legacy.get(self.scope_of_work, self.scope_of_work)
 
     @property
     def has_work_classification(self) -> bool:
@@ -394,6 +401,61 @@ class Estimate(BaseModel):
         from apps.sales.approval_rules import user_can_edit_estimate
 
         return user_can_edit_estimate(user, self)
+
+
+class EstimateRevisionSnapshot(models.Model):
+    """Frozen copy of an estimate before a revision bump (R1, R2, …)."""
+
+    estimate = models.ForeignKey(
+        Estimate,
+        on_delete=models.CASCADE,
+        related_name='revision_snapshots',
+    )
+    revision_number = models.PositiveIntegerField(
+        default=0,
+        help_text='revision_count at snapshot time (0 = original before R1).',
+    )
+    revision_label = models.CharField(
+        max_length=10,
+        blank=True,
+        help_text='Empty for original; R1, R2, … for revisions.',
+    )
+    status_at_snapshot = models.CharField(max_length=20, blank=True)
+    total_amount = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    snapshot_data = models.JSONField(default=dict, blank=True)
+    pdf_file = models.FileField(upload_to='estimate_revisions/', blank=True, null=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='estimate_revision_snapshots_created',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['revision_number', 'created_at']
+        verbose_name = 'Estimate revision snapshot'
+        verbose_name_plural = 'Estimate revision snapshots'
+
+    def __str__(self):
+        return f'{self.estimate.estimate_number} {self.display_title}'
+
+    @property
+    def display_title(self):
+        if self.revision_number and self.revision_number > 0:
+            return f'R{self.revision_number}'
+        return 'Original'
+
+    @property
+    def display_number(self):
+        base = self.estimate.estimate_number
+        if self.revision_label:
+            return f'{base}-{self.revision_label}'
+        return base
+
+    def get_status_at_snapshot_display(self):
+        return dict(Estimate.STATUS_CHOICES).get(self.status_at_snapshot, self.status_at_snapshot)
 
 
 class EstimateProformaInvoice(models.Model):

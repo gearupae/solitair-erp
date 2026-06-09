@@ -195,6 +195,7 @@
 const PR_INVENTORY_ITEMS = JSON.parse(document.getElementById('pr-inventory-items-data').textContent);
 const PR_UNIT_KEYS = new Set(['pcs', 'box', 'kg', 'ltr', 'set', 'other']);
 let formCount = {{ items_formset.total_form_count }};
+let suppressTrailingEmptyRow = false;
 
 function escapeHtml(text) {
     return String(text || '')
@@ -253,12 +254,64 @@ function initAllPrInventorySelect2() {
     document.querySelectorAll('#itemsBody .item-inventory-select').forEach(initPrInventorySelect2);
 }
 
+function getVisiblePrRows() {
+    return Array.from(document.querySelectorAll('#itemsBody .item-row'))
+        .filter(function (r) { return r.style.display !== 'none'; });
+}
+
+function isPrRowFilled(row) {
+    if (!row || row.style.display === 'none') return false;
+    const inv = (row.querySelector('.item-inventory-select')?.value || '').trim();
+    const qty = parseFloat(row.querySelector('.item-qty')?.value || 0) || 0;
+    const cost = parseFloat(row.querySelector('.item-cost')?.value || 0) || 0;
+    return Boolean(inv) || qty > 0 || cost > 0;
+}
+
+function isPrRowEmpty(row) {
+    return !isPrRowFilled(row);
+}
+
+function isTrailingEmptyRow(row) {
+    const rows = getVisiblePrRows();
+    if (!rows.length) return false;
+    return rows[rows.length - 1] === row && isPrRowEmpty(row);
+}
+
+function syncFormsetManagementCounts() {
+    const rows = document.querySelectorAll('#itemsBody .item-row');
+    const totalEl = document.getElementById('id_items-TOTAL_FORMS');
+    if (totalEl) totalEl.value = rows.length;
+    let maxIdx = -1;
+    rows.forEach(function (r) {
+        const el = r.querySelector('[name^="items-"][name$="-quantity"], [name^="items-"][name$="-inventory_item"]');
+        const m = (el?.name || '').match(/^items-(\d+)-/);
+        if (m) maxIdx = Math.max(maxIdx, parseInt(m[1], 10));
+    });
+    formCount = maxIdx + 1;
+}
+
+function ensureTrailingEmptyRow() {
+    if (suppressTrailingEmptyRow) return;
+    const rows = getVisiblePrRows();
+    if (!rows.length) {
+        addItemRow();
+        return;
+    }
+    const last = rows[rows.length - 1];
+    if (isPrRowFilled(last)) {
+        addItemRow();
+    }
+}
+
 function updateRowTotal(row) {
     const qty = parseFloat(row.querySelector('.item-qty')?.value || 0) || 0;
     const cost = parseFloat(row.querySelector('.item-cost')?.value || 0) || 0;
     const total = (qty * cost).toFixed(2);
     const totalCell = row.querySelector('.item-total');
     if (totalCell) totalCell.textContent = total;
+    if (!suppressTrailingEmptyRow) {
+        ensureTrailingEmptyRow();
+    }
 }
 
 function applyInventoryDefaults(selectEl, row) {
@@ -320,12 +373,23 @@ function removeItemRow(btn) {
     const row = btn.closest('tr');
     const invSel = row.querySelector('.item-inventory-select');
     if (invSel) destroyPrInventorySelect2(invSel);
+    const skipTrailingEnsure = isTrailingEmptyRow(row);
     const deleteCheck = row.querySelector('.delete-check');
+    const idInput = row.querySelector('input[name$="-id"]');
+    const hasSavedId = idInput && String(idInput.value || '').trim() !== '';
+
     if (deleteCheck) {
         deleteCheck.checked = true;
         row.style.display = 'none';
+    } else if (!hasSavedId && isPrRowEmpty(row)) {
+        row.remove();
+        syncFormsetManagementCounts();
     } else {
         row.remove();
+        syncFormsetManagementCounts();
+    }
+    if (!skipTrailingEnsure) {
+        ensureTrailingEmptyRow();
     }
 }
 
@@ -335,6 +399,9 @@ $(function() {
     itemsBody.addEventListener('change', function(e) {
         if (e.target.classList.contains('item-inventory-select')) {
             applyInventoryDefaults(e.target, e.target.closest('tr'));
+            if (!suppressTrailingEmptyRow) {
+                ensureTrailingEmptyRow();
+            }
         }
     });
     itemsBody.addEventListener('input', function(e) {
@@ -342,7 +409,8 @@ $(function() {
             updateRowTotal(e.target.closest('tr'));
         }
     });
-    document.querySelectorAll('.item-row').forEach(row => updateRowTotal(row));
+    document.querySelectorAll('.item-row').forEach(function (row) { updateRowTotal(row); });
+    ensureTrailingEmptyRow();
 });
 </script>
 {% endblock %}

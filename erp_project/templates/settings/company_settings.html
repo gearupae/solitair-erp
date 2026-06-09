@@ -45,6 +45,7 @@
                 <div class="col-md-6">
                     <label class="form-label">SMTP host</label>
                     <input type="text" name="smtp_host" class="form-control" value="{{ object.smtp_host }}" placeholder="e.g. smtp.office365.com">
+                    <div class="form-text">Full server name only — not the word &ldquo;smtp&rdquo; alone. Microsoft 365: <code>smtp.office365.com</code>; Gmail: <code>smtp.gmail.com</code>.</div>
                 </div>
                 <div class="col-md-6">
                     <label class="form-label">SMTP port</label>
@@ -143,7 +144,7 @@
             <h5 class="fw-semibold mb-2">
                 <i class="fas fa-file-invoice me-2 text-primary"></i>Sales estimates — defaults
             </h5>
-            <p class="text-muted small mb-3">Default signatures and project conversion behaviour. Client note and terms templates are managed in the section below.</p>
+            <p class="text-muted small mb-3">Default signatures, PDF images, and project conversion behaviour. Client note and terms templates are managed in the section below.</p>
 
             <h6 class="fw-semibold mb-2">Default signatures</h6>
             <p class="text-muted small mb-3">Uploaded images are copied automatically onto new estimates (users can still replace them per estimate).</p>
@@ -163,6 +164,29 @@
                     {% if object.estimate_default_customer_signature %}
                     <div class="mt-2">
                         <img src="{{ object.estimate_default_customer_signature.url }}" alt="Customer signature" class="img-thumbnail" style="max-height:80px">
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <h6 class="fw-semibold mb-2">Estimate PDF images</h6>
+            <p class="text-muted small mb-3">Image 1 and Image 2 appear in one row under the company VAT / TRN on every estimate quotation PDF. Signatures above are per-estimate defaults.</p>
+            <div class="row g-3 mb-4">
+                <div class="col-md-6">
+                    <label class="form-label">Image 1</label>
+                    <input type="file" name="estimate_pdf_stamp_image" class="form-control" accept="image/*">
+                    {% if object.estimate_pdf_stamp_image %}
+                    <div class="mt-2">
+                        <img src="{{ object.estimate_pdf_stamp_image.url }}" alt="Image 1" class="img-thumbnail" style="max-height:80px">
+                    </div>
+                    {% endif %}
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Image 2</label>
+                    <input type="file" name="estimate_pdf_footer_image" class="form-control" accept="image/*">
+                    {% if object.estimate_pdf_footer_image %}
+                    <div class="mt-2">
+                        <img src="{{ object.estimate_pdf_footer_image.url }}" alt="Image 2" class="img-thumbnail" style="max-height:80px">
                     </div>
                     {% endif %}
                 </div>

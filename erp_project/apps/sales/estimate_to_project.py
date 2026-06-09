@@ -33,7 +33,7 @@ def _estimate_line_display_label(line: EstimateItem) -> str:
 
 
 @transaction.atomic
-def create_project_from_estimate(*, estimate, include_items: bool):
+def create_project_from_estimate(*, estimate, include_items: bool, submitted_by=None):
     """
     Create a new Project, link estimate.project, optionally snapshot estimate lines as
     ProjectItemLine rows (shown under “Items” on the project — not as tasks).
@@ -49,12 +49,20 @@ def create_project_from_estimate(*, estimate, include_items: bool):
     desc_parts.append(f'Created from estimate {estimate.estimate_number}.')
     description = '\n\n'.join(desc_parts)[:5000]
 
+    from apps.projects.conversion_approval import (
+        project_conversion_approval_configured,
+        queue_project_conversion_approval,
+    )
+
+    needs_conversion_approval = project_conversion_approval_configured()
+    initial_status = 'draft' if needs_conversion_approval else 'planning'
+
     project = Project.objects.create(
         name=name,
         description=description,
         customer=estimate.customer,
         manager=estimate.assigned_to,
-        status='planning',
+        status=initial_status,
         start_date=estimate.date,
         contract_value=estimate.total_amount or Decimal('0.00'),
         budget=estimate.total_cost(),
@@ -65,6 +73,9 @@ def create_project_from_estimate(*, estimate, include_items: bool):
 
     estimate.project = project
     estimate.save(update_fields=['project'])
+
+    if needs_conversion_approval and submitted_by:
+        queue_project_conversion_approval(submitted_by, project)
 
     if include_items:
         qs = (

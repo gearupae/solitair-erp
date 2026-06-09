@@ -17,13 +17,22 @@
         }
 
         :root {
-            --ink: #0a0a0a;
-            --ink-soft: #1a1a1a;
-            --graphite: #2a2a2a;
-            --silver: #a3a3a3;
-            --mist: #e5e5e5;
-            --paper: #fafafa;
+            --ink: #1e293b;
+            --ink-soft: #475569;
+            --graphite: #64748b;
+            --silver: #94a3b8;
+            --mist: #e2e8f0;
+            --paper: #f8fafc;
             --white: #ffffff;
+            /* Subtle brand accent — light touch of sky blue */
+            --accent: #6ba3bc;
+            --accent-soft: #a8c9d8;
+            --accent-tint: #f4f8fa;
+            --accent-border: #d4e4ec;
+            --head-bg: #c8e6f4;
+            --head-bg-light: #dff0f8;
+            --row-alt: #fafbfc;
+            --discount: #b91c1c;
         }
 
         body {
@@ -65,7 +74,7 @@
             font-size: 9px;
             text-transform: uppercase;
             letter-spacing: 0.12em;
-            color: var(--silver);
+            color: var(--graphite);
             margin-bottom: 10px;
             font-weight: 700;
         }
@@ -86,25 +95,25 @@
 
         .addr-lines {
             font-size: 10px;
-            color: #404040;
+            color: var(--ink-soft);
             line-height: 1.55;
         }
 
         .addr-lines .trn {
             margin-top: 8px;
             padding-top: 8px;
-            border-top: 1px dashed #ccc;
+            border-top: 1px dashed var(--mist);
             font-weight: 600;
             color: var(--ink);
         }
 
-        /* Title strip — flat dark blue (document heading / number / status) */
+        /* Title strip — light sky blue (letterhead tone) */
         .title-strip {
-            background: #153a5c;
-            color: var(--white);
+            background: linear-gradient(135deg, var(--head-bg-light) 0%, var(--head-bg) 100%);
+            color: var(--ink);
             padding: 16px 18px;
             margin-bottom: 16px;
-            border: 1px solid #0c2840;
+            border: 1px solid var(--accent-border);
         }
 
         .title-strip-main {
@@ -119,14 +128,14 @@
             font-weight: 700;
             letter-spacing: 0.06em;
             line-height: 1.2;
-            color: #f1f5f9;
+            color: var(--ink);
         }
 
         .estimate-number {
             font-size: 17px;
             font-weight: 700;
             letter-spacing: 0.04em;
-            color: #e2e8f0;
+            color: var(--accent);
         }
 
         .status-badge {
@@ -136,24 +145,25 @@
             font-size: 10px;
             text-transform: uppercase;
             letter-spacing: 0.08em;
-            border: 1px solid rgba(148, 163, 184, 0.45);
-            background: rgba(15, 23, 42, 0.45);
-            color: #e2e8f0;
+            border: 1px solid var(--accent-border);
+            background: var(--white);
+            color: var(--accent);
+            font-weight: 700;
         }
 
-        .status-draft { opacity: 0.9; border-color: rgba(148, 163, 184, 0.35); }
-        .status-sent { border-color: rgba(125, 211, 252, 0.45); }
-        .status-approved { border-color: rgba(129, 140, 248, 0.55); color: #c7d2fe; }
-        .status-rejected { border-color: rgba(251, 191, 36, 0.5); color: #fde68a; }
-        .status-under_negotiation { border-color: rgba(34, 211, 238, 0.55); color: #a5f3fc; }
-        .status-quotation_won { border-color: rgba(74, 222, 128, 0.65); color: #bbf7d0; }
-        .status-quotation_lost { border-color: rgba(248, 113, 113, 0.65); color: #fecaca; }
+        .status-draft { color: var(--graphite); }
+        .status-sent { color: #0369a1; }
+        .status-approved { color: #1d4ed8; }
+        .status-rejected { color: #b45309; }
+        .status-under_negotiation { color: #0e7490; }
+        .status-quotation_won { color: #15803d; }
+        .status-quotation_lost { color: #b91c1c; }
 
         /* Estimate details inside To block */
         .addr-to-estimate-details {
             margin-top: 12px;
             padding-top: 12px;
-            border-top: 1px dashed #ccc;
+            border-top: 1px dashed var(--mist);
         }
 
         .addr-to-estimate-details .addr-label {
@@ -166,7 +176,7 @@
             gap: 8px;
             padding: 4px 0;
             font-size: 9px;
-            border-bottom: 1px solid #eee;
+            border-bottom: 1px solid var(--mist);
         }
 
         .addr-to-detail-row:last-child {
@@ -174,23 +184,23 @@
         }
 
         .addr-to-detail-label {
-            color: #737373;
+            color: var(--silver);
             flex-shrink: 0;
         }
 
         .addr-to-detail-value {
             font-weight: 600;
-            color: #404040;
+            color: var(--ink-soft);
             text-align: right;
         }
 
         .validity-notice {
             margin-top: 12px;
             padding: 8px 10px;
-            background: #f3f3f3;
-            border: 1px solid #ddd;
+            background: var(--white);
+            border: 1px solid var(--mist);
             font-size: 10px;
-            color: #444;
+            color: var(--ink-soft);
         }
 
         /* Items table */
@@ -201,14 +211,16 @@
         }
 
         .items-table thead th {
-            background: #153a5c;
-            color: #f5f5f5;
+            background: var(--head-bg);
+            color: var(--ink);
             padding: 9px 6px;
             text-align: left;
             font-size: 9px;
             text-transform: uppercase;
             letter-spacing: 0.04em;
-            border: 1px solid #0c2840;
+            border: 1px solid var(--accent-border);
+            border-bottom: 2px solid var(--accent-soft);
+            font-weight: 700;
         }
 
         .items-table thead th.text-center { text-align: center; }
@@ -216,7 +228,7 @@
 
         .items-table tbody td {
             padding: 8px 6px;
-            border-bottom: 1px solid #e8e8e8;
+            border-bottom: 1px solid var(--mist);
             font-size: 10px;
         }
 
@@ -224,28 +236,29 @@
         .items-table tbody td.text-right { text-align: right; font-variant-numeric: tabular-nums; }
 
         .items-table tbody tr:nth-child(even) {
-            background: #f7f7f7;
+            background: var(--row-alt);
         }
 
         .group-row td {
-            background: #eaeaea !important;
+            background: var(--mist) !important;
             font-weight: 700;
             font-size: 9px;
             text-transform: uppercase;
-            color: #333;
+            color: var(--ink-soft);
+            letter-spacing: 0.04em;
         }
 
         .group-total-row td {
-            background: #f0f0f0 !important;
+            background: var(--paper) !important;
             font-weight: 700;
             font-size: 10px;
-            color: #262626;
-            border-top: 1px solid #ccc;
+            color: var(--ink);
+            border-top: 1px solid var(--accent-border);
         }
 
-        .item-number { color: #737373; font-size: 9px; }
-        .item-description { font-weight: 500; }
-        .item-brand { font-size: 9px; color: #525252; }
+        .item-number { color: var(--silver); font-size: 9px; }
+        .item-description { font-weight: 500; color: var(--ink); }
+        .item-brand { font-size: 9px; color: var(--graphite); }
 
         /* Totals */
         .totals-section {
@@ -262,35 +275,37 @@
             display: flex;
             justify-content: space-between;
             padding: 7px 12px;
-            border-bottom: 1px solid #e5e5e5;
+            border-bottom: 1px solid var(--mist);
             font-size: 10px;
         }
 
-        .totals-row.subtotal { background: #f5f5f5; }
-        .totals-row.vat-row { background: #ececec; }
+        .totals-row.subtotal { background: var(--white); }
+        .totals-row.vat-row { background: var(--row-alt); }
 
         .totals-row.total {
-            background: #153a5c;
-            color: #fff;
+            background: var(--paper);
+            color: var(--ink);
             font-size: 13px;
             font-weight: 700;
-            border: 1px solid #0c2840;
+            border: 1px solid var(--mist);
+            border-left: 3px solid var(--accent);
+            margin-top: 2px;
         }
 
         .totals-row.total .totals-label {
-            color: #e8eef5;
+            color: var(--ink);
         }
 
         .totals-row.total .totals-value {
-            color: #fff;
+            color: var(--accent);
         }
 
-        .totals-label { color: #525252; }
-        .totals-value { font-variant-numeric: tabular-nums; font-weight: 600; }
+        .totals-label { color: var(--graphite); }
+        .totals-value { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--ink); }
 
         .amount-words {
-            background: #f0f0f0;
-            border: 1px solid #ddd;
+            background: var(--paper);
+            border: 1px solid var(--mist);
             padding: 12px;
             margin-bottom: 16px;
             font-size: 10px;
@@ -300,7 +315,7 @@
             font-size: 9px;
             text-transform: uppercase;
             letter-spacing: 0.08em;
-            color: #525252;
+            color: var(--graphite);
             font-weight: 700;
             margin-bottom: 4px;
         }
@@ -313,14 +328,14 @@
             font-size: 10px;
             text-transform: uppercase;
             letter-spacing: 0.08em;
-            color: #525252;
+            color: var(--graphite);
             font-weight: 700;
             margin-bottom: 4px;
         }
 
         .notes-content, .terms-content {
-            background: #fafafa;
-            border: 1px solid #e5e5e5;
+            background: var(--paper);
+            border: 1px solid var(--mist);
             padding: 10px 12px;
             font-size: 10px;
             line-height: 1.55;
@@ -333,21 +348,21 @@
         .acceptance-section {
             margin-top: 22px;
             padding: 14px 16px;
-            background: #f5f5f5;
-            border: 1px solid #d4d4d4;
-            color: #262626;
+            background: var(--paper);
+            border: 1px solid var(--mist);
+            color: var(--ink-soft);
         }
 
         .acceptance-title {
             font-size: 11px;
             font-weight: 700;
-            color: #171717;
+            color: var(--ink);
             margin-bottom: 8px;
         }
 
         .acceptance-text {
             font-size: 10px;
-            color: #404040;
+            color: var(--ink-soft);
             margin-bottom: 14px;
         }
 
@@ -370,16 +385,16 @@
 
         .signature-label {
             font-size: 9px;
-            color: #525252;
+            color: var(--silver);
         }
 
         /* Footer */
         .doc-footer {
             margin-top: 28px;
             padding-top: 12px;
-            border-top: 1px solid #d4d4d4;
+            border-top: 1px solid var(--mist);
             font-size: 9px;
-            color: #525252;
+            color: var(--silver);
         }
 
         .doc-footer-line {
@@ -398,14 +413,37 @@
         }
 
         .doc-footer-company strong {
-            color: #171717;
+            color: var(--ink);
             font-size: 10px;
         }
 
         .doc-footer-page {
             font-variant-numeric: tabular-nums;
-            color: #737373;
+            color: var(--silver);
             white-space: nowrap;
+        }
+
+        .addr-from-cert-images {
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px dashed var(--mist);
+            max-height: 60px;
+            overflow: hidden;
+        }
+
+        .addr-from-cert-images img {
+            max-height: 52px;
+            max-width: 48%;
+            width: auto;
+            height: auto;
+            object-fit: contain;
+            flex: 1 1 0;
+            min-width: 0;
         }
 
         @media print {
@@ -428,25 +466,67 @@
 
         .print-btn {
             padding: 10px 18px;
-            border: 1px solid #0c2840;
+            border: 1px solid var(--accent);
             border-radius: 4px;
             cursor: pointer;
             font-size: 13px;
             font-weight: 600;
             text-decoration: none;
-            background: #153a5c;
-            color: #fff;
+            background: var(--accent);
+            color: var(--white);
         }
 
         .print-btn-secondary {
-            background: #f5f5f5;
-            color: #333;
+            background: var(--white);
+            color: var(--ink-soft);
+            border: 1px solid var(--mist);
+        }
+
+        .pdf-flash-messages {
+            position: fixed;
+            top: 64px;
+            left: 16px;
+            right: 240px;
+            z-index: 1001;
+        }
+
+        .pdf-flash {
+            padding: 10px 14px;
+            margin-bottom: 8px;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 600;
+            border: 1px solid #fecaca;
+            background: #fef2f2;
+            color: #991b1b;
+        }
+
+        .pdf-flash.alert-success {
+            border-color: #bbf7d0;
+            background: #f0fdf4;
+            color: #166534;
+        }
+
+        .print-btn:disabled {
+            opacity: 0.65;
+            cursor: wait;
         }
     </style>
 </head>
 <body>
+    {% if request.GET.pdf_error %}
+    <div class="no-print pdf-flash-messages">
+        <div class="pdf-flash">{{ request.GET.pdf_error }}</div>
+    </div>
+    {% endif %}
     <div class="print-actions no-print">
         <button type="button" class="print-btn" onclick="window.print()">{{ print_button_label|default:"Print quotation" }}</button>
+        {% if pdf_variant == 'quotation' %}
+        <button type="button" class="print-btn print-btn-secondary" id="btn-download-pdf"
+                data-download-url="{% url 'sales:estimate_pdf_download' estimate.pk %}">
+            <i class="fas fa-download me-1"></i>Download PDF
+        </button>
+        {% endif %}
         {% if proforma_single_line and proforma_can_edit %}
         <a href="{{ proforma_edit_url }}" class="print-btn print-btn-secondary">Edit proforma</a>
         {% endif %}
@@ -540,7 +620,7 @@
                     {% if estimate.scope_of_work %}
                     <div class="addr-to-detail-row">
                         <span class="addr-to-detail-label">Scope of work</span>
-                        <span class="addr-to-detail-value">{{ estimate.get_scope_of_work_display }}</span>
+                        <span class="addr-to-detail-value">{{ estimate.scope_of_work_label }}</span>
                     </div>
                     {% elif estimate.scope %}
                     <div class="addr-to-detail-row">
@@ -573,6 +653,16 @@
                     <div class="trn">VAT / TRN: {{ company.tax_id }}</div>
                     {% endif %}
                 </div>
+                {% if pdf_image_1_url or pdf_image_2_url %}
+                <div class="addr-from-cert-images">
+                    {% if pdf_image_1_url %}
+                    <img src="{{ pdf_image_1_url }}" alt="Image 1">
+                    {% endif %}
+                    {% if pdf_image_2_url %}
+                    <img src="{{ pdf_image_2_url }}" alt="Image 2">
+                    {% endif %}
+                </div>
+                {% endif %}
             </div>
         </div>
 
@@ -750,7 +840,7 @@
                 {% if estimate.discount_applied and estimate.discount_applied > 0 %}
                 <div class="totals-row">
                     <span class="totals-label">Discount (excl. VAT)</span>
-                    <span class="totals-value" style="color:#b91c1c;">− AED {{ estimate.discount_applied|floatformat:2 }}</span>
+                    <span class="totals-value" style="color:var(--discount);">− AED {{ estimate.discount_applied|floatformat:2 }}</span>
                 </div>
                 {% endif %}
                 {% for rate, amounts in vat_summary.items %}
@@ -763,7 +853,7 @@
                 {% if estimate.discount_applied and estimate.discount_applied > 0 %}
                 <div class="totals-row">
                     <span class="totals-label">Discount (excl. VAT)</span>
-                    <span class="totals-value" style="color:#b91c1c;">− AED {{ estimate.discount_applied|floatformat:2 }}</span>
+                    <span class="totals-value" style="color:var(--discount);">− AED {{ estimate.discount_applied|floatformat:2 }}</span>
                 </div>
                 {% endif %}
                 <div class="totals-row">
@@ -877,6 +967,43 @@
         if (urlParams.get('print') === '1') {
             window.onload = function() { window.print(); };
         }
+
+        (function () {
+            const btn = document.getElementById('btn-download-pdf');
+            if (!btn) return;
+            btn.addEventListener('click', async function () {
+                const url = btn.dataset.downloadUrl;
+                if (!url) return;
+                const label = btn.innerHTML;
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Generating…';
+                try {
+                    const res = await fetch(url, { credentials: 'same-origin' });
+                    const contentType = (res.headers.get('Content-Type') || '').toLowerCase();
+                    if (!res.ok || !contentType.includes('pdf')) {
+                        window.location.href = url;
+                        return;
+                    }
+                    const blob = await res.blob();
+                    const cd = res.headers.get('Content-Disposition') || '';
+                    let filename = 'Quotation.pdf';
+                    const match = cd.match(/filename="?([^";\n]+)"?/i);
+                    if (match) filename = match[1].trim();
+                    const link = document.createElement('a');
+                    link.href = URL.createObjectURL(blob);
+                    link.download = filename;
+                    document.body.appendChild(link);
+                    link.click();
+                    link.remove();
+                    setTimeout(function () { URL.revokeObjectURL(link.href); }, 3000);
+                } catch (err) {
+                    window.location.href = url;
+                } finally {
+                    btn.disabled = false;
+                    btn.innerHTML = label;
+                }
+            });
+        })();
     </script>
 </body>
 </html>

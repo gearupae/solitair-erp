@@ -1,0 +1,14 @@
+{% with count=rows|length %}
+{% if count %}
+<div class="row row-cols-1 g-2{% if count >= 3 %} row-cols-md-3{% elif count == 2 %} row-cols-md-2{% endif %}">
+    {% for row in rows %}
+    <div class="col">
+        <div class="project-expense-cell h-100">
+            <div class="project-expense-label">{{ row.label }}</div>
+            <div class="project-expense-amount">AED {{ row.amount|floatformat:2 }}</div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+{% endwith %}

@@ -1,0 +1,118 @@
+{% extends 'base.html' %}
+
+{% block extra_css %}
+<style>
+.expense-type-order-input {
+    width: 4.25rem;
+    min-width: 4.25rem;
+    max-width: 4.25rem;
+    text-align: center;
+    padding-left: 0.25rem;
+    padding-right: 0.25rem;
+    -moz-appearance: textfield;
+}
+.expense-type-order-input::-webkit-outer-spin-button,
+.expense-type-order-input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+    <div>
+        <h4 class="mb-1 fw-bold">Expense types</h4>
+        <p class="text-muted mb-0 small">
+            Used on <strong>sub-groups</strong> only (Inventory → Item groups). Not used on base groups.
+        </p>
+    </div>
+    <a href="{% url 'inventory:item_group_manage' %}?tab=sub" class="btn btn-outline-primary btn-sm">Item groups</a>
+</div>
+
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-body py-3">
+        <form method="post" class="row g-2 align-items-end">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="add">
+            <div class="col-md-6 col-lg-5">
+                <label class="form-label small text-muted mb-1">Name</label>
+                <input type="text" name="name" class="form-control form-control-sm" placeholder="e.g. Labour expenses" required maxlength="120">
+            </div>
+            <div class="col-md-2 col-lg-2">
+                <label class="form-label small text-muted mb-1">Order</label>
+                <input type="number" name="sort_order" class="form-control form-control-sm expense-type-order-input" value="" min="1" step="1" placeholder="Auto">
+            </div>
+            <div class="col-md-4 col-lg-2">
+                <label class="form-label small text-muted mb-1 d-none d-md-block">&nbsp;</label>
+                <button type="submit" class="btn btn-dark btn-sm w-100">
+                    <i class="fas fa-plus me-1"></i>Add
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-header bg-white py-2">
+        <h6 class="mb-0 fw-semibold small">Expense types ({{ expense_types|length }})</h6>
+    </div>
+    <div class="card-body p-0">
+        {% if expense_types %}
+        <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0 align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th style="width:5.5rem;" class="text-center">Order</th>
+                        <th>Name</th>
+                        <th style="width:5rem;" class="text-center">Active</th>
+                        <th style="width:7rem;" class="text-end"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for t in expense_types %}
+                    <tr>
+                        <form method="post" id="expense-type-form-{{ t.pk }}">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="save">
+                            <input type="hidden" name="type_id" value="{{ t.pk }}">
+                        </form>
+                        <td class="text-center">
+                            <input type="number" form="expense-type-form-{{ t.pk }}" name="sort_order"
+                                   class="form-control form-control-sm expense-type-order-input d-inline-block"
+                                   value="{% if t.sort_order %}{{ t.sort_order }}{% else %}{{ forloop.counter }}{% endif %}"
+                                   min="1" step="1" title="Display order">
+                        </td>
+                        <td>
+                            <input type="text" form="expense-type-form-{{ t.pk }}" name="name"
+                                   class="form-control form-control-sm" value="{{ t.name }}" required maxlength="120">
+                        </td>
+                        <td class="text-center">
+                            <input type="checkbox" form="expense-type-form-{{ t.pk }}" name="is_active"
+                                   class="form-check-input m-0" {% if t.is_active %}checked{% endif %}
+                                   title="Active">
+                        </td>
+                        <td class="text-end text-nowrap">
+                            <button type="submit" form="expense-type-form-{{ t.pk }}" class="btn btn-sm btn-outline-secondary" title="Save">
+                                <i class="fas fa-save"></i>
+                            </button>
+                            <form method="post" class="d-inline" onsubmit="return confirm('Delete “{{ t.name }}”?');">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="delete">
+                                <input type="hidden" name="type_id" value="{{ t.pk }}">
+                                <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-muted small p-3 mb-0">No expense types yet — add one above.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

@@ -297,6 +297,18 @@ class CompanySettings(models.Model):
         null=True,
         help_text='Default customer signature image for new estimates.',
     )
+    estimate_pdf_stamp_image = models.ImageField(
+        upload_to='company/estimate_pdf/',
+        blank=True,
+        null=True,
+        help_text='Image 1 — shown under company VAT / TRN on estimate quotation PDFs (left).',
+    )
+    estimate_pdf_footer_image = models.ImageField(
+        upload_to='company/estimate_pdf/',
+        blank=True,
+        null=True,
+        help_text='Image 2 — shown under company VAT / TRN on estimate quotation PDFs (right).',
+    )
 
     class Meta:
         verbose_name = 'Company Settings'
@@ -310,6 +322,29 @@ class CompanySettings(models.Model):
         """Get or create company settings."""
         settings, _ = cls.objects.get_or_create(pk=1, defaults={'company_name': 'My Company'})
         return settings
+
+
+class ItemSubGroupExpenseType(models.Model):
+    """
+    Configurable expense categories for inventory sub-groups (e.g. Labour, Other).
+    Managed in Settings; optional on each sub-group, not on base groups.
+    """
+
+    name = models.CharField(max_length=120, unique=True)
+    sort_order = models.PositiveIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ['sort_order', 'name']
+        verbose_name = 'Sub-group expense type'
+        verbose_name_plural = 'Sub-group expense types'
+
+    def __str__(self):
+        return self.name
+
+    @classmethod
+    def active_choices(cls):
+        return cls.objects.filter(is_active=True).order_by('sort_order', 'name')
 
 
 class EstimateTextTemplate(models.Model):
@@ -479,6 +514,7 @@ class ApprovalConfiguration(BaseModel):
         ('service_request', 'Service Request'),
         ('estimate', 'Sales Estimate'),
         ('project', 'Project'),
+        ('project_conversion', 'Project from estimate (draft)'),
         ('leave', 'Leave Request'),
     ]
     
@@ -552,6 +588,7 @@ class ApprovalConfiguration(BaseModel):
                 'inventory_request': f'/inventory/consumables/{pk}/' if pk else '',
                 'estimate': f'/sales/estimates/{pk}/' if pk else '',
                 'project': f'/projects/{pk}/' if pk else '',
+                'project_conversion': f'/projects/{pk}/' if pk else '',
                 'leave': f'/hr/leave/{pk}/' if pk else '',
             }
             link = link_map.get(module, str(pk) if pk else '')
@@ -560,6 +597,8 @@ class ApprovalConfiguration(BaseModel):
                 msg = f'{ref} was edited and needs your approval to clear the review queue.'
             elif module == 'project':
                 msg = f'{ref} completion was requested and needs your approval.'
+            elif module == 'project_conversion':
+                msg = f'{ref} was created from a quotation and needs your approval to leave Draft status.'
             elif module == 'leave':
                 msg = f'Leave request {ref} requires your approval.'
             else:

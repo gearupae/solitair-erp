@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Category, Warehouse, StorageLocation, Item, ItemGroup, ItemSerialNumber, Stock, StockMovement
+from .models import Category, Warehouse, StorageLocation, Item, ItemBaseGroup, ItemGroup, ItemSerialNumber, Stock, StockMovement
 
 
 @admin.register(Category)
@@ -25,10 +25,16 @@ class WarehouseAdmin(admin.ModelAdmin):
     readonly_fields = ['code']
 
 
+@admin.register(ItemBaseGroup)
+class ItemBaseGroupAdmin(admin.ModelAdmin):
+    list_display = ['name']
+    search_fields = ['name']
+
+
 @admin.register(ItemGroup)
 class ItemGroupAdmin(admin.ModelAdmin):
-    list_display = ['name', 'hide_items_on_pdf']
-    list_filter = ['hide_items_on_pdf']
+    list_display = ['name', 'base_group', 'hide_items_on_pdf']
+    list_filter = ['hide_items_on_pdf', 'base_group']
     search_fields = ['name']
 
 
