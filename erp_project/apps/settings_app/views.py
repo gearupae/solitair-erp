@@ -304,22 +304,6 @@ class CompanySettingsView(PermissionRequiredMixin, UpdateView):
         context['openai_key_masked'] = self.get_object().openai_api_key_masked()
         return context
 
-    def form_valid(self, form):
-        raw_key = (self.request.POST.get('openai_api_key') or '').strip()
-        if raw_key:
-            try:
-                form.instance.set_openai_api_key(raw_key)
-            except Exception as exc:
-                messages.error(self.request, f'OpenAI key could not be saved: {exc}')
-                return self.form_invalid(form)
-        response = super().form_valid(form)
-        if raw_key:
-            CompanySettings.objects.filter(pk=form.instance.pk).update(
-                openai_api_key=form.instance.openai_api_key,
-            )
-            messages.success(self.request, 'OpenAI API key saved for AI forecasting.')
-        return response
-
     def post(self, request, *args, **kwargs):
         if request.POST.get('estimate_template_action'):
             return self._handle_estimate_template_post(request)
@@ -393,8 +377,25 @@ class CompanySettingsView(PermissionRequiredMixin, UpdateView):
         return redirect('settings:company')
     
     def form_valid(self, form):
-        messages.success(self.request, 'Company settings updated successfully.')
-        return super().form_valid(form)
+        raw_key = (self.request.POST.get('openai_api_key') or '').strip()
+        if raw_key:
+            try:
+                form.instance.set_openai_api_key(raw_key)
+            except Exception as exc:
+                messages.error(self.request, f'OpenAI key could not be saved: {exc}')
+                return self.form_invalid(form)
+        response = super().form_valid(form)
+        if raw_key:
+            CompanySettings.objects.filter(pk=form.instance.pk).update(
+                openai_api_key=form.instance.openai_api_key,
+            )
+            messages.success(
+                self.request,
+                'Company settings updated successfully. OpenAI API key saved for AI forecasting.',
+            )
+        else:
+            messages.success(self.request, 'Company settings updated successfully.')
+        return response
 
     def form_invalid(self, form):
         messages.error(self.request, 'Could not save company settings. Please check the form and try again.')

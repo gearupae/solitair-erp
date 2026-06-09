@@ -154,10 +154,13 @@
                 </div>
                 <div class="col-md-8">
                     <label class="form-label">OpenAI API Key</label>
-                    <input type="password" name="openai_api_key" class="form-control" placeholder="Leave blank to keep unchanged" autocomplete="off">
-                    {% if openai_key_masked and openai_key_status == 'database' %}
-                    <div class="form-text">Current key ends with: {{ openai_key_masked|slice:"-4:" }}</div>
-                    {% endif %}
+                    <input type="password" name="openai_api_key" class="form-control" placeholder="Paste key and click Save Settings below" autocomplete="new-password">
+                    <div class="form-text">
+                        For security, this field stays blank after save. Use the badge above to confirm the key is stored.
+                        {% if openai_key_masked and openai_key_status == 'database' %}
+                        Current key ends with: <strong>{{ openai_key_masked|slice:"-4:" }}</strong>.
+                        {% endif %}
+                    </div>
                 </div>
             </div>
 
