@@ -17,6 +17,7 @@ def global_context(request):
         'app_name': 'Gearup ERP',
         'current_year': __import__('datetime').datetime.now().year,
         'nav_hidden_modules': settings.NAV_HIDDEN_MODULES,
+        'static_css_version': getattr(settings, 'STATIC_CSS_VERSION', '1'),
     }
     
     if request.user.is_authenticated:

@@ -166,6 +166,7 @@ USE_TZ = True
 STATIC_URL = 'static/'
 STATICFILES_DIRS = [BASE_DIR / 'static']
 STATIC_ROOT = BASE_DIR / 'staticfiles'
+STATIC_CSS_VERSION = '20250602'
 
 # Media files
 MEDIA_URL = 'media/'

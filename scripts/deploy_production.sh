@@ -73,7 +73,7 @@ source venv/bin/activate
 pip install -q -r requirements.txt || echo "WARN: pip install failed; continuing with existing venv"
 cd "\${APP}/erp_project"
 python manage.py migrate --no-input
-python manage.py collectstatic --no-input
+python manage.py collectstatic --no-input --clear
 systemctl restart gunicorn
 sleep 1
 systemctl is-active gunicorn
