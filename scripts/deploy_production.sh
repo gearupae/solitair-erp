@@ -60,7 +60,7 @@ echo "    NEVER overwrites: erp_project/.env, .env, venv/, media/, staticfiles/"
 echo "    NEVER overwrites: db.sqlite3 (unless --with-db)"
 rsync "${RSYNC_EXCLUDES[@]}" "${ROOT}/" "${HOST}:${REMOTE}/"
 
-echo "==> Remote: migrate, collectstatic, restart (pip: ${DEPLOY_RUN_PIP:-0})"
+echo "==> Remote: migrate, collectstatic, restart (pip: always)"
 ssh ${SSH_OPTS} "$HOST" bash -s << EOF
 set -euo pipefail
 APP="${REMOTE}"
@@ -70,9 +70,7 @@ APP="${REMOTE}"
 chown -R www-data:www-data "\${APP}"
 cd "\${APP}"
 source venv/bin/activate
-if [[ "\${DEPLOY_RUN_PIP:-}" == "1" ]]; then
-  pip install -q -r requirements.txt || echo "WARN: pip install failed; continuing with existing venv"
-fi
+pip install -q -r requirements.txt || echo "WARN: pip install failed; continuing with existing venv"
 cd "\${APP}/erp_project"
 python manage.py migrate --no-input
 python manage.py collectstatic --no-input

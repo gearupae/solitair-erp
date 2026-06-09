@@ -315,6 +315,8 @@ class CompanySettingsView(PermissionRequiredMixin, UpdateView):
         return super().post(request, *args, **kwargs)
 
     def _handle_openai_key_post(self, request):
+        from django.core.exceptions import ImproperlyConfigured
+
         action = request.POST.get('openai_key_action')
         cs = CompanySettings.get_settings()
         redirect_url = f'{reverse("settings:company")}#openai-key-settings'
@@ -333,8 +335,15 @@ class CompanySettingsView(PermissionRequiredMixin, UpdateView):
         try:
             cs.set_openai_api_key(raw_key)
             cs.save(update_fields=['openai_api_key'])
+        except ImproperlyConfigured as exc:
+            messages.error(
+                request,
+                f'OpenAI key could not be saved: {exc} '
+                'Ask your administrator to run pip install -r requirements.txt on the server.',
+            )
+            return redirect(redirect_url)
         except Exception as exc:
-            messages.error(request, f'OpenAI key could not be saved: {exc}')
+            messages.error(request, f'OpenAI API key could not be saved: {exc}')
             return redirect(redirect_url)
 
         messages.success(request, 'OpenAI API key saved for AI forecasting.')
