@@ -1,5 +1,6 @@
 from django.contrib import admin
 from .models import Category, Warehouse, StorageLocation, Item, ItemBaseGroup, ItemGroup, ItemSerialNumber, Stock, StockMovement
+from .models_reporting import InventoryCostLayer, InventoryForecast
 
 
 @admin.register(Category)
@@ -80,6 +81,15 @@ class StockMovementAdmin(admin.ModelAdmin):
     search_fields = ['item__name', 'reference']
 
 
+@admin.register(InventoryCostLayer)
+class InventoryCostLayerAdmin(admin.ModelAdmin):
+    list_display = ['item', 'warehouse', 'qty_remaining', 'unit_cost', 'received_date']
+    list_filter = ['warehouse', 'received_date']
+    search_fields = ['item__item_code', 'item__name']
 
 
-
+@admin.register(InventoryForecast)
+class InventoryForecastAdmin(admin.ModelAdmin):
+    list_display = ['item', 'forecast_date', 'forecast_30', 'forecast_60', 'forecast_90', 'confidence', 'refreshed_at']
+    list_filter = ['confidence', 'forecast_date']
+    search_fields = ['item__item_code', 'item__name']

@@ -298,7 +298,20 @@ class CompanySettingsView(PermissionRequiredMixin, UpdateView):
             ],
             cls=DjangoJSONEncoder,
         )
+        from apps.inventory.utils import openai_key_status
+
+        context['openai_key_status'] = openai_key_status()
+        context['openai_key_masked'] = self.get_object().openai_api_key_masked()
         return context
+
+    def form_valid(self, form):
+        response = super().form_valid(form)
+        raw_key = (self.request.POST.get('openai_api_key') or '').strip()
+        if raw_key:
+            obj = self.get_object()
+            obj.set_openai_api_key(raw_key)
+            obj.save(update_fields=['openai_api_key'])
+        return response
 
     def post(self, request, *args, **kwargs):
         if request.POST.get('estimate_template_action'):

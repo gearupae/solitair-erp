@@ -1,6 +1,5 @@
 from django.contrib import admin
 
-from apps.inventory.models_requisition import MaterialRequisitionIssue, MaterialRequisitionIssueLine
 from apps.inventory.models_inter_entity import (
     InterEntityTransfer,
     InterEntityTransferLine,
@@ -8,11 +7,6 @@ from apps.inventory.models_inter_entity import (
 )
 from apps.purchase.models_grn import GoodsReceiptNote, GRNLine, GRNAttachment
 from apps.purchase.models_rfq import RFQ, RFQLine, SupplierQuote, SupplierQuoteLine, RFQAwardLine
-
-
-@admin.register(MaterialRequisitionIssue)
-class MaterialRequisitionIssueAdmin(admin.ModelAdmin):
-    list_display = ['issue_number', 'requisition', 'warehouse', 'issued_at']
 
 
 @admin.register(InterEntityVatTreatment)

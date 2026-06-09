@@ -5,6 +5,7 @@ from django.urls import path
 from . import views
 from . import aging_views
 from . import views_procurement
+from . import report_views
 
 app_name = 'inventory'
 
@@ -71,15 +72,18 @@ urlpatterns = [
     path('consumables/reports/inventory/aging/export/xlsx/', aging_views.inventory_aging_report_xlsx, name='inventory_aging_report_xlsx'),
     path('consumables/reports/inventory/aging/export/pdf/', aging_views.inventory_aging_report_pdf, name='inventory_aging_report_pdf'),
 
-    # Material Requisitions (generalized internal issue)
-    path('requisitions/', views_procurement.MaterialRequisitionListView.as_view(), name='material_requisition_list'),
-    path('requisitions/new/', views_procurement.material_requisition_create, name='material_requisition_create'),
-    path('requisitions/<int:pk>/', views_procurement.MaterialRequisitionDetailView.as_view(), name='material_requisition_detail'),
-    path('requisitions/<int:pk>/submit/', views_procurement.material_requisition_submit, name='material_requisition_submit'),
-    path('requisitions/<int:pk>/approve/', views_procurement.material_requisition_approve, name='material_requisition_approve'),
-    path('requisitions/<int:pk>/issue/', views_procurement.material_requisition_issue, name='material_requisition_issue'),
-    path('requisitions/<int:pk>/reject/', views_procurement.material_requisition_reject, name='material_requisition_reject'),
-    path('requisitions/<int:pk>/close/', views_procurement.material_requisition_close, name='material_requisition_close'),
+    # Dedicated inventory reports
+    path('reports/reorder/', report_views.reorder_report, name='reorder_report'),
+    path('reports/slow-dead-stock/', report_views.slow_dead_stock_report, name='slow_dead_stock_report'),
+    path('reports/fifo-valuation/', report_views.fifo_valuation_report, name='fifo_valuation_report'),
+    path('reports/demand-supply-gap/', report_views.demand_supply_gap_report, name='demand_supply_gap_report'),
+    path('reports/ai-forecast/', report_views.ai_forecast_report, name='ai_forecast_report'),
+    path('reports/ai-forecast/refresh/', report_views.ai_forecast_refresh, name='ai_forecast_refresh'),
+    path(
+        'reports/ai-forecast/action-summary/',
+        report_views.ai_forecast_action_summary_refresh,
+        name='ai_forecast_action_summary_refresh',
+    ),
 
     # Inter-entity transfers
     path('inter-entity/', views_procurement.InterEntityTransferListView.as_view(), name='inter_entity_transfer_list'),

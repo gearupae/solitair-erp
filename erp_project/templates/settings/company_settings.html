@@ -138,6 +138,25 @@
                         <option value="weighted_average" {% if object.inventory_valuation_method == 'weighted_average' %}selected{% endif %}>Weighted Average</option>
                     </select>
                 </div>
+                <div class="col-12">
+                    <hr class="my-2">
+                    <h6 class="fw-semibold mb-2"><i class="fas fa-robot me-2 text-primary"></i>OpenAI API Key (for AI Forecasting)</h6>
+                    <p class="text-muted small mb-2">Used by Inventory → AI Forecast Report. Environment variable <code>OPENAI_API_KEY</code> overrides the value stored here.</p>
+                    {% if openai_key_status == 'env' %}
+                    <span class="badge bg-success mb-2">Configured via .env</span>
+                    {% elif openai_key_status == 'database' %}
+                    <span class="badge bg-info text-dark mb-2">Set in database{% if openai_key_masked %} ({{ openai_key_masked }}){% endif %}</span>
+                    {% else %}
+                    <span class="badge bg-secondary mb-2">Not configured</span>
+                    {% endif %}
+                </div>
+                <div class="col-md-8">
+                    <label class="form-label">OpenAI API Key</label>
+                    <input type="password" name="openai_api_key" class="form-control" placeholder="Leave blank to keep unchanged" autocomplete="off">
+                    {% if openai_key_masked and openai_key_status == 'database' %}
+                    <div class="form-text">Current key ends with: {{ openai_key_masked|slice:"-4:" }}</div>
+                    {% endif %}
+                </div>
             </div>
 
             <hr class="my-4">

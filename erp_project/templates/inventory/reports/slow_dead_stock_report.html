@@ -1,0 +1,40 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-center mb-3">
+    <h4 class="fw-bold mb-0">{{ title }}</h4>
+    <div class="d-flex gap-2">
+        <a href="?warehouse={{ filter_warehouse|default:'' }}&category={{ filter_category|default:'' }}&slow_threshold={{ filter_slow_threshold }}&dead_threshold={{ filter_dead_threshold }}&export=xlsx" class="btn btn-outline-success btn-sm">Excel</a>
+        <a href="?warehouse={{ filter_warehouse|default:'' }}&category={{ filter_category|default:'' }}&slow_threshold={{ filter_slow_threshold }}&dead_threshold={{ filter_dead_threshold }}&export=pdf" class="btn btn-outline-danger btn-sm" target="_blank">PDF</a>
+    </div>
+</div>
+<form method="get" class="card card-body mb-3 py-2">
+    <div class="row g-2 align-items-end">
+        <div class="col-md-2"><label class="small">Warehouse</label>
+            <select name="warehouse" class="form-select form-select-sm"><option value="">All</option>
+            {% for w in filters.warehouses %}<option value="{{ w.pk }}" {% if filter_warehouse == w.pk %}selected{% endif %}>{{ w.name }}</option>{% endfor %}
+            </select></div>
+        <div class="col-md-2"><label class="small">Category</label>
+            <select name="category" class="form-select form-select-sm"><option value="">All</option>
+            {% for c in filters.categories %}<option value="{{ c.pk }}" {% if filter_category == c.pk %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
+            </select></div>
+        <div class="col-md-2"><label class="small">Slow threshold (days)</label>
+            <input type="number" name="slow_threshold" class="form-control form-control-sm" value="{{ filter_slow_threshold }}"></div>
+        <div class="col-md-2"><label class="small">Dead threshold (days)</label>
+            <input type="number" name="dead_threshold" class="form-control form-control-sm" value="{{ filter_dead_threshold }}"></div>
+        <div class="col-auto"><button class="btn btn-primary btn-sm">Apply</button></div>
+    </div>
+</form>
+<p class="small text-muted">Slow: no movement {{ filter_slow_threshold }}–{{ filter_dead_threshold|add:'-1' }} days · Dead: {{ filter_dead_threshold }}+ days</p>
+<div class="card border-0 shadow-sm"><div class="table-responsive">
+<table class="table table-sm mb-0"><thead class="table-light"><tr>
+<th>Item</th><th>SKU</th><th>Warehouse</th><th>Last Movement</th><th>Days</th><th>Qty</th><th>Value</th><th>Type</th>
+</tr></thead><tbody>
+{% for r in rows %}
+<tr class="{% if r.classification == 'Dead Stock' %}table-danger{% elif r.classification == 'Slow Moving' %}table-warning{% endif %}">
+<td>{{ r.item_name }}</td><td>{{ r.sku }}</td><td>{{ r.warehouse }}</td>
+<td>{{ r.last_movement_date|default:'—' }}</td><td>{{ r.days_since_movement }}</td>
+<td>{{ r.on_hand_qty }}</td><td>{{ r.value }}</td><td>{{ r.classification }}</td>
+</tr>
+{% empty %}<tr><td colspan="8" class="text-center text-muted py-4">No slow or dead stock.</td></tr>{% endfor %}
+</tbody></table></div></div>
+{% endblock %}

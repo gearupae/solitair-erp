@@ -309,6 +309,11 @@ class CompanySettings(models.Model):
         null=True,
         help_text='Image 2 — shown under company VAT / TRN on estimate quotation PDFs (right).',
     )
+    openai_api_key = models.CharField(
+        max_length=512,
+        blank=True,
+        help_text='Encrypted OpenAI API key for inventory AI forecasting.',
+    )
 
     class Meta:
         verbose_name = 'Company Settings'
@@ -322,6 +327,23 @@ class CompanySettings(models.Model):
         """Get or create company settings."""
         settings, _ = cls.objects.get_or_create(pk=1, defaults={'company_name': 'My Company'})
         return settings
+
+    def set_openai_api_key(self, raw_key: str) -> None:
+        from apps.inventory.crypto import encrypt_value
+
+        raw_key = (raw_key or '').strip()
+        if raw_key:
+            self.openai_api_key = encrypt_value(raw_key)
+
+    def get_openai_api_key_decrypted(self) -> str:
+        from apps.inventory.crypto import decrypt_value
+
+        return decrypt_value(self.openai_api_key or '')
+
+    def openai_api_key_masked(self) -> str:
+        from apps.inventory.utils import mask_secret
+
+        return mask_secret(self.get_openai_api_key_decrypted())
 
 
 class ItemSubGroupExpenseType(models.Model):

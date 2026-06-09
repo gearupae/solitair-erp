@@ -1,0 +1,349 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block extra_css %}
+<style>
+.fc-badge {
+    display: inline-block;
+    border-radius: 9999px;
+    padding: 0.2rem 0.55rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.fc-badge-red    { background: #FEE2E2; color: #991B1B; }
+.fc-badge-orange { background: #FFEDD5; color: #C2410C; }
+.fc-badge-green  { background: #D1FAE5; color: #065F46; }
+.fc-badge-blue   { background: #DBEAFE; color: #1E40AF; }
+.fc-badge-yellow { background: #FEF9C3; color: #854D0E; }
+.fc-badge-gray   { background: #E5E7EB; color: #374151; }
+.fc-badge-purple { background: #F3E8FF; color: #6B21A8; }
+.fc-text-normal  { color: #6B7280; font-size: 0.875rem; }
+
+.fc-days-critical { color: #DC2626; font-weight: 600; }
+.fc-days-warning  { color: #EA580C; font-weight: 600; }
+.fc-days-good     { color: #16A34A; font-weight: 600; }
+
+.fc-trend-up     { color: #16A34A; font-weight: 600; }
+.fc-trend-down   { color: #DC2626; font-weight: 600; }
+.fc-trend-stable { color: #6B7280; }
+
+.summary-card { transition: transform .12s ease; cursor: pointer; }
+.summary-card:hover { transform: translateY(-2px); }
+.summary-card.active { outline: 2px solid #3B82F6; outline-offset: 2px; }
+
+.fc-table th {
+    white-space: nowrap;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.fc-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.fc-table td .order-qty-bold { font-weight: 700; }
+
+.kpi-red    { background: #FEE2E2; color: #991B1B; }
+.kpi-gray   { background: #E5E7EB; color: #374151; }
+.kpi-yellow { background: #FEF9C3; color: #854D0E; }
+
+@media (max-width: 576px) {
+    .summary-card .display-6 { font-size: 1.5rem; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <div>
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-1 small">
+                <li class="breadcrumb-item"><a href="{% url 'inventory:consumable_inventory_reports' %}">Inventory Reports</a></li>
+                <li class="breadcrumb-item active">AI Forecast</li>
+            </ol>
+        </nav>
+        <h4 class="fw-bold mb-1">{{ title }}</h4>
+        <p class="text-muted small mb-0">
+            {{ summary.items_with_forecast }} / {{ summary.total_items }} items forecasted
+        </p>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
+        <button type="button" id="btnRefreshAll" class="btn btn-primary btn-sm" {% if not openai_configured %}disabled{% endif %}>
+            <i class="fas fa-sync-alt me-1"></i>Refresh Forecasts (max 20)
+        </button>
+        <a href="?{% if filter_qs %}{{ filter_qs }}&{% endif %}export=xlsx" class="btn btn-outline-success btn-sm">
+            <i class="fas fa-file-excel me-1"></i>Excel
+        </a>
+        <a href="?{% if filter_qs %}{{ filter_qs }}&{% endif %}export=pdf" class="btn btn-outline-danger btn-sm" target="_blank">
+            <i class="fas fa-file-pdf me-1"></i>PDF
+        </a>
+    </div>
+</div>
+
+{% if not openai_configured %}
+<div class="alert alert-warning">
+    Configure OpenAI API key in <a href="{% url 'settings:company' %}">Settings → Company</a> or set <code>OPENAI_API_KEY</code> in <code>.env</code>.
+</div>
+{% endif %}
+
+<!-- KPI Cards -->
+<div class="row g-3 mb-4">
+    <div class="col-12 col-md-4">
+        <a href="{% url 'inventory:ai_forecast_report' %}?{% if filter_warehouse %}warehouse={{ filter_warehouse }}&{% endif %}{% if filter_category %}category={{ filter_category }}&{% endif %}{% if filter_status != 'All' %}status={{ filter_status }}&{% endif %}{% if filter_stockout_risk != 'All' %}stockout_risk={{ filter_stockout_risk }}&{% endif %}{% if filter_search %}search={{ filter_search|urlencode }}&{% endif %}{% if not filter_high_risk %}high_risk=1{% endif %}" class="text-decoration-none">
+            <div class="card border-0 shadow-sm summary-card h-100 {% if filter_high_risk %}active{% endif %}">
+                <div class="card-body py-3">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <div class="text-muted small mb-1">Items at Stockout Risk</div>
+                            <div class="display-6 fw-bold mb-0">{{ summary.stockout_risk_count }}</div>
+                            <div class="small text-muted mt-1">Days left &lt; lead time</div>
+                        </div>
+                        <span class="badge rounded-pill kpi-red px-3 py-2 fs-6">{{ summary.stockout_risk_count }}</span>
+                    </div>
+                </div>
+            </div>
+        </a>
+    </div>
+    <div class="col-12 col-md-4">
+        <div class="card border-0 shadow-sm summary-card h-100">
+            <div class="card-body py-3">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <div class="text-muted small mb-1">Dead Stock Value</div>
+                        <div class="display-6 fw-bold mb-0">AED {{ summary.dead_stock_value|floatformat:0|intcomma }}</div>
+                        <div class="small text-muted mt-1">180+ days no movement</div>
+                    </div>
+                    <span class="badge rounded-pill kpi-gray px-3 py-2 fs-6"><i class="fas fa-box-open"></i></span>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-12 col-md-4">
+        <div class="card border-0 shadow-sm summary-card h-100">
+            <div class="card-body py-3">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <div class="text-muted small mb-1">Overstock Value</div>
+                        <div class="display-6 fw-bold mb-0">AED {{ summary.overstock_value|floatformat:0|intcomma }}</div>
+                        <div class="small text-muted mt-1">Excess vs F90D + safety stock</div>
+                    </div>
+                    <span class="badge rounded-pill kpi-yellow px-3 py-2 fs-6"><i class="fas fa-warehouse"></i></span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Filters -->
+<form method="get" class="card border-0 shadow-sm mb-3">
+    <div class="card-body py-3 filter-bar">
+        <div class="row g-2 align-items-end">
+            <div class="col-6 col-md-2">
+                <label class="form-label small mb-1">Status</label>
+                <select name="status" class="form-select form-select-sm">
+                    {% for s in filters.status_choices %}
+                    <option value="{{ s }}" {% if filter_status == s %}selected{% endif %}>{{ s }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-6 col-md-2">
+                <label class="form-label small mb-1">Stockout Risk</label>
+                <select name="stockout_risk" class="form-select form-select-sm">
+                    {% for r in filters.risk_choices %}
+                    <option value="{{ r }}" {% if filter_stockout_risk == r %}selected{% endif %}>{{ r }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-6 col-md-2">
+                <label class="form-label small mb-1">Category</label>
+                <select name="category" class="form-select form-select-sm">
+                    <option value="">All</option>
+                    {% for c in filters.categories %}
+                    <option value="{{ c.pk }}" {% if filter_category == c.pk %}selected{% endif %}>{{ c.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-6 col-md-2">
+                <label class="form-label small mb-1">Warehouse</label>
+                <select name="warehouse" class="form-select form-select-sm">
+                    <option value="">All</option>
+                    {% for w in filters.warehouses %}
+                    <option value="{{ w.pk }}" {% if filter_warehouse == w.pk %}selected{% endif %}>{{ w.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-12 col-md-3">
+                <label class="form-label small mb-1">Search</label>
+                <input type="search" name="search" class="form-control form-control-sm" value="{{ filter_search }}" placeholder="Item name or SKU">
+            </div>
+            <div class="col-auto">
+                <button type="submit" class="btn btn-primary btn-sm">Apply</button>
+                <a href="{% url 'inventory:ai_forecast_report' %}" class="btn btn-outline-secondary btn-sm">Reset</a>
+            </div>
+        </div>
+    </div>
+</form>
+
+<div id="loadingOverlay" class="d-none position-fixed top-0 start-0 w-100 h-100 bg-dark bg-opacity-25" style="z-index:1050;">
+    <div class="d-flex align-items-center justify-content-center h-100">
+        <div class="spinner-border text-light" role="status"></div>
+        <span class="text-white ms-2">Working…</span>
+    </div>
+</div>
+
+<!-- Data table -->
+<div class="card border-0 shadow-sm mb-4">
+    <div class="table-responsive">
+        <table class="table table-sm table-hover mb-0 fc-table">
+            <thead class="table-light">
+                <tr>
+                    <th>Item</th>
+                    <th>SKU</th>
+                    <th class="num">Avg Monthly</th>
+                    <th class="num">F30D</th>
+                    <th class="num">F60D</th>
+                    <th class="num">F90D</th>
+                    <th>Confidence</th>
+                    <th class="num">Current Stock</th>
+                    <th class="num">Days Left</th>
+                    <th>Stockout Risk</th>
+                    <th class="num">Suggested Order</th>
+                    <th>Status</th>
+                    <th>Trend</th>
+                    <th>Reorder Date</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in rows %}
+                <tr data-item-id="{{ r.item_id }}">
+                    <td>{{ r.item_name }}</td>
+                    <td><code class="small">{{ r.sku }}</code></td>
+                    <td class="num avg-m">{{ r.avg_monthly_consumption|default:'—' }}</td>
+                    <td class="num f30">{% if r.forecast_30 != None %}{{ r.forecast_30|floatformat:0 }}{% else %}—{% endif %}</td>
+                    <td class="num f60">{% if r.forecast_60 != None %}{{ r.forecast_60|floatformat:0 }}{% else %}—{% endif %}</td>
+                    <td class="num f90">{% if r.forecast_90 != None %}{{ r.forecast_90|floatformat:0 }}{% else %}—{% endif %}</td>
+                    <td class="conf">{{ r.confidence|default:'—' }}</td>
+                    <td class="num">{{ r.current_stock|floatformat:0 }}</td>
+                    <td class="num {{ r.days_left_class }}">{{ r.days_left_display }}</td>
+                    <td><span class="{{ r.stockout_risk_badge }}">{{ r.stockout_risk }}</span></td>
+                    <td class="num {% if r.suggested_order_bold %}order-qty-bold{% endif %}">{{ r.suggested_order_qty|floatformat:0 }}</td>
+                    <td>
+                        {% if r.status == 'Normal' %}
+                        <span class="fc-text-normal">Normal</span>
+                        {% else %}
+                        <span class="{{ r.status_badge }}">{{ r.status }}</span>
+                        {% endif %}
+                    </td>
+                    <td class="{{ r.trend_class }}">{{ r.trend_icon }} {{ r.trend_label }}</td>
+                    <td>{{ r.recommended_reorder_date|default:'—' }}</td>
+                    <td>
+                        {% if openai_configured %}
+                        <button type="button" class="btn btn-outline-primary btn-sm btn-refresh-one" data-id="{{ r.item_id }}">Refresh</button>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="15" class="text-center text-muted py-4">No items match your filters.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% if page_obj.has_other_pages %}
+<nav class="mb-4">
+    <ul class="pagination pagination-sm">
+        {% if page_obj.has_previous %}
+        <li class="page-item"><a class="page-link" href="?{% if filter_qs %}{{ filter_qs }}&{% endif %}page={{ page_obj.previous_page_number }}">Prev</a></li>
+        {% endif %}
+        <li class="page-item disabled"><span class="page-link">{{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span></li>
+        {% if page_obj.has_next %}
+        <li class="page-item"><a class="page-link" href="?{% if filter_qs %}{{ filter_qs }}&{% endif %}page={{ page_obj.next_page_number }}">Next</a></li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+
+<!-- AI Action Summary -->
+<div class="card border-0 shadow-sm">
+    <div class="card-header bg-white d-flex flex-wrap justify-content-between align-items-center gap-2 py-3">
+        <div>
+            <h6 class="mb-0 fw-bold"><i class="fas fa-robot text-primary me-2"></i>AI Action Summary — Top 5 This Week</h6>
+            {% if action_summary.generated_at %}
+            <small class="text-muted">
+                Generated {{ action_summary.generated_at|slice:":19" }}
+                {% if action_summary.from_cache %}(cached){% endif %}
+            </small>
+            {% endif %}
+        </div>
+        <button type="button" id="btnRefreshActions" class="btn btn-outline-primary btn-sm" {% if not openai_configured %}disabled{% endif %}>
+            <i class="fas fa-sync-alt me-1"></i>Refresh Actions
+        </button>
+    </div>
+    <div class="card-body">
+        <ul class="mb-0 ps-3" id="actionSummaryList">
+            {% for bullet in action_summary.bullets %}
+            <li class="mb-2">{{ bullet }}</li>
+            {% empty %}
+            <li class="text-muted">No actions generated yet. Click Refresh Actions.</li>
+            {% endfor %}
+        </ul>
+    </div>
+</div>
+
+<script>
+(function(){
+    const csrf = '{{ csrf_token }}';
+    const overlay = document.getElementById('loadingOverlay');
+    function showLoad(on){ overlay.classList.toggle('d-none', !on); }
+
+    async function refreshItem(id){
+        const fd = new FormData(); fd.append('item_id', id);
+        const r = await fetch('{% url "inventory:ai_forecast_refresh" %}', {method:'POST', headers:{'X-CSRFToken':csrf}, body:fd});
+        return r.json();
+    }
+
+    document.querySelectorAll('.btn-refresh-one').forEach(btn=>{
+        btn.addEventListener('click', async function(){
+            showLoad(true);
+            try {
+                const data = await refreshItem(this.dataset.id);
+                if(!data.ok){ alert(data.error||'Failed'); return; }
+                location.reload();
+            } finally { showLoad(false); }
+        });
+    });
+
+    const btnAll = document.getElementById('btnRefreshAll');
+    if(btnAll) btnAll.addEventListener('click', async function(){
+        showLoad(true);
+        try {
+            const fd = new FormData(); fd.append('refresh_all', '1');
+            const r = await fetch('{% url "inventory:ai_forecast_refresh" %}', {method:'POST', headers:{'X-CSRFToken':csrf}, body:fd});
+            const data = await r.json();
+            if(data.ok) location.reload(); else alert(data.error||'Failed');
+        } finally { showLoad(false); }
+    });
+
+    const btnActions = document.getElementById('btnRefreshActions');
+    if(btnActions) btnActions.addEventListener('click', async function(){
+        showLoad(true);
+        try {
+            const fd = new FormData();
+            fd.append('warehouse', '{{ filter_warehouse|default:"" }}');
+            fd.append('category', '{{ filter_category|default:"" }}');
+            fd.append('status', '{{ filter_status|default:"All" }}');
+            fd.append('stockout_risk', '{{ filter_stockout_risk|default:"All" }}');
+            fd.append('search', '{{ filter_search|escapejs }}');
+            {% if filter_high_risk %}fd.append('high_risk', '1');{% endif %}
+            const r = await fetch('{% url "inventory:ai_forecast_action_summary_refresh" %}', {
+                method:'POST', headers:{'X-CSRFToken':csrf}, body:fd
+            });
+            const data = await r.json();
+            if(!data.ok){ alert(data.error||'Failed'); return; }
+            const ul = document.getElementById('actionSummaryList');
+            ul.innerHTML = (data.bullets||[]).map(b=>'<li class="mb-2">'+b+'</li>').join('') || '<li class="text-muted">No actions.</li>';
+        } finally { showLoad(false); }
+    });
+})();
+</script>
+{% endblock %}

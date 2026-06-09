@@ -204,7 +204,7 @@
                 {% if 'documents' not in nav_hidden_modules %}{% if is_superuser or 'documents' in user_permissions or 'contracts' in user_permissions %}
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle {% if 'documents' in request.path or '/contracts/' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
-                        <i class="fas fa-folder-open me-1"></i>Documents
+                        <i class="fas fa-folder-open me-1"></i>Doc
                     </a>
                     <ul class="dropdown-menu dropdown-menu-dark">
                         {% if is_superuser or 'documents' in user_permissions %}
@@ -493,7 +493,7 @@
                     <a class="nav-link dropdown-toggle {% if 'inventory' in request.path or 'stock-take' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
                         <i class="fas fa-boxes me-1"></i>Inventory
                     </a>
-                    <ul class="dropdown-menu dropdown-menu-dark">
+                    <ul class="dropdown-menu dropdown-menu-dark inventory-dropdown" data-bs-auto-close="outside">
                         <li>
                             <a class="dropdown-item" href="{% url 'inventory:item_list' %}">
                                 <i class="fas fa-box me-2"></i>Items
@@ -551,39 +551,11 @@
                                 <i class="fas fa-clipboard-list me-2"></i>Request items
                             </a>
                         </li>
+                        <li><hr class="dropdown-divider"></li>
                         <li>
-                            <a class="dropdown-item" href="{% url 'inventory:material_requisition_list' %}">
-                                <i class="fas fa-file-signature me-2"></i>Material Requisitions
-                            </a>
-                        </li>
-                        <li>
-                            <a class="dropdown-item" href="{% url 'inventory:consumable_dashboard' %}">
-                                <i class="fas fa-chart-line me-2"></i>Consumables Dashboard
-                            </a>
-                        </li>
-                        <li>
-                            <a class="dropdown-item" href="{% url 'inventory:consumable_inventory_reports' %}">
-                                <i class="fas fa-file-alt me-2"></i>Inventory Reports
-                            </a>
-                        </li>
-                        <li>
-                            <a class="dropdown-item" href="{% url 'inventory:consumable_monthly_request_report' %}">
-                                <i class="fas fa-users me-2"></i>Monthly Requests
-                            </a>
-                        </li>
-                        <li>
-                            <a class="dropdown-item" href="{% url 'inventory:consumable_monthly_consumption_report' %}">
-                                <i class="fas fa-chart-bar me-2"></i>Monthly Consumption
-                            </a>
-                        </li>
-                        <li>
-                            <a class="dropdown-item" href="{% url 'inventory:consumable_monthly_cost_report' %}">
-                                <i class="fas fa-coins me-2"></i>Monthly Cost
-                            </a>
-                        </li>
-                        <li>
-                            <a class="dropdown-item" href="{% url 'inventory:inventory_aging_report' %}">
-                                <i class="fas fa-hourglass-half me-2"></i>Inventory Aging Report
+                            <a class="dropdown-item reports-trigger" href="#" id="inventoryReportsTrigger">
+                                <span><i class="fas fa-chart-pie me-2"></i>Reports</span>
+                                <i class="fas fa-chevron-right"></i>
                             </a>
                         </li>
                     </ul>
@@ -821,8 +793,8 @@
     </div>
 </nav>
 
-<!-- Reports Panel (Separate from dropdown) -->
-<div id="reportsPanel">
+<!-- Reports Panel (Finance flyout) -->
+<div id="reportsPanel" class="nav-reports-panel">
     <h6 class="dropdown-header">Financial Statements</h6>
     <a class="dropdown-item" href="{% url 'finance:trial_balance' %}">
         <i class="fas fa-balance-scale me-2"></i>Trial Balance
@@ -898,71 +870,117 @@
     </a>
 </div>
 
+<!-- Inventory Reports Panel (flyout from Inventory menu) -->
+<div id="inventoryReportsPanel" class="nav-reports-panel">
+    <h6 class="dropdown-header">Reports Hub</h6>
+    <a class="dropdown-item" href="{% url 'inventory:consumable_inventory_reports' %}">
+        <i class="fas fa-file-alt me-2"></i>Inventory Reports
+    </a>
+    <a class="dropdown-item" href="{% url 'inventory:consumable_dashboard' %}">
+        <i class="fas fa-tachometer-alt me-2"></i>Consumables Dashboard
+    </a>
+
+    <hr class="dropdown-divider">
+    <h6 class="dropdown-header">Consumables</h6>
+    <a class="dropdown-item" href="{% url 'inventory:consumable_monthly_request_report' %}">
+        <i class="fas fa-users me-2"></i>Monthly Requests
+    </a>
+    <a class="dropdown-item" href="{% url 'inventory:consumable_monthly_consumption_report' %}">
+        <i class="fas fa-chart-bar me-2"></i>Monthly Consumption
+    </a>
+    <a class="dropdown-item" href="{% url 'inventory:consumable_monthly_cost_report' %}">
+        <i class="fas fa-coins me-2"></i>Monthly Cost
+    </a>
+
+    <hr class="dropdown-divider">
+    <h6 class="dropdown-header">Stock Analysis</h6>
+    <a class="dropdown-item" href="{% url 'inventory:inventory_aging_report' %}">
+        <i class="fas fa-hourglass-half me-2"></i>Inventory Aging
+    </a>
+    <a class="dropdown-item" href="{% url 'inventory:reorder_report' %}">
+        <i class="fas fa-cart-plus me-2"></i>Reorder / Low-Stock
+    </a>
+    <a class="dropdown-item" href="{% url 'inventory:slow_dead_stock_report' %}">
+        <i class="fas fa-pause-circle me-2"></i>Slow-Moving &amp; Dead Stock
+    </a>
+    <a class="dropdown-item" href="{% url 'inventory:fifo_valuation_report' %}">
+        <i class="fas fa-layer-group me-2"></i>FIFO Valuation
+    </a>
+    <a class="dropdown-item" href="{% url 'inventory:demand_supply_gap_report' %}">
+        <i class="fas fa-balance-scale me-2"></i>Demand vs Supply Gap
+    </a>
+
+    <hr class="dropdown-divider">
+    <h6 class="dropdown-header">AI Forecasting</h6>
+    <a class="dropdown-item" href="{% url 'inventory:ai_forecast_report' %}">
+        <i class="fas fa-robot me-2"></i>AI Forecast Report
+    </a>
+</div>
+
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    var reportsTrigger = document.getElementById('reportsTrigger');
-    var reportsPanel = document.getElementById('reportsPanel');
-    var financeDropdown = document.querySelector('.finance-dropdown');
-    
-    if (reportsTrigger && reportsPanel) {
-        reportsTrigger.addEventListener('click', function(e) {
+    function setupReportsFlyout(triggerId, panelId, dropdownSelector) {
+        var trigger = document.getElementById(triggerId);
+        var panel = document.getElementById(panelId);
+        var anchorMenu = document.querySelector(dropdownSelector);
+        if (!trigger || !panel) {
+            return;
+        }
+        trigger.addEventListener('click', function(e) {
             e.preventDefault();
             e.stopPropagation();
-            
-            // Get position of finance dropdown
-            var financeRect = financeDropdown.getBoundingClientRect();
-            
-            // Position the reports panel to the right of finance dropdown
-            reportsPanel.style.left = (financeRect.right + 5) + 'px';
-            reportsPanel.style.top = financeRect.top + 'px';
-            
-            // Toggle visibility
-            reportsPanel.classList.toggle('show');
-        });
-        
-        // Close panel when clicking outside
-        document.addEventListener('click', function(e) {
-            if (!reportsPanel.contains(e.target) && e.target !== reportsTrigger && !reportsTrigger.contains(e.target)) {
-                reportsPanel.classList.remove('show');
+            var rect = anchorMenu ? anchorMenu.getBoundingClientRect() : trigger.getBoundingClientRect();
+            panel.style.left = (rect.right + 5) + 'px';
+            panel.style.top = rect.top + 'px';
+            panel.classList.toggle('show');
+            var financePanel = document.getElementById('reportsPanel');
+            if (financePanel && panelId !== 'reportsPanel') {
+                financePanel.classList.remove('show');
+            }
+            var inventoryPanel = document.getElementById('inventoryReportsPanel');
+            if (inventoryPanel && panelId !== 'inventoryReportsPanel') {
+                inventoryPanel.classList.remove('show');
             }
         });
-        
-        // Close panel when finance dropdown closes
-        var financeNavItem = document.querySelector('.nav-item.dropdown:has(.finance-dropdown)');
-        if (financeNavItem) {
-            financeNavItem.addEventListener('hidden.bs.dropdown', function() {
-                reportsPanel.classList.remove('show');
-            });
-        }
-        
-        // Also close when any nav dropdown closes
+        document.addEventListener('click', function(e) {
+            if (!panel.contains(e.target) && e.target !== trigger && !trigger.contains(e.target)) {
+                panel.classList.remove('show');
+            }
+        });
         document.querySelectorAll('.nav-item.dropdown').forEach(function(item) {
             item.addEventListener('hidden.bs.dropdown', function() {
-                reportsPanel.classList.remove('show');
+                panel.classList.remove('show');
             });
         });
     }
+
+    setupReportsFlyout('reportsTrigger', 'reportsPanel', '.finance-dropdown');
+    setupReportsFlyout('inventoryReportsTrigger', 'inventoryReportsPanel', '.inventory-dropdown');
 });
 </script>
 
 <style>
-/* Finance menu scrollable */
-.finance-dropdown {
+/* Finance & Inventory menu scrollable */
+.finance-dropdown,
+.inventory-dropdown {
     max-height: 80vh;
     overflow-y: auto;
 }
-/* Custom scrollbar for dark dropdown */
-.finance-dropdown::-webkit-scrollbar {
+.finance-dropdown::-webkit-scrollbar,
+.inventory-dropdown::-webkit-scrollbar {
     width: 6px;
 }
-.finance-dropdown::-webkit-scrollbar-track {
+.finance-dropdown::-webkit-scrollbar-track,
+.inventory-dropdown::-webkit-scrollbar-track {
     background: #343a40;
 }
-.finance-dropdown::-webkit-scrollbar-thumb {
+.finance-dropdown::-webkit-scrollbar-thumb,
+.inventory-dropdown::-webkit-scrollbar-thumb {
     background: #6c757d;
     border-radius: 3px;
 }
-.finance-dropdown::-webkit-scrollbar-thumb:hover {
+.finance-dropdown::-webkit-scrollbar-thumb:hover,
+.inventory-dropdown::-webkit-scrollbar-thumb:hover {
     background: #adb5bd;
 }
 /* Reports trigger button */
@@ -972,8 +990,10 @@ document.addEventListener('DOMContentLoaded', function() {
     align-items: center !important;
     cursor: pointer;
 }
-/* Reports Panel - Fixed position outside dropdown */
-#reportsPanel {
+/* Reports flyout panels — Finance & Inventory */
+.nav-reports-panel,
+#reportsPanel,
+#inventoryReportsPanel {
     position: fixed;
     top: 56px;
     display: none;
@@ -987,7 +1007,9 @@ document.addEventListener('DOMContentLoaded', function() {
     box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.5);
     padding: 0.5rem 0;
 }
-#reportsPanel.show {
+.nav-reports-panel.show,
+#reportsPanel.show,
+#inventoryReportsPanel.show {
     display: block;
     animation: fadeInRight 0.15s ease-out;
 }
@@ -1001,20 +1023,30 @@ document.addEventListener('DOMContentLoaded', function() {
         transform: translateX(0);
     }
 }
-#reportsPanel::-webkit-scrollbar {
+.nav-reports-panel::-webkit-scrollbar,
+#reportsPanel::-webkit-scrollbar,
+#inventoryReportsPanel::-webkit-scrollbar {
     width: 5px;
 }
-#reportsPanel::-webkit-scrollbar-track {
+.nav-reports-panel::-webkit-scrollbar-track,
+#reportsPanel::-webkit-scrollbar-track,
+#inventoryReportsPanel::-webkit-scrollbar-track {
     background: transparent;
 }
-#reportsPanel::-webkit-scrollbar-thumb {
+.nav-reports-panel::-webkit-scrollbar-thumb,
+#reportsPanel::-webkit-scrollbar-thumb,
+#inventoryReportsPanel::-webkit-scrollbar-thumb {
     background: #495057;
     border-radius: 3px;
 }
-#reportsPanel::-webkit-scrollbar-thumb:hover {
+.nav-reports-panel::-webkit-scrollbar-thumb:hover,
+#reportsPanel::-webkit-scrollbar-thumb:hover,
+#inventoryReportsPanel::-webkit-scrollbar-thumb:hover {
     background: #6c757d;
 }
-#reportsPanel .dropdown-header {
+.nav-reports-panel .dropdown-header,
+#reportsPanel .dropdown-header,
+#inventoryReportsPanel .dropdown-header {
     color: #6c757d;
     font-size: 0.7rem;
     font-weight: 600;
@@ -1023,10 +1055,14 @@ document.addEventListener('DOMContentLoaded', function() {
     padding: 0.5rem 1rem 0.25rem;
     margin-top: 0.25rem;
 }
-#reportsPanel .dropdown-header:first-child {
+.nav-reports-panel .dropdown-header:first-child,
+#reportsPanel .dropdown-header:first-child,
+#inventoryReportsPanel .dropdown-header:first-child {
     margin-top: 0;
 }
-#reportsPanel .dropdown-item {
+.nav-reports-panel .dropdown-item,
+#reportsPanel .dropdown-item,
+#inventoryReportsPanel .dropdown-item {
     color: #dee2e6;
     padding: 0.45rem 1rem;
     font-size: 0.875rem;
@@ -1034,20 +1070,28 @@ document.addEventListener('DOMContentLoaded', function() {
     align-items: center;
     transition: all 0.15s ease;
 }
-#reportsPanel .dropdown-item i {
+.nav-reports-panel .dropdown-item i,
+#reportsPanel .dropdown-item i,
+#inventoryReportsPanel .dropdown-item i {
     width: 20px;
     text-align: center;
     opacity: 0.7;
 }
-#reportsPanel .dropdown-item:hover {
+.nav-reports-panel .dropdown-item:hover,
+#reportsPanel .dropdown-item:hover,
+#inventoryReportsPanel .dropdown-item:hover {
     background: #495057;
     color: #fff;
     padding-left: 1.15rem;
 }
-#reportsPanel .dropdown-item:hover i {
+.nav-reports-panel .dropdown-item:hover i,
+#reportsPanel .dropdown-item:hover i,
+#inventoryReportsPanel .dropdown-item:hover i {
     opacity: 1;
 }
-#reportsPanel .dropdown-divider {
+.nav-reports-panel .dropdown-divider,
+#reportsPanel .dropdown-divider,
+#inventoryReportsPanel .dropdown-divider {
     border-color: rgba(255,255,255,0.08);
     margin: 0.35rem 0;
 }

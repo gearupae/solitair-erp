@@ -323,7 +323,10 @@ class Command(BaseCommand):
                         applied = True
                         movements_created += 1
                     except Exception:
-                        movement.delete()
+                        # Avoid ORM delete cascades when related tables are missing
+                        StockMovement.objects.filter(pk=movement.pk)._raw_delete(
+                            movement._state.db
+                        )
                         if mt in ("out", "adjustment_minus"):
                             q = q // 2
                         else:

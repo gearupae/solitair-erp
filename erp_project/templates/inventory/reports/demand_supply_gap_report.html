@@ -1,0 +1,39 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-header d-flex justify-content-between mb-3">
+    <h4 class="fw-bold mb-0">{{ title }}</h4>
+    <div class="d-flex gap-2">
+        <a href="?period={{ filter_period }}&warehouse={{ filter_warehouse|default:'' }}&category={{ filter_category|default:'' }}&export=xlsx" class="btn btn-outline-success btn-sm">Excel</a>
+        <a href="?period={{ filter_period }}&warehouse={{ filter_warehouse|default:'' }}&category={{ filter_category|default:'' }}&export=pdf" class="btn btn-outline-danger btn-sm" target="_blank">PDF</a>
+    </div>
+</div>
+<form method="get" class="card card-body mb-3 py-2">
+    <div class="row g-2 align-items-end">
+        <div class="col-md-2"><label class="small">Period</label>
+            <select name="period" class="form-select form-select-sm">
+                <option value="30" {% if filter_period == 30 %}selected{% endif %}>30 days</option>
+                <option value="60" {% if filter_period == 60 %}selected{% endif %}>60 days</option>
+                <option value="90" {% if filter_period == 90 %}selected{% endif %}>90 days</option>
+            </select></div>
+        <div class="col-md-3"><label class="small">Warehouse</label>
+            <select name="warehouse" class="form-select form-select-sm"><option value="">All</option>
+            {% for w in filters.warehouses %}<option value="{{ w.pk }}" {% if filter_warehouse == w.pk %}selected{% endif %}>{{ w.name }}</option>{% endfor %}
+            </select></div>
+        <div class="col-auto"><button class="btn btn-primary btn-sm">Apply</button></div>
+    </div>
+</form>
+<p class="small">Negative gap = surplus · Positive gap = shortage</p>
+<div class="card border-0 shadow-sm"><div class="table-responsive">
+<table class="table table-sm mb-0"><thead class="table-light"><tr>
+<th>Item</th><th>SKU</th><th>Demand</th><th>Supply</th><th>Gap</th><th>Coverage Days</th><th>On-Hand</th><th>Open PO</th><th>In Transit</th>
+</tr></thead><tbody>
+{% for r in rows %}
+<tr class="{% if r.gap > 0 %}table-danger{% elif r.gap < 0 %}table-success{% endif %}">
+<td>{{ r.item_name }}</td><td>{{ r.sku }}</td>
+<td>{% if filter_period == 30 %}{{ r.demand }}{% elif filter_period == 60 %}{{ r.demand }}{% else %}{{ r.demand }}{% endif %}</td>
+<td>{{ r.supply }}</td><td>{{ r.gap }}</td><td>{{ r.coverage_days }}</td>
+<td>{{ r.on_hand }}</td><td>{{ r.open_po }}</td><td>{{ r.in_transit }}</td>
+</tr>
+{% empty %}<tr><td colspan="9" class="text-center text-muted py-4">No data.</td></tr>{% endfor %}
+</tbody></table></div></div>
+{% endblock %}

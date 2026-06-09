@@ -176,7 +176,28 @@ Proprietary - Al Najah Fire ERP
 
 For support, contact your system administrator.
 
+## AI Forecasting setup
 
+Inventory **AI Forecast Report** uses OpenAI (`gpt-4o-mini`) to predict 30/60/90-day demand from the last 12 months of stock-out movements.
 
+1. **Configure API key** (either method):
+   - Set `OPENAI_API_KEY=sk-...` in `.env` (recommended for production), **or**
+   - Enter the key under **Settings → Company → OpenAI API Key (for AI Forecasting)** (stored encrypted in the database).
+2. Environment key **overrides** the database value when both are set.
+3. Open **Inventory → AI Forecast Report**, then use **Refresh** per item or **Refresh All**.
+4. Rate limit: at most **one refresh per item per hour**.
+5. After loading historical stock movements, rebuild FIFO layers for the valuation report:
+   ```bash
+   python manage.py rebuild_fifo_layers
+   ```
 
+Dedicated report URLs:
+
+| Report | URL |
+|--------|-----|
+| Reorder / Low-Stock | `/inventory/reports/reorder/` |
+| Slow-Moving & Dead Stock | `/inventory/reports/slow-dead-stock/` |
+| FIFO Valuation | `/inventory/reports/fifo-valuation/` |
+| Demand vs Supply Gap | `/inventory/reports/demand-supply-gap/` |
+| AI Forecast | `/inventory/reports/ai-forecast/` |
 

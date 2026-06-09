@@ -22,6 +22,9 @@ NAV_HIDDEN_MODULES = frozenset(
     code.strip() for code in _nav_hidden_raw.split(',') if code.strip()
 )
 
+# OpenAI (inventory AI forecasting) — env takes precedence over DB-stored key
+OPENAI_API_KEY = config('OPENAI_API_KEY', default='')
+
 ALLOWED_HOSTS = config(
     'ALLOWED_HOSTS',
     default='localhost,127.0.0.1,89.167.54.227,gear.telldb.com',

@@ -1,4 +1,4 @@
-"""Tests for Material Requisitions and Inter-entity transfers."""
+"""Tests for Inter-entity transfers."""
 from datetime import date
 from decimal import Decimal
 
@@ -6,9 +6,8 @@ from django.contrib.auth.models import User
 from django.test import TestCase
 
 from apps.finance.models import Account, AccountType, FiscalYear
-from apps.inventory.models import Category, ConsumableRequest, ConsumableRequestItem, Item, Stock, Warehouse
+from apps.inventory.models import Category, Item, Stock, Warehouse
 from apps.inventory.models_inter_entity import InterEntityTransfer, InterEntityTransferLine, InterEntityVatTreatment
-from apps.inventory.services.requisition_service import approve_requisition, issue_requisition, submit_requisition
 from apps.settings_app.models import Company
 
 
@@ -17,40 +16,6 @@ def _ensure_fiscal_year():
         name='FY 2026',
         defaults={'start_date': date(2026, 1, 1), 'end_date': date(2026, 12, 31), 'is_closed': False},
     )
-
-
-class MaterialRequisitionTests(TestCase):
-    @classmethod
-    def setUpTestData(cls):
-        cls.user = User.objects.create_user('requser', password='test')
-        cls.approver = User.objects.create_superuser('admin', 'a@t.com', 'test')
-        cls.wh = Warehouse.objects.create(name='Main WH', status='active')
-        cls.cat = Category.objects.create(name='General')
-        cls.item = Item.objects.create(name='Cement Bag', category=cls.cat, purchase_price=Decimal('10'))
-        Stock.objects.create(item=cls.item, warehouse=cls.wh, quantity=Decimal('100'))
-        _ensure_fiscal_year()
-        Account.objects.create(code='1500', name='Inventory', account_type=AccountType.ASSET)
-        Account.objects.create(code='5100', name='COGS', account_type=AccountType.EXPENSE)
-
-    def test_partial_issue_workflow(self):
-        req = ConsumableRequest.objects.create(
-            request_kind='material',
-            requested_by=self.user,
-            status='draft',
-        )
-        ConsumableRequestItem.objects.create(consumable_request=req, item=self.item, quantity=Decimal('10'))
-        submit_requisition(req, self.user)
-        self.assertEqual(req.status, 'submitted')
-        approve_requisition(req, self.approver, warehouse=self.wh)
-        issue_requisition(req, self.approver, self.wh, {req.items.first().pk: Decimal('4')})
-        req.refresh_from_db()
-        line = req.items.first()
-        line.refresh_from_db()
-        self.assertEqual(req.status, 'partially_issued')
-        self.assertEqual(line.qty_issued, Decimal('4'))
-        issue_requisition(req, self.approver, self.wh, {line.pk: Decimal('6')})
-        req.refresh_from_db()
-        self.assertEqual(req.status, 'issued')
 
 
 class InterEntityTransferTests(TestCase):

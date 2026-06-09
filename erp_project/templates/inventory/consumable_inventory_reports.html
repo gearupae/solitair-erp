@@ -84,6 +84,15 @@
                 <li class="nav-item"><button type="button" class="nav-link" data-report="stock_movement" data-title="Movement">Movement</button></li>
                 <li class="nav-item"><button type="button" class="nav-link" data-report="stock_balance" data-title="Balance">Balance</button></li>
             </ul>
+            <div class="small text-muted text-uppercase fw-semibold mt-3 mb-2" style="letter-spacing: 0.04em;">Dedicated reports</div>
+            <ul class="nav nav-pills flex-column flex-sm-row flex-sm-wrap gap-1">
+                <li class="nav-item"><a class="nav-link" href="{% url 'inventory:reorder_report' %}">Reorder</a></li>
+                <li class="nav-item"><a class="nav-link" href="{% url 'inventory:slow_dead_stock_report' %}">Slow / Dead</a></li>
+                <li class="nav-item"><a class="nav-link" href="{% url 'inventory:fifo_valuation_report' %}">FIFO Valuation</a></li>
+                <li class="nav-item"><a class="nav-link" href="{% url 'inventory:demand_supply_gap_report' %}">Demand vs Supply</a></li>
+                <li class="nav-item"><a class="nav-link" href="{% url 'inventory:ai_forecast_report' %}">AI Forecast</a></li>
+                <li class="nav-item"><a class="nav-link" href="{% url 'inventory:inventory_aging_report' %}">Aging</a></li>
+            </ul>
         </div>
         <div class="card-body py-3 reports-toolbar">
             <div class="row g-2 g-md-3 align-items-end">

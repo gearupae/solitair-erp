@@ -259,6 +259,14 @@ class Item(BaseModel):
     # Stock
     unit = models.CharField(max_length=20, default='pcs')  # pcs, kg, m, etc.
     minimum_stock = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
+    lead_time_days = models.PositiveSmallIntegerField(
+        default=7,
+        help_text='Supplier lead time in days for reorder planning',
+    )
+    safety_stock_qty = models.PositiveIntegerField(
+        default=0,
+        help_text='Safety stock buffer quantity for forecast reports',
+    )
     
     # Condition / usage tracking
     condition_status = models.CharField(

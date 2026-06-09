@@ -8,8 +8,8 @@ class InventoryConfig(AppConfig):
 
     def ready(self):
         import apps.inventory.signals  # noqa: F401
-        import apps.inventory.models_requisition  # noqa: F401
         import apps.inventory.models_inter_entity  # noqa: F401
+        import apps.inventory.models_reporting  # noqa: F401
         import apps.inventory.admin_procurement  # noqa: F401
 
 
