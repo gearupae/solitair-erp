@@ -146,6 +146,8 @@
                     <span class="badge bg-success mb-2">Configured via .env</span>
                     {% elif openai_key_status == 'database' %}
                     <span class="badge bg-info text-dark mb-2">Set in database{% if openai_key_masked %} ({{ openai_key_masked }}){% endif %}</span>
+                    {% elif openai_key_status == 'invalid' %}
+                    <span class="badge bg-danger mb-2">Key stored but unreadable — re-enter and save</span>
                     {% else %}
                     <span class="badge bg-secondary mb-2">Not configured</span>
                     {% endif %}

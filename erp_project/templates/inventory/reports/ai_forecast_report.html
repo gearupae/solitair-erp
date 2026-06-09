@@ -66,7 +66,7 @@
         </p>
     </div>
     <div class="d-flex gap-2 flex-wrap">
-        <button type="button" id="btnRefreshAll" class="btn btn-primary btn-sm" {% if not openai_configured %}disabled{% endif %}>
+        <button type="button" id="btnRefreshAll" class="btn btn-primary btn-sm">
             <i class="fas fa-sync-alt me-1"></i>Refresh Forecasts (max 20)
         </button>
         <a href="?{% if filter_qs %}{{ filter_qs }}&{% endif %}export=xlsx" class="btn btn-outline-success btn-sm">
@@ -182,6 +182,8 @@
     </div>
 </form>
 
+{% csrf_token %}
+
 <div id="loadingOverlay" class="d-none position-fixed top-0 start-0 w-100 h-100 bg-dark bg-opacity-25" style="z-index:1050;">
     <div class="d-flex align-items-center justify-content-center h-100">
         <div class="spinner-border text-light" role="status"></div>
@@ -236,9 +238,7 @@
                     <td class="{{ r.trend_class }}">{{ r.trend_icon }} {{ r.trend_label }}</td>
                     <td>{{ r.recommended_reorder_date|default:'—' }}</td>
                     <td>
-                        {% if openai_configured %}
                         <button type="button" class="btn btn-outline-primary btn-sm btn-refresh-one" data-id="{{ r.item_id }}">Refresh</button>
-                        {% endif %}
                     </td>
                 </tr>
                 {% empty %}
@@ -275,7 +275,7 @@
             </small>
             {% endif %}
         </div>
-        <button type="button" id="btnRefreshActions" class="btn btn-outline-primary btn-sm" {% if not openai_configured %}disabled{% endif %}>
+        <button type="button" id="btnRefreshActions" class="btn btn-outline-primary btn-sm">
             <i class="fas fa-sync-alt me-1"></i>Refresh Actions
         </button>
     </div>
@@ -292,14 +292,47 @@
 
 <script>
 (function(){
-    const csrf = '{{ csrf_token }}';
+    function csrfToken(){
+        if (typeof getCookie === 'function') {
+            const fromCookie = getCookie('csrftoken');
+            if (fromCookie) return fromCookie;
+        }
+        const input = document.querySelector('[name=csrfmiddlewaretoken]');
+        return input ? input.value : '';
+    }
+
+    async function postJson(url, formData){
+        const token = csrfToken();
+        const r = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': token,
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+            credentials: 'same-origin',
+            body: formData,
+        });
+        let data = {};
+        try {
+            data = await r.json();
+        } catch (e) {
+            throw new Error(r.status === 403 ? 'Session expired or CSRF error — refresh the page and try again.' : 'Unexpected server response.');
+        }
+        if (!r.ok && !data.error) {
+            data.error = data.error || `Request failed (${r.status})`;
+            data.ok = false;
+        }
+        return data;
+    }
+
     const overlay = document.getElementById('loadingOverlay');
     function showLoad(on){ overlay.classList.toggle('d-none', !on); }
 
     async function refreshItem(id){
-        const fd = new FormData(); fd.append('item_id', id);
-        const r = await fetch('{% url "inventory:ai_forecast_refresh" %}', {method:'POST', headers:{'X-CSRFToken':csrf}, body:fd});
-        return r.json();
+        const fd = new FormData();
+        fd.append('item_id', id);
+        fd.append('force', '1');
+        return postJson('{% url "inventory:ai_forecast_refresh" %}', fd);
     }
 
     document.querySelectorAll('.btn-refresh-one').forEach(btn=>{
@@ -307,25 +340,46 @@
             showLoad(true);
             try {
                 const data = await refreshItem(this.dataset.id);
-                if(!data.ok){ alert(data.error||'Failed'); return; }
+                if(!data.ok){
+                    if (typeof showToast === 'function') showToast('error', data.error || 'Failed');
+                    else alert(data.error || 'Failed');
+                    return;
+                }
+                if (typeof showToast === 'function') showToast('success', 'Forecast updated');
                 location.reload();
+            } catch (err) {
+                if (typeof showToast === 'function') showToast('error', err.message);
+                else alert(err.message);
             } finally { showLoad(false); }
         });
     });
 
     const btnAll = document.getElementById('btnRefreshAll');
     if(btnAll) btnAll.addEventListener('click', async function(){
+        if (btnAll.disabled) return;
         showLoad(true);
         try {
-            const fd = new FormData(); fd.append('refresh_all', '1');
-            const r = await fetch('{% url "inventory:ai_forecast_refresh" %}', {method:'POST', headers:{'X-CSRFToken':csrf}, body:fd});
-            const data = await r.json();
-            if(data.ok) location.reload(); else alert(data.error||'Failed');
+            const fd = new FormData();
+            fd.append('refresh_all', '1');
+            fd.append('force', '1');
+            const data = await postJson('{% url "inventory:ai_forecast_refresh" %}', fd);
+            if(!data.ok){
+                if (typeof showToast === 'function') showToast('error', data.error || 'Failed');
+                else alert(data.error || 'Failed');
+                return;
+            }
+            const msg = `Refreshed ${data.refreshed || 0} item(s)` + (data.skipped ? `, ${data.skipped} skipped` : '');
+            if (typeof showToast === 'function') showToast('success', msg);
+            location.reload();
+        } catch (err) {
+            if (typeof showToast === 'function') showToast('error', err.message);
+            else alert(err.message);
         } finally { showLoad(false); }
     });
 
     const btnActions = document.getElementById('btnRefreshActions');
     if(btnActions) btnActions.addEventListener('click', async function(){
+        if (btnActions.disabled) return;
         showLoad(true);
         try {
             const fd = new FormData();
@@ -335,13 +389,18 @@
             fd.append('stockout_risk', '{{ filter_stockout_risk|default:"All" }}');
             fd.append('search', '{{ filter_search|escapejs }}');
             {% if filter_high_risk %}fd.append('high_risk', '1');{% endif %}
-            const r = await fetch('{% url "inventory:ai_forecast_action_summary_refresh" %}', {
-                method:'POST', headers:{'X-CSRFToken':csrf}, body:fd
-            });
-            const data = await r.json();
-            if(!data.ok){ alert(data.error||'Failed'); return; }
+            const data = await postJson('{% url "inventory:ai_forecast_action_summary_refresh" %}', fd);
+            if(!data.ok){
+                if (typeof showToast === 'function') showToast('error', data.error || 'Failed');
+                else alert(data.error || 'Failed');
+                return;
+            }
             const ul = document.getElementById('actionSummaryList');
             ul.innerHTML = (data.bullets||[]).map(b=>'<li class="mb-2">'+b+'</li>').join('') || '<li class="text-muted">No actions.</li>';
+            if (typeof showToast === 'function') showToast('success', 'Action summary updated');
+        } catch (err) {
+            if (typeof showToast === 'function') showToast('error', err.message);
+            else alert(err.message);
         } finally { showLoad(false); }
     });
 })();

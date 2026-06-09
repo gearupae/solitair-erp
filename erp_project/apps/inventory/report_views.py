@@ -8,6 +8,7 @@ from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
 from django.http import HttpResponse, HttpResponseForbidden, JsonResponse
 from django.shortcuts import render
+from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_POST
 
 from apps.core.utils import PermissionChecker
@@ -205,6 +206,7 @@ def demand_supply_gap_report(request):
 
 
 @login_required
+@ensure_csrf_cookie
 def ai_forecast_report(request):
     wh = request.GET.get('warehouse') or None
     cat = request.GET.get('category') or None
@@ -308,18 +310,37 @@ def ai_forecast_refresh(request):
 
     item_id = request.POST.get('item_id')
     refresh_all = request.POST.get('refresh_all') == '1'
+    force = True  # user-initiated refresh bypasses rate limit
 
     if refresh_all:
         items = Item.objects.filter(is_active=True, item_type='product', status='active')[:20]
         ok = err = 0
+        errors: list[str] = []
         for item in items:
             try:
-                refresh_item_forecast(item)
+                refresh_item_forecast(item, force=force)
                 ok += 1
-            except (ForecastRateLimited, OpenAINotConfigured):
+            except OpenAINotConfigured as exc:
                 err += 1
-            except Exception:
+                if str(exc) not in errors:
+                    errors.append(str(exc))
+                break
+            except ForecastRateLimited:
                 err += 1
+            except Exception as exc:
+                err += 1
+                if len(errors) < 3:
+                    errors.append(str(exc))
+        if ok == 0 and err > 0:
+            return JsonResponse(
+                {
+                    'ok': False,
+                    'error': errors[0] if errors else f'No forecasts refreshed ({err} skipped).',
+                    'refreshed': ok,
+                    'skipped': err,
+                },
+                status=400 if errors else 429,
+            )
         return JsonResponse({'ok': True, 'refreshed': ok, 'skipped': err})
 
     if not item_id:
@@ -330,7 +351,7 @@ def ai_forecast_refresh(request):
         return JsonResponse({'ok': False, 'error': 'Item not found'}, status=404)
 
     try:
-        fc = refresh_item_forecast(item)
+        fc = refresh_item_forecast(item, force=force)
     except OpenAINotConfigured as exc:
         return JsonResponse({'ok': False, 'error': str(exc)}, status=400)
     except ForecastRateLimited as exc:

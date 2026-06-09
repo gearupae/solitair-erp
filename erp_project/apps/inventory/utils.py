@@ -14,7 +14,16 @@ def get_openai_api_key() -> str:
     from apps.settings_app.models import CompanySettings
 
     cs = CompanySettings.get_settings()
-    return cs.get_openai_api_key_decrypted()
+    stored = (cs.openai_api_key or '').strip()
+    if not stored:
+        return ''
+    decrypted = cs.get_openai_api_key_decrypted().strip()
+    if decrypted:
+        return decrypted
+    # Plain-text fallback (legacy / mis-saved keys)
+    if stored.startswith('sk-'):
+        return stored
+    return ''
 
 
 def openai_key_status() -> str:
@@ -25,8 +34,11 @@ def openai_key_status() -> str:
     from apps.settings_app.models import CompanySettings
 
     cs = CompanySettings.get_settings()
-    if cs.get_openai_api_key_decrypted():
+    stored = (cs.openai_api_key or '').strip()
+    if get_openai_api_key():
         return 'database'
+    if stored:
+        return 'invalid'
     return 'none'
 
 

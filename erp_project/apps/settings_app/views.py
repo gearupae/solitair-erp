@@ -305,12 +305,19 @@ class CompanySettingsView(PermissionRequiredMixin, UpdateView):
         return context
 
     def form_valid(self, form):
-        response = super().form_valid(form)
         raw_key = (self.request.POST.get('openai_api_key') or '').strip()
         if raw_key:
-            obj = self.get_object()
-            obj.set_openai_api_key(raw_key)
-            obj.save(update_fields=['openai_api_key'])
+            try:
+                form.instance.set_openai_api_key(raw_key)
+            except Exception as exc:
+                messages.error(self.request, f'OpenAI key could not be saved: {exc}')
+                return self.form_invalid(form)
+        response = super().form_valid(form)
+        if raw_key:
+            CompanySettings.objects.filter(pk=form.instance.pk).update(
+                openai_api_key=form.instance.openai_api_key,
+            )
+            messages.success(self.request, 'OpenAI API key saved for AI forecasting.')
         return response
 
     def post(self, request, *args, **kwargs):
