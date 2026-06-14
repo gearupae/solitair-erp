@@ -32,8 +32,14 @@ class Vendor(BaseModel):
     address = models.TextField(blank=True)
     city = models.CharField(max_length=100, blank=True)
     country = models.CharField(max_length=100, default='United Arab Emirates')
-    trn = models.CharField(max_length=20, blank=True, verbose_name='Tax Registration Number (TRN)',
-                          help_text='UAE VAT TRN for B2B transactions')
+    trn = models.CharField(max_length=20, blank=True, verbose_name='TRN',
+                          help_text='UAE VAT tax registration number')
+    location_link = models.URLField(
+        max_length=500,
+        blank=True,
+        verbose_name='Location link',
+        help_text='Google Maps or other map link to the vendor location',
+    )
     payment_terms = models.CharField(max_length=50, blank=True, default='Net 30')
     credit_limit = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active')

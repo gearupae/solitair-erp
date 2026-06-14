@@ -48,6 +48,31 @@
     margin-top: 0.75rem;
     padding-top: 0.75rem;
 }
+.public-link-analytics-body {
+    padding-top: 1.25rem;
+    padding-bottom: 1.25rem;
+}
+.public-link-analytics-label {
+    color: #64748b;
+    font-size: 0.72rem;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    margin-bottom: 0.35rem;
+}
+.public-link-analytics-value {
+    font-size: 1.35rem;
+    font-weight: 500;
+    color: #0f172a;
+    line-height: 1.2;
+}
+.public-link-analytics-date {
+    font-size: 0.875rem;
+    font-weight: 400;
+    color: #0f172a;
+    margin-top: 0.15rem;
+    line-height: 1.35;
+}
 </style>
 {% endblock %}
 
@@ -104,6 +129,11 @@
             <a href="{% url 'projects:project_detail' estimate.project.pk %}" class="btn btn-outline-primary">
                 <i class="fas fa-project-diagram me-2"></i>{% if estimate.project.status == 'draft' and estimate.project.conversion_approval_status == 'pending' %}View project (awaiting approval){% else %}View linked project{% endif %}
             </a>
+            {% if show_public_quotation_link %}
+            <a href="{{ public_quotation_url }}" class="btn btn-outline-info" target="_blank" rel="noopener" title="Open public quotation link">
+                <i class="fas fa-external-link-alt me-2"></i>Public link
+            </a>
+            {% endif %}
             {% elif can_convert_to_project %}
                 {% if estimate_to_project_prompt_include_lines %}
                 <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#convertProjectModal">
@@ -131,6 +161,11 @@
                 </a>
                 {% endif %}
             </div>
+            {% endif %}
+            {% if show_public_quotation_link and not estimate.project %}
+            <a href="{{ public_quotation_url }}" class="btn btn-outline-info" target="_blank" rel="noopener" title="Open public quotation link">
+                <i class="fas fa-external-link-alt me-2"></i>Public link
+            </a>
             {% endif %}
             <a href="{% url 'sales:estimate_pdf' estimate.pk %}" class="btn btn-outline-danger" target="_blank">
                 <i class="fas fa-file-pdf me-2"></i>PDF
@@ -420,6 +455,36 @@
             </div>
         </div>
 
+        {% if show_public_quotation_link %}
+        <div class="card mb-4">
+            <div class="card-header bg-transparent py-3">
+                <h6 class="mb-0 fw-semibold"><i class="fas fa-chart-line me-2 text-dark"></i>Public link analytics</h6>
+            </div>
+            <div class="card-body public-link-analytics-body">
+                <div class="row g-3 text-center">
+                    <div class="col-4">
+                        <div class="public-link-analytics-label">Views</div>
+                        <div class="public-link-analytics-value">{{ public_quotation_stats.total_views }}</div>
+                    </div>
+                    <div class="col-4">
+                        <div class="public-link-analytics-label">Devices</div>
+                        <div class="public-link-analytics-value">{{ public_quotation_stats.unique_devices }}</div>
+                    </div>
+                    <div class="col-4">
+                        <div class="public-link-analytics-label">Last opened</div>
+                        <div class="public-link-analytics-date">
+                            {% if public_quotation_stats.last_viewed_at %}
+                            {{ public_quotation_stats.last_viewed_at|date:"d/m/Y H:i" }}
+                            {% else %}
+                            <span class="text-muted">—</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
         {% if revision_snapshots %}
         <div class="card mb-4">
             <div class="card-header bg-transparent py-3">
@@ -463,8 +528,12 @@
                 </div>
                 {% if estimate.discount_applied and estimate.discount_applied > 0 %}
                 <div class="d-flex justify-content-between mb-2">
-                    <span>Discount (excl. VAT)</span>
+                    <span>Discount (before VAT)</span>
                     <span class="text-danger">− AED {{ estimate.discount_applied|floatformat:2 }}</span>
+                </div>
+                <div class="d-flex justify-content-between mb-2">
+                    <span>Discount (after VAT)</span>
+                    <span class="text-danger">− AED {{ estimate.discount_applied_incl_vat|floatformat:2 }}</span>
                 </div>
                 {% endif %}
                 <div class="d-flex justify-content-between mb-2">

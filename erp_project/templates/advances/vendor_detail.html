@@ -67,8 +67,18 @@
                     </div>
                     {% if vendor.trn %}
                     <div class="col-md-6">
-                        <label class="form-label text-muted small">TRN (VAT)</label>
+                        <label class="form-label text-muted small">TRN</label>
                         <p class="fw-medium mb-0">{{ vendor.trn }}</p>
+                    </div>
+                    {% endif %}
+                    {% if vendor.location_link %}
+                    <div class="col-md-6">
+                        <label class="form-label text-muted small">Location link</label>
+                        <p class="mb-0">
+                            <a href="{{ vendor.location_link }}" class="text-decoration-none" target="_blank" rel="noopener">
+                                <i class="fas fa-map-marker-alt me-1"></i>Open location
+                            </a>
+                        </p>
                     </div>
                     {% endif %}
                     {% if vendor.address %}

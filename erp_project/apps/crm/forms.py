@@ -18,15 +18,16 @@ from .utils import (
 class CustomerForm(forms.ModelForm):
     """Form for creating/editing customers."""
 
-    scope = forms.MultipleChoiceField(
-        choices=Customer.SCOPE_CHOICES,
+    job_type = forms.MultipleChoiceField(
+        choices=Customer.JOB_TYPE_CHOICES,
         required=False,
         widget=forms.SelectMultiple(
             attrs={
-                'class': 'form-select select2-crm-scope',
-                'data-placeholder': 'Select scope…',
+                'class': 'form-select select2-crm-job-type',
+                'data-placeholder': 'Select job type(s)…',
             }
         ),
+        label='Job type',
     )
 
     class Meta:
@@ -53,6 +54,8 @@ class CustomerForm(forms.ModelForm):
             self.fields['primary_project'].widget.attrs['class'] = 'form-select'
             self.fields['primary_project'].label = 'Project'
         self.fields['scope'].label = 'Scope'
+        self.fields['scope'].required = False
+        self.fields['scope'].widget.attrs['class'] = 'form-select'
         self.fields['business_segment'].required = True
         self.fields['business_segment'].widget.attrs['class'] = 'form-select'
         self.fields['business_segment'].label = 'Business type'
@@ -81,10 +84,10 @@ class CustomerForm(forms.ModelForm):
                 self.initial['assigned_salesperson'] = emp.pk
 
         if self.instance.pk:
-            self.initial['scope'] = list(self.instance.scope or [])
+            self.initial['job_type'] = list(self.instance.job_type or [])
 
         for field_name, field in self.fields.items():
-            if field_name in ('scope', 'primary_project', 'business_segment', 'assigned_salesperson'):
+            if field_name in ('job_type', 'primary_project', 'business_segment', 'assigned_salesperson', 'scope'):
                 continue
             if field_name in ('trn_document', 'trade_license_document'):
                 field.widget = forms.FileInput(
@@ -98,7 +101,7 @@ class CustomerForm(forms.ModelForm):
             if field_name in ['address', 'notes']:
                 field.widget.attrs['class'] = 'form-control'
                 field.widget.attrs['rows'] = 3
-            elif field_name in ['status', 'customer_type', 'job_type']:
+            elif field_name in ['status', 'customer_type']:
                 field.widget.attrs['class'] = 'form-select'
             else:
                 field.widget.attrs['class'] = 'form-control'
@@ -118,6 +121,14 @@ class CustomerForm(forms.ModelForm):
             elif field_name == 'website':
                 field.widget = forms.TextInput(attrs=field.widget.attrs)
                 field.widget.attrs['placeholder'] = 'gear-up.ae, www.gear-up.ae, or https://gear-up.ae'
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        instance.job_type = self.cleaned_data.get('job_type') or []
+        if commit:
+            instance.save()
+            self.save_m2m()
+        return instance
 
     def clean_website(self):
         raw = self.cleaned_data.get('website') or ''

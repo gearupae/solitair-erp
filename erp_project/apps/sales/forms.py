@@ -305,7 +305,7 @@ class InvoiceForm(forms.ModelForm):
         self.fields['customer'].queryset = Customer.objects.filter(is_active=True)
         self.fields['customer'].widget.attrs['class'] = 'form-select'
         self.fields['estimate'].queryset = Estimate.objects.filter(
-            is_active=True, status__in=['approved', 'quotation_won'],
+            is_active=True, status='quotation_won',
         )
         self.fields['estimate'].widget.attrs['class'] = 'form-select'
         self.fields['estimate'].required = False

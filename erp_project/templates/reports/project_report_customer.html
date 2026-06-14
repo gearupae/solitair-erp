@@ -149,7 +149,7 @@
                 </div>
                 <div class="col-12 mt-2">
                     <div class="small text-muted">Status</div>
-                    <span class="badge {% if report.project.status == 'completed' %}bg-success{% elif report.project.status == 'in_progress' %}bg-primary{% else %}bg-secondary{% endif %}">
+                    <span class="badge {% if report.project.status == 'completed' %}bg-success{% elif report.project.status == 'ongoing' %}bg-primary{% else %}bg-secondary{% endif %}">
                         {{ report.project.get_status_display }}
                     </span>
                 </div>

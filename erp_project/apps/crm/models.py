@@ -62,21 +62,25 @@ class Customer(BaseModel):
     ]
 
     SCOPE_CHOICES = [
-        ('ff', 'FF'),
-        ('fa', 'FA'),
-        ('em', 'EM'),
-        ('fls', 'FLS'),
-        ('mep', 'MEP'),
+        ('', '—'),
+        ('maintenance', 'Maintenance'),
+        ('maintenance_with_amc', 'Maintenance with AMC'),
+        ('amc', 'AMC'),
+        ('project', 'Project'),
+        ('materials_trading', 'Materials Trading'),
+        ('refilling_servicing', 'Refilling & Servicing'),
+        ('decor_work', 'Decor Work'),
+        ('decor_with_amc', 'Decor with AMC'),
+        ('drawing_approvals', 'Drawing Approvals'),
+        ('rectification', 'Rectification'),
     ]
 
     JOB_TYPE_CHOICES = [
-        ('', '—'),
-        ('amc', 'AMC'),
-        ('project', 'Project'),
-        ('direct_sale', 'Direct Sale'),
-        ('maintenance', 'Maintenance'),
+        ('fire_protection_system', 'Fire Protection System'),
+        ('gas_protection_system', 'Gas Protection System'),
+        ('cctv', 'CCTV'),
+        ('smoke_management_system', 'Smoke Management System'),
     ]
-    
     customer_number = models.CharField(max_length=50, unique=True, editable=False)
     name = models.CharField(max_length=200, blank=True, default='')
     email = models.EmailField(blank=True)
@@ -92,12 +96,17 @@ class Customer(BaseModel):
         help_text='Tax registration / VAT number for B2B invoices',
     )
     website = models.URLField(blank=True, max_length=500)
-    scope = models.JSONField(default=list, blank=True, help_text='Disciplines: FF, FA, EM, FLS, MEP')
-    job_type = models.CharField(
-        max_length=20,
+    scope = models.CharField(
+        max_length=40,
         blank=True,
         default='',
-        choices=JOB_TYPE_CHOICES,
+        choices=SCOPE_CHOICES,
+        verbose_name='Scope',
+    )
+    job_type = models.JSONField(
+        default=list,
+        blank=True,
+        help_text='System types: Fire Protection, Gas Protection, CCTV, Smoke Management.',
         verbose_name='Job type',
     )
     primary_project = models.ForeignKey(
@@ -199,12 +208,24 @@ class Customer(BaseModel):
         return base
 
     @property
-    def scope_display_labels(self):
-        """Labels for selected scope codes (FF, FA, EM, FLS, MEP)."""
+    def scope_display_label(self):
         if not self.scope:
+            return ''
+        return dict(self.SCOPE_CHOICES).get(self.scope, self.scope)
+
+    @property
+    def job_type_display_labels(self):
+        """Labels for selected job type codes."""
+        if not self.job_type:
             return []
-        labels = dict(self.SCOPE_CHOICES)
-        return [labels.get(code, code) for code in self.scope]
+        labels = dict(self.JOB_TYPE_CHOICES)
+        return [labels.get(code, code) for code in self.job_type if code in labels or code]
+
+    @property
+    def scope_display_labels(self):
+        """Backward-compatible alias for templates expecting a list."""
+        label = self.scope_display_label
+        return [label] if label else []
 
     @property
     def assigned_salesman_label(self):

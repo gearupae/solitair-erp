@@ -37,7 +37,7 @@ def user_is_estimate_creator(user, estimate) -> bool:
 
 def user_can_convert_estimate_follow_on(user, estimate) -> bool:
     """
-    Who may convert an approved / quotation-won estimate to invoice or project.
+    Who may convert a quotation-won estimate to invoice or project.
     Only the assigned salesperson or the creator (not every user with sales access).
     """
     if not user or not user.is_authenticated:
@@ -138,9 +138,10 @@ def estimate_status_change_allowed(current_status, new_status, *, user=None, est
     if current_status == new_status:
         return True
 
+    if user and getattr(user, 'is_superuser', False):
+        return True
+
     if current_status == 'quotation_won':
-        if user and user.is_superuser and new_status == 'under_negotiation':
-            return True
         return False
 
     if new_status in ('approved', 'rejected'):
@@ -150,11 +151,6 @@ def estimate_status_change_allowed(current_status, new_status, *, user=None, est
             and estimate is not None
             and user_can_approve_estimate_status(user, estimate)
         )
-
-    if user and user.is_superuser:
-        if current_status == 'quotation_won' and new_status == 'draft':
-            return False
-        return True
 
     if new_status in ('quotation_won', 'quotation_lost'):
         return (
@@ -189,6 +185,23 @@ def estimate_status_change_allowed(current_status, new_status, *, user=None, est
     return False
 
 
+def _admin_estimate_status_actions(estimate):
+    """Superuser: every status except the current one."""
+    labels = dict(type(estimate).STATUS_CHOICES)
+    current = estimate.status
+    actions = []
+    for code, _label in type(estimate).STATUS_CHOICES:
+        if code == current:
+            continue
+        actions.append({
+            'status': code,
+            'label': labels.get(code, code),
+            'btn_class': 'btn-outline-secondary',
+            'icon': 'fa-exchange-alt',
+        })
+    return actions
+
+
 def get_estimate_status_actions(estimate, user):
     """
     Status buttons for estimate detail / list.
@@ -196,6 +209,9 @@ def get_estimate_status_actions(estimate, user):
     """
     if not user or not user.is_authenticated:
         return []
+
+    if user.is_superuser:
+        return _admin_estimate_status_actions(estimate)
 
     can_edit = user_can_edit_estimate(user, estimate)
     can_approve_status = user_can_approve_estimate_status(user, estimate)
@@ -205,13 +221,6 @@ def get_estimate_status_actions(estimate, user):
     actions = []
 
     if current == 'quotation_won':
-        if user.is_superuser:
-            actions.append({
-                'status': 'under_negotiation',
-                'label': 'Mark under negotiation',
-                'btn_class': 'btn-outline-info',
-                'icon': 'fa-handshake',
-            })
         return actions
 
     if can_approve_status and current == 'sent':
@@ -303,6 +312,8 @@ def get_estimate_status_actions(estimate, user):
 def allowed_status_choices_for_estimate(estimate, user):
     """Dropdown options: current status plus allowed transitions."""
     labels = dict(type(estimate).STATUS_CHOICES)
+    if user and getattr(user, 'is_superuser', False):
+        return [(code, labels.get(code, code)) for code, _ in type(estimate).STATUS_CHOICES]
     current = estimate.status
     choices = [(current, labels.get(current, current))]
     for action in get_estimate_status_actions(estimate, user):

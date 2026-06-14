@@ -1336,9 +1336,56 @@ class ConsumableRequestItem(models.Model):
     )
     unit_cost = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     total_cost = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    scope_classification = models.CharField(max_length=20, blank=True, default='')
+    proposed_qty_at_request = models.DecimalField(
+        max_digits=10, decimal_places=2, null=True, blank=True,
+        help_text='Proposed qty on project Items list when request was submitted.',
+    )
+    additional_qty_at_request = models.DecimalField(
+        max_digits=10, decimal_places=2, null=True, blank=True,
+        help_text='Qty above proposed (new item or excess quantity).',
+    )
     
     class Meta:
         ordering = ['id']
+
+    @property
+    def scope_badge(self) -> dict | None:
+        from apps.inventory.consumable_project_scope import (
+            SCOPE_ADDITIONAL_QTY,
+            SCOPE_NEW_ITEM,
+            SCOPE_STANDARD,
+        )
+
+        if not self.scope_classification:
+            return None
+        if self.scope_classification == SCOPE_STANDARD:
+            return {
+                'text': 'Standard',
+                'class': 'bg-light text-dark border',
+                'label': (
+                    f'Standard project item request'
+                    f'{f" (proposed {self.proposed_qty_at_request})" if self.proposed_qty_at_request is not None else ""}.'
+                ),
+            }
+        if self.scope_classification == SCOPE_NEW_ITEM:
+            return {
+                'text': 'New addition',
+                'class': 'bg-warning text-dark',
+                'label': 'New additional item — not on the project Items list.',
+            }
+        if self.scope_classification == SCOPE_ADDITIONAL_QTY:
+            extra = self.additional_qty_at_request or Decimal('0')
+            proposed = self.proposed_qty_at_request
+            return {
+                'text': f'+{extra} additional',
+                'class': 'bg-info text-dark',
+                'label': (
+                    f'Additional quantity — proposed on project is {proposed}; '
+                    f'{extra} is above the proposed amount.'
+                ),
+            }
+        return None
     
     def save(self, *args, **kwargs):
         if not self.unit_cost and self.item:

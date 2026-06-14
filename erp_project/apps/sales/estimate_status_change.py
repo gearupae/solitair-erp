@@ -56,6 +56,13 @@ def apply_estimate_status_fields(
                 'edit_approval_submitted_by',
             ])
 
+    if new_status == 'quotation_won' and old_status != 'quotation_won':
+        from .sales_order import allocate_sales_order_number
+
+        if not (estimate.sales_order_number or '').strip():
+            estimate.sales_order_number = allocate_sales_order_number()
+            update_fields.append('sales_order_number')
+
     estimate.status = new_status
     return list(dict.fromkeys(update_fields))
 

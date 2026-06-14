@@ -25,19 +25,19 @@ SEED_TAG = "DEMO-AN"
 SEED_NOTE = "Seeded by seed_alnajah_demo"
 
 CUSTOMERS = [
-    ("001", "Emirates Tower Management LLC", "100123456700001", "b2b", "project", ["ff", "fa"]),
-    ("002", "Dubai Marina Hotel Group", "100123456700002", "b2b", "amc", ["ff", "em"]),
-    ("003", "Al Quoz Industrial Complex", "100123456700003", "b2b", "maintenance", ["fa", "fls"]),
-    ("004", "Sharjah Municipality Buildings", "100123456700004", "b2b", "project", ["ff", "mep"]),
-    ("005", "Abu Dhabi Mall Operations", "100123456700005", "b2b", "amc", ["ff", "fa", "em"]),
-    ("006", "Jumeirah Beach Residence Owners", "100123456700006", "b2b", "project", ["ff"]),
+    ("001", "Emirates Tower Management LLC", "100123456700001", "b2b", "project", ["fire_protection_system"]),
+    ("002", "Dubai Marina Hotel Group", "100123456700002", "b2b", "amc", ["fire_protection_system", "smoke_management_system"]),
+    ("003", "Al Quoz Industrial Complex", "100123456700003", "b2b", "maintenance", ["gas_protection_system"]),
+    ("004", "Sharjah Municipality Buildings", "100123456700004", "b2b", "project", ["fire_protection_system", "cctv"]),
+    ("005", "Abu Dhabi Mall Operations", "100123456700005", "b2b", "amc", ["fire_protection_system"]),
+    ("006", "Jumeirah Beach Residence Owners", "100123456700006", "b2b", "project", ["smoke_management_system"]),
 ]
 
 PROJECTS = [
-    ("001", "001", "Fire Alarm Upgrade – Emirates Tower", "in_progress", "fixed", 285000),
-    ("002", "002", "Annual AMC – Dubai Marina Hotel", "in_progress", "fixed", 96000),
+    ("001", "001", "Fire Alarm Upgrade – Emirates Tower", "ongoing", "fixed", 285000),
+    ("002", "002", "Annual AMC – Dubai Marina Hotel", "ongoing", "fixed", 96000),
     ("003", "003", "Sprinkler System Inspection – Al Quoz", "planning", "time_material", 45000),
-    ("004", "004", "Emergency Lighting Fit-out – Sharjah", "in_progress", "milestone", 128000),
+    ("004", "004", "Emergency Lighting Fit-out – Sharjah", "ongoing", "milestone", 128000),
     ("005", "005", "Fire Pump Room Maintenance – AD Mall", "planning", "fixed", 72000),
 ]
 
@@ -163,7 +163,7 @@ class Command(BaseCommand):
         from apps.crm.models import Customer
 
         created = 0
-        for seq, name, trn, segment, job_type, scope in CUSTOMERS:
+        for seq, name, trn, segment, scope, job_type in CUSTOMERS:
             ref = f"{SEED_TAG}-CUST-{seq}"
             _, was_created = Customer.objects.get_or_create(
                 name=f"[{SEED_TAG}] {name}",

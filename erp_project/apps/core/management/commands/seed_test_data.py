@@ -803,7 +803,7 @@ class Command(BaseCommand):
                     'budget': Decimal(str(int(value * 0.85))),
                     'start_date': date(2024, random.randint(1, 6), 1),
                     'end_date': date(2024, random.randint(7, 12), 28),
-                    'status': random.choice(['planning', 'in_progress']),
+                    'status': random.choice(['planning', 'ongoing']),
                     'description': f'{name} for {customer.name if customer else "Internal"}',
                 }
             )

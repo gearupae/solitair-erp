@@ -222,12 +222,13 @@
 <div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-3">
     <div>
         <h4 class="mb-1 fw-bold">{{ title }}</h4>
-        <p class="text-muted mb-0">{% if crm_sales_rep_only %}View and manage leads and customers assigned to you{% else %}Manage your customers and leads{% endif %}</p>
+        <p class="text-muted mb-0">{% if crm_list_kind == 'lead' %}{% if crm_sales_rep_only %}View and manage your assigned leads{% else %}Manage leads and convert them to customers{% endif %}{% else %}Manage your customer accounts{% endif %}</p>
     </div>
     <div class="d-flex flex-wrap gap-2 align-items-center">
         <a href="{% url 'crm:public_upload' %}" class="btn btn-light btn-sm" target="_blank" rel="noopener" title="Public page to upload photos and files to a lead or customer">
             <i class="fas fa-link me-1"></i>Public upload
         </a>
+        {% if crm_show_kanban %}
         <div class="btn-group" role="tablist" aria-label="View mode">
             <a href="#crmTabKanban" class="btn btn-sm btn-outline-primary" id="crm-tab-kanban" data-bs-toggle="tab" role="tab" aria-controls="crmTabKanban" aria-selected="false" tabindex="-1">
                 <i class="fas fa-columns me-1"></i>Board
@@ -236,9 +237,10 @@
                 <i class="fas fa-list me-1"></i>List
             </a>
         </div>
+        {% endif %}
         {% if can_create %}
         <button type="button" class="btn btn-primary btn-sm" onclick="toggleInlineForm('customerForm')">
-            <i class="fas fa-plus me-1"></i>Add Customer
+            <i class="fas fa-plus me-1"></i>{{ crm_add_button_label }}
         </button>
         {% endif %}
     </div>
@@ -248,7 +250,7 @@
 <div id="customerForm" class="inline-form-container">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h5 class="mb-0 fw-semibold">
-            <i class="fas fa-user-plus me-2 text-primary"></i>Add New Customer
+            <i class="fas fa-user-plus me-2 text-primary"></i>{{ crm_inline_form_title }}
         </h5>
         <button type="button" class="btn-close" onclick="cancelInlineForm('customerForm')"></button>
     </div>
@@ -264,16 +266,9 @@
                 <input type="text" name="name" class="form-control" placeholder="Full Name (optional)">
             </div>
             <div class="col-md-3">
-                <label class="form-label">Type <span class="text-danger">*</span></label>
-                {% if crm_sales_rep_only %}
-                <input type="hidden" name="customer_type" value="lead">
-                <input type="text" class="form-control" value="Lead" readonly>
-                {% else %}
-                <select name="customer_type" id="crmInlineCustomerType" class="form-select" required>
-                    <option value="lead">Lead</option>
-                    <option value="customer">Customer</option>
-                </select>
-                {% endif %}
+                <label class="form-label">Type</label>
+                <input type="hidden" name="customer_type" value="{{ crm_default_customer_type }}">
+                <input type="text" class="form-control" value="{% if crm_list_kind == 'lead' %}Lead{% else %}Customer{% endif %}" readonly>
             </div>
             <div class="col-md-3" id="crmInlineAssignWrap">
                 <label class="form-label">Assigned salesman <span class="text-danger">*</span></label>
@@ -326,12 +321,28 @@
             </div>
             <div class="col-md-3">
                 <label class="form-label">Job type</label>
-                <select name="job_type" class="form-select">
+                <select name="job_type" class="form-select" multiple size="4">
+                    <option value="fire_protection_system">Fire Protection System</option>
+                    <option value="gas_protection_system">Gas Protection System</option>
+                    <option value="cctv">CCTV</option>
+                    <option value="smoke_management_system">Smoke Management System</option>
+                </select>
+                <div class="form-text small">Hold Ctrl/Cmd to select multiple.</div>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Scope</label>
+                <select name="scope" class="form-select">
                     <option value="">—</option>
+                    <option value="maintenance">Maintenance</option>
+                    <option value="maintenance_with_amc">Maintenance with AMC</option>
                     <option value="amc">AMC</option>
                     <option value="project">Project</option>
-                    <option value="direct_sale">Direct Sale</option>
-                    <option value="maintenance">Maintenance</option>
+                    <option value="materials_trading">Materials Trading</option>
+                    <option value="refilling_servicing">Refilling &amp; Servicing</option>
+                    <option value="decor_work">Decor Work</option>
+                    <option value="decor_with_amc">Decor with AMC</option>
+                    <option value="drawing_approvals">Drawing Approvals</option>
+                    <option value="rectification">Rectification</option>
                 </select>
             </div>
             <div class="col-md-3" id="crmB2bTrnDocWrap" style="display:none;">
@@ -353,7 +364,7 @@
         </div>
         <div class="mt-4 pt-3 border-top">
             <button type="submit" class="btn btn-primary">
-                <i class="fas fa-save me-2"></i>Save Customer
+                <i class="fas fa-save me-2"></i>{{ crm_save_button_label }}
             </button>
             <button type="button" class="btn btn-light" onclick="cancelInlineForm('customerForm')">Cancel</button>
         </div>
@@ -361,6 +372,7 @@
 </div>
 
 <div class="tab-content">
+    {% if crm_show_kanban %}
     <div class="tab-pane fade" id="crmTabKanban" role="tabpanel" aria-labelledby="crm-tab-kanban" tabindex="0">
         <div class="card border-0 shadow-sm mb-2">
             <div class="card-body py-2 px-2">
@@ -427,6 +439,7 @@
             </div>
         </div>
     </div>
+    {% endif %}
 
     <div class="tab-pane fade show active" id="crmTabList" role="tabpanel" aria-labelledby="crm-tab-list" tabindex="0">
 
@@ -440,7 +453,7 @@
                         <i class="fas fa-users text-primary"></i>
                     </div>
                     <div>
-                        <p class="text-muted mb-0 small">Total Customers</p>
+                        <p class="text-muted mb-0 small">{% if crm_list_kind == 'lead' %}Total Leads{% else %}Total Customers{% endif %}</p>
                         <h5 class="mb-0 fw-bold">{{ total_customers }}</h5>
                     </div>
                 </div>
@@ -455,13 +468,45 @@
                         <i class="fas fa-check-circle text-success"></i>
                     </div>
                     <div>
-                        <p class="text-muted mb-0 small">Active Customers</p>
+                        <p class="text-muted mb-0 small">{% if crm_list_kind == 'lead' %}Active Leads{% else %}Active Customers{% endif %}</p>
                         <h5 class="mb-0 fw-bold">{{ active_customers }}</h5>
                     </div>
                 </div>
             </div>
         </div>
     </div>
+    {% if crm_list_kind == 'lead' %}
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="bg-warning bg-opacity-10 rounded p-3 me-3">
+                        <i class="fas fa-user-tag text-warning"></i>
+                    </div>
+                    <div>
+                        <p class="text-muted mb-0 small">Prospects</p>
+                        <h5 class="mb-0 fw-bold">{{ prospects }}</h5>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="bg-secondary bg-opacity-10 rounded p-3 me-3">
+                        <i class="fas fa-inbox text-secondary"></i>
+                    </div>
+                    <div>
+                        <p class="text-muted mb-0 small">Unassigned</p>
+                        <h5 class="mb-0 fw-bold">{{ kanban_leads_unassigned|length }}</h5>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% else %}
     <div class="col-md-3">
         <div class="card">
             <div class="card-body">
@@ -492,6 +537,7 @@
             </div>
         </div>
     </div>
+    {% endif %}
 </div>
 
 <!-- Filters -->
@@ -503,17 +549,6 @@
                 <input type="text" name="search" class="form-control" placeholder="Name, company, email, VAT..." value="{{ request.GET.search }}">
             </div>
             {% if not crm_sales_rep_only %}
-            <div class="crm-filter-field crm-filter-type">
-                <label class="form-label small text-muted">Type</label>
-                <select name="type" class="form-select">
-                    <option value="">All Types</option>
-                    <option value="lead" {% if request.GET.type == 'lead' %}selected{% endif %}>Lead</option>
-                    <option value="customer" {% if request.GET.type == 'customer' %}selected{% endif %}>Customer</option>
-                </select>
-            </div>
-            {% else %}
-            <input type="hidden" name="type" value="{{ request.GET.type|default:'lead' }}">
-            {% endif %}
             <div class="crm-filter-field crm-filter-status">
                 <label class="form-label small text-muted">Status</label>
                 <select name="status" class="form-select">
@@ -523,7 +558,6 @@
                     <option value="inactive" {% if request.GET.status == 'inactive' %}selected{% endif %}>Inactive</option>
                 </select>
             </div>
-            {% if not crm_sales_rep_only %}
             <div class="crm-filter-field crm-filter-salesman">
                 <label class="form-label small text-muted">Salesman</label>
                 <select name="salesman" class="form-select">
@@ -546,7 +580,7 @@
                     <button type="submit" class="btn btn-primary">
                         <i class="fas fa-filter me-1"></i>Filter
                     </button>
-                    <a href="{% url 'crm:customer_list' %}" class="btn btn-light">Clear</a>
+                    <a href="{% url crm_list_url_name %}" class="btn btn-light">Clear</a>
                 </div>
             </div>
         </form>
@@ -565,7 +599,7 @@
                         <th class="col-company">Company</th>
                         <th class="col-email">Email</th>
                         <th>Phone</th>
-                        <th>Type</th>
+                        {% if crm_show_type_column %}<th>Type</th>{% endif %}
                         {% if show_assign_salesman %}<th>Salesman</th>{% endif %}
                         <th>Status</th>
                         <th class="text-center col-actions">Actions</th>
@@ -602,6 +636,7 @@
                             <span class="text-muted">-</span>
                             {% endif %}
                         </td>
+                        {% if crm_show_type_column %}
                         <td>
                             {% if can_edit %}
                             <form method="post" action="{% url 'crm:customer_inline_update' customer.pk %}" class="crm-inline-field-form">
@@ -625,6 +660,7 @@
                             {% endif %}
                             {% endif %}
                         </td>
+                        {% endif %}
                         {% if show_assign_salesman %}
                         <td class="text-nowrap small">
                             {% if customer.assigned_salesperson %}
@@ -662,8 +698,8 @@
                                 <i class="fas fa-edit"></i>
                             </a>
                             {% endif %}
-                            {% if can_edit and customer.customer_type == 'lead' %}
-                            <a href="{% url 'crm:customer_convert' customer.pk %}" class="btn btn-action btn-outline-success" title="Convert to Customer" onclick="return confirm('Convert {{ customer.name }} to a customer?');">
+                            {% if can_edit and crm_list_kind == 'lead' %}
+                            <a href="{% url 'crm:customer_convert' customer.pk %}" class="btn btn-action btn-outline-success" title="Convert to Customer" onclick="return confirm('Convert this lead to a customer? All details will be kept.');">
                                 <i class="fas fa-user-check"></i>
                             </a>
                             {% endif %}
@@ -677,12 +713,12 @@
                     </tr>
                     {% empty %}
                     <tr>
-                        <td colspan="8" class="text-center py-5 text-muted">
+                        <td colspan="{% if crm_show_type_column %}9{% else %}8{% endif %}" class="text-center py-5 text-muted">
                             <i class="fas fa-users fa-3x mb-3 d-block"></i>
-                            <p class="mb-2">No customers found</p>
+                            <p class="mb-2">No {% if crm_list_kind == 'lead' %}leads{% else %}customers{% endif %} found</p>
                             {% if can_create %}
                             <button class="btn btn-primary btn-sm" onclick="toggleInlineForm('customerForm')">
-                                <i class="fas fa-plus me-1"></i>Add Your First Customer
+                                <i class="fas fa-plus me-1"></i>{% if crm_list_kind == 'lead' %}Add Your First Lead{% else %}Add Your First Customer{% endif %}
                             </button>
                             {% endif %}
                         </td>

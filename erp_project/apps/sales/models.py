@@ -31,7 +31,7 @@ class Estimate(BaseModel):
     ]
 
     #: Estimates allowed to convert to invoice / project (won or internally approved).
-    FOLLOW_ON_STATUSES = frozenset({'approved', 'quotation_won'})
+    FOLLOW_ON_STATUSES = frozenset({'quotation_won'})
 
     EDIT_APPROVAL_STATUS_CHOICES = [
         ('none', 'No pending edit review'),
@@ -81,6 +81,14 @@ class Estimate(BaseModel):
     ]
     
     estimate_number = models.CharField(max_length=50, unique=True, editable=False)
+    sales_order_number = models.CharField(
+        max_length=50,
+        unique=True,
+        null=True,
+        blank=True,
+        editable=False,
+        help_text='Assigned when quotation is won (SO-1, SO-2, …).',
+    )
     customer = models.ForeignKey(
         Customer, 
         on_delete=models.PROTECT, 
@@ -189,6 +197,19 @@ class Estimate(BaseModel):
         default=False,
         help_text='If on, PDF shows the inventory item brand name on each line.',
     )
+    public_share_token = models.UUIDField(
+        unique=True,
+        null=True,
+        blank=True,
+        editable=False,
+        help_text='Token for the public quotation link (quot won / under negotiation).',
+    )
+    quotation_creator_ip = models.GenericIPAddressField(
+        null=True,
+        blank=True,
+        protocol='both',
+        help_text='IP when the estimate was created; excluded from public link view counts.',
+    )
 
     # Calculated fields
     subtotal = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
@@ -218,6 +239,15 @@ class Estimate(BaseModel):
         base = self.estimate_number
         label = self.revision_label
         return f'{base}-{label}' if label else base
+
+    @property
+    def display_sales_order_number(self):
+        """Sales order label shown in lists and overview."""
+        return (self.sales_order_number or '').strip() or '—'
+
+    @property
+    def is_sales_order(self) -> bool:
+        return self.status == 'quotation_won'
 
     @property
     def display_proforma_number(self):
@@ -274,6 +304,22 @@ class Estimate(BaseModel):
         if val is None:
             return Decimal('0.00')
         return val.quantize(Decimal('0.01'))
+
+    def discount_applied_incl_vat(self) -> Decimal:
+        """Total discount impact on the grand total (excl. VAT portion + VAT reduction)."""
+        if not self.discount_applied or self.discount_applied <= 0:
+            return Decimal('0.00')
+        items = list(self.items.all())
+        if not items:
+            return Decimal('0.00')
+        vat_without_discount = sum(
+            (item.total * item.vat_rate / Decimal('100')).quantize(Decimal('0.01'))
+            for item in items
+        )
+        vat_reduction = (vat_without_discount - (self.vat_amount or Decimal('0.00'))).quantize(
+            Decimal('0.01')
+        )
+        return (self.discount_applied + vat_reduction).quantize(Decimal('0.01'))
 
     def compute_discount_amount(self, subtotal: Decimal) -> Decimal:
         """Discount applied to subtotal (excl. VAT) before tax."""
@@ -376,7 +422,7 @@ class Estimate(BaseModel):
 
     @property
     def allows_follow_on_conversion(self) -> bool:
-        """True when the estimate may be converted to an invoice or project."""
+        """True when the estimate may be converted to an invoice or project (quotation won only)."""
         return self.status in self.FOLLOW_ON_STATUSES
 
     def active_invoices(self):
@@ -401,6 +447,32 @@ class Estimate(BaseModel):
         from apps.sales.approval_rules import user_can_edit_estimate
 
         return user_can_edit_estimate(user, self)
+
+
+class EstimatePublicView(models.Model):
+    """Analytics for views of the public quotation link."""
+
+    estimate = models.ForeignKey(
+        Estimate,
+        on_delete=models.CASCADE,
+        related_name='public_views',
+    )
+    viewed_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    ip_address = models.GenericIPAddressField(null=True, blank=True, protocol='both')
+    user_agent = models.TextField(blank=True, default='')
+    device_key = models.CharField(max_length=64, blank=True, default='', db_index=True)
+    is_counted = models.BooleanField(
+        default=True,
+        help_text='False when the viewer IP matches the quotation creator IP.',
+    )
+
+    class Meta:
+        ordering = ['-viewed_at']
+        verbose_name = 'Public quotation view'
+        verbose_name_plural = 'Public quotation views'
+
+    def __str__(self):
+        return f'{self.estimate_id} @ {self.viewed_at:%Y-%m-%d %H:%M}'
 
 
 class EstimateRevisionSnapshot(models.Model):

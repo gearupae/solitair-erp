@@ -126,28 +126,49 @@ def apply_customer_list_filters(queryset, params, *, apply_type=True):
     return queryset
 
 
-class CustomerListView(PermissionRequiredMixin, ListView):
-    """List all customers with inline create form."""
+class CRMRecordListView(PermissionRequiredMixin, ListView):
+    """Shared list/board for CRM leads or customers (one type per page)."""
     model = Customer
     template_name = 'crm/customer_list.html'
     context_object_name = 'customers'
     module_name = 'crm'
     permission_type = 'view'
     paginate_by = 25
-    
+    crm_list_kind = 'customer'  # override to 'lead' on LeadListView
+
     def get_queryset(self):
         queryset = filter_customers_for_user(
             Customer.objects.select_related('assigned_salesperson', 'lead_kanban_stage'),
             self.request.user,
+        ).filter(customer_type=self.crm_list_kind, is_active=True)
+        return apply_customer_list_filters(
+            queryset,
+            self.request.GET,
+            apply_type=False,
         )
-        return apply_customer_list_filters(queryset, self.request.GET)
-    
+
+    def _list_url_name(self):
+        return 'crm:lead_list' if self.crm_list_kind == 'lead' else 'crm:customer_list'
+
+    def _redirect_to_list(self):
+        return redirect(self._list_url_name())
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         user = self.request.user
-        sales_rep_only = crm_show_my_leads_label(user)
+        is_leads = self.crm_list_kind == 'lead'
+        sales_rep_only = crm_show_my_leads_label(user) and is_leads
+        context['crm_list_kind'] = self.crm_list_kind
+        context['crm_list_url_name'] = self._list_url_name()
+        context['crm_show_kanban'] = is_leads
+        context['crm_show_type_column'] = False
+        context['crm_show_type_filter'] = False
+        context['crm_default_customer_type'] = self.crm_list_kind
         context['crm_sales_rep_only'] = sales_rep_only
-        context['title'] = 'My Leads & Customers' if sales_rep_only else 'Customers'
+        context['title'] = ('My Leads' if sales_rep_only else 'Leads') if is_leads else 'Customers'
+        context['crm_add_button_label'] = 'Add Lead' if is_leads else 'Add Customer'
+        context['crm_inline_form_title'] = 'Add New Lead' if is_leads else 'Add New Customer'
+        context['crm_save_button_label'] = 'Save Lead' if is_leads else 'Save Customer'
         context['form'] = CustomerForm(
             projects_queryset=get_crm_project_queryset(self.request.user),
             user=user,
@@ -169,91 +190,90 @@ class CustomerListView(PermissionRequiredMixin, ListView):
         context['can_delete'] = self.request.user.is_superuser or PermissionChecker.has_permission(
             self.request.user, 'crm', 'delete'
         )
-        
-        # Summary stats (scoped for sales reps)
-        customers = filter_customers_for_user(Customer.objects.all(), user)
-        context['total_customers'] = customers.count()
-        context['active_customers'] = customers.filter(status='active').count()
-        context['total_leads'] = customers.filter(customer_type='lead').count()
-        context['prospects'] = customers.filter(status='prospect').count()
+
+        scoped = filter_customers_for_user(Customer.objects.filter(is_active=True), user)
+        scoped_kind = scoped.filter(customer_type=self.crm_list_kind)
+        if is_leads:
+            context['total_customers'] = scoped_kind.count()
+            context['active_customers'] = scoped_kind.filter(status='active').count()
+            context['total_leads'] = context['total_customers']
+            context['prospects'] = scoped_kind.filter(status='prospect').count()
+        else:
+            context['total_customers'] = scoped_kind.count()
+            context['active_customers'] = scoped_kind.filter(status='active').count()
+            context['total_leads'] = scoped.filter(customer_type='lead').count()
+            context['prospects'] = scoped_kind.filter(status='prospect').count()
+
         context['project_choices'] = get_crm_project_queryset(self.request.user)
         context['crm_customer_type_choices'] = Customer.CUSTOMER_TYPE_CHOICES
         context['crm_status_choices'] = Customer.STATUS_CHOICES
         context['crm_filter_date_range'] = customer_date_range_display(self.request.GET)
 
-        # Kanban board (leads pipeline + fixed customers column)
-        board_stages = list(
-            CrmLeadKanbanStage.objects.filter(
-                is_active=True,
-                converts_to_customer=False,
-            ).order_by('sort_order', 'id')
-        )
-        context['crm_kanban_stages'] = board_stages
-        context['crm_kanban_won_stage'] = (
-            CrmLeadKanbanStage.objects.filter(
-                is_active=True,
-                converts_to_customer=True,
-            ).first()
-        )
-        board_leads = annotate_latest_estimate_value(
-            apply_customer_list_filters(
-                filter_customers_for_user(
-                    Customer.objects.filter(customer_type='lead', is_active=True)
-                    .select_related('lead_kanban_stage', 'assigned_salesperson'),
-                    user,
-                ),
-                self.request.GET,
-                apply_type=False,
+        if is_leads:
+            board_stages = list(
+                CrmLeadKanbanStage.objects.filter(
+                    is_active=True,
+                    converts_to_customer=False,
+                ).order_by('sort_order', 'id')
             )
-        ).order_by('customer_number')
-        leads_by_stage = {s.id: [] for s in board_stages}
-        unassigned = []
-        for lead in board_leads:
-            sid = lead.lead_kanban_stage_id
-            if sid and sid in leads_by_stage:
-                leads_by_stage[sid].append(lead)
-            else:
-                unassigned.append(lead)
-        context['kanban_lead_columns'] = [
-            {
-                'stage': s,
-                'leads': leads_by_stage[s.id],
-                'theme_style': kanban_theme_style(
-                    CRM_KANBAN_STAGE_THEMES[i % len(CRM_KANBAN_STAGE_THEMES)]
-                ),
-            }
-            for i, s in enumerate(board_stages)
-        ]
-        context['kanban_leads_unassigned'] = unassigned
-        context['kanban_unassigned_style'] = kanban_theme_style(CRM_KANBAN_UNASSIGNED_THEME)
-        context['kanban_won_style'] = kanban_theme_style(CRM_KANBAN_WON_THEME)
-        context['kanban_customers_style'] = kanban_theme_style(CRM_KANBAN_CUSTOMERS_THEME)
-        context['crm_show_customers_column'] = True
-        context['kanban_customers'] = list(
-            annotate_latest_estimate_value(
+            context['crm_kanban_stages'] = board_stages
+            context['crm_kanban_won_stage'] = (
+                CrmLeadKanbanStage.objects.filter(
+                    is_active=True,
+                    converts_to_customer=True,
+                ).first()
+            )
+            board_leads = annotate_latest_estimate_value(
                 apply_customer_list_filters(
                     filter_customers_for_user(
-                        Customer.objects.filter(customer_type='customer', is_active=True)
-                        .select_related('assigned_salesperson'),
+                        Customer.objects.filter(customer_type='lead', is_active=True)
+                        .select_related('lead_kanban_stage', 'assigned_salesperson'),
                         user,
                     ),
                     self.request.GET,
                     apply_type=False,
                 )
-            ).order_by('name', 'customer_number')[:400]
-        )
+            ).order_by('customer_number')
+            leads_by_stage = {s.id: [] for s in board_stages}
+            unassigned = []
+            for lead in board_leads:
+                sid = lead.lead_kanban_stage_id
+                if sid and sid in leads_by_stage:
+                    leads_by_stage[sid].append(lead)
+                else:
+                    unassigned.append(lead)
+            context['kanban_lead_columns'] = [
+                {
+                    'stage': s,
+                    'leads': leads_by_stage[s.id],
+                    'theme_style': kanban_theme_style(
+                        CRM_KANBAN_STAGE_THEMES[i % len(CRM_KANBAN_STAGE_THEMES)]
+                    ),
+                }
+                for i, s in enumerate(board_stages)
+            ]
+            context['kanban_leads_unassigned'] = unassigned
+            context['kanban_unassigned_style'] = kanban_theme_style(CRM_KANBAN_UNASSIGNED_THEME)
+            context['kanban_won_style'] = kanban_theme_style(CRM_KANBAN_WON_THEME)
+            context['crm_show_customers_column'] = False
+        else:
+            context['crm_kanban_stages'] = []
+            context['crm_kanban_won_stage'] = None
+            context['kanban_lead_columns'] = []
+            context['kanban_leads_unassigned'] = []
+            context['crm_show_customers_column'] = False
+
         context['can_configure_kanban'] = (
             self.request.user.is_superuser
             or PermissionChecker.has_permission(self.request.user, 'settings', 'edit')
         )
-
         return context
 
     def post(self, request, *args, **kwargs):
         """Handle inline form submission."""
         if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'crm', 'create')):
-            messages.error(request, 'You do not have permission to create customers.')
-            return redirect('crm:customer_list')
+            messages.error(request, 'You do not have permission to create records.')
+            return self._redirect_to_list()
 
         form = CustomerForm(
             request.POST,
@@ -262,19 +282,33 @@ class CustomerListView(PermissionRequiredMixin, ListView):
             user=request.user,
         )
         if form.is_valid():
-            customer = form.save(commit=False)
-            customer.save()
-            log_action(request.user, 'create', 'Customer', customer.id, {
-                'name': customer.name,
-                'customer_number': customer.customer_number
+            record = form.save(commit=False)
+            record.customer_type = self.crm_list_kind
+            record.save()
+            log_action(request.user, 'create', 'Customer', record.id, {
+                'name': record.name,
+                'customer_number': record.customer_number,
+                'customer_type': self.crm_list_kind,
             })
-            messages.success(request, f'Customer {customer.name} created successfully.')
+            label = 'Lead' if self.crm_list_kind == 'lead' else 'Customer'
+            display = record.company or record.name or record.customer_number
+            messages.success(request, f'{label} {display} created successfully.')
         else:
             for field, errors in form.errors.items():
                 for error in errors:
                     messages.error(request, f'{field}: {error}')
 
-        return redirect('crm:customer_list')
+        return self._redirect_to_list()
+
+
+class CustomerListView(CRMRecordListView):
+    """Customers only — no leads."""
+    crm_list_kind = 'customer'
+
+
+class LeadListView(CRMRecordListView):
+    """Leads only — pipeline board and convert to customer."""
+    crm_list_kind = 'lead'
 
 
 @login_required
@@ -708,16 +742,16 @@ class CustomerDeleteView(DeletePermissionMixin, DeleteView):
 
 @login_required
 def convert_to_customer(request, pk):
-    """Convert a lead to a customer."""
+    """Convert a lead to a customer (same record — all details kept)."""
     customer = get_object_or_404(Customer, pk=pk)
     if not user_can_access_customer(request.user, customer):
         messages.error(request, 'You do not have access to this lead.')
-        return redirect('crm:customer_list')
-    
+        return redirect('crm:lead_list')
+
     if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'crm', 'edit')):
         messages.error(request, 'You do not have permission to convert leads.')
-        return redirect('crm:customer_list')
-    
+        return redirect('crm:lead_list')
+
     if customer.customer_type == 'lead':
         customer.customer_type = 'customer'
         customer.lead_kanban_stage = None
@@ -725,15 +759,15 @@ def convert_to_customer(request, pk):
         log_action(request.user, 'update', 'Customer', customer.id, {
             'action': 'converted_to_customer',
             'old_type': 'lead',
-            'new_type': 'customer'
+            'new_type': 'customer',
         })
+        display = customer.company or customer.name or customer.customer_number
         messages.success(
             request,
-            f'{customer.name} has been converted to a customer. Set B2B/B2C and any B2B documents on the next screen.',
+            f'{display} has been converted to a customer. All lead details were kept.',
         )
-        return redirect('crm:customer_edit', pk=customer.pk)
-    else:
-        messages.info(request, f'{customer.name} is already a customer.')
-    
+        return redirect('crm:customer_detail', pk=customer.pk)
+
+    messages.info(request, f'{customer.name} is already a customer.')
     return redirect('crm:customer_list')
 

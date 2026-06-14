@@ -93,12 +93,24 @@
         <!-- Navigation Links -->
         <div class="collapse navbar-collapse" id="mainNavbar">
             <ul class="navbar-nav me-auto mb-2 mb-lg-0">
-                <!-- CRM → Customers (no submenu) -->
+                <!-- CRM -->
                 {% if is_superuser or 'crm' in user_permissions %}
-                <li class="nav-item">
-                    <a class="nav-link {% if 'crm' in request.path %}active{% endif %}" href="{% url 'crm:customer_list' %}">
-                        <i class="fas fa-users me-1"></i>{% if crm_sales_rep_only %}My Leads{% else %}CRM{% endif %}
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle {% if 'crm' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
+                        <i class="fas fa-users me-1"></i>CRM
                     </a>
+                    <ul class="dropdown-menu dropdown-menu-dark">
+                        <li>
+                            <a class="dropdown-item {% if '/crm/leads' in request.path %}active{% endif %}" href="{% url 'crm:lead_list' %}">
+                                <i class="fas fa-user-clock me-2"></i>{% if crm_sales_rep_only %}My Leads{% else %}Leads{% endif %}
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item {% if '/crm/customers' in request.path %}active{% endif %}" href="{% url 'crm:customer_list' %}">
+                                <i class="fas fa-user-check me-2"></i>Customers
+                            </a>
+                        </li>
+                    </ul>
                 </li>
                 {% endif %}
                 
@@ -112,6 +124,11 @@
                         <li>
                             <a class="dropdown-item" href="{% url 'sales:estimate_list' %}">
                                 <i class="fas fa-file-invoice me-2"></i>Estimates
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'sales:sales_order_list' %}">
+                                <i class="fas fa-clipboard-check me-2"></i>Sales Orders
                             </a>
                         </li>
                         <li>
@@ -573,7 +590,7 @@
                 {% endif %}
                 
                 <!-- Reports -->
-                {% if is_superuser or 'reports' in user_permissions %}
+                {% if is_superuser or 'reports' in user_permissions or 'projects' in user_permissions or 'crm' in user_permissions or 'sales' in user_permissions %}
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle {% if 'reports' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
                         <i class="fas fa-chart-line me-1"></i>Reports
@@ -590,11 +607,25 @@
                                 <i class="fas fa-user-plus me-2"></i>Lead Report
                             </a>
                         </li>
+                        {% if is_superuser or 'crm' in user_permissions %}
+                        <li>
+                            <a class="dropdown-item" href="{% url 'reports:lead_forecasting' %}">
+                                <i class="fas fa-chart-line me-2"></i>Lead Forecasting
+                            </a>
+                        </li>
+                        {% endif %}
                         <li>
                             <a class="dropdown-item" href="{% url 'reports:sales_report' %}">
                                 <i class="fas fa-file-invoice-dollar me-2"></i>Sales Report
                             </a>
                         </li>
+                        {% if is_superuser or 'sales' in user_permissions %}
+                        <li>
+                            <a class="dropdown-item" href="{% url 'reports:sales_forecasting' %}">
+                                <i class="fas fa-chart-pie me-2"></i>Sales Forecasting
+                            </a>
+                        </li>
+                        {% endif %}
                         <li>
                             <a class="dropdown-item" href="{% url 'reports:project_report_internal' %}">
                                 <i class="fas fa-hard-hat me-2"></i>Project Profit and Loss Report
@@ -610,6 +641,13 @@
                                 <i class="fas fa-calendar-alt me-2"></i>Period Wise Report
                             </a>
                         </li>
+                        {% if is_superuser or 'projects' in user_permissions %}
+                        <li>
+                            <a class="dropdown-item" href="{% url 'reports:project_forecasting' %}">
+                                <i class="fas fa-brain me-2"></i>Project Forecasting
+                            </a>
+                        </li>
+                        {% endif %}
                     </ul>
                 </li>
                 {% endif %}

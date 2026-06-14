@@ -33,6 +33,14 @@
                     <input type="text" name="phone" class="form-control" value="{{ object.phone }}">
                 </div>
                 <div class="col-md-4">
+                    <label class="form-label">TRN</label>
+                    <input type="text" name="trn" class="form-control" value="{{ object.trn }}" placeholder="VAT / TRN number">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Location link</label>
+                    <input type="url" name="location_link" class="form-control" value="{{ object.location_link }}" placeholder="https://maps.google.com/...">
+                </div>
+                <div class="col-md-4">
                     <label class="form-label">Status</label>
                     <select name="status" class="form-select">
                         <option value="active" {% if object.status == 'active' %}selected{% endif %}>Active</option>

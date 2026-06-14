@@ -5,6 +5,10 @@ With full accounting integration:
 - Project Revenue → Project Revenue Ledger
 - All postings flow automatically to GL with project/cost center tracking
 """
+from __future__ import annotations
+
+import uuid
+
 from django.db import models
 from django.db.models import Sum, Q
 from django.conf import settings
@@ -26,12 +30,17 @@ class Project(BaseModel):
         ('rejected', 'Edit rejected'),
     ]
 
-    STATUS_CHOICES = [
-        ('draft', 'Draft'),
+    CREATE_STATUS_CHOICES = [
         ('planning', 'Planning'),
-        ('in_progress', 'In Progress'),
+        ('ongoing', 'ongoing'),
         ('on_hold', 'On Hold'),
         ('completed', 'Completed'),
+        ('completed_payment_pending', 'Completed Payment Pending'),
+        ('ongoing_payment_received', 'ongoing payment received'),
+    ]
+
+    STATUS_CHOICES = CREATE_STATUS_CHOICES + [
+        ('draft', 'Draft'),
         ('cancelled', 'Cancelled'),
     ]
 
@@ -46,13 +55,46 @@ class Project(BaseModel):
         ('time_material', 'Time & Material'),
         ('milestone', 'Milestone Based'),
     ]
+
+    CATEGORY_CHOICES = [
+        ('fire', 'Fire'),
+        ('gas', 'Gas'),
+        ('cctv', 'CCTV'),
+    ]
+
+    SUB_CATEGORY_CHOICES = [
+        ('amc', 'AMC'),
+        ('maintenance', 'Maintenance'),
+        ('maintenance_with_amc', 'Maintenance With AMC'),
+        ('project', 'Project'),
+        ('decor', 'Décor'),
+        ('decor_with_amc', 'Décor with AMC'),
+        ('drawing', 'Drawing'),
+        ('rectification', 'Rectification'),
+        ('trading', 'Trading'),
+        ('refilling', 'Refilling'),
+    ]
     
     project_code = models.CharField(max_length=50, unique=True, editable=False)
     name = models.CharField(max_length=200)
     description = models.TextField(blank=True)
     customer = models.ForeignKey(Customer, on_delete=models.SET_NULL, null=True, blank=True, related_name='projects')
     manager = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='managed_projects')
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='planning')
+    status = models.CharField(max_length=32, choices=STATUS_CHOICES, default='planning')
+    category = models.CharField(
+        max_length=20,
+        choices=CATEGORY_CHOICES,
+        blank=True,
+        default='',
+        verbose_name='Category',
+    )
+    sub_category = models.CharField(
+        max_length=32,
+        choices=SUB_CATEGORY_CHOICES,
+        blank=True,
+        default='',
+        verbose_name='Sub category',
+    )
     conversion_approval_status = models.CharField(
         max_length=20,
         choices=CONVERSION_APPROVAL_STATUS_CHOICES,
@@ -112,6 +154,12 @@ class Project(BaseModel):
     total_expenses = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     total_revenue = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     total_billed = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    checklist_public_token = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        editable=False,
+        db_index=True,
+    )
     
     # GL Account overrides (optional - uses Account Mapping if not set)
     expense_account = models.ForeignKey(
@@ -142,6 +190,12 @@ class Project(BaseModel):
         from apps.projects.approval_rules import user_can_edit_project
 
         return user_can_edit_project(user, self)
+
+    def ensure_checklist_public_token(self) -> uuid.UUID:
+        if not self.checklist_public_token:
+            self.checklist_public_token = uuid.uuid4()
+            self.save(update_fields=['checklist_public_token', 'updated_at'])
+        return self.checklist_public_token
 
     @property
     def total_tasks(self):
@@ -631,6 +685,60 @@ class ProjectPublicUpload(BaseModel):
         related_name='public_uploads',
     )
     file = models.FileField(upload_to='project_public/%Y/%m/', max_length=500)
+    original_filename = models.CharField(max_length=255, blank=True)
+    note = models.CharField(max_length=500, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.project.project_code}: {self.original_filename or self.file.name}'
+
+    @property
+    def is_probably_image(self):
+        name = (self.original_filename or self.file.name or '').lower()
+        return name.endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.heic', '.heif'))
+
+
+class ProjectChecklistItem(BaseModel):
+    """Site checklist row on a project (green = OK, red = flagged)."""
+
+    project = models.ForeignKey(
+        Project,
+        on_delete=models.CASCADE,
+        related_name='checklist_items',
+    )
+    text = models.CharField(max_length=500)
+    item_date = models.DateField()
+    is_flagged_red = models.BooleanField(
+        default=False,
+        help_text='When set, row displays red (issue flagged). Otherwise green.',
+    )
+    sort_order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ['-item_date', '-sort_order', '-created_at']
+
+    def __str__(self):
+        return f'{self.project.project_code}: {self.text[:40]}'
+
+
+class ProjectChecklistUpload(BaseModel):
+    """Photo/file attached via the project checklist public link."""
+
+    project = models.ForeignKey(
+        Project,
+        on_delete=models.CASCADE,
+        related_name='checklist_uploads',
+    )
+    checklist_item = models.ForeignKey(
+        ProjectChecklistItem,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='uploads',
+    )
+    file = models.FileField(upload_to='project_checklist/%Y/%m/', max_length=500)
     original_filename = models.CharField(max_length=255, blank=True)
     note = models.CharField(max_length=500, blank=True)
 

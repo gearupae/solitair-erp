@@ -79,7 +79,7 @@
 <div class="page-header">
     <nav aria-label="breadcrumb">
         <ol class="breadcrumb mb-2">
-            <li class="breadcrumb-item"><a href="{% url 'crm:customer_list' %}">Customers</a></li>
+            <li class="breadcrumb-item"><a href="{% if customer.customer_type == 'lead' %}{% url 'crm:lead_list' %}{% else %}{% url 'crm:customer_list' %}{% endif %}">{% if customer.customer_type == 'lead' %}Leads{% else %}Customers{% endif %}</a></li>
             <li class="breadcrumb-item active">{{ customer.customer_number }}</li>
         </ol>
     </nav>
@@ -95,7 +95,7 @@
             </a>
             {% endif %}
             {% if can_edit and customer.customer_type == 'lead' %}
-            <a href="{% url 'crm:customer_convert' customer.pk %}" class="btn btn-success" onclick="return confirm('Convert {{ customer.name }} to a customer?');">
+            <a href="{% url 'crm:customer_convert' customer.pk %}" class="btn btn-success" onclick="return confirm('Convert this lead to a customer? All details will be kept.');">
                 <i class="fas fa-user-check me-2"></i>Convert to Customer
             </a>
             {% endif %}
@@ -191,7 +191,15 @@
                     </div>
                     <div class="col-md-6 info-field">
                         <label class="form-label text-muted small info-label">Job type</label>
-                        <p class="fw-medium info-value">{% if customer.job_type %}{{ customer.get_job_type_display }}{% else %}-{% endif %}</p>
+                        <p class="fw-medium info-value">
+                            {% if customer.job_type_display_labels %}
+                            {% for label in customer.job_type_display_labels %}<span class="badge bg-light text-dark border me-1 mb-1">{{ label }}</span>{% endfor %}
+                            {% else %}-{% endif %}
+                        </p>
+                    </div>
+                    <div class="col-md-6 info-field">
+                        <label class="form-label text-muted small info-label">Scope</label>
+                        <p class="fw-medium info-value">{% if customer.scope_display_label %}{{ customer.scope_display_label }}{% else %}-{% endif %}</p>
                     </div>
                     <div class="col-md-6 info-field">
                         <label class="form-label text-muted small info-label">Project</label>

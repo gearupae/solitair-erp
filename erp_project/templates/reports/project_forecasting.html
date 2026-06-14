@@ -1,0 +1,313 @@
+{% extends 'base.html' %}
+{% load humanize static %}
+
+{% block extra_css %}
+<style>
+.pf-kpi { border-left: 4px solid var(--pf-accent, #153a5c); }
+.pf-kpi--risk { --pf-accent: #991b1b; background: #fef2f2; }
+.pf-kpi--watch { --pf-accent: #92400e; background: #fffbeb; }
+.pf-kpi--healthy { --pf-accent: #065f46; background: #ecfdf5; }
+.pf-kpi--confidence { --pf-accent: #153a5c; background: #f8fafc; }
+
+.pf-brief {
+    background: #eef3fa;
+    border-left: 4px solid #e8c97a;
+    border-radius: 0.375rem;
+}
+.pf-brief__body { font-style: italic; line-height: 1.65; }
+
+.pf-badge {
+    display: inline-block;
+    border-radius: 9999px;
+    padding: 0.2rem 0.6rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: capitalize;
+}
+.pf-badge-red { background: #fee2e2; color: #991b1b; }
+.pf-badge-amber { background: #fef3c7; color: #92400e; }
+.pf-badge-green { background: #d1fae5; color: #065f46; }
+
+.pf-table th {
+    white-space: nowrap;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    user-select: none;
+}
+.pf-table th .sort-icon { opacity: 0.35; font-size: 0.65rem; margin-left: 0.25rem; }
+.pf-table th.sorted .sort-icon { opacity: 1; }
+
+.pf-row-expandable { cursor: pointer; }
+.pf-row-expandable:hover { background: #f8f9fb; }
+.pf-detail-row td { background: #f8f9fb; border-top: none; }
+
+.pf-margin-negative { color: #991b1b; font-weight: 600; }
+
+.pf-anomaly { border-left: 3px solid #e5e7eb; padding-left: 0.75rem; }
+.pf-anomaly--high { border-left-color: #dc2626; }
+.pf-anomaly--medium { border-left-color: #2563eb; }
+
+@media print {
+    .no-print { display: none !important; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <div>
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-1 small">
+                <li class="breadcrumb-item"><a href="{% url 'reports:index' %}">Reports</a></li>
+                <li class="breadcrumb-item active">Project Forecasting</li>
+            </ol>
+        </nav>
+        <h4 class="mb-0 fw-bold">{{ title }}</h4>
+        <p class="text-muted small mb-0">
+            {{ start_date|date:"d/m/Y" }} – {{ end_date|date:"d/m/Y" }}
+            · {{ project_count|intcomma }} project{{ project_count|pluralize }}
+            {% if from_cache %}<span class="badge bg-secondary-subtle text-secondary ms-1">Cached</span>{% endif %}
+        </p>
+    </div>
+    <div class="d-flex gap-2 flex-wrap no-print">
+        <a href="?start_date={{ start_date|date:'Y-m-d' }}&end_date={{ end_date|date:'Y-m-d' }}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if manager_filter %}&manager={{ manager_filter }}{% endif %}{% if customer_filter %}&customer={{ customer_filter }}{% endif %}&export=xlsx" class="btn btn-outline-success btn-sm">
+            <i class="fas fa-file-excel me-1"></i>Export Excel
+        </a>
+        <a href="?start_date={{ start_date|date:'Y-m-d' }}&end_date={{ end_date|date:'Y-m-d' }}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if manager_filter %}&manager={{ manager_filter }}{% endif %}{% if customer_filter %}&customer={{ customer_filter }}{% endif %}&export=pdf" class="btn btn-outline-danger btn-sm" target="_blank">
+            <i class="fas fa-file-pdf me-1"></i>Export PDF
+        </a>
+    </div>
+</div>
+
+{% if ai_error and not from_cache %}
+<div class="alert alert-warning no-print">
+    {{ ai_error }}
+</div>
+{% elif not openai_configured %}
+<div class="alert alert-info no-print small">
+    OpenAI key not detected — using rule-based scoring. Set <code>OPENAI_API_KEY</code> in environment or Company Settings for AI briefs.
+</div>
+{% endif %}
+
+<div class="card mb-3 border-0 shadow-sm no-print">
+    <div class="card-body py-2 px-3">
+        <form method="get" id="pfFilterForm" class="row g-2 align-items-end">
+            <div class="col-sm-6 col-md-2">
+                <label class="form-label small mb-1">Start date</label>
+                <input type="date" name="start_date" class="form-control form-control-sm" value="{{ start_date|date:'Y-m-d' }}">
+            </div>
+            <div class="col-sm-6 col-md-2">
+                <label class="form-label small mb-1">End date</label>
+                <input type="date" name="end_date" class="form-control form-control-sm" value="{{ end_date|date:'Y-m-d' }}">
+            </div>
+            <div class="col-sm-6 col-md-2">
+                <label class="form-label small mb-1">Status</label>
+                <select name="status" class="form-select form-select-sm">
+                    {% for v, l in status_choices %}
+                    <option value="{{ v }}" {% if status_filter == v %}selected{% endif %}>{{ l }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-sm-6 col-md-2">
+                <label class="form-label small mb-1">Manager</label>
+                <select name="manager" class="form-select form-select-sm">
+                    <option value="">All managers</option>
+                    {% for m in manager_choices %}
+                    <option value="{{ m.id }}" {% if manager_filter == m.id|stringformat:"s" %}selected{% endif %}>{{ m.label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-sm-6 col-md-2">
+                <label class="form-label small mb-1">Customer</label>
+                <select name="customer" class="form-select form-select-sm">
+                    <option value="">All customers</option>
+                    {% for c in customer_choices %}
+                    <option value="{{ c.id }}" {% if customer_filter == c.id|stringformat:"s" %}selected{% endif %}>{{ c.label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-sm-6 col-md-2 d-flex gap-1">
+                <button type="submit" class="btn btn-primary btn-sm flex-grow-1"><i class="fas fa-filter me-1"></i>Apply</button>
+                <a href="?start_date={{ start_date|date:'Y-m-d' }}&end_date={{ end_date|date:'Y-m-d' }}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if manager_filter %}&manager={{ manager_filter }}{% endif %}{% if customer_filter %}&customer={{ customer_filter }}{% endif %}&refresh=1" class="btn btn-outline-secondary btn-sm" title="Re-run AI analysis">
+                    <i class="fas fa-sync-alt"></i>
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Section 1: Risk Summary Cards -->
+<div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+        <div class="card pf-kpi pf-kpi--risk border-0 shadow-sm h-100">
+            <div class="card-body py-3">
+                <div class="small text-muted">At Risk</div>
+                <div class="fw-bold fs-4">{{ summary.at_risk|default:0 }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card pf-kpi pf-kpi--watch border-0 shadow-sm h-100">
+            <div class="card-body py-3">
+                <div class="small text-muted">Watch</div>
+                <div class="fw-bold fs-4">{{ summary.watch|default:0 }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card pf-kpi pf-kpi--healthy border-0 shadow-sm h-100">
+            <div class="card-body py-3">
+                <div class="small text-muted">Healthy</div>
+                <div class="fw-bold fs-4">{{ summary.healthy|default:0 }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card pf-kpi pf-kpi--confidence border-0 shadow-sm h-100">
+            <div class="card-body py-3">
+                <div class="small text-muted">AI Confidence</div>
+                <div class="fw-bold fs-4" title="Confidence reflects data completeness, activity recency, and forecast horizon.">{{ summary.avg_confidence_pct|default:0 }}%</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Section 2: AI Executive Brief -->
+<div class="card border-0 shadow-sm mb-4 pf-brief">
+    <div class="card-body">
+        <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+            <h6 class="fw-bold mb-0">AI Executive Brief</h6>
+            <button type="button" id="btnRegenerateBrief" class="btn btn-outline-primary btn-sm no-print">
+                <i class="fas fa-magic me-1"></i>Regenerate Brief
+            </button>
+        </div>
+        <div id="executiveBrief" class="pf-brief__body {% if brief_failed %}text-danger{% else %}text-secondary{% endif %} mb-0">
+            {% if executive_brief %}{{ executive_brief }}{% else %}
+            <span class="text-muted">No brief available. Click Regenerate Brief to generate one.</span>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Section 3: Project Risk Table -->
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white fw-bold">Project Risk Analysis</div>
+    <div class="card-body p-0">
+        {% if rows %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 pf-table" id="pfRiskTable">
+                <thead class="table-light">
+                    <tr>
+                        <th data-sort="code">Code <span class="sort-icon">↕</span></th>
+                        <th data-sort="project_name">Project <span class="sort-icon">↕</span></th>
+                        <th data-sort="customer">Customer <span class="sort-icon">↕</span></th>
+                        <th data-sort="status_label">Status <span class="sort-icon">↕</span></th>
+                        <th data-sort="risk_level" data-sort-default="asc">Risk Level <span class="sort-icon">↕</span></th>
+                        <th data-sort="completion_forecast">Completion Forecast <span class="sort-icon">↕</span></th>
+                        <th data-sort="cost_overrun_pct">Cost Forecast <span class="sort-icon">↕</span></th>
+                        <th data-sort="predicted_margin_pct">Margin Forecast <span class="sort-icon">↕</span></th>
+                        <th data-sort="top_risk_reason">Top Risk Reason <span class="sort-icon">↕</span></th>
+                        <th data-sort="ai_action">AI Action <span class="sort-icon">↕</span></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in rows %}
+                    <tr class="pf-row-expandable" data-row-id="{{ forloop.counter }}">
+                        <td>
+                            <a href="{{ row.detail_url }}" target="_blank" rel="noopener" class="fw-semibold" onclick="event.stopPropagation();">{{ row.code }}</a>
+                        </td>
+                        <td>{{ row.project_name }}</td>
+                        <td>{{ row.customer }}</td>
+                        <td>{{ row.status_label }}</td>
+                        <td data-value="{{ row.risk_level }}">
+                            <span class="pf-badge pf-badge-{{ row.risk_level }}">{{ row.risk_level }}</span>
+                        </td>
+                        <td>{{ row.completion_forecast }}</td>
+                        <td data-value="{{ row.cost_overrun_pct|default:0 }}">{{ row.cost_forecast_display }}</td>
+                        <td data-value="{{ row.predicted_margin_pct|default:0 }}" class="{% if row.margin_negative %}pf-margin-negative{% endif %}">
+                            {{ row.margin_forecast_display }}
+                        </td>
+                        <td class="small">{{ row.top_risk_reason }}</td>
+                        <td class="small">{{ row.ai_action }}</td>
+                    </tr>
+                    <tr class="pf-detail-row d-none" data-detail-for="{{ forloop.counter }}">
+                        <td colspan="10" class="py-3 px-4">
+                            <div class="small text-muted mb-1"><strong>AI reasoning</strong></div>
+                            <p class="mb-2">{{ row.reasoning|default:"—" }}</p>
+                            <a href="{{ row.detail_url }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary">
+                                <i class="fas fa-external-link-alt me-1"></i>Open project detail
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center text-muted py-5">
+            <i class="fas fa-folder-open fa-2x mb-2 opacity-50"></i>
+            <p class="mb-0">No active projects match the selected filters.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Section 4: Anomaly Detection -->
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white fw-bold">Anomaly Detection</div>
+    <div class="card-body">
+        {% if anomalies %}
+        <ul class="list-unstyled mb-0">
+            {% for a in anomalies %}
+            <li class="pf-anomaly pf-anomaly--{{ a.severity|default:'medium' }} mb-3">
+                <div class="d-flex gap-2 align-items-start">
+                    {% if a.severity == 'high' %}
+                    <i class="fas fa-exclamation-triangle text-danger mt-1"></i>
+                    {% else %}
+                    <i class="fas fa-info-circle text-primary mt-1"></i>
+                    {% endif %}
+                    <div>
+                        <div class="small text-muted">{{ a.category }}</div>
+                        <div>
+                            {% if a.detail_url %}
+                            <a href="{{ a.detail_url }}" target="_blank" rel="noopener" class="fw-semibold">{{ a.project_code }}</a>
+                            {% else %}
+                            <span class="fw-semibold">{{ a.project_code }}</span>
+                            {% endif %}
+                            — {{ a.description }}
+                        </div>
+                        <div class="small text-muted mt-1"><em>Suggested:</em> {{ a.suggested_action }}</div>
+                    </div>
+                </div>
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <div class="text-center text-muted py-4">
+            <i class="fas fa-check-circle text-success fa-2x mb-2"></i>
+            <p class="mb-0">No anomalies detected for the current filter set.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<form id="pfCsrfForm" class="d-none">{% csrf_token %}</form>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'reports/js/project_forecasting.js' %}"></script>
+<script>
+window.PF_CONFIG = {
+    regenerateUrl: "{% url 'reports:project_forecasting_regenerate_brief' %}",
+    filters: {
+        start_date: "{{ start_date|date:'Y-m-d' }}",
+        end_date: "{{ end_date|date:'Y-m-d' }}",
+        status: "{{ status_filter|escapejs }}",
+        manager: "{{ manager_filter|escapejs }}",
+        customer: "{{ customer_filter|escapejs }}"
+    }
+};
+</script>
+{% endblock %}

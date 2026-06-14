@@ -37,7 +37,7 @@ def create_project_from_estimate(*, estimate, include_items: bool, submitted_by=
     """
     Create a new Project, link estimate.project, optionally snapshot estimate lines as
     ProjectItemLine rows (shown under “Items” on the project — not as tasks).
-    `estimate` must be approved or quotation-won and not already linked to a project.
+    `estimate` must be quotation-won and not already linked to a project.
 
     Project fields: ``contract_value`` = estimate selling total; ``budget`` = sum of line
     base cost (qty × unit_price); ``estimated_cost`` is left at zero for manual entry later.

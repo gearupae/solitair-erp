@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quotation — {{ estimate.display_estimate_number }}</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" crossorigin="anonymous">
+    <style>
+        :root {
+            --bg: #eef2f7;
+            --surface: #ffffff;
+            --text: #0f172a;
+            --muted: #64748b;
+            --border: #e2e8f0;
+            --primary: #0ea5e9;
+            --primary-dark: #0284c7;
+            --accent-bg: #f0f9ff;
+            --success: #059669;
+            --radius: 12px;
+            --shadow: 0 4px 24px rgba(15, 23, 42, 0.08);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.5;
+            font-size: 15px;
+        }
+
+        .pub-toolbar {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(8px);
+            border-bottom: 1px solid var(--border);
+            padding: 0.75rem 1rem;
+        }
+
+        .pub-toolbar-inner {
+            max-width: 980px;
+            margin: 0 auto;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .pub-toolbar-title {
+            font-weight: 600;
+            font-size: 0.95rem;
+            color: var(--muted);
+        }
+
+        .pub-toolbar-title strong { color: var(--text); }
+
+        .pub-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+
+        .pub-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            font-size: 0.875rem;
+            font-weight: 600;
+            text-decoration: none;
+            border: none;
+            cursor: pointer;
+            transition: background 0.15s, transform 0.1s;
+        }
+
+        .pub-btn-primary { background: var(--primary); color: #fff; }
+        .pub-btn-primary:hover { background: var(--primary-dark); }
+        .pub-btn-outline { background: #fff; color: var(--text); border: 1px solid var(--border); }
+        .pub-btn-outline:hover { background: var(--bg); }
+        .pub-btn:disabled { opacity: 0.65; cursor: wait; }
+
+        .pub-page {
+            max-width: 980px;
+            margin: 1.5rem auto 3rem;
+            padding: 0 1rem;
+        }
+
+        .pub-card {
+            background: var(--surface);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            overflow: hidden;
+        }
+
+        .pub-hero {
+            background: linear-gradient(135deg, #0c4a6e 0%, #0369a1 50%, #0ea5e9 100%);
+            color: #fff;
+            padding: 2rem 2rem 1.75rem;
+        }
+
+        .pub-hero-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 1.5rem;
+            flex-wrap: wrap;
+        }
+
+        .pub-hero-label {
+            font-size: 0.75rem;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+            opacity: 0.85;
+            margin-bottom: 0.35rem;
+        }
+
+        .pub-hero h1 {
+            font-size: 1.75rem;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+        }
+
+        .pub-ref {
+            font-size: 1.05rem;
+            opacity: 0.92;
+            margin-top: 0.25rem;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .pub-logo img {
+            max-height: 56px;
+            max-width: 180px;
+            object-fit: contain;
+            background: #fff;
+            border-radius: 8px;
+            padding: 6px 10px;
+        }
+
+        .pub-body { padding: 1.75rem 2rem 2rem; }
+
+        .pub-grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.25rem;
+            margin-bottom: 1.5rem;
+        }
+
+        @media (max-width: 720px) {
+            .pub-grid-2 { grid-template-columns: 1fr; }
+            .pub-body { padding: 1.25rem; }
+            .pub-hero { padding: 1.5rem 1.25rem; }
+        }
+
+        .pub-panel {
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 1.1rem 1.25rem;
+            background: #fafbfc;
+        }
+
+        .pub-panel h2 {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--muted);
+            margin-bottom: 0.65rem;
+            font-weight: 700;
+        }
+
+        .pub-panel .name {
+            font-weight: 700;
+            font-size: 1.05rem;
+            margin-bottom: 0.35rem;
+        }
+
+        .pub-panel .lines {
+            color: var(--muted);
+            font-size: 0.9rem;
+        }
+
+        .pub-panel .lines > * + * { margin-top: 0.2rem; }
+
+        .pub-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.65rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .pub-meta-item {
+            background: var(--accent-bg);
+            border: 1px solid #bae6fd;
+            border-radius: 999px;
+            padding: 0.35rem 0.85rem;
+            font-size: 0.82rem;
+            color: #0369a1;
+        }
+
+        .pub-meta-item span { color: var(--muted); margin-right: 0.25rem; }
+
+        .pub-validity {
+            background: #fffbeb;
+            border: 1px solid #fde68a;
+            border-radius: 8px;
+            padding: 0.75rem 1rem;
+            font-size: 0.875rem;
+            color: #92400e;
+            margin-bottom: 1.5rem;
+        }
+
+        .pub-section-title {
+            font-size: 0.95rem;
+            font-weight: 700;
+            margin-bottom: 0.75rem;
+            color: var(--text);
+        }
+
+        .pub-table-wrap {
+            overflow-x: auto;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            margin-bottom: 1.5rem;
+        }
+
+        table.pub-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.875rem;
+        }
+
+        .pub-table thead th {
+            background: #f1f5f9;
+            text-align: left;
+            padding: 0.65rem 0.85rem;
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: var(--muted);
+            border-bottom: 1px solid var(--border);
+            white-space: nowrap;
+        }
+
+        .pub-table tbody td {
+            padding: 0.65rem 0.85rem;
+            border-bottom: 1px solid #f1f5f9;
+            vertical-align: top;
+        }
+
+        .pub-table tbody tr:last-child td { border-bottom: none; }
+        .pub-table tbody tr:nth-child(even) { background: #fafbfc; }
+        .pub-table .group-row td {
+            background: #e0f2fe !important;
+            font-weight: 700;
+            color: #0c4a6e;
+            font-size: 0.8rem;
+        }
+        .pub-table .text-right { text-align: right; }
+        .pub-table .text-center { text-align: center; }
+        .pub-table .muted { color: var(--muted); font-size: 0.82rem; }
+
+        .pub-totals-wrap {
+            display: flex;
+            justify-content: flex-end;
+            margin-bottom: 1.5rem;
+        }
+
+        .pub-totals {
+            min-width: 280px;
+            max-width: 100%;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        .pub-totals-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.55rem 1rem;
+            font-size: 0.9rem;
+            border-bottom: 1px solid #f1f5f9;
+        }
+
+        .pub-totals-row.discount .pub-totals-val { color: #dc2626; }
+        .pub-totals-row.grand {
+            background: #0c4a6e;
+            color: #fff;
+            font-weight: 700;
+            font-size: 1rem;
+            border-bottom: none;
+        }
+
+        .pub-note {
+            border-left: 3px solid var(--primary);
+            background: var(--accent-bg);
+            padding: 1rem 1.15rem;
+            border-radius: 0 8px 8px 0;
+            margin-bottom: 1.25rem;
+            font-size: 0.9rem;
+        }
+
+        .pub-note h3 {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--muted);
+            margin-bottom: 0.4rem;
+        }
+
+        .pub-terms {
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 1.15rem 1.25rem;
+            margin-bottom: 1.5rem;
+            font-size: 0.875rem;
+            color: var(--muted);
+        }
+
+        .pub-terms h3 {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text);
+            margin-bottom: 0.6rem;
+        }
+
+        .pub-signatures {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.25rem;
+            margin-bottom: 1.5rem;
+        }
+
+        @media (max-width: 560px) {
+            .pub-signatures { grid-template-columns: 1fr; }
+        }
+
+        .pub-sig-box {
+            border: 1px dashed var(--border);
+            border-radius: 10px;
+            padding: 1rem;
+            min-height: 100px;
+            text-align: center;
+        }
+
+        .pub-sig-box img { max-height: 64px; max-width: 100%; margin-bottom: 0.5rem; }
+        .pub-sig-label { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+
+        .pub-footer {
+            text-align: center;
+            padding: 1.25rem 2rem 1.5rem;
+            border-top: 1px solid var(--border);
+            background: #fafbfc;
+            font-size: 0.82rem;
+            color: var(--muted);
+        }
+
+        .pub-footer strong { color: var(--text); }
+
+        .pub-certs {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 0.75rem;
+            flex-wrap: wrap;
+        }
+
+        .pub-certs img {
+            max-height: 48px;
+            border-radius: 4px;
+        }
+
+        @media print {
+            body { background: #fff; }
+            .pub-toolbar { display: none !important; }
+            .pub-page { margin: 0; padding: 0; max-width: none; }
+            .pub-card { box-shadow: none; border-radius: 0; }
+            .pub-hero { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+        }
+    </style>
+</head>
+<body>
+    <div class="pub-toolbar no-print">
+        <div class="pub-toolbar-inner">
+            <div class="pub-toolbar-title">
+                <strong>{{ estimate.display_estimate_number }}</strong>
+                {% if estimate.customer.company %} · {{ estimate.customer.company }}{% elif estimate.customer.name %} · {{ estimate.customer.name }}{% endif %}
+            </div>
+            <div class="pub-actions">
+                <button type="button" class="pub-btn pub-btn-outline" onclick="window.print()">
+                    <i class="fas fa-print"></i> Print
+                </button>
+                <button type="button" class="pub-btn pub-btn-primary" id="btn-download-pdf"
+                        data-download-url="{{ public_quotation_download_url }}">
+                    <i class="fas fa-download"></i> Download PDF
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="pub-page">
+        <div class="pub-card">
+            <div class="pub-hero">
+                <div class="pub-hero-top">
+                    <div>
+                        <div class="pub-hero-label">Quotation</div>
+                        <h1>{{ company.company_name }}</h1>
+                        <div class="pub-ref">{{ estimate.display_estimate_number }}</div>
+                    </div>
+                    {% if company.logo and logo_absolute_url %}
+                    <div class="pub-logo">
+                        <img src="{{ logo_absolute_url }}" alt="{{ company.company_name }}">
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="pub-body">
+                <div class="pub-grid-2">
+                    <div class="pub-panel">
+                        <h2>Prepared for</h2>
+                        {% if estimate.customer.company %}
+                        <div class="name">{{ estimate.customer.company }}</div>
+                        {% if estimate.customer.name %}
+                        <div class="lines" style="font-weight:600;margin-bottom:0.35rem;">Attn: {{ estimate.customer.name }}</div>
+                        {% endif %}
+                        {% else %}
+                        <div class="name">{{ estimate.customer.name }}</div>
+                        {% endif %}
+                        <div class="lines">
+                            {% if estimate.customer.address %}<div>{{ estimate.customer.address }}</div>{% endif %}
+                            {% if estimate.customer.city or estimate.customer.country %}
+                            <div>{% if estimate.customer.city %}{{ estimate.customer.city }}{% endif %}{% if estimate.customer.city and estimate.customer.country %}, {% endif %}{% if estimate.customer.country %}{{ estimate.customer.country }}{% endif %}</div>
+                            {% endif %}
+                            {% if estimate.customer.phone %}<div>Tel: {{ estimate.customer.phone }}</div>{% endif %}
+                            {% if estimate.customer.email %}<div>{{ estimate.customer.email }}</div>{% endif %}
+                            {% if estimate.customer.trn %}<div>VAT / TRN: {{ estimate.customer.trn }}</div>{% endif %}
+                        </div>
+                    </div>
+                    <div class="pub-panel">
+                        <h2>From</h2>
+                        <div class="name">{{ company.company_name }}</div>
+                        <div class="lines">
+                            {% if company.address %}<div>{{ company.address|linebreaksbr }}</div>{% endif %}
+                            {% if company.phone %}<div>Tel: {{ company.phone }}</div>{% endif %}
+                            {% if company.email %}<div>{{ company.email }}</div>{% endif %}
+                            {% if company.website %}<div>{{ company.website }}</div>{% endif %}
+                            {% if company.tax_id %}<div>VAT / TRN: {{ company.tax_id }}</div>{% endif %}
+                        </div>
+                        {% if pdf_image_1_url or pdf_image_2_url %}
+                        <div class="pub-certs">
+                            {% if pdf_image_1_url %}<img src="{{ pdf_image_1_url }}" alt="">{% endif %}
+                            {% if pdf_image_2_url %}<img src="{{ pdf_image_2_url }}" alt="">{% endif %}
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="pub-meta">
+                    <div class="pub-meta-item"><span>Date</span> {{ estimate.date|date:"d/m/Y" }}</div>
+                    <div class="pub-meta-item"><span>Valid until</span> {{ estimate.valid_until|date:"d/m/Y"|default:"On request" }}</div>
+                    {% if estimate.prepared_by %}
+                    <div class="pub-meta-item"><span>Prepared by</span> {{ estimate.prepared_by }}</div>
+                    {% endif %}
+                    {% if estimate.project %}
+                    <div class="pub-meta-item"><span>Project</span> {{ estimate.project.name }}</div>
+                    {% endif %}
+                </div>
+
+                {% if estimate.valid_until %}
+                <div class="pub-validity">
+                    <strong>Validity:</strong> This quotation is valid until {{ estimate.valid_until|date:"d/m/Y" }}. Prices and availability may change after this date.
+                </div>
+                {% endif %}
+
+                <div class="pub-section-title">Line items</div>
+                <div class="pub-table-wrap">
+                    {% if estimate.show_rates_on_pdf %}
+                    <table class="pub-table">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Description</th>
+                                {% if estimate.show_brand_name_on_pdf %}<th>Brand</th>{% endif %}
+                                <th class="text-center">Qty</th>
+                                <th class="text-right">Rate</th>
+                                <th class="text-right">Line</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for group in pdf_item_groups %}
+                            {% if group.hide_items_on_pdf and group.name %}
+                            <tr>
+                                <td>{{ group.collapsed_index }}</td>
+                                <td><strong>{{ group.name }}</strong></td>
+                                {% if estimate.show_brand_name_on_pdf %}<td></td>{% endif %}
+                                <td class="text-center">1.00</td>
+                                <td class="text-right">{{ group.line_subtotal|floatformat:2 }}</td>
+                                <td class="text-right">{{ group.line_total|floatformat:2 }}</td>
+                            </tr>
+                            {% else %}
+                            {% if group.name %}
+                            <tr class="group-row"><td colspan="{% if estimate.show_brand_name_on_pdf %}6{% else %}5{% endif %}">{{ group.name }}</td></tr>
+                            {% endif %}
+                            {% for row in group.items %}
+                            <tr>
+                                <td>{{ row.index }}</td>
+                                <td>{{ row.item.description }}{% if row.item.inventory_item %} <span class="muted">({{ row.item.inventory_item.item_code }})</span>{% endif %}</td>
+                                {% if estimate.show_brand_name_on_pdf %}
+                                <td>{% if row.item.inventory_item and row.item.inventory_item.brand %}{{ row.item.inventory_item.brand }}{% endif %}</td>
+                                {% endif %}
+                                <td class="text-center">{{ row.item.quantity|floatformat:2 }}</td>
+                                <td class="text-right">{{ row.item.rate|floatformat:2 }}</td>
+                                <td class="text-right">{{ row.item.total|add:row.item.vat_amount|floatformat:2 }}</td>
+                            </tr>
+                            {% endfor %}
+                            {% if group.name and estimate.show_group_totals_on_pdf %}
+                            <tr>
+                                <td colspan="{% if estimate.show_brand_name_on_pdf %}5{% else %}4{% endif %}" class="text-right"><strong>Subtotal</strong></td>
+                                <td class="text-right"><strong>AED {{ group.line_total|floatformat:2 }}</strong></td>
+                            </tr>
+                            {% endif %}
+                            {% endif %}
+                            {% empty %}
+                            <tr><td colspan="{% if estimate.show_brand_name_on_pdf %}6{% else %}5{% endif %}" class="text-center muted" style="padding:2rem;">No items</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% else %}
+                    <table class="pub-table">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Description</th>
+                                {% if estimate.show_brand_name_on_pdf %}<th>Brand</th>{% endif %}
+                                <th class="text-center">Qty</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for group in pdf_item_groups %}
+                            {% if group.hide_items_on_pdf and group.name %}
+                            <tr>
+                                <td>{{ group.collapsed_index }}</td>
+                                <td><strong>{{ group.name }}</strong> <span class="muted">— AED {{ group.line_total|floatformat:2 }}</span></td>
+                                {% if estimate.show_brand_name_on_pdf %}<td></td>{% endif %}
+                                <td class="text-center">1.00</td>
+                            </tr>
+                            {% else %}
+                            {% if group.name %}
+                            <tr class="group-row"><td colspan="{% if estimate.show_brand_name_on_pdf %}4{% else %}3{% endif %}">{{ group.name }}</td></tr>
+                            {% endif %}
+                            {% for row in group.items %}
+                            <tr>
+                                <td>{{ row.index }}</td>
+                                <td>{{ row.item.description }}{% if row.item.inventory_item %} <span class="muted">({{ row.item.inventory_item.item_code }})</span>{% endif %}</td>
+                                {% if estimate.show_brand_name_on_pdf %}
+                                <td>{% if row.item.inventory_item and row.item.inventory_item.brand %}{{ row.item.inventory_item.brand }}{% endif %}</td>
+                                {% endif %}
+                                <td class="text-center">{{ row.item.quantity|floatformat:2 }}</td>
+                            </tr>
+                            {% endfor %}
+                            {% endif %}
+                            {% empty %}
+                            <tr><td colspan="{% if estimate.show_brand_name_on_pdf %}4{% else %}3{% endif %}" class="text-center muted" style="padding:2rem;">No items</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% endif %}
+                </div>
+
+                <div class="pub-totals-wrap">
+                    <div class="pub-totals">
+                        {% if estimate.show_rates_on_pdf %}
+                        <div class="pub-totals-row">
+                            <span>Subtotal (excl. VAT)</span>
+                            <span class="pub-totals-val">AED {{ estimate.subtotal|floatformat:2 }}</span>
+                        </div>
+                        {% endif %}
+                        {% if estimate.discount_applied and estimate.discount_applied > 0 %}
+                        <div class="pub-totals-row discount">
+                            <span>Discount (excl. VAT)</span>
+                            <span class="pub-totals-val">− AED {{ estimate.discount_applied|floatformat:2 }}</span>
+                        </div>
+                        {% endif %}
+                        {% for rate, amounts in vat_summary.items %}
+                        <div class="pub-totals-row">
+                            <span>VAT{% if rate %} @ {{ rate|floatformat:0 }}%{% endif %}</span>
+                            <span class="pub-totals-val">AED {{ amounts.vat|floatformat:2 }}</span>
+                        </div>
+                        {% empty %}
+                        {% if not estimate.show_rates_on_pdf %}
+                        <div class="pub-totals-row">
+                            <span>Total VAT</span>
+                            <span class="pub-totals-val">AED {{ estimate.vat_amount|floatformat:2 }}</span>
+                        </div>
+                        {% endif %}
+                        {% endfor %}
+                        <div class="pub-totals-row grand">
+                            <span>Grand total</span>
+                            <span>AED {{ estimate.total_amount|floatformat:2 }}</span>
+                        </div>
+                    </div>
+                </div>
+
+                {% if amount_words %}
+                <div class="pub-note">
+                    <h3>Amount in words</h3>
+                    <div>{{ amount_words }}</div>
+                </div>
+                {% endif %}
+
+                {% if estimate.client_note %}
+                <div class="pub-note">
+                    <h3>Note</h3>
+                    <div>{{ estimate.client_note|linebreaks }}</div>
+                </div>
+                {% endif %}
+
+                <div class="pub-terms">
+                    <h3>Terms &amp; conditions</h3>
+                    {% if estimate.terms_and_conditions %}
+                    {{ estimate.terms_and_conditions|linebreaks }}
+                    {% else %}
+                    <p>Prices quoted are in UAE Dirhams (AED) and include VAT where applicable. This quotation is valid as stated on this document unless otherwise agreed. Payment and delivery terms are as agreed upon order confirmation.</p>
+                    {% endif %}
+                </div>
+
+                <div class="pub-signatures">
+                    <div class="pub-sig-box">
+                        {% if authorized_signature_url %}
+                        <img src="{{ authorized_signature_url }}" alt="">
+                        {% endif %}
+                        <div class="pub-sig-label">Authorized signature</div>
+                    </div>
+                    <div class="pub-sig-box">
+                        {% if customer_signature_url %}
+                        <img src="{{ customer_signature_url }}" alt="">
+                        {% endif %}
+                        <div class="pub-sig-label">Customer signature</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="pub-footer">
+                <strong>{{ company.company_name }}</strong>
+                {% if company.phone %} · {{ company.phone }}{% endif %}
+                {% if company.email %} · {{ company.email }}{% endif %}
+                <div style="margin-top:0.35rem;">Ref: {{ estimate.display_estimate_number }} · Thank you for your business.</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        (function () {
+            const btn = document.getElementById('btn-download-pdf');
+            if (!btn) return;
+            btn.addEventListener('click', async function () {
+                const url = btn.dataset.downloadUrl;
+                if (!url) return;
+                const label = btn.innerHTML;
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating…';
+                try {
+                    const res = await fetch(url);
+                    const contentType = (res.headers.get('Content-Type') || '').toLowerCase();
+                    if (!res.ok || !contentType.includes('pdf')) {
+                        window.location.href = url;
+                        return;
+                    }
+                    const blob = await res.blob();
+                    const cd = res.headers.get('Content-Disposition') || '';
+                    let filename = 'Quotation.pdf';
+                    const match = cd.match(/filename="?([^";\n]+)"?/i);
+                    if (match) filename = match[1].trim();
+                    const link = document.createElement('a');
+                    link.href = URL.createObjectURL(blob);
+                    link.download = filename;
+                    document.body.appendChild(link);
+                    link.click();
+                    link.remove();
+                    setTimeout(function () { URL.revokeObjectURL(link.href); }, 3000);
+                } catch (err) {
+                    window.location.href = url;
+                } finally {
+                    btn.disabled = false;
+                    btn.innerHTML = label;
+                }
+            });
+        })();
+    </script>
+</body>
+</html>

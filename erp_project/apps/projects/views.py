@@ -1,15 +1,16 @@
 """Projects Views"""
 from django.shortcuts import render, redirect, get_object_or_404
-from django.http import HttpResponseNotAllowed
+from django.http import HttpResponseNotAllowed, JsonResponse
+from django.template.loader import render_to_string
 from django.views.decorators.cache import never_cache
-from django.views.decorators.http import require_http_methods
+from django.views.decorators.http import require_http_methods, require_POST
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth import get_user_model
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.views.generic import ListView, CreateView, UpdateView, DetailView
 from django.urls import reverse, reverse_lazy
-from django.db.models import Q, Sum, Count, Value, Prefetch
+from django.db.models import Q, Sum, Count, Value, Prefetch, Max
 from django.db.models.fields import DecimalField
 from django.db.models.functions import Coalesce
 from django.utils import timezone
@@ -22,6 +23,8 @@ from .models import (
     ProjectGatepass,
     ProjectPublicUpload,
     ProjectItemLine,
+    ProjectChecklistItem,
+    ProjectChecklistUpload,
 )
 from .forms import ProjectForm, ProjectTaskCreateForm, TaskForm, ProjectExpenseForm, ProjectGatepassForm, ProjectItemDeliveryForm, ProjectItemReturnForm
 from .gatepass_alerts import pick_display_gatepass
@@ -134,7 +137,7 @@ class ProjectListView(PermissionRequiredMixin, ListView):
             Project.objects.filter(is_active=True), self.request.user
         )
         context['total_projects'] = all_projects.count()
-        context['in_progress_projects'] = all_projects.filter(status='in_progress').count()
+        context['in_progress_projects'] = all_projects.filter(status='ongoing').count()
         context['completed_projects'] = all_projects.filter(status='completed').count()
         
         return context
@@ -216,6 +219,237 @@ def public_project_upload(request):
         'projects/public_upload_form.html',
         {'projects': project_qs},
     )
+
+
+def _parse_checklist_date(raw: str) -> date | None:
+    raw = (raw or '').strip()
+    if not raw:
+        return None
+    try:
+        return date.fromisoformat(raw)
+    except ValueError:
+        return None
+
+
+def _project_by_checklist_token(token):
+    return Project.objects.filter(is_active=True, checklist_public_token=token).first()
+
+
+def _public_checklist_projects_qs():
+    return Project.objects.filter(is_active=True).exclude(status='cancelled').order_by(
+        'project_code', 'name'
+    )
+
+
+def _resolve_public_checklist_project(request, project_qs=None):
+    project_qs = project_qs or _public_checklist_projects_qs()
+    raw_pid = (request.GET.get('project') or request.POST.get('project') or '').strip()
+    if raw_pid.isdigit():
+        return project_qs.filter(pk=int(raw_pid)).first()
+    return None
+
+
+def _public_checklist_redirect(project_id: int):
+    url = reverse('projects:public_checklist') + f'?project={project_id}'
+    return redirect(url)
+
+
+@never_cache
+def public_project_checklist_token_redirect(request, token):
+    """Legacy per-project token links → project query param."""
+    project = _project_by_checklist_token(token)
+    if not project:
+        messages.error(request, 'Checklist link is invalid or the project is no longer available.')
+        return redirect('projects:public_checklist')
+    return _public_checklist_redirect(project.pk)
+
+
+@never_cache
+@require_http_methods(['GET', 'POST'])
+def public_project_checklist(request):
+    """Public checklist hub: pick a project, view/toggle items, upload files."""
+    project_qs = _public_checklist_projects_qs()
+    project = _resolve_public_checklist_project(request, project_qs)
+    selected_id = project.pk if project else None
+    if not project:
+        raw_pid = (request.GET.get('project') or request.POST.get('project') or '').strip()
+        if raw_pid.isdigit():
+            selected_id = int(raw_pid)
+
+    if request.method == 'POST':
+        action = (request.POST.get('action') or '').strip()
+
+        if not project:
+            messages.error(request, 'Please select a project from the list.')
+            return render(
+                request,
+                'projects/public_checklist.html',
+                {
+                    'projects': project_qs,
+                    'project': None,
+                    'selected_project_id': selected_id,
+                    'checklist_items': [],
+                    'checklist_uploads': [],
+                },
+                status=400,
+            )
+
+        if action == 'toggle':
+            item_id = request.POST.get('item_id')
+            if item_id and str(item_id).isdigit():
+                item = project.checklist_items.filter(pk=int(item_id), is_active=True).first()
+                if item:
+                    item.is_flagged_red = not item.is_flagged_red
+                    item.save(update_fields=['is_flagged_red', 'updated_at'])
+                    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                        return JsonResponse({'ok': True, 'is_flagged_red': item.is_flagged_red})
+            return _public_checklist_redirect(project.pk)
+
+        if action == 'upload':
+            note = (request.POST.get('note') or '').strip()[:500]
+            item_id = request.POST.get('checklist_item_id')
+            checklist_item = None
+            if item_id and str(item_id).isdigit():
+                checklist_item = project.checklist_items.filter(pk=int(item_id), is_active=True).first()
+
+            files = request.FILES.getlist('files')
+            if not files:
+                messages.error(request, 'Please add at least one file or photo.')
+            else:
+                created = 0
+                for f in files:
+                    if not f.name:
+                        continue
+                    ProjectChecklistUpload.objects.create(
+                        project=project,
+                        checklist_item=checklist_item,
+                        file=f,
+                        original_filename=(getattr(f, 'name', '') or '')[:255],
+                        note=note,
+                    )
+                    created += 1
+                if created:
+                    messages.success(
+                        request,
+                        f'{created} file(s) uploaded to {project.project_code} — {project.name}.',
+                    )
+                else:
+                    messages.error(request, 'No files were saved.')
+            return _public_checklist_redirect(project.pk)
+
+    items = []
+    uploads = []
+    if project:
+        items = list(
+            project.checklist_items.filter(is_active=True).order_by(
+                '-item_date', '-sort_order', '-created_at'
+            )
+        )
+        uploads = list(
+            project.checklist_uploads.filter(is_active=True)
+            .select_related('checklist_item')
+            .order_by('-created_at')
+        )
+
+    return render(
+        request,
+        'projects/public_checklist.html',
+        {
+            'projects': project_qs,
+            'project': project,
+            'selected_project_id': selected_id,
+            'checklist_items': items,
+            'checklist_uploads': uploads,
+        },
+    )
+
+
+@login_required
+@require_POST
+def project_checklist_toggle(request, pk):
+    project = get_object_or_404(Project, pk=pk, is_active=True)
+    from apps.core.visibility import user_can_access_project
+
+    if not user_can_access_project(request.user, project):
+        return JsonResponse({'ok': False, 'error': 'Permission denied.'}, status=403)
+
+    item_id = request.POST.get('item_id')
+    if not item_id or not str(item_id).isdigit():
+        return JsonResponse({'ok': False, 'error': 'Invalid item.'}, status=400)
+
+    item = project.checklist_items.filter(pk=int(item_id), is_active=True).first()
+    if not item:
+        return JsonResponse({'ok': False, 'error': 'Not found.'}, status=404)
+
+    item.is_flagged_red = not item.is_flagged_red
+    item.updated_by = request.user
+    item.save(update_fields=['is_flagged_red', 'updated_by', 'updated_at'])
+    return JsonResponse({'ok': True, 'is_flagged_red': item.is_flagged_red})
+
+
+def _checklist_row_html(item, *, show_delete=False, toggle_class='checklist-toggle'):
+    return render_to_string(
+        'projects/partials/checklist_item_row.html',
+        {
+            'item': item,
+            'show_delete': show_delete,
+            'toggle_class': toggle_class,
+        },
+    ).strip()
+
+
+@login_required
+@require_POST
+def project_checklist_add(request, pk):
+    project = get_object_or_404(Project, pk=pk, is_active=True)
+    if not project.allows_edit_by(request.user):
+        return JsonResponse({'ok': False, 'error': 'Permission denied.'}, status=403)
+
+    text = (request.POST.get('checklist_text') or '').strip()
+    item_date = _parse_checklist_date(request.POST.get('checklist_date')) or date.today()
+    if not text:
+        return JsonResponse({'ok': False, 'error': 'Enter checklist text.'}, status=400)
+
+    max_sort = (
+        project.checklist_items.filter(is_active=True).aggregate(m=Max('sort_order')).get('m') or 0
+    )
+    item = ProjectChecklistItem.objects.create(
+        project=project,
+        text=text[:500],
+        item_date=item_date,
+        sort_order=max_sort + 1,
+        created_by=request.user,
+        updated_by=request.user,
+    )
+    return JsonResponse({
+        'ok': True,
+        'item': {
+            'id': item.pk,
+            'is_flagged_red': item.is_flagged_red,
+        },
+        'html': _checklist_row_html(item, show_delete=True),
+    })
+
+
+@login_required
+@require_POST
+def project_checklist_delete(request, pk):
+    project = get_object_or_404(Project, pk=pk, is_active=True)
+    if not project.allows_edit_by(request.user):
+        return JsonResponse({'ok': False, 'error': 'Permission denied.'}, status=403)
+
+    item_id = request.POST.get('item_id')
+    if not item_id or not str(item_id).isdigit():
+        return JsonResponse({'ok': False, 'error': 'Invalid item.'}, status=400)
+
+    item = project.checklist_items.filter(pk=int(item_id), is_active=True).first()
+    if not item:
+        return JsonResponse({'ok': False, 'error': 'Not found.'}, status=404)
+
+    item.is_active = False
+    item.updated_by = request.user
+    item.save(update_fields=['is_active', 'updated_by', 'updated_at'])
+    return JsonResponse({'ok': True, 'item_id': item.pk})
 
 
 class TaskListView(PermissionRequiredMixin, ListView):
@@ -715,6 +949,9 @@ class ProjectDetailView(PermissionRequiredMixin, DetailView):
                 line.max_return_qty = None
                 line.track_by_serial = False
                 line.requires_whole_quantity = False
+        from apps.inventory.consumable_project_scope import attach_project_line_request_limits
+
+        attach_project_line_request_limits(item_lines, self.object)
         context['project_item_lines'] = item_lines
         if 'task_form' not in context:
             context['task_form'] = ProjectTaskCreateForm()
@@ -862,6 +1099,20 @@ class ProjectDetailView(PermissionRequiredMixin, DetailView):
         from .member_roles import build_project_team_display
 
         context['project_team'] = build_project_team_display(self.object)
+        self.object.ensure_checklist_public_token()
+        context['checklist_public_url'] = self.request.build_absolute_uri(
+            reverse('projects:public_checklist') + f'?project={self.object.pk}'
+        )
+        context['checklist_items'] = list(
+            self.object.checklist_items.filter(is_active=True).order_by(
+                '-item_date', '-sort_order', '-created_at'
+            )
+        )
+        context['checklist_uploads'] = list(
+            self.object.checklist_uploads.filter(is_active=True)
+            .select_related('checklist_item')
+            .order_by('-created_at')
+        )
         context['item_delivery_groups'] = project_delivery_summary_groups(self.object)
         context['item_return_rows'] = project_return_history_rows(self.object)
         context['item_activity_timeline'] = project_item_activity_timeline(self.object)
@@ -896,6 +1147,105 @@ class ProjectDetailView(PermissionRequiredMixin, DetailView):
     def post(self, request, *args, **kwargs):
         self.object = self.get_object()
         action = request.POST.get('action', 'add_task')
+
+        if action == 'checklist_add':
+            if not self.object.allows_edit_by(request.user):
+                messages.error(request, 'Permission denied.')
+                return redirect('projects:project_detail', pk=self.object.pk)
+            text = (request.POST.get('checklist_text') or '').strip()
+            item_date = _parse_checklist_date(request.POST.get('checklist_date')) or date.today()
+            if not text:
+                messages.error(request, 'Enter checklist text before adding.')
+                return redirect('projects:project_detail', pk=self.object.pk)
+            max_sort = (
+                self.object.checklist_items.filter(is_active=True).aggregate(m=Max('sort_order')).get('m') or 0
+            )
+            ProjectChecklistItem.objects.create(
+                project=self.object,
+                text=text[:500],
+                item_date=item_date,
+                sort_order=max_sort + 1,
+                created_by=request.user,
+                updated_by=request.user,
+            )
+            messages.success(request, 'Checklist item added.')
+            return redirect('projects:project_detail', pk=self.object.pk)
+
+        if action == 'bulk_item_request':
+            from apps.core.visibility import user_can_access_project
+
+            if not user_can_access_project(request.user, self.object):
+                messages.error(request, 'Permission denied.')
+                return redirect('projects:project_detail', pk=self.object.pk)
+
+            item_ids = request.POST.getlist('request_item_id')
+            quantities = request.POST.getlist('request_quantity')
+            if not item_ids:
+                messages.error(request, 'Select at least one item and enter a quantity.')
+                return redirect('projects:project_detail', pk=self.object.pk)
+
+            from apps.inventory.models import ConsumableRequest, ConsumableRequestItem, Item
+            from apps.inventory.consumable_project_scope import (
+                apply_scope_to_consumable_request,
+                attach_project_line_request_limits,
+            )
+
+            item_lines = list(self.object.item_lines.select_related('inventory_item'))
+            attach_project_line_request_limits(item_lines, self.object)
+            limits_by_item = {
+                line.inventory_item_id: line.max_request_qty
+                for line in item_lines
+                if line.inventory_item_id and line.max_request_qty is not None
+            }
+
+            lines_to_create: list[tuple[Item, Decimal]] = []
+
+            for raw_id, raw_qty in zip(item_ids, quantities):
+                if not str(raw_id).isdigit():
+                    continue
+                item_id = int(raw_id)
+                try:
+                    qty = Decimal(str(raw_qty)).quantize(Decimal('0.01'))
+                except Exception:
+                    messages.error(request, 'Enter a valid quantity for each selected item.')
+                    return redirect('projects:project_detail', pk=self.object.pk)
+                if qty <= 0:
+                    continue
+                item = Item.objects.filter(pk=item_id, is_active=True).first()
+                if not item:
+                    continue
+                max_qty = limits_by_item.get(item_id)
+                if max_qty is not None and qty > max_qty:
+                    messages.error(
+                        request,
+                        f'{item.name}: requested {qty} exceeds remaining {max_qty} on this project.',
+                    )
+                    return redirect('projects:project_detail', pk=self.object.pk)
+                lines_to_create.append((item, qty))
+
+            if not lines_to_create:
+                messages.error(request, 'No valid items to request.')
+                return redirect('projects:project_detail', pk=self.object.pk)
+
+            consumable_request = ConsumableRequest.objects.create(
+                requested_by=request.user,
+                project=self.object,
+                status='pending',
+                priority='medium',
+            )
+            for item, qty in lines_to_create:
+                ConsumableRequestItem.objects.create(
+                    consumable_request=consumable_request,
+                    item=item,
+                    quantity=qty,
+                )
+            consumable_request.recalculate_total()
+            apply_scope_to_consumable_request(consumable_request)
+            messages.success(
+                request,
+                f'Request {consumable_request.request_number} submitted for {len(lines_to_create)} item(s).',
+            )
+            return redirect('inventory:consumable_request_detail', pk=consumable_request.pk)
 
         if action == 'record_item_delivery':
             if not (

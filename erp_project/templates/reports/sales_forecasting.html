@@ -1,0 +1,436 @@
+{% extends 'base.html' %}
+{% load humanize static %}
+
+{% block extra_css %}
+<style>
+.sf-kpi { border-left: 4px solid var(--sf-accent, #153a5c); }
+.sf-kpi--closures { --sf-accent: #065f46; background: #ecfdf5; }
+.sf-kpi--value { --sf-accent: #153a5c; background: #f8fafc; }
+.sf-kpi--profit { --sf-accent: #0d6efd; background: #eff6ff; }
+.sf-kpi--risk { --sf-accent: #991b1b; background: #fef2f2; }
+.sf-kpi--conf { --sf-accent: #92400e; background: #fffbeb; }
+
+.sf-brief { background: #eef3fa; border-left: 4px solid #e8c97a; border-radius: 0.375rem; }
+.sf-brief__body { font-style: italic; line-height: 1.65; }
+
+.sf-badge { display: inline-block; border-radius: 9999px; padding: 0.2rem 0.6rem; font-size: 0.72rem; font-weight: 600; text-transform: capitalize; }
+.sf-badge-red { background: #fee2e2; color: #991b1b; }
+.sf-badge-amber { background: #fef3c7; color: #92400e; }
+.sf-badge-green { background: #d1fae5; color: #065f46; }
+
+.sf-table th { white-space: nowrap; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; cursor: pointer; user-select: none; }
+.sf-table th .sort-icon { opacity: 0.35; font-size: 0.65rem; margin-left: 0.25rem; }
+.sf-table th.sorted .sort-icon { opacity: 1; }
+
+.sf-margin-negative { color: #991b1b; font-weight: 600; }
+
+.sf-project-scroll { display: flex; gap: 1rem; overflow-x: auto; padding-bottom: 0.5rem; scroll-snap-type: x mandatory; }
+.sf-project-card { flex: 0 0 280px; scroll-snap-align: start; border: 1px solid #e5e7eb; border-radius: 0.5rem; background: #fff; }
+.sf-variance-good { color: #065f46; font-weight: 600; }
+.sf-variance-bad { color: #991b1b; font-weight: 600; }
+
+.sf-alert { border-left: 3px solid #e5e7eb; padding-left: 0.75rem; margin-bottom: 1rem; }
+.sf-alert--high { border-left-color: #dc2626; }
+.sf-alert--medium { border-left-color: #d97706; }
+.sf-alert--low { border-left-color: #16a34a; }
+
+@media print { .no-print { display: none !important; } .sf-project-scroll { flex-wrap: wrap; overflow: visible; } }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <div>
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-1 small">
+                <li class="breadcrumb-item"><a href="{% url 'reports:index' %}">Reports</a></li>
+                <li class="breadcrumb-item active">Sales Forecasting</li>
+            </ol>
+        </nav>
+        <h4 class="mb-0 fw-bold">{{ title }}</h4>
+        <p class="text-muted small mb-0">
+            {{ start_date|date:"d/m/Y" }} – {{ end_date|date:"d/m/Y" }}
+            · {{ estimate_count|intcomma }} estimate{{ estimate_count|pluralize }}
+            {% if from_cache %}<span class="badge bg-secondary-subtle text-secondary ms-1">Cached</span>{% endif %}
+        </p>
+    </div>
+    <div class="d-flex gap-2 flex-wrap no-print">
+        <a href="?start_date={{ start_date|date:'Y-m-d' }}&end_date={{ end_date|date:'Y-m-d' }}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if salesperson_filter %}&salesperson={{ salesperson_filter }}{% endif %}{% if customer_filter %}&customer={{ customer_filter }}{% endif %}{% if job_type_filter %}&job_type={{ job_type_filter|urlencode }}{% endif %}&export=xlsx" class="btn btn-outline-success btn-sm">
+            <i class="fas fa-file-excel me-1"></i>Export Excel
+        </a>
+        <a href="?start_date={{ start_date|date:'Y-m-d' }}&end_date={{ end_date|date:'Y-m-d' }}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if salesperson_filter %}&salesperson={{ salesperson_filter }}{% endif %}{% if customer_filter %}&customer={{ customer_filter }}{% endif %}{% if job_type_filter %}&job_type={{ job_type_filter|urlencode }}{% endif %}&export=pdf" class="btn btn-outline-danger btn-sm" target="_blank">
+            <i class="fas fa-file-pdf me-1"></i>Export PDF
+        </a>
+    </div>
+</div>
+
+{% if not openai_configured %}
+<div class="alert alert-warning no-print">
+    Configure OpenAI API key in <a href="{% url 'settings:company' %}">Settings → Company</a> for full AI analysis. Heuristic scoring uses completed project data as fallback.
+</div>
+{% endif %}
+
+<div class="card mb-3 border-0 shadow-sm no-print">
+    <div class="card-body py-2 px-3">
+        <form method="get" class="row g-2 align-items-end">
+            <div class="col-sm-6 col-md-2">
+                <label class="form-label small mb-1">Start date</label>
+                <input type="date" name="start_date" class="form-control form-control-sm" value="{{ start_date|date:'Y-m-d' }}">
+            </div>
+            <div class="col-sm-6 col-md-2">
+                <label class="form-label small mb-1">End date</label>
+                <input type="date" name="end_date" class="form-control form-control-sm" value="{{ end_date|date:'Y-m-d' }}">
+            </div>
+            <div class="col-sm-6 col-md-2">
+                <label class="form-label small mb-1">Status</label>
+                <select name="status" class="form-select form-select-sm">
+                    {% for v, l in status_choices %}
+                    <option value="{{ v }}" {% if status_filter == v %}selected{% endif %}>{{ l }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-sm-6 col-md-2">
+                <label class="form-label small mb-1">Salesperson</label>
+                <select name="salesperson" class="form-select form-select-sm">
+                    <option value="">All</option>
+                    <option value="none" {% if salesperson_filter == 'none' %}selected{% endif %}>Unassigned</option>
+                    {% for sp in salesperson_choices %}
+                    <option value="{{ sp.id }}" {% if salesperson_filter == sp.id|stringformat:"s" %}selected{% endif %}>{{ sp.label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-sm-6 col-md-2">
+                <label class="form-label small mb-1">Customer</label>
+                <select name="customer" class="form-select form-select-sm">
+                    <option value="">All</option>
+                    {% for c in customer_choices %}
+                    <option value="{{ c.id }}" {% if customer_filter == c.id|stringformat:"s" %}selected{% endif %}>{{ c.label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-sm-6 col-md-2">
+                <label class="form-label small mb-1">Job type</label>
+                <select name="job_type" class="form-select form-select-sm">
+                    {% for j in job_type_choices %}
+                    <option value="{{ j.id }}" {% if job_type_filter == j.id %}selected{% endif %}>{{ j.label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-12 col-md-auto d-flex gap-1">
+                <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-filter me-1"></i>Apply</button>
+                <a href="?start_date={{ start_date|date:'Y-m-d' }}&end_date={{ end_date|date:'Y-m-d' }}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if salesperson_filter %}&salesperson={{ salesperson_filter }}{% endif %}{% if customer_filter %}&customer={{ customer_filter }}{% endif %}{% if job_type_filter %}&job_type={{ job_type_filter|urlencode }}{% endif %}&refresh=1" class="btn btn-outline-secondary btn-sm" title="Re-run AI analysis"><i class="fas fa-sync-alt"></i></a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Section 1: Summary Cards -->
+<div class="row g-3 mb-4">
+    <div class="col-6 col-lg">
+        <div class="card sf-kpi sf-kpi--closures border-0 shadow-sm h-100">
+            <div class="card-body py-3">
+                <div class="small text-muted">Predicted Closures</div>
+                <div class="fw-bold fs-4">{{ summary.predicted_closures|default:0 }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg">
+        <div class="card sf-kpi sf-kpi--value border-0 shadow-sm h-100">
+            <div class="card-body py-3">
+                <div class="small text-muted">Predicted Won Value</div>
+                <div class="fw-bold fs-5">AED {{ summary.predicted_won_value|default:0|floatformat:0|intcomma }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg">
+        <div class="card sf-kpi sf-kpi--profit border-0 shadow-sm h-100">
+            <div class="card-body py-3">
+                <div class="small text-muted">Predicted Profit</div>
+                <div class="fw-bold fs-5">AED {{ summary.predicted_profit|default:0|floatformat:0|intcomma }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg">
+        <div class="card sf-kpi sf-kpi--risk border-0 shadow-sm h-100">
+            <div class="card-body py-3">
+                <div class="small text-muted">At-Risk Estimates</div>
+                <div class="fw-bold fs-4">{{ summary.at_risk_count|default:0 }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg">
+        <div class="card sf-kpi sf-kpi--conf border-0 shadow-sm h-100">
+            <div class="card-body py-3">
+                <div class="small text-muted">AI Confidence</div>
+                <div class="fw-bold fs-4">{{ summary.avg_confidence_pct|default:0 }}%</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Section 2: Executive Brief -->
+<div class="card border-0 shadow-sm mb-4 sf-brief">
+    <div class="card-body">
+        <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+            <h6 class="fw-bold mb-0">AI Executive Brief</h6>
+            <button type="button" id="btnRegenerateBrief" class="btn btn-outline-primary btn-sm no-print">
+                <i class="fas fa-magic me-1"></i>Regenerate Brief
+            </button>
+        </div>
+        <div id="executiveBrief" class="sf-brief__body text-secondary mb-0">
+            {% if executive_brief %}{{ executive_brief }}{% else %}
+            <span class="text-muted">No brief available. Click Regenerate Brief to generate one.</span>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Section 3: Estimate Forecast Table -->
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white fw-bold">Estimate-Level Forecast</div>
+    <div class="card-body p-0">
+        {% if rows %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 sf-table" id="sfEstimateTable">
+                <thead class="table-light">
+                    <tr>
+                        <th data-sort="estimate_number">Estimate <span class="sort-icon">↕</span></th>
+                        <th data-sort="customer">Customer <span class="sort-icon">↕</span></th>
+                        <th data-sort="salesperson">Salesperson <span class="sort-icon">↕</span></th>
+                        <th data-sort="status_label">Status <span class="sort-icon">↕</span></th>
+                        <th data-sort="total_value_display">Total Value <span class="sort-icon">↕</span></th>
+                        <th data-sort="estimated_margin_display">Est. Margin % <span class="sort-icon">↕</span></th>
+                        <th data-sort="predicted_outcome">Predicted Outcome <span class="sort-icon">↕</span></th>
+                        <th data-sort="predicted_margin_display">Predicted Margin % <span class="sort-icon">↕</span></th>
+                        <th data-sort="risk_flag" data-sort-default="asc">Risk Flag <span class="sort-icon">↕</span></th>
+                        <th data-sort="top_insight">Top Insight <span class="sort-icon">↕</span></th>
+                        <th data-sort="ai_action">AI Action <span class="sort-icon">↕</span></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in rows %}
+                    <tr>
+                        <td>
+                            <a href="{{ row.detail_url }}" target="_blank" rel="noopener" class="fw-semibold">{{ row.estimate_number }}</a>
+                            {% if row.matched_project_code %}
+                            <div class="small text-muted">↳ {{ row.matched_project_code }}</div>
+                            {% endif %}
+                        </td>
+                        <td>{{ row.customer }}</td>
+                        <td>{{ row.salesperson }}</td>
+                        <td>{{ row.status_label }}</td>
+                        <td>{{ row.total_value_display }}</td>
+                        <td data-value="{{ row.estimated_margin_display }}">{{ row.estimated_margin_display }}</td>
+                        <td>{{ row.predicted_outcome }}</td>
+                        <td data-value="{{ row.predicted_margin_display }}" class="{% if row.margin_negative %}sf-margin-negative{% endif %}">{{ row.predicted_margin_display }}</td>
+                        <td data-value="{{ row.risk_flag }}"><span class="sf-badge sf-badge-{{ row.risk_flag }}">{{ row.risk_flag }}</span></td>
+                        <td class="small">{{ row.top_insight }}</td>
+                        <td class="small">{{ row.ai_action }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center text-muted py-5">No active estimates match the selected filters.</div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Section 4: Project Learning -->
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white fw-bold">Learn from Past Projects</div>
+    <div class="card-body">
+        {% if project_cards %}
+        <div class="sf-project-scroll mb-4">
+            {% for p in project_cards %}
+            <div class="sf-project-card p-3">
+                <a href="{{ p.detail_url }}" target="_blank" rel="noopener" class="fw-bold text-decoration-none">{{ p.project_code }}</a>
+                <div class="small text-muted mb-2">{{ p.project_name|truncatechars:40 }}</div>
+                <div class="small">Est. cost: AED {{ p.estimated_cost_aed|floatformat:0|intcomma }}</div>
+                <div class="small">Actual cost: AED {{ p.actual_cost_aed|floatformat:0|intcomma }}</div>
+                <div class="small">Est. margin: {{ p.estimated_margin_pct }}% → Actual: {{ p.actual_margin_pct }}%</div>
+                <div class="small mt-1 {% if p.variance_pct > 5 %}sf-variance-bad{% elif p.variance_pct < -5 %}sf-variance-good{% endif %}">
+                    Variance: {% if p.variance_pct > 0 %}+{% endif %}{{ p.variance_pct }}%
+                    {% if p.variance_pct > 5 %}↑{% elif p.variance_pct < -5 %}↓{% endif %}
+                </div>
+                <div class="small text-muted mt-2 fst-italic">{{ p.ai_one_liner }}</div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-muted mb-3">No completed projects available for learning.</p>
+        {% endif %}
+
+        <h6 class="fw-bold mb-3">Patterns from Closed Projects</h6>
+        {% if patterns %}
+        <div class="table-responsive">
+            <table class="table table-sm table-bordered mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Pattern</th>
+                        <th>Frequency</th>
+                        <th>Avg Margin Impact</th>
+                        <th>Recommendation</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for p in patterns %}
+                    <tr>
+                        <td>{{ p.pattern_name }}</td>
+                        <td>{{ p.frequency }}</td>
+                        <td class="{% if p.avg_margin_impact_pct < 0 %}sf-variance-bad{% else %}sf-variance-good{% endif %}">{{ p.avg_margin_impact_pct|floatformat:1 }}%</td>
+                        <td class="small">{{ p.recommendation }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-muted mb-0">Insufficient completed project history to surface patterns.</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Section 5: Pattern Match Alerts -->
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white fw-bold">Estimate Pattern Match Alerts</div>
+    <div class="card-body">
+        {% if pattern_alerts %}
+        {% for a in pattern_alerts %}
+        <div class="sf-alert sf-alert--{{ a.severity|default:'medium' }}">
+            <div class="d-flex gap-2 align-items-start">
+                {% if a.severity == 'high' %}
+                <i class="fas fa-exclamation-triangle text-danger mt-1"></i>
+                {% elif a.severity == 'low' %}
+                <i class="fas fa-check-circle text-success mt-1"></i>
+                {% else %}
+                <i class="fas fa-exclamation-circle text-warning mt-1"></i>
+                {% endif %}
+                <div class="flex-grow-1">
+                    <div>
+                        <a href="{{ a.estimate_url }}" target="_blank" rel="noopener" class="fw-semibold">{{ a.estimate_number }}</a>
+                        {% if a.matched_project_code %}
+                        ↔ <a href="{{ a.project_url }}" target="_blank" rel="noopener" class="fw-semibold">{{ a.matched_project_code }}</a>
+                        {% endif %}
+                    </div>
+                    <div class="small">{{ a.description }}</div>
+                    <div class="small text-muted mt-1"><em>Suggested:</em> {{ a.suggested_action }}</div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+        {% else %}
+        <div class="text-center text-muted py-4">
+            <i class="fas fa-check-circle text-success fa-2x mb-2"></i>
+            <p class="mb-0">No pattern match alerts for the current estimate set.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Section 6: Next Month Forecast -->
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white fw-bold">Next Month Forecast</div>
+    <div class="card-body">
+        {% if next_month %}
+        <div class="row g-4">
+            <div class="col-md-6">
+                <dl class="mb-0">
+                    <dt>Expected Wins</dt>
+                    <dd>{{ next_month.expected_wins_count|default:0 }}</dd>
+                    <dt>Expected Won Value</dt>
+                    <dd>AED {{ next_month.expected_won_value_aed|default:0|floatformat:0|intcomma }}
+                        <span class="text-muted small">(AED {{ next_month.expected_won_value_low_aed|default:0|floatformat:0|intcomma }} – {{ next_month.expected_won_value_high_aed|default:0|floatformat:0|intcomma }})</span>
+                    </dd>
+                    <dt>Expected Profit</dt>
+                    <dd>AED {{ next_month.expected_profit_aed|default:0|floatformat:0|intcomma }}</dd>
+                    <dt>Expected New Estimates</dt>
+                    <dd>{{ next_month.expected_new_estimates|default:0 }}</dd>
+                    <dt>Confidence</dt>
+                    <dd>{{ next_month.confidence_pct|default:0 }}%</dd>
+                </dl>
+            </div>
+            <div class="col-md-6">
+                {% if next_month.top_risks %}
+                <div class="mb-3">
+                    <div class="small fw-semibold text-muted">Top risk factors</div>
+                    <ul class="small mb-0 text-danger">
+                        {% for r in next_month.top_risks %}<li>{{ r }}</li>{% endfor %}
+                    </ul>
+                </div>
+                {% endif %}
+                {% if next_month.key_assumptions %}
+                <div>
+                    <div class="small fw-semibold text-muted">Key assumptions</div>
+                    <ul class="small mb-0">
+                        {% for a in next_month.key_assumptions %}<li>{{ a }}</li>{% endfor %}
+                    </ul>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% else %}
+        <p class="text-muted mb-0">Next month forecast unavailable.</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Section 7: Salesperson Pricing Quality -->
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white fw-bold">Salesperson Pricing Quality</div>
+    <div class="card-body p-0">
+        {% if sp_quality %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Salesperson</th>
+                        <th>Estimates Prepared</th>
+                        <th>Win Rate</th>
+                        <th>Avg Est. Margin</th>
+                        <th>Avg Actual Margin</th>
+                        <th>Pricing Accuracy</th>
+                        <th>AI Verdict</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for sp in sp_quality %}
+                    <tr>
+                        <td class="fw-semibold">{{ sp.label }}</td>
+                        <td>{{ sp.estimates_prepared|default:0 }}</td>
+                        <td>{{ sp.win_rate_pct|default:0 }}%</td>
+                        <td>{{ sp.avg_estimated_margin_pct|default:0 }}%</td>
+                        <td>{{ sp.avg_actual_margin_pct|default:0 }}%</td>
+                        <td>{{ sp.pricing_accuracy_pct|default:0 }}%</td>
+                        <td class="small">{{ sp.ai_verdict }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center text-muted py-4">No salesperson pricing data available.</div>
+        {% endif %}
+    </div>
+</div>
+
+<form class="d-none">{% csrf_token %}</form>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'reports/js/sales_forecasting.js' %}"></script>
+<script>
+window.SF_CONFIG = {
+    regenerateUrl: "{% url 'reports:sales_forecasting_regenerate_brief' %}",
+    filters: {
+        start_date: "{{ start_date|date:'Y-m-d' }}",
+        end_date: "{{ end_date|date:'Y-m-d' }}",
+        status: "{{ status_filter|escapejs }}",
+        salesperson: "{{ salesperson_filter|escapejs }}",
+        customer: "{{ customer_filter|escapejs }}",
+        job_type: "{{ job_type_filter|escapejs }}"
+    }
+};
+</script>
+{% endblock %}

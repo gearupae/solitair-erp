@@ -466,9 +466,15 @@
                             <td></td>
                             <td></td>
                         </tr>
-                        <tr>
-                            <td colspan="10" class="text-end fw-medium text-danger">Discount (excl. VAT):</td>
-                            <td class="text-end fw-medium text-danger" id="discountDisplay">0.00</td>
+                        <tr id="discountExclRow" class="d-none">
+                            <td colspan="10" class="text-end fw-medium text-danger">Discount (before VAT):</td>
+                            <td class="text-end fw-medium text-danger" id="discountDisplayExcl">0.00</td>
+                            <td></td>
+                            <td></td>
+                        </tr>
+                        <tr id="discountInclRow" class="d-none">
+                            <td colspan="10" class="text-end fw-medium text-danger">Discount (after VAT):</td>
+                            <td class="text-end fw-medium text-danger" id="discountDisplayIncl">0.00</td>
                             <td></td>
                             <td></td>
                         </tr>
@@ -1742,7 +1748,9 @@ function calculateTotals() {
 
     let remainingDisc = disc;
     let vatTotal = 0;
+    let vatWithoutDiscount = 0;
     rows.forEach((row, idx) => {
+        vatWithoutDiscount += Math.round(row.net * (row.vatRate / 100) * 100) / 100;
         let lineDisc = 0;
         if (disc > 0 && subtotal > 0) {
             if (idx === rows.length - 1) {
@@ -1756,9 +1764,16 @@ function calculateTotals() {
         vatTotal += Math.round(lineNet * (row.vatRate / 100) * 100) / 100;
     });
 
+    const discInclVat = disc + Math.round((vatWithoutDiscount - vatTotal) * 100) / 100;
     const grand = subtotal - disc + vatTotal;
     document.getElementById('subtotal').textContent = subtotal.toFixed(2);
-    document.getElementById('discountDisplay').textContent = disc.toFixed(2);
+    const showDiscount = disc > 0;
+    document.getElementById('discountExclRow')?.classList.toggle('d-none', !showDiscount);
+    document.getElementById('discountInclRow')?.classList.toggle('d-none', !showDiscount);
+    if (showDiscount) {
+        document.getElementById('discountDisplayExcl').textContent = disc.toFixed(2);
+        document.getElementById('discountDisplayIncl').textContent = discInclVat.toFixed(2);
+    }
     document.getElementById('vatTotal').textContent = vatTotal.toFixed(2);
     document.getElementById('grandTotal').textContent = grand.toFixed(2);
     updateExpenseTypeTotals();
