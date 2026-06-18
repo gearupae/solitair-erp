@@ -24,6 +24,7 @@ from .models import (
     ApprovalConfigurationLevel,
     Company,
     EstimateTextTemplate,
+    PurchaseOrderTermsTemplate,
     ItemSubGroupExpenseType,
 )
 from .forms import UserForm, RoleForm, CompanySettingsForm, CompanyForm
@@ -298,6 +299,24 @@ class CompanySettingsView(PermissionRequiredMixin, UpdateView):
             ],
             cls=DjangoJSONEncoder,
         )
+        po_terms_templates = list(
+            PurchaseOrderTermsTemplate.objects.all().order_by('sort_order', 'name')
+        )
+        context['po_terms_templates'] = po_terms_templates
+        context['po_terms_templates_json'] = json.dumps(
+            [
+                {
+                    'id': t.pk,
+                    'name': t.name,
+                    'body': t.body,
+                    'is_default': t.is_default,
+                    'is_active': t.is_active,
+                    'sort_order': t.sort_order,
+                }
+                for t in po_terms_templates
+            ],
+            cls=DjangoJSONEncoder,
+        )
         from apps.inventory.utils import openai_key_status
 
         context['openai_key_status'] = openai_key_status()
@@ -312,6 +331,8 @@ class CompanySettingsView(PermissionRequiredMixin, UpdateView):
             return self._handle_openai_key_post(request)
         if request.POST.get('estimate_template_action'):
             return self._handle_estimate_template_post(request)
+        if request.POST.get('po_terms_template_action'):
+            return self._handle_po_terms_template_post(request)
         return super().post(request, *args, **kwargs)
 
     def _handle_openai_key_post(self, request):
@@ -414,6 +435,54 @@ class CompanySettingsView(PermissionRequiredMixin, UpdateView):
             return redirect(f'{reverse("settings:company")}#estimate-templates')
         else:
             messages.error(request, 'Invalid template request.')
+        return redirect('settings:company')
+
+    def _handle_po_terms_template_post(self, request):
+        action = request.POST.get('po_terms_template_action')
+
+        if action == 'save':
+            name = (request.POST.get('name') or '').strip()[:120]
+            body = request.POST.get('body') or ''
+            if not name:
+                messages.error(request, 'Template name is required for purchase order terms.')
+                return redirect('settings:company')
+            is_default = request.POST.get('is_default') == 'on'
+            is_active = request.POST.get('is_active') == 'on'
+            sort_order = int(request.POST.get('sort_order') or 0)
+            template_id = request.POST.get('template_id') or ''
+            if template_id:
+                template = get_object_or_404(PurchaseOrderTermsTemplate, pk=int(template_id))
+                template.name = name
+                template.body = body
+                template.sort_order = sort_order
+                template.is_active = is_active
+                template.is_default = is_default
+                template.save()
+                messages.success(request, f'Purchase order terms template “{name}” saved.')
+            else:
+                if not sort_order:
+                    sort_order = (
+                        PurchaseOrderTermsTemplate.objects.order_by('-sort_order')
+                        .values_list('sort_order', flat=True)
+                        .first()
+                        or 0
+                    ) + 1
+                template = PurchaseOrderTermsTemplate.objects.create(
+                    name=name,
+                    body=body,
+                    is_default=is_default,
+                    sort_order=sort_order,
+                    is_active=is_active,
+                )
+                messages.success(request, f'Purchase order terms template “{name}” created.')
+            return redirect(f'{reverse("settings:company")}?po_terms={template.pk}#po-terms-templates')
+        elif action == 'delete' and request.POST.get('template_id'):
+            template = get_object_or_404(PurchaseOrderTermsTemplate, pk=int(request.POST['template_id']))
+            name = template.name
+            template.delete()
+            messages.success(request, f'Purchase order terms template “{name}” deleted.')
+            return redirect(f'{reverse("settings:company")}#po-terms-templates')
+        messages.error(request, 'Invalid purchase order terms template request.')
         return redirect('settings:company')
     
     def form_valid(self, form):

@@ -328,6 +328,7 @@ class LeaveTypeForm(forms.ModelForm):
             'once_in_service',
             'carry_forward_allowed',
             'carry_forward_cap',
+            'accrue_monthly',
             'is_probation_only',
             'is_gender_specific',
             'gender_required',
@@ -338,6 +339,7 @@ class LeaveTypeForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields['accrue_monthly'].label = 'Accrue monthly (spread annual days over 12 months)'
         select_fields = ('location', 'pay_type', 'gender_restricted', 'gender_required')
         for name, field in self.fields.items():
             if name in select_fields:

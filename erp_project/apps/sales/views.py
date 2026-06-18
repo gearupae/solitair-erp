@@ -1051,7 +1051,35 @@ class EstimateDetailView(PermissionRequiredMixin, DetailView):
 
         context['estimate_retention_form'] = EstimateProjectRetentionForm(estimate=self.object)
         context['retention_percent_label'] = retention_percent_label(self.object.retention_percent)
+        from apps.inventory.utils import get_openai_api_key
+        from .estimate_evaluate_ai import get_cached_estimate_evaluation
+
+        context['openai_configured'] = bool(get_openai_api_key())
+        context['estimate_ai_evaluation'] = get_cached_estimate_evaluation(self.object)
+        context['estimate_ai_evaluate_url'] = reverse(
+            'sales:estimate_ai_evaluate', args=[self.object.pk]
+        )
         return context
+
+
+@login_required
+def estimate_ai_evaluate(request, pk):
+    """AJAX: AI review of quotation terms, pricing, and VAT."""
+    if request.method != 'POST':
+        return HttpResponseNotAllowed(['POST'])
+    estimate = get_object_or_404(Estimate, pk=pk, is_active=True)
+    from apps.core.visibility import user_can_access_estimate
+
+    if not user_can_access_estimate(request.user, estimate):
+        return JsonResponse({'ok': False, 'error': 'Permission denied.'}, status=403)
+    from .estimate_evaluate_ai import evaluate_estimate
+
+    force = request.POST.get('force') == '1'
+    try:
+        result = evaluate_estimate(estimate, force_refresh=force)
+        return JsonResponse({'ok': True, 'evaluation': result})
+    except Exception as exc:
+        return JsonResponse({'ok': False, 'error': str(exc)}, status=500)
 
 
 @login_required

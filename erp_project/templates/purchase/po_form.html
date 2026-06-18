@@ -207,6 +207,24 @@
             </div>
         </div>
     </div>
+
+    <div class="card mb-4">
+        <div class="card-header">
+            <h6 class="mb-0 fw-semibold"><i class="fas fa-file-contract me-2"></i>Terms &amp; conditions</h6>
+        </div>
+        <div class="card-body">
+            <div class="mb-3">
+                <label class="form-label" for="poTermsTemplateSelect">Template</label>
+                <select id="poTermsTemplateSelect" class="form-select">
+                    <option value="">— Select template —</option>
+                </select>
+                <small class="text-muted">Choose a template from <a href="{% url 'settings:company' %}#po-terms-templates">Company Settings</a>, or type your own text below.</small>
+            </div>
+            <label class="form-label" for="{{ form.terms_and_conditions.id_for_label }}">Terms text</label>
+            {{ form.terms_and_conditions }}
+            {% if form.terms_and_conditions.errors %}<div class="text-danger small">{{ form.terms_and_conditions.errors|join:", " }}</div>{% endif %}
+        </div>
+    </div>
     
     <button type="submit" class="btn btn-primary"><i class="fas fa-save me-2"></i>Save</button>
     <a href="{% url 'purchase:po_list' %}" class="btn btn-light">Cancel</a>
@@ -683,6 +701,33 @@ $(function() {
         loadSRItems(preselectSr);
     }
     {% endif %}
+
+    const poTermsTemplates = {{ po_terms_templates_json|safe }};
+    function setupPoTermsTemplateSelect() {
+        const select = document.getElementById('poTermsTemplateSelect');
+        const textarea = document.querySelector('[name="terms_and_conditions"]');
+        if (!select || !textarea) return;
+        const byId = {};
+        poTermsTemplates.forEach(function(t) {
+            byId[String(t.id)] = t;
+            const opt = document.createElement('option');
+            opt.value = String(t.id);
+            opt.textContent = t.name + (t.is_default ? ' (default)' : '');
+            select.appendChild(opt);
+        });
+        select.addEventListener('change', function() {
+            const template = byId[select.value];
+            if (!template) return;
+            textarea.value = template.body || '';
+        });
+        {% if not object %}
+        const defaultTemplate = poTermsTemplates.find(function(t) { return t.is_default; }) || poTermsTemplates[0];
+        if (defaultTemplate) {
+            select.value = String(defaultTemplate.id);
+        }
+        {% endif %}
+    }
+    setupPoTermsTemplateSelect();
 });
 </script>
 {% endblock %}

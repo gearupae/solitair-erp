@@ -233,7 +233,7 @@ def leave_balance_ajax(request):
     emp = get_object_or_404(Employee, pk=emp_id)
     lt = get_object_or_404(LeaveType, pk=lt_id)
     year = int(request.GET.get('year') or date.today().year)
-    rem = get_or_compute_remaining(emp, lt, year)
+    rem = get_or_compute_remaining(emp, lt, year, ref=date.today())
     return JsonResponse({'remaining': str(rem)})
 
 

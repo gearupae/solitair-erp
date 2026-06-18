@@ -52,6 +52,35 @@
     padding-top: 1.25rem;
     padding-bottom: 1.25rem;
 }
+.estimate-ai-flag {
+    border-radius: 0.5rem;
+    padding: 0.65rem 0.75rem;
+    border: 1px solid transparent;
+}
+.estimate-ai-flag--green {
+    background: #ecfdf5;
+    border-color: #a7f3d0;
+    color: #065f46;
+}
+.estimate-ai-flag--red {
+    background: #fef2f2;
+    border-color: #fecaca;
+    color: #991b1b;
+}
+.estimate-ai-flag--amber {
+    background: #fffbeb;
+    border-color: #fde68a;
+    color: #92400e;
+}
+.estimate-ai-flag-title {
+    font-weight: 600;
+    font-size: 0.8125rem;
+}
+.estimate-ai-flag-detail {
+    font-size: 0.75rem;
+    margin-top: 0.2rem;
+    opacity: 0.92;
+}
 .public-link-analytics-label {
     color: #64748b;
     font-size: 0.72rem;
@@ -657,6 +686,49 @@
                 {% endif %}
             </div>
         </div>
+
+        <div class="card mb-4" id="estimate-ai-evaluate-card">
+            <div class="card-header bg-transparent py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <h6 class="mb-0 fw-semibold"><i class="fas fa-robot me-2 text-dark"></i>AI evaluate</h6>
+                <button type="button" class="btn btn-sm btn-outline-primary" id="estimateAiEvaluateBtn">
+                    <i class="fas fa-magic me-1"></i>Run evaluation
+                </button>
+            </div>
+            <div class="card-body pt-0">
+                <p class="text-muted small mb-3">Reviews terms &amp; conditions, pricing, and VAT for this quotation. Green flags are OK; red flags need attention.</p>
+                {% if not openai_configured %}
+                <div class="alert alert-warning py-2 small mb-3">
+                    OpenAI is not configured — rule-based checks only.
+                    <a href="{% url 'settings:company' %}#openai-key-settings">Add API key</a> for full AI review.
+                </div>
+                {% endif %}
+                <div id="estimateAiEvaluateStatus" class="text-muted small mb-2{% if not estimate_ai_evaluation %} d-none{% endif %}">
+                    {% if estimate_ai_evaluation %}
+                    Last run: {{ estimate_ai_evaluation.generated_at|slice:":16"|default:"—" }}
+                    {% if estimate_ai_evaluation.from_cache %} (cached){% endif %}
+                    {% endif %}
+                </div>
+                <div id="estimateAiEvaluateSummary" class="small mb-3{% if not estimate_ai_evaluation %} d-none{% endif %}">
+                    {% if estimate_ai_evaluation %}{{ estimate_ai_evaluation.summary }}{% endif %}
+                </div>
+                <div id="estimateAiEvaluateFlags">
+                    {% if estimate_ai_evaluation and estimate_ai_evaluation.flags %}
+                    {% for flag in estimate_ai_evaluation.flags %}
+                    <div class="estimate-ai-flag estimate-ai-flag--{{ flag.severity }} mb-2">
+                        <div class="d-flex justify-content-between align-items-start gap-2">
+                            <div class="estimate-ai-flag-title">{{ flag.title }}</div>
+                            <span class="badge {% if flag.severity == 'green' %}bg-success{% elif flag.severity == 'red' %}bg-danger{% else %}bg-warning text-dark{% endif %} text-uppercase" style="font-size:0.6rem;">{{ flag.category }}</span>
+                        </div>
+                        {% if flag.detail %}<div class="estimate-ai-flag-detail">{{ flag.detail }}</div>{% endif %}
+                    </div>
+                    {% endfor %}
+                    {% else %}
+                    <p class="text-muted small mb-0" id="estimateAiEvaluateEmpty">Click <strong>Run evaluation</strong> to analyse this quotation.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
         {% if can_create_proforma and not estimate.has_invoice %}
         <div class="card mb-4" id="proforma-create">
             <div class="card-header bg-transparent py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
@@ -718,7 +790,52 @@
             {% endif %}
         </div>
         {% endif %}
-        
+
+        {% if can_send_estimate_email %}
+        <div class="card mb-4">
+            <div class="card-header bg-transparent py-3">
+                <h6 class="mb-0 fw-semibold"><i class="fas fa-envelope me-2 text-dark"></i>Email this quotation</h6>
+            </div>
+            <div class="card-body pt-0">
+                {% if estimate_email_hint %}
+                <div class="alert alert-warning py-2 small mb-3">{{ estimate_email_hint }}</div>
+                {% endif %}
+                {% if estimate_email_missing_customer_email %}
+                <div class="alert alert-info py-2 small mb-3">
+                    This customer has no email on file. Enter a recipient below
+                    {% if customer_edit_url %}or <a href="{{ customer_edit_url }}">add email on the customer record</a>{% endif %}.
+                </div>
+                {% endif %}
+                {% csrf_token %}
+                <div class="row g-3">
+                    <div class="col-12">
+                        <label class="form-label small fw-semibold" for="estimate-email-subject">Subject</label>
+                        <input type="text" class="form-control form-control-sm" id="estimate-email-subject" value="{{ estimate_email_default_subject }}" required>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label small fw-semibold" for="estimate-email-to">To <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control form-control-sm{% if estimate_email_missing_customer_email %} border-warning{% endif %}" id="estimate-email-to" name="estimate-email-to" value="{{ estimate_email_default_to }}" placeholder="customer@example.com" required autocomplete="email" inputmode="email">
+                        <div class="form-text">Comma-separated for multiple recipients.</div>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label small fw-semibold" for="estimate-email-cc">Cc</label>
+                        <input type="text" class="form-control form-control-sm" id="estimate-email-cc" placeholder="Optional, comma-separated">
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label small fw-semibold" for="estimate-email-body">Message</label>
+                        <textarea class="form-control form-control-sm" id="estimate-email-body" rows="5">{{ estimate_email_default_body }}</textarea>
+                    </div>
+                    <div class="col-12">
+                        <button type="button" class="btn btn-primary btn-sm w-100" id="estimate-email-send-btn">
+                            <i class="fas fa-paper-plane me-1"></i>Send email with PDF
+                        </button>
+                        <span class="text-muted small d-block mt-2 text-center" id="estimate-email-send-status"></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
         <!-- Audit Info -->
         <div class="card mb-4">
             <div class="card-header bg-transparent py-3">
@@ -772,51 +889,6 @@
                 {% endif %}
             </div>
         </div>
-
-        {% if can_send_estimate_email %}
-        <div class="card mb-4">
-            <div class="card-header bg-transparent py-3">
-                <h6 class="mb-0 fw-semibold"><i class="fas fa-envelope me-2 text-dark"></i>Email this quotation</h6>
-            </div>
-            <div class="card-body pt-0">
-                {% if estimate_email_hint %}
-                <div class="alert alert-warning py-2 small mb-3">{{ estimate_email_hint }}</div>
-                {% endif %}
-                {% if estimate_email_missing_customer_email %}
-                <div class="alert alert-info py-2 small mb-3">
-                    This customer has no email on file. Enter a recipient below
-                    {% if customer_edit_url %}or <a href="{{ customer_edit_url }}">add email on the customer record</a>{% endif %}.
-                </div>
-                {% endif %}
-                {% csrf_token %}
-                <div class="row g-3">
-                    <div class="col-12">
-                        <label class="form-label small fw-semibold" for="estimate-email-subject">Subject</label>
-                        <input type="text" class="form-control form-control-sm" id="estimate-email-subject" value="{{ estimate_email_default_subject }}" required>
-                    </div>
-                    <div class="col-12">
-                        <label class="form-label small fw-semibold" for="estimate-email-to">To <span class="text-danger">*</span></label>
-                        <input type="text" class="form-control form-control-sm{% if estimate_email_missing_customer_email %} border-warning{% endif %}" id="estimate-email-to" name="estimate-email-to" value="{{ estimate_email_default_to }}" placeholder="customer@example.com" required autocomplete="email" inputmode="email">
-                        <div class="form-text">Comma-separated for multiple recipients.</div>
-                    </div>
-                    <div class="col-12">
-                        <label class="form-label small fw-semibold" for="estimate-email-cc">Cc</label>
-                        <input type="text" class="form-control form-control-sm" id="estimate-email-cc" placeholder="Optional, comma-separated">
-                    </div>
-                    <div class="col-12">
-                        <label class="form-label small fw-semibold" for="estimate-email-body">Message</label>
-                        <textarea class="form-control form-control-sm" id="estimate-email-body" rows="5">{{ estimate_email_default_body }}</textarea>
-                    </div>
-                    <div class="col-12">
-                        <button type="button" class="btn btn-primary btn-sm w-100" id="estimate-email-send-btn">
-                            <i class="fas fa-paper-plane me-1"></i>Send email with PDF
-                        </button>
-                        <span class="text-muted small d-block mt-2 text-center" id="estimate-email-send-status"></span>
-                    </div>
-                </div>
-            </div>
-        </div>
-        {% endif %}
     </div>
 </div>
 
@@ -924,6 +996,84 @@
     var url = document.getElementById('btn-copy-public-quote')?.getAttribute('data-public-url') || '';
     document.getElementById('btn-copy-public-quote')?.addEventListener('click', function() {
         copyPublicUrl(this.getAttribute('data-public-url') || url);
+    });
+})();
+</script>
+<script>
+(function() {
+    var btn = document.getElementById('estimateAiEvaluateBtn');
+    if (!btn) return;
+    var url = "{{ estimate_ai_evaluate_url|escapejs }}";
+    var csrf = document.querySelector('[name=csrfmiddlewaretoken]')?.value || '';
+    var statusEl = document.getElementById('estimateAiEvaluateStatus');
+    var summaryEl = document.getElementById('estimateAiEvaluateSummary');
+    var flagsEl = document.getElementById('estimateAiEvaluateFlags');
+
+    function badgeClass(severity) {
+        if (severity === 'green') return 'bg-success';
+        if (severity === 'red') return 'bg-danger';
+        return 'bg-warning text-dark';
+    }
+
+    function renderFlags(flags) {
+        if (!flagsEl) return;
+        if (!flags || !flags.length) {
+            flagsEl.innerHTML = '<p class="text-muted small mb-0">No flags returned.</p>';
+            return;
+        }
+        flagsEl.innerHTML = flags.map(function(flag) {
+            var sev = flag.severity || 'amber';
+            var cat = (flag.category || 'general').toUpperCase();
+            var title = flag.title || 'Flag';
+            var detail = flag.detail ? '<div class="estimate-ai-flag-detail">' + flag.detail + '</div>' : '';
+            return '<div class="estimate-ai-flag estimate-ai-flag--' + sev + ' mb-2">' +
+                '<div class="d-flex justify-content-between align-items-start gap-2">' +
+                '<div class="estimate-ai-flag-title">' + title + '</div>' +
+                '<span class="badge ' + badgeClass(sev) + ' text-uppercase" style="font-size:0.6rem;">' + cat + '</span>' +
+                '</div>' + detail + '</div>';
+        }).join('');
+    }
+
+    btn.addEventListener('click', function() {
+        btn.disabled = true;
+        var origHtml = btn.innerHTML;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Evaluating…';
+        if (statusEl) {
+            statusEl.classList.remove('d-none');
+            statusEl.textContent = 'Running evaluation…';
+        }
+        var fd = new FormData();
+        fd.append('csrfmiddlewaretoken', csrf);
+        fetch(url, { method: 'POST', headers: { 'X-CSRFToken': csrf }, body: fd })
+            .then(function(r) { return r.json().then(function(data) { return { ok: r.ok, data: data }; }); })
+            .then(function(res) {
+                btn.disabled = false;
+                btn.innerHTML = origHtml;
+                var data = res.data;
+                if (!res.ok || !data.ok) {
+                    if (statusEl) statusEl.textContent = '';
+                    if (typeof toastr !== 'undefined') toastr.error(data.error || 'Evaluation failed.');
+                    return;
+                }
+                var ev = data.evaluation || {};
+                if (statusEl) {
+                    statusEl.classList.remove('d-none');
+                    var when = (ev.generated_at || '').slice(0, 16).replace('T', ' ');
+                    statusEl.textContent = when ? 'Last run: ' + when : 'Evaluation complete.';
+                }
+                if (summaryEl) {
+                    summaryEl.classList.remove('d-none');
+                    summaryEl.textContent = ev.summary || '';
+                }
+                renderFlags(ev.flags);
+                if (typeof toastr !== 'undefined') toastr.success('Evaluation complete.');
+            })
+            .catch(function() {
+                btn.disabled = false;
+                btn.innerHTML = origHtml;
+                if (statusEl) statusEl.textContent = '';
+                if (typeof toastr !== 'undefined') toastr.error('Network error.');
+            });
     });
 })();
 </script>

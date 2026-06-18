@@ -6,7 +6,12 @@ from decimal import Decimal
 
 from django.db.models import Sum
 
-from apps.hr.leave_entitlements import compute_entitled_days, refresh_carried_forward_placeholder
+from apps.hr.leave_entitlements import (
+    compute_entitled_days,
+    effective_entitled_days,
+    monthly_accrued_entitlement,
+    refresh_carried_forward_placeholder,
+)
 from apps.hr.models import Employee, LeaveBalance, LeaveRequest, LeaveType
 
 
@@ -90,14 +95,36 @@ def _is_effectively_unpaid_local(lt: LeaveType) -> bool:
     return (lt.pay_type or '').lower() == 'unpaid' or not lt.is_paid
 
 
-def get_or_compute_remaining(employee: Employee, leave_type: LeaveType, year: int) -> Decimal:
+def get_or_compute_remaining(
+    employee: Employee,
+    leave_type: LeaveType,
+    year: int,
+    *,
+    ref: date | None = None,
+) -> Decimal:
+    """
+    Remaining leave days for a calendar-year bucket.
+    ref defaults to today — monthly accrual types use today's month, not leave start month.
+    """
+    ref = ref or date.today()
     sync_leave_balances_for_employee(employee.pk)
     lb = LeaveBalance.objects.filter(employee=employee, leave_type=leave_type, year=year).first()
-    if lb:
-        return lb.remaining_days
     if _is_effectively_unpaid_local(leave_type):
         return Decimal('99999')
-    return Decimal('0')
+    if not lb:
+        entitled = effective_entitled_days(employee, leave_type, year, ref=ref)
+        return max(Decimal('0'), entitled.quantize(Decimal('0.01')))
+
+    full_annual = lb.entitled_days or Decimal('0')
+    if getattr(leave_type, 'accrue_monthly', False):
+        entitled = monthly_accrued_entitlement(full_annual, year, ref)
+    else:
+        entitled = full_annual
+    carried = lb.carried_forward or Decimal('0')
+    used = lb.used_days or Decimal('0')
+    pending = lb.pending_days or Decimal('0')
+    raw = entitled + carried - used - pending
+    return max(Decimal('0.00'), raw.quantize(Decimal('0.01')))
 
 
 def sync_all_employees_for_leave_type(leave_type_id: int) -> None:

@@ -191,6 +191,18 @@
       balanceBox.appendChild(line1);
       balanceBox.appendChild(line2);
 
+      if (row.accrue_monthly) {
+        var accrualHint = document.createElement('div');
+        accrualHint.className = 'small text-muted mt-1';
+        accrualHint.textContent =
+          'Monthly accrual: ' +
+          (row.accrued_to_date || row.entitled_days) +
+          ' of ' +
+          (row.annual_entitled_days || row.entitled_days) +
+          ' days earned so far this year (based on today, not selected leave dates).';
+        balanceBox.appendChild(accrualHint);
+      }
+
       var ptLow = (row.pay_type || '').toLowerCase();
       var entNum = parseFloat(entitled);
       if (ptLow !== 'unpaid' && entNum > 0 && entNum < 90000) {

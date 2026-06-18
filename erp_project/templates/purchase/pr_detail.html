@@ -16,6 +16,12 @@
         </p>
     </div>
     <div>
+        <a href="{% url 'purchase:pr_pdf' pr.pk %}" class="btn btn-outline-danger" target="_blank" rel="noopener">
+            <i class="fas fa-file-pdf me-2"></i>PDF / Print
+        </a>
+        <a href="{% url 'purchase:pr_pdf' pr.pk %}?format=pdf" class="btn btn-outline-success" target="_blank" rel="noopener">
+            <i class="fas fa-download me-2"></i>Download PDF
+        </a>
         {% if can_submit %}
         <a href="{% url 'purchase:pr_submit' pr.pk %}" class="btn btn-primary" onclick="return confirm('Submit for approval?');">
             <i class="fas fa-paper-plane me-2"></i>Submit for Approval

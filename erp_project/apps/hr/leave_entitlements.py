@@ -121,6 +121,40 @@ def apply_carry_forward_cap(lt: LeaveType, carried: Decimal) -> Decimal:
     return min(carried, Decimal(str(cap)))
 
 
+def monthly_accrued_entitlement(full_annual: Decimal, year: int, ref: date | None = None) -> Decimal:
+    """
+    Spread full-year entitlement evenly over 12 calendar months.
+    Month 1 → annual/12, month 2 → 2×annual/12, … month 12 → full annual.
+    Uses ref (default today) so future leave dates do not unlock unearned months.
+    """
+    ref = ref or date.today()
+    full_annual = Decimal(str(full_annual or 0)).quantize(Decimal('0.01'))
+    if full_annual <= 0:
+        return Decimal('0.00')
+    if ref.year < year:
+        return Decimal('0.00')
+    if ref.year > year:
+        return full_annual
+    months_elapsed = Decimal(ref.month)
+    accrued = (full_annual / Decimal('12')) * months_elapsed
+    return min(full_annual, accrued.quantize(Decimal('0.01')))
+
+
+def effective_entitled_days(
+    employee: Employee,
+    lt: LeaveType,
+    year: int,
+    *,
+    ref: date | None = None,
+) -> Decimal:
+    """Entitlement available for balance checks — applies monthly accrual cap when enabled."""
+    ref = ref or date.today()
+    full = compute_entitled_days(employee, lt, year, ref)
+    if getattr(lt, 'accrue_monthly', False):
+        return monthly_accrued_entitlement(full, year, ref)
+    return full
+
+
 def refresh_carried_forward_placeholder(lb: LeaveBalance, lt: LeaveType) -> Decimal:
     """Keep stored carried_forward but cap by leave type policy."""
     raw = lb.carried_forward or Decimal('0')

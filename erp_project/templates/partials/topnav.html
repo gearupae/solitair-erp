@@ -590,7 +590,7 @@
                 {% endif %}
                 
                 <!-- Reports -->
-                {% if is_superuser or 'reports' in user_permissions or 'projects' in user_permissions or 'crm' in user_permissions or 'sales' in user_permissions %}
+                {% if is_superuser or 'reports' in user_permissions or 'finance' in user_permissions or 'projects' in user_permissions or 'crm' in user_permissions or 'sales' in user_permissions %}
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle {% if 'reports' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
                         <i class="fas fa-chart-line me-1"></i>Reports
@@ -645,6 +645,40 @@
                         <li>
                             <a class="dropdown-item" href="{% url 'reports:project_forecasting' %}">
                                 <i class="fas fa-brain me-2"></i>Project Forecasting
+                            </a>
+                        </li>
+                        {% endif %}
+                        {% if is_superuser or 'finance' in user_permissions or 'reports' in user_permissions %}
+                        <li><hr class="dropdown-divider"></li>
+                        <li class="dropdown-header">AI Finance</li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'reports:ai_finance_index' %}">
+                                <i class="fas fa-robot me-2"></i>AI Finance Hub
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'reports:ai_finance_cash_flow' %}">
+                                <i class="fas fa-water me-2"></i>Cash Flow Forecast
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'reports:ai_finance_revenue' %}">
+                                <i class="fas fa-chart-line me-2"></i>Revenue Forecast
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'reports:ai_finance_expense' %}">
+                                <i class="fas fa-receipt me-2"></i>Expense Forecast
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'reports:ai_finance_receivables' %}">
+                                <i class="fas fa-user-clock me-2"></i>Receivables Forecast
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'reports:ai_finance_anomaly' %}">
+                                <i class="fas fa-exclamation-triangle me-2"></i>Anomaly Detection
                             </a>
                         </li>
                         {% endif %}
@@ -915,6 +949,27 @@
     </a>
     <a class="dropdown-item" href="{% url 'finance:tax_reconciliation' %}">
         <i class="fas fa-link me-2"></i>Tax Reconciliation
+    </a>
+
+    <hr class="dropdown-divider">
+    <h6 class="dropdown-header">AI Finance</h6>
+    <a class="dropdown-item" href="{% url 'reports:ai_finance_index' %}">
+        <i class="fas fa-robot me-2"></i>AI Finance Hub
+    </a>
+    <a class="dropdown-item" href="{% url 'reports:ai_finance_cash_flow' %}">
+        <i class="fas fa-water me-2"></i>Cash Flow Forecast
+    </a>
+    <a class="dropdown-item" href="{% url 'reports:ai_finance_revenue' %}">
+        <i class="fas fa-chart-line me-2"></i>Revenue Forecast
+    </a>
+    <a class="dropdown-item" href="{% url 'reports:ai_finance_expense' %}">
+        <i class="fas fa-receipt me-2"></i>Expense Forecast
+    </a>
+    <a class="dropdown-item" href="{% url 'reports:ai_finance_receivables' %}">
+        <i class="fas fa-user-clock me-2"></i>Receivables Forecast
+    </a>
+    <a class="dropdown-item" href="{% url 'reports:ai_finance_anomaly' %}">
+        <i class="fas fa-exclamation-triangle me-2"></i>Anomaly Detection
     </a>
 </div>
 

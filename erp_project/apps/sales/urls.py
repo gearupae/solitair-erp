@@ -49,6 +49,7 @@ urlpatterns = [
     ),
     path('estimates/<int:pk>/send-email/', views.estimate_send_email, name='estimate_send_email'),
     path('estimates/<int:pk>/retention/', views.estimate_save_project_retention, name='estimate_save_project_retention'),
+    path('estimates/<int:pk>/ai-evaluate/', views.estimate_ai_evaluate, name='estimate_ai_evaluate'),
     path('public/quotation/<uuid:token>/', views.public_quotation_view, name='public_quotation'),
     path(
         'public/quotation/<uuid:token>/download/',

@@ -58,6 +58,32 @@ def _active_inventory_items_json():
     return json.dumps(_active_inventory_items_data())
 
 
+def _po_terms_templates_context():
+    import json
+    from django.core.serializers.json import DjangoJSONEncoder
+    from apps.settings_app.models import PurchaseOrderTermsTemplate
+
+    templates = list(
+        PurchaseOrderTermsTemplate.objects.filter(is_active=True).order_by('sort_order', 'name')
+    )
+    return {
+        'po_terms_templates_json': json.dumps(
+            [
+                {
+                    'id': t.pk,
+                    'name': t.name,
+                    'body': t.body,
+                    'is_default': t.is_default,
+                    'is_active': t.is_active,
+                    'sort_order': t.sort_order,
+                }
+                for t in templates
+            ],
+            cls=DjangoJSONEncoder,
+        ),
+    }
+
+
 def _pr_inventory_items_json():
     return _active_inventory_items_json()
 
@@ -383,7 +409,43 @@ class PurchaseRequestDetailView(PermissionRequiredMixin, DetailView):
             'purchase:pr_vendor_quote_analyze', args=[self.object.pk]
         )
         context['has_quote_attachments'] = self.object.attachments.exists()
+        context['pr_pdf_url'] = reverse('purchase:pr_pdf', args=[self.object.pk])
         return context
+
+
+@login_required
+def pr_pdf(request, pk):
+    """Purchase request printable HTML / PDF — same visual style as quotation PDF."""
+    from apps.core.visibility import user_can_access_purchase_request
+    from .pr_pdf_render import build_pr_pdf_context, render_pr_pdf_bytes
+
+    pr = get_object_or_404(
+        PurchaseRequest.objects.filter(is_active=True)
+        .select_related('requested_by', 'department', 'created_by')
+        .prefetch_related('items'),
+        pk=pk,
+    )
+    if not user_can_access_purchase_request(request.user, pr):
+        messages.error(request, 'Permission denied.')
+        return redirect('purchase:pr_list')
+
+    if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'purchase', 'view')):
+        messages.error(request, 'Permission denied.')
+        return redirect('purchase:pr_list')
+
+    context = build_pr_pdf_context(request, pr)
+    output_format = request.GET.get('format', 'html')
+    if output_format == 'pdf':
+        pdf, err = render_pr_pdf_bytes(request, pr)
+        if pdf is not None:
+            response = HttpResponse(pdf, content_type='application/pdf')
+            response['Content-Disposition'] = f'inline; filename="PR_{pr.pr_number}.pdf"'
+            return response
+        if err:
+            messages.info(request, err)
+        return render(request, 'purchase/pr_pdf.html', context)
+
+    return render(request, 'purchase/pr_pdf.html', context)
 
 
 @login_required
@@ -743,6 +805,13 @@ class PurchaseOrderCreateView(CreatePermissionMixin, CreateView):
     template_name = 'purchase/po_form.html'
     success_url = reverse_lazy('purchase:po_list')
     module_name = 'purchase'
+
+    def get_initial(self):
+        from apps.settings_app.models import PurchaseOrderTermsTemplate
+
+        initial = super().get_initial()
+        initial['terms_and_conditions'] = PurchaseOrderTermsTemplate.get_default_body()
+        return initial
     
     def get_context_data(self, **kwargs):
         from apps.finance.models import TaxCode
@@ -763,6 +832,7 @@ class PurchaseOrderCreateView(CreatePermissionMixin, CreateView):
             context['items_formset'] = kwargs['items_formset']
         context['po_inventory_items_data'] = _active_inventory_items_data()
         context['po_inventory_items_json'] = json.dumps(context['po_inventory_items_data'])
+        context.update(_po_terms_templates_context())
         return context
     
     def post(self, request, *args, **kwargs):
@@ -820,6 +890,7 @@ class PurchaseOrderUpdateView(UpdatePermissionMixin, UpdateView):
             context['items_formset'] = kwargs['items_formset']
         context['po_inventory_items_data'] = _active_inventory_items_data()
         context['po_inventory_items_json'] = json.dumps(context['po_inventory_items_data'])
+        context.update(_po_terms_templates_context())
         return context
     
     def post(self, request, *args, **kwargs):
@@ -934,7 +1005,41 @@ class PurchaseOrderDetailView(PermissionRequiredMixin, DetailView):
             and self.object.status != 'cancelled'
             and self.object.items.exists()
         )
+        from apps.inventory.utils import get_openai_api_key
+        from .po_evaluate_ai import get_cached_po_evaluation
+
+        context['openai_configured'] = bool(get_openai_api_key())
+        context['po_ai_evaluation'] = get_cached_po_evaluation(self.object)
+        context['po_ai_evaluate_url'] = reverse('purchase:po_ai_evaluate', args=[self.object.pk])
         return context
+
+
+@login_required
+def po_ai_evaluate(request, pk):
+    """AJAX: AI review of PO terms, retention, vendor, items, and VAT."""
+    if request.method != 'POST':
+        from django.http import HttpResponseNotAllowed
+        return HttpResponseNotAllowed(['POST'])
+    po = get_object_or_404(
+        PurchaseOrder.objects.filter(is_active=True)
+        .select_related('vendor', 'project')
+        .prefetch_related('items__tax_code', 'items__inventory_item'),
+        pk=pk,
+    )
+    from apps.core.visibility import user_can_access_purchase_order
+
+    if not user_can_access_purchase_order(request.user, po):
+        return JsonResponse({'ok': False, 'error': 'Permission denied.'}, status=403)
+    if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'purchase', 'view')):
+        return JsonResponse({'ok': False, 'error': 'Permission denied.'}, status=403)
+    from .po_evaluate_ai import evaluate_purchase_order
+
+    force = request.POST.get('force') == '1'
+    try:
+        result = evaluate_purchase_order(po, force_refresh=force)
+        return JsonResponse({'ok': True, 'evaluation': result})
+    except Exception as exc:
+        return JsonResponse({'ok': False, 'error': str(exc)}, status=500)
 
 
 @login_required

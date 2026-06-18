@@ -1,0 +1,89 @@
+{% extends 'reports/ai_finance/base.html' %}
+{% load humanize %}
+
+{% block report_subtitle %}{{ transaction_count|default:0 }} transactions scanned (last 90 days){% endblock %}
+
+{% block export_buttons %}
+{% if table_rows %}
+<a href="?export=xlsx" class="btn btn-outline-success btn-sm">
+    <i class="fas fa-file-excel me-1"></i>Export Excel
+</a>
+<a href="?export=pdf" class="btn btn-outline-danger btn-sm" target="_blank">
+    <i class="fas fa-file-pdf me-1"></i>Export PDF
+</a>
+{% endif %}
+{% endblock %}
+
+{% block report_filters %}
+<div class="card mb-3 border-0 shadow-sm no-print">
+    <div class="card-body py-2 px-3 d-flex gap-2 align-items-center">
+        <a href="?refresh=1" class="btn btn-primary btn-sm"><i class="fas fa-search me-1"></i>Scan</a>
+        <a href="?refresh=1" class="btn btn-outline-secondary btn-sm" title="Re-run AI"><i class="fas fa-sync-alt"></i></a>
+    </div>
+</div>
+{% endblock %}
+
+{% block report_content %}
+{% if not has_data %}
+<div class="card border-0 shadow-sm">
+    <div class="card-body text-center text-muted py-5">
+        <i class="fas fa-shield-alt fa-2x mb-3 opacity-50"></i>
+        <p class="mb-0">Not enough recent transaction data for anomaly detection. Need at least five transactions in the last 90 days.</p>
+    </div>
+</div>
+{% else %}
+
+{% if summary %}
+<div class="card border-0 shadow-sm mb-4 sf-brief">
+    <div class="card-body py-3">
+        <h6 class="fw-bold mb-1">AI Insight</h6>
+        <p class="sf-brief__body text-secondary mb-0">{{ summary }}</p>
+    </div>
+</div>
+{% endif %}
+
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white fw-bold d-flex justify-content-between align-items-center">
+        <span>Flagged Items</span>
+        <span class="badge bg-secondary-subtle text-secondary">{{ table_rows|length }} found</span>
+    </div>
+    <div class="card-body p-0">
+        {% if table_rows %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 sf-table">
+                <thead class="table-light">
+                    <tr>
+                        <th>Severity</th>
+                        <th>Category</th>
+                        <th>Reference</th>
+                        <th>Party</th>
+                        <th class="text-end">Amount</th>
+                        <th>Date</th>
+                        <th>Reason</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in table_rows %}
+                    <tr>
+                        <td><span class="sf-badge sf-badge-{{ row.severity }}">{{ row.severity }}</span></td>
+                        <td>{{ row.category }}</td>
+                        <td class="fw-semibold">{{ row.reference }}</td>
+                        <td>{{ row.party }}</td>
+                        <td class="text-end">{% if row.amount %}AED {{ row.amount|floatformat:2|intcomma }}{% else %}—{% endif %}</td>
+                        <td>{{ row.date }}</td>
+                        <td class="small">{{ row.reason }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center text-muted py-5">
+            <i class="fas fa-check-circle text-success fa-2x mb-2"></i>
+            <p class="mb-0">No anomalies detected in recent transactions.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+{% endblock %}

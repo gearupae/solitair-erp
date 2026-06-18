@@ -393,12 +393,74 @@
         </div>
     </div>
 </div>
+
+<div class="card border-0 shadow-sm" id="po-terms-templates">
+    <div class="card-body p-4">
+        <h5 class="fw-semibold mb-1">
+            <i class="fas fa-file-signature me-2 text-primary"></i>Purchase order terms templates
+        </h5>
+        <p class="text-muted small mb-4">Manage reusable terms &amp; conditions for new purchase orders. Pick a template to edit, or click <strong>New</strong> to create one.</p>
+
+        <div class="border rounded p-3 bg-light-subtle">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h6 class="fw-semibold mb-0">Terms &amp; conditions</h6>
+                <button type="button" class="btn btn-sm btn-outline-primary" id="poTermsNewBtn">
+                    <i class="fas fa-plus me-1"></i>New
+                </button>
+            </div>
+            <label class="form-label small text-muted" for="poTermsTemplateSelect">Select template</label>
+            <select id="poTermsTemplateSelect" class="form-select mb-3">
+                <option value="">— Choose a template —</option>
+                {% for t in po_terms_templates %}
+                <option value="{{ t.pk }}">{{ t.name }}{% if t.is_default %} (default){% endif %}{% if not t.is_active %} — inactive{% endif %}</option>
+                {% endfor %}
+            </select>
+
+            <form method="post" id="poTermsTemplateForm" class="d-none">
+                {% csrf_token %}
+                <input type="hidden" name="po_terms_template_action" value="save">
+                <input type="hidden" name="template_id" id="poTermsTemplateId" value="">
+                <input type="hidden" name="sort_order" id="poTermsSortOrder" value="0">
+                <div class="mb-3">
+                    <label class="form-label" for="poTermsTemplateName">Template name</label>
+                    <input type="text" name="name" id="poTermsTemplateName" class="form-control" maxlength="120" required placeholder="e.g. Standard PO terms">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="poTermsTemplateBody">Text</label>
+                    <textarea name="body" id="poTermsTemplateBody" class="form-control" rows="8" placeholder="Purchase order terms &amp; conditions…"></textarea>
+                </div>
+                <div class="d-flex flex-wrap gap-3 mb-3">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="is_default" id="poTermsTemplateDefault">
+                        <label class="form-check-label" for="poTermsTemplateDefault">Default for new purchase orders</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="is_active" id="poTermsTemplateActive" checked>
+                        <label class="form-check-label" for="poTermsTemplateActive">Active</label>
+                    </div>
+                </div>
+                <div class="d-flex gap-2">
+                    <button type="submit" class="btn btn-primary btn-sm">Save</button>
+                    <button type="button" class="btn btn-outline-danger btn-sm d-none" id="poTermsDeleteBtn">Delete</button>
+                    <button type="button" class="btn btn-light btn-sm d-none" id="poTermsCancelBtn">Cancel</button>
+                </div>
+            </form>
+            <form method="post" id="poTermsDeleteForm" class="d-none">
+                {% csrf_token %}
+                <input type="hidden" name="po_terms_template_action" value="delete">
+                <input type="hidden" name="template_id" id="poTermsDeleteTemplateId" value="">
+            </form>
+            <p class="text-muted small mb-0 mt-3" id="poTermsEmptyHint"{% if po_terms_templates %} style="display:none"{% endif %}>No templates yet. Click <strong>New</strong> to create your first purchase order terms template.</p>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
 const clientNoteTemplates = {{ client_note_templates_json|safe }};
 const termsTemplates = {{ terms_templates_json|safe }};
+const poTermsTemplates = {{ po_terms_templates_json|safe }};
 
 function setupEstimateTemplateEditor(config) {
     const {
@@ -579,6 +641,24 @@ document.addEventListener('DOMContentLoaded', function() {
         deleteTemplateIdInputId: 'termsDeleteTemplateId',
         emptyHintId: 'termsEmptyHint',
         urlParam: 'terms',
+    });
+    setupEstimateTemplateEditor({
+        templates: poTermsTemplates,
+        selectId: 'poTermsTemplateSelect',
+        formId: 'poTermsTemplateForm',
+        templateIdInputId: 'poTermsTemplateId',
+        sortOrderInputId: 'poTermsSortOrder',
+        nameInputId: 'poTermsTemplateName',
+        bodyInputId: 'poTermsTemplateBody',
+        defaultInputId: 'poTermsTemplateDefault',
+        activeInputId: 'poTermsTemplateActive',
+        newBtnId: 'poTermsNewBtn',
+        deleteBtnId: 'poTermsDeleteBtn',
+        cancelBtnId: 'poTermsCancelBtn',
+        deleteFormId: 'poTermsDeleteForm',
+        deleteTemplateIdInputId: 'poTermsDeleteTemplateId',
+        emptyHintId: 'poTermsEmptyHint',
+        urlParam: 'po_terms',
     });
 });
 </script>

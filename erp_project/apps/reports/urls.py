@@ -1,6 +1,7 @@
 from django.urls import path
 
 from . import views
+from . import ai_finance_views
 
 app_name = 'reports'
 
@@ -29,4 +30,16 @@ urlpatterns = [
         views.project_forecasting_regenerate_brief,
         name='project_forecasting_regenerate_brief',
     ),
+    # AI Finance
+    path('ai-finance/', ai_finance_views.AiFinanceIndexView.as_view(), name='ai_finance_index'),
+    path('ai-finance/cash-flow/', ai_finance_views.CashFlowForecastView.as_view(), name='ai_finance_cash_flow'),
+    path('ai-finance/revenue/', ai_finance_views.RevenueForecastView.as_view(), name='ai_finance_revenue'),
+    path('ai-finance/expense/', ai_finance_views.ExpenseForecastView.as_view(), name='ai_finance_expense'),
+    path('ai-finance/receivables/', ai_finance_views.ReceivablesForecastView.as_view(), name='ai_finance_receivables'),
+    path('ai-finance/anomaly/', ai_finance_views.AnomalyDetectionView.as_view(), name='ai_finance_anomaly'),
+    path('api/ai-finance/cash-flow-forecast/', ai_finance_views.CashFlowForecastApiView.as_view(), name='api_ai_finance_cash_flow'),
+    path('api/ai-finance/revenue-forecast/', ai_finance_views.RevenueForecastApiView.as_view(), name='api_ai_finance_revenue'),
+    path('api/ai-finance/expense-forecast/', ai_finance_views.ExpenseForecastApiView.as_view(), name='api_ai_finance_expense'),
+    path('api/ai-finance/receivables-forecast/', ai_finance_views.ReceivablesForecastApiView.as_view(), name='api_ai_finance_receivables'),
+    path('api/ai-finance/anomaly-detection/', ai_finance_views.AnomalyDetectionApiView.as_view(), name='api_ai_finance_anomaly'),
 ]

@@ -9,7 +9,7 @@ from django.core.exceptions import ValidationError
 from django.db.models import Q
 
 from apps.hr.leave_balance_service import get_or_compute_remaining, sync_leave_balances_for_employee
-from apps.hr.leave_entitlements import tier_breakdown_for_type
+from apps.hr.leave_entitlements import monthly_accrued_entitlement, tier_breakdown_for_type
 from apps.hr.leave_utils import count_uae_working_days, inclusive_end_date_for_uae_working_days
 from apps.hr.models import Employee, LeaveBalance, LeaveRequest, LeaveType
 
@@ -131,11 +131,18 @@ def leave_type_eligible_for_dropdown(
 
 def balance_snapshot_for_type(emp: Employee, lt: LeaveType, year: int) -> dict[str, Any]:
     sync_leave_balances_for_employee(emp.pk)
-    rem = get_or_compute_remaining(emp, lt, year)
+    ref = date.today()
+    rem = get_or_compute_remaining(emp, lt, year, ref=ref)
     lb = LeaveBalance.objects.filter(employee=emp, leave_type=lt, year=year).first()
-    entitled = lb.entitled_days if lb else Decimal('0')
+    full_entitled = lb.entitled_days if lb else Decimal('0')
     used = lb.used_days if lb else Decimal('0')
     pending = lb.pending_days if lb else Decimal('0')
+    accrued = (
+        monthly_accrued_entitlement(full_entitled, year, ref)
+        if getattr(lt, 'accrue_monthly', False)
+        else full_entitled
+    )
+    entitled_display = accrued if getattr(lt, 'accrue_monthly', False) else full_entitled
     ou = once_used_for_leave_type(emp, lt)
     eligible = leave_type_eligible_for_dropdown(emp, lt, remaining_days=rem, once_used=ou)
     tier = tier_breakdown_for_type(emp, lt, year)
@@ -152,7 +159,10 @@ def balance_snapshot_for_type(emp: Employee, lt: LeaveType, year: int) -> dict[s
         'leave_type_name': lt.name,
         'pay_type': lt.pay_type,
         'days_allowed': lt.days_allowed,
-        'entitled_days': str(entitled.quantize(Decimal('0.01'))),
+        'accrue_monthly': bool(getattr(lt, 'accrue_monthly', False)),
+        'annual_entitled_days': str(full_entitled.quantize(Decimal('0.01'))),
+        'accrued_to_date': str(accrued.quantize(Decimal('0.01'))),
+        'entitled_days': str(entitled_display.quantize(Decimal('0.01'))),
         'used_days': str(used.quantize(Decimal('0.01'))),
         'pending_days': str(pending.quantize(Decimal('0.01'))),
         'remaining_days': str(rem.quantize(Decimal('0.01'))),
@@ -290,7 +300,7 @@ def validate_leave_request_dates_and_balance(
 
     year = start_date.year
     requested_wd = count_uae_working_days(start_date, end_date)
-    rem = get_or_compute_remaining(employee, leave_type, year)
+    rem = get_or_compute_remaining(employee, leave_type, year, ref=date.today())
 
     if is_effectively_unpaid(leave_type):
         return
@@ -338,7 +348,7 @@ def adjusted_end_date_if_reduce(
     end_date: date,
 ) -> date:
     """Smallest valid end date so working days do not exceed remaining balance."""
-    rem = get_or_compute_remaining(employee, leave_type, start_date.year)
+    rem = get_or_compute_remaining(employee, leave_type, start_date.year, ref=date.today())
     wd = count_uae_working_days(start_date, end_date)
     if wd <= rem:
         return end_date
@@ -357,7 +367,7 @@ def create_split_leave_pair(
     """Creates paid + unpaid leave rows sharing split_group_id."""
     import uuid
 
-    rem = get_or_compute_remaining(employee, leave_type_paid, start_date.year)
+    rem = get_or_compute_remaining(employee, leave_type_paid, start_date.year, ref=date.today())
     ult = get_default_unpaid_leave_type()
     if not ult:
         raise ValidationError('Split requires an active Unpaid leave type. Contact HR.')

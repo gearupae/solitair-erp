@@ -8,6 +8,7 @@ from .models import (
     CompanySettings,
     Company,
     EstimateTextTemplate,
+    PurchaseOrderTermsTemplate,
     ItemSubGroupExpenseType,
     NumberSeries,
     AuditLog,
@@ -72,6 +73,13 @@ class ItemSubGroupExpenseTypeAdmin(admin.ModelAdmin):
 class EstimateTextTemplateAdmin(admin.ModelAdmin):
     list_display = ['name', 'template_type', 'is_default', 'sort_order', 'is_active']
     list_filter = ['template_type', 'is_default', 'is_active']
+    search_fields = ['name', 'body']
+
+
+@admin.register(PurchaseOrderTermsTemplate)
+class PurchaseOrderTermsTemplateAdmin(admin.ModelAdmin):
+    list_display = ['name', 'is_default', 'sort_order', 'is_active']
+    list_filter = ['is_default', 'is_active']
     search_fields = ['name', 'body']
 
 

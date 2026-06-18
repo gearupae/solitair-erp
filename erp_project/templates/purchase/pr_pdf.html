@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Purchase Request — {{ pr.pr_number }}</title>
+    <style>
+        @page { size: A4; margin: 14mm; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --ink: #0a0a0a;
+            --ink-soft: #1a1a1a;
+            --graphite: #404040;
+            --silver: #737373;
+            --mist: #e5e5e5;
+            --paper: #fafafa;
+            --white: #ffffff;
+            --accent: #0a0a0a;
+            --accent-soft: #262626;
+            --accent-tint: #f5f5f5;
+            --accent-border: #d4d4d4;
+            --head-bg: #1a1a1a;
+            --head-bg-light: #2a2a2a;
+            --row-alt: #fafafa;
+        }
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            font-size: 11px;
+            line-height: 1.45;
+            color: var(--ink-soft);
+            background: var(--white);
+        }
+        .estimate-container {
+            max-width: 210mm;
+            margin: 0 auto;
+            padding: 16px 16px 28px;
+            background: var(--white);
+        }
+        .addr-grid {
+            display: flex;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 18px;
+            border: 1px solid var(--mist);
+            background: var(--paper);
+        }
+        .addr-block { flex: 1; padding: 14px 16px; min-width: 0; }
+        .addr-block + .addr-block { border-left: 1px solid var(--mist); }
+        .addr-label {
+            font-size: 9px;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            color: var(--graphite);
+            margin-bottom: 10px;
+            font-weight: 700;
+        }
+        .addr-from-logo {
+            max-height: 56px;
+            max-width: 200px;
+            margin-bottom: 10px;
+            object-fit: contain;
+        }
+        .addr-name {
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--ink);
+            margin-bottom: 6px;
+        }
+        .addr-lines { font-size: 10px; color: var(--ink-soft); line-height: 1.55; }
+        .addr-lines .trn {
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px dashed var(--mist);
+            font-weight: 600;
+            color: var(--ink);
+        }
+        .title-strip {
+            background: linear-gradient(135deg, var(--head-bg-light) 0%, var(--head-bg) 100%);
+            color: var(--white);
+            padding: 16px 18px;
+            margin-bottom: 16px;
+            border: 1px solid var(--accent);
+        }
+        .title-strip-main {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 6px;
+        }
+        .estimate-title-text {
+            font-size: 22px;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            line-height: 1.2;
+            color: var(--white);
+        }
+        .estimate-number {
+            font-size: 17px;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            color: #e5e5e5;
+        }
+        .status-badge {
+            display: inline-block;
+            margin-top: 2px;
+            padding: 4px 12px;
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            border: 1px solid rgba(255,255,255,0.35);
+            background: rgba(255,255,255,0.12);
+            color: #f5f5f5;
+            font-weight: 700;
+        }
+        .status-pending { background: #fef3c7; color: #92400e; border-color: #fde68a; }
+        .status-approved, .status-converted { background: #dcfce7; color: #14532d; border-color: #bbf7d0; }
+        .status-rejected { background: #fee2e2; color: #991b1b; border-color: #fecaca; }
+        .status-returned { background: #ffedd5; color: #9a3412; border-color: #fed7aa; }
+        .status-draft { background: #f3f4f6; color: #374151; border-color: #e5e7eb; }
+        .addr-to-estimate-details {
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px dashed var(--mist);
+        }
+        .addr-to-estimate-details .addr-label { margin-bottom: 8px; }
+        .addr-to-detail-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            padding: 4px 0;
+            font-size: 9px;
+            border-bottom: 1px solid var(--mist);
+        }
+        .addr-to-detail-row:last-child { border-bottom: none; }
+        .addr-to-detail-label { color: var(--silver); flex-shrink: 0; }
+        .addr-to-detail-value {
+            font-weight: 600;
+            color: var(--ink-soft);
+            text-align: right;
+        }
+        .items-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 18px;
+        }
+        .items-table thead th {
+            background: var(--head-bg);
+            color: var(--white);
+            padding: 9px 6px;
+            text-align: left;
+            font-size: 9px;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            border: 1px solid var(--accent-soft);
+            border-bottom: 2px solid var(--accent);
+            font-weight: 700;
+        }
+        .items-table thead th.text-center { text-align: center; }
+        .items-table thead th.text-right { text-align: right; }
+        .items-table tbody td {
+            padding: 8px 6px;
+            border-bottom: 1px solid var(--mist);
+            font-size: 10px;
+        }
+        .items-table tbody td.text-center { text-align: center; }
+        .items-table tbody td.text-right { text-align: right; font-variant-numeric: tabular-nums; }
+        .items-table tbody tr:nth-child(even) { background: var(--row-alt); }
+        .item-number { color: var(--silver); font-size: 9px; }
+        .item-description { font-weight: 500; color: var(--ink); }
+        .totals-section {
+            display: flex;
+            justify-content: flex-end;
+            margin-bottom: 16px;
+        }
+        .totals-table { width: 300px; }
+        .totals-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 7px 12px;
+            border-bottom: 1px solid var(--mist);
+            font-size: 10px;
+        }
+        .totals-row.total {
+            background: var(--paper);
+            color: var(--ink);
+            font-size: 13px;
+            font-weight: 700;
+            border: 1px solid var(--mist);
+            border-left: 3px solid var(--accent);
+            margin-top: 2px;
+        }
+        .totals-label { color: var(--graphite); }
+        .totals-value { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--ink); }
+        .amount-words {
+            background: var(--paper);
+            border: 1px solid var(--mist);
+            padding: 12px;
+            margin-bottom: 16px;
+            font-size: 10px;
+        }
+        .amount-words-label {
+            font-size: 9px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--graphite);
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+        .notes-section { margin-bottom: 16px; }
+        .notes-title {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--graphite);
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+        .notes-content {
+            background: var(--paper);
+            border: 1px solid var(--mist);
+            padding: 10px 12px;
+            font-size: 10px;
+            line-height: 1.55;
+        }
+        .approval-note {
+            margin-bottom: 16px;
+            padding: 10px 12px;
+            background: #fffbeb;
+            border: 1px solid #fde68a;
+            font-size: 10px;
+            color: #92400e;
+        }
+        .doc-footer {
+            margin-top: 28px;
+            padding-top: 12px;
+            border-top: 1px solid var(--mist);
+            font-size: 9px;
+            color: var(--silver);
+        }
+        .doc-footer-line {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 8px;
+            margin-bottom: 6px;
+        }
+        .doc-footer-company { flex: 1; min-width: 200px; line-height: 1.5; }
+        .doc-footer-company strong { color: var(--ink); font-size: 10px; }
+        .doc-footer-page { font-variant-numeric: tabular-nums; white-space: nowrap; }
+        .addr-from-cert-images {
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px dashed var(--mist);
+            max-height: 60px;
+            overflow: hidden;
+        }
+        .addr-from-cert-images img {
+            max-height: 52px;
+            max-width: 48%;
+            width: auto;
+            height: auto;
+            object-fit: contain;
+            flex: 1 1 0;
+            min-width: 0;
+        }
+        .print-actions {
+            position: fixed;
+            top: 16px;
+            right: 16px;
+            display: flex;
+            gap: 10px;
+            z-index: 1000;
+        }
+        .print-btn {
+            padding: 10px 18px;
+            border: 1px solid var(--accent);
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            text-decoration: none;
+            background: var(--accent);
+            color: var(--white);
+        }
+        .print-btn-secondary {
+            background: var(--white);
+            color: var(--ink-soft);
+            border: 1px solid var(--mist);
+        }
+        @media print {
+            body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+            .no-print { display: none !important; }
+            .estimate-container { padding: 0; max-width: none; }
+        }
+    </style>
+</head>
+<body>
+    <div class="print-actions no-print">
+        <button type="button" class="print-btn" onclick="window.print()">Print purchase request</button>
+        <a href="{% url 'purchase:pr_pdf' pr.pk %}?format=pdf" class="print-btn print-btn-secondary" target="_blank" rel="noopener">Download PDF</a>
+        <a href="{% url 'purchase:pr_detail' pr.pk %}" class="print-btn print-btn-secondary">Back to request</a>
+    </div>
+
+    <div class="estimate-container">
+        <div class="title-strip">
+            <div class="title-strip-main">
+                <div class="estimate-title-text">PURCHASE REQUEST</div>
+                <div class="estimate-number">{{ pr.pr_number }}</div>
+                <div class="status-badge status-{{ pr.status }}">{{ pr.get_status_display }}</div>
+            </div>
+        </div>
+
+        <div class="addr-grid">
+            <div class="addr-block addr-to">
+                <div class="addr-label">Request details</div>
+                <div class="addr-name">{{ pr.requested_by.get_full_name|default:pr.requested_by.username }}</div>
+                <div class="addr-lines">
+                    {% if pr.department %}
+                    <div>Department: {{ pr.department.name }}</div>
+                    {% endif %}
+                    <div>Priority: {{ pr.get_priority_display }}</div>
+                </div>
+                <div class="addr-to-estimate-details">
+                    <div class="addr-label">Dates</div>
+                    <div class="addr-to-detail-row">
+                        <span class="addr-to-detail-label">Request date</span>
+                        <span class="addr-to-detail-value">{{ pr.date|date:"d/m/Y" }}</span>
+                    </div>
+                    <div class="addr-to-detail-row">
+                        <span class="addr-to-detail-label">Required by</span>
+                        <span class="addr-to-detail-value">{{ pr.required_by_date|date:"d/m/Y"|default:"—" }}</span>
+                    </div>
+                    {% if pr.created_at %}
+                    <div class="addr-to-detail-row">
+                        <span class="addr-to-detail-label">Created</span>
+                        <span class="addr-to-detail-value">{{ pr.created_at|date:"d/m/Y H:i" }}</span>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="addr-block addr-from">
+                <div class="addr-label">From</div>
+                {% if company.logo and logo_absolute_url %}
+                <img src="{{ logo_absolute_url }}" alt="{{ company.company_name }}" class="addr-from-logo">
+                {% endif %}
+                <div class="addr-name">{{ company.company_name }}</div>
+                <div class="addr-lines">
+                    {% if company.address %}<div>{{ company.address|linebreaksbr }}</div>{% endif %}
+                    {% if company.phone %}<div>Tel: {{ company.phone }}</div>{% endif %}
+                    {% if company.email %}<div>{{ company.email }}</div>{% endif %}
+                    {% if company.website %}<div>{{ company.website }}</div>{% endif %}
+                    {% if company.tax_id %}<div class="trn">VAT / TRN: {{ company.tax_id }}</div>{% endif %}
+                </div>
+                {% if pdf_image_1_url or pdf_image_2_url %}
+                <div class="addr-from-cert-images">
+                    {% if pdf_image_1_url %}<img src="{{ pdf_image_1_url }}" alt="Stamp">{% endif %}
+                    {% if pdf_image_2_url %}<img src="{{ pdf_image_2_url }}" alt="Footer">{% endif %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <table class="items-table">
+            <thead>
+                <tr>
+                    <th style="width:26px;">#</th>
+                    <th>Description</th>
+                    <th class="text-center" style="width:48px;">Qty</th>
+                    <th class="text-center" style="width:52px;">Unit</th>
+                    <th class="text-right" style="width:80px;">Est. price</th>
+                    <th class="text-right" style="width:80px;">Total</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in pr.items.all %}
+                <tr>
+                    <td class="item-number">{{ forloop.counter }}</td>
+                    <td class="item-description">{{ item.description }}</td>
+                    <td class="text-center">{{ item.quantity|floatformat:2 }}</td>
+                    <td class="text-center">{{ item.get_unit_display }}</td>
+                    <td class="text-right">{{ item.estimated_price|floatformat:2 }}</td>
+                    <td class="text-right">{{ item.total|floatformat:2 }}</td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="6" style="text-align:center;padding:20px;color:var(--silver);">No line items</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <div class="totals-section">
+            <div class="totals-table">
+                <div class="totals-row total">
+                    <span class="totals-label">Estimated total</span>
+                    <span class="totals-value">AED {{ pr.total_amount|floatformat:2 }}</span>
+                </div>
+            </div>
+        </div>
+
+        {% if amount_words %}
+        <div class="amount-words">
+            <div class="amount-words-label">Amount in words</div>
+            <div>{{ amount_words }}</div>
+        </div>
+        {% endif %}
+
+        {% if pr.notes %}
+        <div class="notes-section">
+            <div class="notes-title">Notes / justification</div>
+            <div class="notes-content">{{ pr.notes|linebreaks }}</div>
+        </div>
+        {% endif %}
+
+        {% if pr.rejection_reason %}
+        <div class="approval-note">
+            <strong>Approver comment:</strong><br>
+            {{ pr.rejection_reason|linebreaksbr }}
+        </div>
+        {% endif %}
+
+        <footer class="doc-footer">
+            <div class="doc-footer-line">
+                <div class="doc-footer-company">
+                    <strong>{{ company.company_name }}</strong>
+                    {% if company.address %}<br>{{ company.address|linebreaksbr }}{% endif %}
+                    {% if company.phone %}<br>Tel: {{ company.phone }}{% endif %}
+                    {% if company.email %}<br>{{ company.email }}{% endif %}
+                    {% if company.website %}<br>{{ company.website }}{% endif %}
+                    {% if company.tax_id %}<br>VAT / TRN: {{ company.tax_id }}{% endif %}
+                </div>
+                <div class="doc-footer-page">
+                    Ref: {{ pr.pr_number }}<br>
+                    <span style="color:var(--silver);">Page</span> 1
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('print') === '1') {
+            window.onload = function() { window.print(); };
+        }
+    </script>
+</body>
+</html>

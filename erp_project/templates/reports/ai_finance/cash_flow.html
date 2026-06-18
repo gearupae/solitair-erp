@@ -1,0 +1,141 @@
+{% extends 'reports/ai_finance/base.html' %}
+{% load humanize %}
+
+{% block report_subtitle %}Last 12 months actuals · {{ forecast_months }}-month forecast{% endblock %}
+
+{% block report_filters %}
+<div class="card mb-3 border-0 shadow-sm no-print">
+    <div class="card-body py-2 px-3">
+        <form method="get" class="row g-2 align-items-end">
+            <div class="col-sm-6 col-md-3">
+                <label class="form-label small mb-1">Forecast horizon</label>
+                <select name="months" class="form-select form-select-sm">
+                    <option value="3" {% if forecast_months == 3 %}selected{% endif %}>3 months</option>
+                    <option value="6" {% if forecast_months == 6 %}selected{% endif %}>6 months</option>
+                </select>
+            </div>
+            <div class="col-auto d-flex gap-1">
+                <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-magic me-1"></i>Generate</button>
+                <a href="?months={{ forecast_months }}&refresh=1" class="btn btn-outline-secondary btn-sm" title="Re-run AI"><i class="fas fa-sync-alt"></i></a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block report_content %}
+{% if not has_data %}
+<div class="card border-0 shadow-sm">
+    <div class="card-body text-center text-muted py-5">
+        <i class="fas fa-database fa-2x mb-3 opacity-50"></i>
+        <p class="mb-0">Not enough payment history to generate a cash flow forecast. Record confirmed payments for at least two months.</p>
+    </div>
+</div>
+{% else %}
+
+{% if summary %}
+<div class="card border-0 shadow-sm mb-4 sf-brief">
+    <div class="card-body py-3">
+        <h6 class="fw-bold mb-1">AI Insight</h6>
+        <p class="sf-brief__body text-secondary mb-0">{{ summary }}</p>
+    </div>
+</div>
+{% endif %}
+
+{% if alerts %}
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white fw-bold">Alerts</div>
+    <div class="card-body">
+        {% for alert in alerts %}
+        <div class="sf-alert sf-alert--high"><i class="fas fa-exclamation-triangle text-danger me-2"></i>{{ alert }}</div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white fw-bold">Cash Balance — Actual vs Forecast</div>
+    <div class="card-body">
+        <canvas id="cashFlowChart" height="100"></canvas>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white fw-bold">Monthly Detail</div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 sf-table">
+                <thead class="table-light">
+                    <tr>
+                        <th>Month</th>
+                        <th class="text-end">Inflow (Actual)</th>
+                        <th class="text-end">Outflow (Actual)</th>
+                        <th class="text-end">Balance (Actual)</th>
+                        <th class="text-end">Balance (Forecast)</th>
+                        <th>Confidence</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in table_rows %}
+                    <tr class="{% if row.is_forecast %}forecast-row{% endif %}">
+                        <td>{{ row.month }}{% if row.is_forecast %} <span class="badge bg-secondary-subtle text-secondary">Forecast</span>{% endif %}</td>
+                        <td class="text-end">{% if row.actual_inflow != None %}AED {{ row.actual_inflow|floatformat:2|intcomma }}{% else %}—{% endif %}</td>
+                        <td class="text-end">{% if row.actual_outflow != None %}AED {{ row.actual_outflow|floatformat:2|intcomma }}{% else %}—{% endif %}</td>
+                        <td class="text-end">{% if row.actual_balance != None %}AED {{ row.actual_balance|floatformat:2|intcomma }}{% else %}—{% endif %}</td>
+                        <td class="text-end {% if row.forecast_balance and row.forecast_balance < 0 %}negative-cash{% endif %}">
+                            {% if row.forecast_balance != None %}AED {{ row.forecast_balance|floatformat:2|intcomma }}{% else %}—{% endif %}
+                        </td>
+                        <td>{% if row.confidence %}<span class="sf-badge sf-badge-{{ row.confidence }}">{{ row.confidence }}</span>{% endif %}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block report_js %}
+<script>
+(function() {
+    var chartData = {{ chart_json|safe }};
+    if (!chartData.labels || !chartData.labels.length) return;
+    var ctx = document.getElementById('cashFlowChart');
+    if (!ctx) return;
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: chartData.labels,
+            datasets: [
+                {
+                    label: 'Actual Balance',
+                    data: chartData.actual_balance,
+                    borderColor: '#153a5c',
+                    backgroundColor: 'rgba(21,58,92,0.1)',
+                    tension: 0.3,
+                    spanGaps: false,
+                },
+                {
+                    label: 'Forecast Balance',
+                    data: chartData.forecast_balance,
+                    borderColor: '#0d6efd',
+                    borderDash: [6, 4],
+                    backgroundColor: 'rgba(13,110,253,0.05)',
+                    tension: 0.3,
+                },
+            ],
+        },
+        options: {
+            responsive: true,
+            plugins: { legend: { position: 'bottom' } },
+            scales: {
+                y: {
+                    ticks: { callback: function(v) { return 'AED ' + v.toLocaleString(); } },
+                },
+            },
+        },
+    });
+})();
+</script>
+{% endblock %}

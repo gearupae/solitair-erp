@@ -1,0 +1,72 @@
+{% extends 'reports/ai_finance/base.html' %}
+
+{% block report_title %}AI Finance{% endblock %}
+{% block report_subtitle %}AI-powered financial forecasting and anomaly detection{% endblock %}
+
+{% block export_buttons %}{% endblock %}
+{% block report_filters %}{% endblock %}
+
+{% block report_content %}
+<div class="row g-4">
+    <div class="col-md-6">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body d-flex flex-column">
+                <span class="badge bg-primary-subtle text-primary mb-2">Forecast</span>
+                <h5 class="fw-bold mb-2">Cash Flow Forecast</h5>
+                <p class="text-muted mb-0">Predict monthly closing cash balance for the next 3–6 months from payment history.</p>
+                <div class="mt-auto pt-3">
+                    <a href="{% url 'reports:ai_finance_cash_flow' %}" class="btn btn-primary btn-sm"><i class="fas fa-water me-1"></i>Open</a>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body d-flex flex-column">
+                <span class="badge bg-success-subtle text-success mb-2">Forecast</span>
+                <h5 class="fw-bold mb-2">Revenue Forecast</h5>
+                <p class="text-muted mb-0">Forecast upcoming revenue from historical sales invoices and growth trends.</p>
+                <div class="mt-auto pt-3">
+                    <a href="{% url 'reports:ai_finance_revenue' %}" class="btn btn-success btn-sm"><i class="fas fa-chart-line me-1"></i>Open</a>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body d-flex flex-column">
+                <span class="badge bg-warning-subtle text-warning-emphasis mb-2">Forecast</span>
+                <h5 class="fw-bold mb-2">Expense Forecast</h5>
+                <p class="text-muted mb-0">Forecast expenses by category from vendor bills and expense claims.</p>
+                <div class="mt-auto pt-3">
+                    <a href="{% url 'reports:ai_finance_expense' %}" class="btn btn-warning btn-sm text-dark"><i class="fas fa-chart-bar me-1"></i>Open</a>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body d-flex flex-column">
+                <span class="badge bg-info-subtle text-info-emphasis mb-2">Collections</span>
+                <h5 class="fw-bold mb-2">Receivables Collection Forecast</h5>
+                <p class="text-muted mb-0">Predict when open invoices will be paid based on customer payment behavior.</p>
+                <div class="mt-auto pt-3">
+                    <a href="{% url 'reports:ai_finance_receivables' %}" class="btn btn-info btn-sm text-white"><i class="fas fa-user-clock me-1"></i>Open</a>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body d-flex flex-column">
+                <span class="badge bg-danger-subtle text-danger mb-2">Detection</span>
+                <h5 class="fw-bold mb-2">Anomaly Detection</h5>
+                <p class="text-muted mb-0">Flag unusual transactions, spikes, and duplicate-looking entries in recent activity.</p>
+                <div class="mt-auto pt-3">
+                    <a href="{% url 'reports:ai_finance_anomaly' %}" class="btn btn-outline-danger btn-sm"><i class="fas fa-exclamation-triangle me-1"></i>Open</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

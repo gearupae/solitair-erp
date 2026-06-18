@@ -170,11 +170,12 @@ class PurchaseOrderForm(forms.ModelForm):
     
     class Meta:
         model = PurchaseOrder
-        fields = ['vendor', 'purchase_request', 'service_request', 'order_date', 'expected_delivery_date', 'status', 'notes']
+        fields = ['vendor', 'purchase_request', 'service_request', 'order_date', 'expected_delivery_date', 'status', 'notes', 'terms_and_conditions']
         widgets = {
             'order_date': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}, format='%Y-%m-%d'),
             'expected_delivery_date': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}, format='%Y-%m-%d'),
             'notes': forms.Textarea(attrs={'rows': 1, 'class': 'form-control'}),
+            'terms_and_conditions': forms.Textarea(attrs={'rows': 5, 'class': 'form-control'}),
         }
     
     # Fields to exclude when editing (source is set at creation only)
@@ -213,6 +214,7 @@ class PurchaseOrderForm(forms.ModelForm):
         self.fields['status'].choices = PurchaseOrder.STATUS_CHOICES
         self.fields['expected_delivery_date'].required = False
         self.fields['notes'].required = False
+        self.fields['terms_and_conditions'].required = False
     
     def clean_service_request(self):
         """Ensure empty value is None - From SR is optional."""

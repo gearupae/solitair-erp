@@ -517,11 +517,15 @@
         {% endif %}
 
         <div class="notes-section">
-            <div class="notes-title">Terms</div>
+            <div class="notes-title">Terms &amp; conditions</div>
             <div class="notes-content">
+                {% if po.terms_and_conditions %}
+                {{ po.terms_and_conditions|linebreaks }}
+                {% else %}
                 <strong>Currency:</strong> UAE Dirham (AED)
                 {% if po.vendor.payment_terms %}<br><strong>Payment terms (supplier):</strong> {{ po.vendor.payment_terms }}{% endif %}
                 {% if company.email %}<br><strong>Buyer contact:</strong> {{ company.email }}{% endif %}
+                {% endif %}
             </div>
         </div>
 

@@ -429,6 +429,49 @@ class EstimateTextTemplate(models.Model):
         return ''
 
 
+class PurchaseOrderTermsTemplate(models.Model):
+    """Reusable terms & conditions templates for purchase orders."""
+
+    name = models.CharField(max_length=120)
+    body = models.TextField(blank=True)
+    is_default = models.BooleanField(
+        default=False,
+        help_text='Pre-selected when creating a new purchase order.',
+    )
+    sort_order = models.PositiveIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ['sort_order', 'name']
+        verbose_name = 'Purchase order terms template'
+        verbose_name_plural = 'Purchase order terms templates'
+
+    def __str__(self):
+        return self.name
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        if self.is_default:
+            PurchaseOrderTermsTemplate.objects.filter(
+                is_default=True,
+            ).exclude(pk=self.pk).update(is_default=False)
+
+    @classmethod
+    def get_default_body(cls):
+        template = (
+            cls.objects.filter(is_active=True, is_default=True)
+            .order_by('sort_order', 'name')
+            .first()
+        )
+        if not template:
+            template = (
+                cls.objects.filter(is_active=True)
+                .order_by('sort_order', 'name')
+                .first()
+            )
+        return template.body if template else ''
+
+
 class NumberSeries(models.Model):
     """
     Document number series configuration.

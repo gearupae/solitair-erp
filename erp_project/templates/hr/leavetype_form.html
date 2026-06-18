@@ -125,6 +125,13 @@
                 </div>
                 <div class="col-md-6 col-lg-4">
                     <div class="form-check">
+                        {{ form.accrue_monthly }}
+                        <label class="form-check-label" for="{{ form.accrue_monthly.id_for_label }}">{{ form.accrue_monthly.label }}</label>
+                        {% if form.accrue_monthly.help_text %}<div class="form-text">{{ form.accrue_monthly.help_text }}</div>{% endif %}
+                    </div>
+                </div>
+                <div class="col-md-6 col-lg-4">
+                    <div class="form-check">
                         {{ form.is_probation_only }}
                         <label class="form-check-label" for="{{ form.is_probation_only.id_for_label }}">{{ form.is_probation_only.label }}</label>
                     </div>

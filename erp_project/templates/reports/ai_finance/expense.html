@@ -1,0 +1,126 @@
+{% extends 'reports/ai_finance/base.html' %}
+{% load humanize %}
+
+{% block report_subtitle %}Last 12 months vendor bills · {{ forecast_months }}-month forecast by category{% endblock %}
+
+{% block report_filters %}
+<div class="card mb-3 border-0 shadow-sm no-print">
+    <div class="card-body py-2 px-3">
+        <form method="get" class="row g-2 align-items-end">
+            <div class="col-sm-6 col-md-3">
+                <label class="form-label small mb-1">Forecast horizon</label>
+                <select name="months" class="form-select form-select-sm">
+                    <option value="3" {% if forecast_months == 3 %}selected{% endif %}>3 months</option>
+                    <option value="6" {% if forecast_months == 6 %}selected{% endif %}>6 months</option>
+                </select>
+            </div>
+            <div class="col-auto d-flex gap-1">
+                <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-magic me-1"></i>Generate</button>
+                <a href="?months={{ forecast_months }}&refresh=1" class="btn btn-outline-secondary btn-sm" title="Re-run AI"><i class="fas fa-sync-alt"></i></a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block report_content %}
+{% if not has_data %}
+<div class="card border-0 shadow-sm">
+    <div class="card-body text-center text-muted py-5">
+        <i class="fas fa-receipt fa-2x mb-3 opacity-50"></i>
+        <p class="mb-0">Not enough vendor bill or expense data to generate a forecast.</p>
+    </div>
+</div>
+{% else %}
+
+{% if summary %}
+<div class="card border-0 shadow-sm mb-4 sf-brief">
+    <div class="card-body py-3">
+        <h6 class="fw-bold mb-1">AI Insight</h6>
+        <p class="sf-brief__body text-secondary mb-0">{{ summary }}</p>
+    </div>
+</div>
+{% endif %}
+
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white fw-bold">Expenses by Category — Historical &amp; Forecast</div>
+    <div class="card-body">
+        <canvas id="expenseChart" height="110"></canvas>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white fw-bold">Forecast by Month</div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 sf-table">
+                <thead class="table-light">
+                    <tr>
+                        <th>Month</th>
+                        {% for cat in categories %}
+                        <th class="text-end">{{ cat|truncatechars:20 }}</th>
+                        {% endfor %}
+                        <th class="text-end">Total</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in table_rows %}
+                    <tr class="forecast-row">
+                        <td>{{ row.month }} <span class="badge bg-secondary-subtle text-secondary">Forecast</span></td>
+                        {% for cell in row.cells %}
+                        <td class="text-end">AED {{ cell.value|floatformat:2|intcomma }}</td>
+                        {% endfor %}
+                        <td class="text-end fw-semibold">AED {{ row.total|floatformat:2|intcomma }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block report_js %}
+<script>
+(function() {
+    var chartData = {{ chart_json|safe }};
+    if (!chartData.labels || !chartData.labels.length) return;
+    var cats = chartData.categories || [];
+    var colors = ['#153a5c','#0d6efd','#065f46','#d97706','#991b1b','#6f42c1','#20c997','#fd7e14','#6c757d','#e83e8c','#17a2b8','#28a745'];
+    var datasets = [];
+    cats.forEach(function(cat, i) {
+        var data = chartData.labels.map(function(label) {
+            if (chartData.historical && chartData.historical[label] && chartData.historical[label][cat] !== undefined) {
+                return chartData.historical[label][cat];
+            }
+            var fr = (chartData.forecast_rows || []).find(function(r) { return r.month === label; });
+            return fr ? (fr[cat] || 0) : 0;
+        });
+        datasets.push({
+            label: cat,
+            data: data,
+            backgroundColor: colors[i % colors.length],
+            stack: 'stack0',
+        });
+    });
+    var ctx = document.getElementById('expenseChart');
+    if (!ctx) return;
+    new Chart(ctx, {
+        type: 'bar',
+        data: { labels: chartData.labels, datasets: datasets },
+        options: {
+            responsive: true,
+            plugins: { legend: { position: 'bottom' } },
+            scales: {
+                x: { stacked: true },
+                y: {
+                    stacked: true,
+                    ticks: { callback: function(v) { return 'AED ' + v.toLocaleString(); } },
+                },
+            },
+        },
+    });
+})();
+</script>
+{% endblock %}

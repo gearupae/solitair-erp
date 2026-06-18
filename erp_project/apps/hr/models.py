@@ -169,6 +169,13 @@ class LeaveType(BaseModel):
         blank=True,
         help_text='Maximum days that may carry from prior year (e.g. 15 UAE annual, 30 KSA annual).',
     )
+    accrue_monthly = models.BooleanField(
+        default=False,
+        help_text=(
+            'Spread annual entitlement evenly across 12 months (e.g. 30 days → 2.5 per month). '
+            'Available balance uses accrual as of today, not the selected leave dates.'
+        ),
+    )
 
     class Meta:
         ordering = ['name']
