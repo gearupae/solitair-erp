@@ -9,7 +9,13 @@ from django.urls import reverse
 
 from apps.core.utils import get_client_ip
 
-PUBLIC_QUOTATION_STATUSES = frozenset({'quotation_won', 'under_negotiation'})
+# Shareable once sent to the customer (not draft / rejected / lost).
+PUBLIC_QUOTATION_STATUSES = frozenset({
+    'sent',
+    'approved',
+    'under_negotiation',
+    'quotation_won',
+})
 
 
 def estimate_public_link_eligible(estimate) -> bool:

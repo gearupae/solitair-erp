@@ -402,7 +402,7 @@
             <div class="pub-hero">
                 <div class="pub-hero-top">
                     <div>
-                        <div class="pub-hero-label">Quotation</div>
+                        <div class="pub-hero-label">Quotation{% if estimate.revision_label %} · {{ estimate.revision_label }}{% endif %}</div>
                         <h1>{{ company.company_name }}</h1>
                         <div class="pub-ref">{{ estimate.display_estimate_number }}</div>
                     </div>

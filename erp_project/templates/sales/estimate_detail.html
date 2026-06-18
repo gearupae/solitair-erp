@@ -73,6 +73,61 @@
     margin-top: 0.15rem;
     line-height: 1.35;
 }
+.estimate-status-select {
+    max-width: 100%;
+}
+.estimate-status-select.estimate-status-draft {
+    background-color: #f3f4f6;
+    color: #374151;
+    border-color: #e5e7eb;
+}
+.estimate-status-select.estimate-status-sent {
+    background-color: #dbeafe;
+    color: #1e40af;
+    border-color: #bfdbfe;
+}
+.estimate-status-select.estimate-status-approved {
+    background-color: #e0e7ff;
+    color: #3730a3;
+    border-color: #c7d2fe;
+}
+.estimate-status-select.estimate-status-rejected {
+    background-color: #ffedd5;
+    color: #9a3412;
+    border-color: #fed7aa;
+}
+.estimate-status-select.estimate-status-under_negotiation {
+    background-color: #cffafe;
+    color: #0e7490;
+    border-color: #a5f3fc;
+}
+.estimate-status-select.estimate-status-quotation_won {
+    background-color: #dcfce7;
+    color: #14532d;
+    border-color: #bbf7d0;
+}
+.estimate-status-select.estimate-status-quotation_lost {
+    background-color: #fee2e2;
+    color: #991b1b;
+    border-color: #fecaca;
+}
+.estimate-activity-feed {
+    max-height: 28rem;
+    overflow-y: auto;
+}
+.estimate-activity-item .estimate-activity-title-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 0.75rem;
+}
+.estimate-activity-item .estimate-activity-title {
+    line-height: 1.35;
+}
+.estimate-activity-item .estimate-activity-time {
+    white-space: nowrap;
+    flex-shrink: 0;
+}
 </style>
 {% endblock %}
 
@@ -86,12 +141,17 @@
     </nav>
     <div class="d-flex justify-content-between align-items-center">
         <div>
-            <h4 class="mb-1 fw-bold">{{ estimate.display_estimate_number }}</h4>
+            <h4 class="mb-1 fw-bold d-flex align-items-center flex-wrap gap-2">
+                <span>{{ estimate.estimate_number }}</span>
+                {% if estimate.revision_label %}
+                <span class="badge bg-info text-dark fs-6">{{ estimate.revision_label }}</span>
+                {% endif %}
+            </h4>
             <span class="text-muted">
                 {% if estimate.customer.company %}{{ estimate.customer.company }}{% if estimate.customer.name %} · {{ estimate.customer.name }}{% endif %}{% else %}{{ estimate.customer.name }}{% endif %}
             </span>
             {% if estimate.revision_label %}
-            <span class="badge bg-info text-dark ms-2">Revision {{ estimate.revision_label }}</span>
+            <div class="text-muted small mt-1">Quotation ref: {{ estimate.display_estimate_number }}</div>
             {% endif %}
         </div>
         <div class="d-flex flex-wrap gap-2 align-items-center">
@@ -129,11 +189,6 @@
             <a href="{% url 'projects:project_detail' estimate.project.pk %}" class="btn btn-outline-primary">
                 <i class="fas fa-project-diagram me-2"></i>{% if estimate.project.status == 'draft' and estimate.project.conversion_approval_status == 'pending' %}View project (awaiting approval){% else %}View linked project{% endif %}
             </a>
-            {% if show_public_quotation_link %}
-            <a href="{{ public_quotation_url }}" class="btn btn-outline-info" target="_blank" rel="noopener" title="Open public quotation link">
-                <i class="fas fa-external-link-alt me-2"></i>Public link
-            </a>
-            {% endif %}
             {% elif can_convert_to_project %}
                 {% if estimate_to_project_prompt_include_lines %}
                 <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#convertProjectModal">
@@ -162,20 +217,15 @@
                 {% endif %}
             </div>
             {% endif %}
-            {% if show_public_quotation_link and not estimate.project %}
-            <a href="{{ public_quotation_url }}" class="btn btn-outline-info" target="_blank" rel="noopener" title="Open public quotation link">
-                <i class="fas fa-external-link-alt me-2"></i>Public link
-            </a>
-            {% endif %}
-            <a href="{% url 'sales:estimate_pdf' estimate.pk %}" class="btn btn-outline-danger" target="_blank">
-                <i class="fas fa-file-pdf me-2"></i>PDF
-            </a>
             {% if show_public_quotation_link %}
             <button type="button" class="btn btn-outline-primary" id="btn-copy-public-quote"
                     data-public-url="{{ public_quotation_url }}">
                 <i class="fas fa-link me-2"></i>Copy public link
             </button>
             {% endif %}
+            <a href="{% url 'sales:estimate_pdf' estimate.pk %}" class="btn btn-outline-danger" target="_blank">
+                <i class="fas fa-file-pdf me-2"></i>PDF
+            </a>
         </div>
     </div>
 </div>
@@ -200,6 +250,10 @@
             </div>
             <div class="card-body pt-0">
                 <div class="row row-cols-1 row-cols-sm-2 row-cols-lg-3 g-4 align-items-start">
+                    <div class="col">
+                        <h6 class="text-muted mb-2 text-uppercase small fw-semibold">Quotation number</h6>
+                        <p class="fw-medium mb-0">{{ estimate.display_estimate_number }}</p>
+                    </div>
                     <div class="col">
                         <h6 class="text-muted mb-2 text-uppercase small fw-semibold">Company</h6>
                         <p class="fw-medium mb-0">{{ estimate.customer.company|default:"—" }}</p>
@@ -432,31 +486,27 @@
                         <span class="badge bg-secondary fs-6">{{ estimate.get_status_display }}</span>
                     {% endif %}
                 </div>
+                {% if estimate.revision_label %}
+                <p class="text-muted small mb-2">Quotation revision {{ estimate.revision_label }} · ref {{ estimate.display_estimate_number }}</p>
+                {% endif %}
                 {% if estimate.status == 'rejected' and estimate.rejection_reason %}
                 <div class="alert alert-warning py-2 px-3 mb-0 small">
                     <strong>Rejection reason:</strong> {{ estimate.rejection_reason|linebreaksbr }}
                 </div>
                 {% endif %}
                 
-                {% if estimate_status_actions %}
+                {% if allowed_status_choices|length > 1 %}
                 <hr>
-                <h6 class="text-muted mb-3"><i class="fas fa-sync-alt me-2 text-dark"></i>Update Status</h6>
-                <div class="d-grid gap-2">
-                    {% for action in estimate_status_actions %}
-                    {% if action.status == 'rejected' %}
-                    <button type="button" class="btn btn-sm {{ action.btn_class }}" data-bs-toggle="modal" data-bs-target="#rejectEstimateModal">
-                        <i class="fas {{ action.icon }} me-2"></i>{{ action.label }}
-                    </button>
-                    {% else %}
-                    <form method="post" action="{% url 'sales:estimate_status' estimate.pk action.status %}" class="d-grid">
-                        {% csrf_token %}
-                        <button type="submit" class="btn btn-sm {{ action.btn_class }}">
-                            <i class="fas {{ action.icon }} me-2"></i>{{ action.label }}
-                        </button>
-                    </form>
-                    {% endif %}
-                    {% endfor %}
-                </div>
+                <h6 class="text-muted mb-2"><i class="fas fa-sync-alt me-2 text-dark"></i>Update status</h6>
+                <form method="post" action="{% url 'sales:estimate_set_status' estimate.pk %}" id="estimate-detail-status-form">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                    <select name="status" class="form-select form-select-sm estimate-status-select estimate-status-{{ estimate.status }}" aria-label="Estimate status" data-current-status="{{ estimate.status }}" onchange="window.estimateStatusSelectChange(this)">
+                        {% for value, label in allowed_status_choices %}
+                        <option value="{{ value }}" {% if estimate.status == value %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </form>
                 {% endif %}
             </div>
         </div>
@@ -634,17 +684,54 @@
         <!-- Audit Info -->
         <div class="card mb-4">
             <div class="card-header bg-transparent py-3">
-                <h6 class="mb-0 fw-semibold"><i class="fas fa-history me-2 text-dark"></i>Audit Information</h6>
+                <h6 class="mb-0 fw-semibold"><i class="fas fa-history me-2 text-dark"></i>Audit information</h6>
             </div>
             <div class="card-body pt-0">
-                <div class="mb-2">
-                    <small class="text-muted">Created</small>
-                    <p class="mb-0 small">{{ estimate.created_at|date:"d/m/Y H:i" }}</p>
+                <div class="row g-3 mb-3 pb-3 border-bottom small">
+                    <div class="col-6">
+                        <div class="text-muted text-uppercase" style="font-size:0.72rem;">Created</div>
+                        <div class="fw-medium">{{ estimate.created_at|date:"d/m/Y H:i" }}</div>
+                        {% if estimate.created_by %}
+                        <div class="text-muted">by {{ estimate.created_by.get_full_name|default:estimate.created_by.username }}</div>
+                        {% endif %}
+                    </div>
+                    <div class="col-6">
+                        <div class="text-muted text-uppercase" style="font-size:0.72rem;">Last updated</div>
+                        <div class="fw-medium">{{ estimate.updated_at|date:"d/m/Y H:i" }}</div>
+                        {% if estimate.updated_by %}
+                        <div class="text-muted">by {{ estimate.updated_by.get_full_name|default:estimate.updated_by.username }}</div>
+                        {% endif %}
+                    </div>
                 </div>
-                <div>
-                    <small class="text-muted">Last Updated</small>
-                    <p class="mb-0 small">{{ estimate.updated_at|date:"d/m/Y H:i" }}</p>
+
+                <h6 class="text-muted small text-uppercase mb-2"><i class="fas fa-stream me-1"></i>Activity</h6>
+                {% if estimate_activity %}
+                <div class="estimate-activity-feed">
+                    {% for item in estimate_activity %}
+                    <div class="estimate-activity-item d-flex align-items-start{% if not forloop.last %} mb-3 pb-3 border-bottom{% endif %}">
+                        <div class="me-2 mt-1">
+                            <span class="badge {{ item.icon_bg }} rounded-pill p-2">
+                                <i class="fas {{ item.icon }} fa-xs"></i>
+                            </span>
+                        </div>
+                        <div class="flex-grow-1 min-w-0">
+                            <div class="estimate-activity-title-row">
+                                <div class="estimate-activity-title fw-medium small">{{ item.title }}</div>
+                                <small class="estimate-activity-time text-muted">{{ item.timestamp|date:"d/m/Y H:i" }}</small>
+                            </div>
+                            {% if item.detail %}
+                            <div class="text-muted small mt-1 text-break">{{ item.detail }}</div>
+                            {% endif %}
+                            {% if item.user_label %}
+                            <div class="text-muted small mt-1">by {{ item.user_label }}</div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endfor %}
                 </div>
+                {% else %}
+                <p class="text-muted small mb-0">No activity recorded yet. Changes to status, revisions, and edits will appear here.</p>
+                {% endif %}
             </div>
         </div>
 
@@ -721,12 +808,13 @@
 {% include 'sales/includes/proforma_invoice_modal.html' %}
 {% endif %}
 
-{% if estimate.status == 'sent' %}
 <div class="modal fade" id="rejectEstimateModal" tabindex="-1" aria-labelledby="rejectEstimateModalLabel" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
-            <form method="post" action="{% url 'sales:estimate_status' estimate.pk 'rejected' %}">
+            <form method="post" action="{% url 'sales:estimate_set_status' estimate.pk %}" id="rejectEstimateDetailForm">
                 {% csrf_token %}
+                <input type="hidden" name="status" value="rejected">
+                <input type="hidden" name="next" value="{{ request.get_full_path }}">
                 <div class="modal-header">
                     <h5 class="modal-title" id="rejectEstimateModalLabel">Reject estimate</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -743,11 +831,46 @@
         </div>
     </div>
 </div>
-{% endif %}
 {% endblock %}
 
 {% block extra_js %}
 {{ block.super }}
+<script>
+(function () {
+    var rejectModalEl = document.getElementById('rejectEstimateModal');
+    var rejectForm = document.getElementById('rejectEstimateDetailForm');
+    var rejectReasonInput = document.getElementById('id_estimate_rejection_reason');
+
+    window.estimateStatusSelectChange = function (select) {
+        var form = select.form;
+        var current = select.getAttribute('data-current-status') || select.value;
+        if (select.value === 'rejected') {
+            select.value = current;
+            if (rejectForm && form) {
+                rejectForm.action = form.action;
+                var nextInput = form.querySelector('input[name="next"]');
+                var rejectNext = rejectForm.querySelector('input[name="next"]');
+                if (nextInput && rejectNext) {
+                    rejectNext.value = nextInput.value;
+                }
+                var csrfInput = form.querySelector('input[name="csrfmiddlewaretoken"]');
+                var rejectCsrf = rejectForm.querySelector('input[name="csrfmiddlewaretoken"]');
+                if (csrfInput && rejectCsrf) {
+                    rejectCsrf.value = csrfInput.value;
+                }
+            }
+            if (rejectReasonInput) {
+                rejectReasonInput.value = '';
+            }
+            if (rejectModalEl && window.bootstrap) {
+                bootstrap.Modal.getOrCreateInstance(rejectModalEl).show();
+            }
+            return;
+        }
+        form.submit();
+    };
+})();
+</script>
 <script>
 (function() {
     function copyPublicUrl(url) {

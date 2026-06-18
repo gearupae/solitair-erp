@@ -336,6 +336,19 @@
             color: var(--accent);
         }
 
+        .estimate-revision-label {
+            display: inline-block;
+            margin-top: 4px;
+            padding: 3px 10px;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--accent);
+            background: var(--accent-tint);
+            border: 1px solid var(--accent-border);
+        }
+
         .status-badge {
             display: inline-block;
             margin-top: 2px;
@@ -748,6 +761,9 @@
             <div class="title-strip-main">
                 <div class="estimate-title-text">{{ document_heading|default:"QUOTATION" }}</div>
                 <div class="estimate-number">{{ document_number|default:estimate.display_estimate_number }}</div>
+                {% if estimate.revision_label %}
+                <div class="estimate-revision-label">Revision {{ estimate.revision_label }}</div>
+                {% endif %}
                 {% if show_pdf_status|default:True %}
                 <div class="status-badge status-{{ estimate.status }}">{{ estimate.get_status_display }}</div>
                 {% endif %}

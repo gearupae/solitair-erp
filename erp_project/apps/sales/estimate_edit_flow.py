@@ -56,6 +56,9 @@ def apply_after_estimate_save(request, estimate, *, pre_status: str) -> Estimate
         notify_approver_estimate_sent(estimate, requested_by=request.user)
         result.resubmitted_for_approval = True
         result.revision_bumped = True
+        from .estimate_audit import log_estimate_revision_bump
+
+        log_estimate_revision_bump(request.user, estimate, pre_status=pre_status, request=request)
         return result
 
     return result

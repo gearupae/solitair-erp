@@ -101,3 +101,14 @@ def after_estimate_status_saved(
         notify_submitter_estimate_status_rejected(
             estimate, approver=user, reason=reason
         )
+
+    if old_status != new_status:
+        from .estimate_audit import log_estimate_status_change
+
+        log_estimate_status_change(
+            user,
+            estimate,
+            old_status=old_status,
+            new_status=new_status,
+            rejection_reason=reason if new_status == 'rejected' else '',
+        )

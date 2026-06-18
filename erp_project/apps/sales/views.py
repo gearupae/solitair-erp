@@ -653,6 +653,9 @@ class EstimateCreateView(CreatePermissionMixin, CreateView):
                     self.object.save(update_fields=['quotation_creator_ip'])
                 apply_company_default_estimate_signatures(self.object, request.FILES)
                 bulk_create_estimate_items(self.object, rows, replace_existing=False)
+                from .estimate_audit import log_estimate_created
+
+                log_estimate_created(request.user, self.object, request=request)
                 messages.success(request, f'Estimate {self.object.estimate_number} created successfully.')
                 est = self.object
                 link = reverse('sales:estimate_detail', kwargs={'pk': est.pk})
@@ -687,6 +690,9 @@ class EstimateCreateView(CreatePermissionMixin, CreateView):
         items_formset.instance = self.object
         items_formset.save()
         self.object.calculate_totals()
+        from .estimate_audit import log_estimate_created
+
+        log_estimate_created(self.request.user, self.object, request=self.request)
         messages.success(self.request, f'Estimate {self.object.estimate_number} created successfully.')
         est = self.object
         link = reverse('sales:estimate_detail', kwargs={'pk': est.pk})
@@ -943,7 +949,7 @@ class EstimateDetailView(PermissionRequiredMixin, DetailView):
                 self.object.quotation_creator_ip = creator_ip
                 self.object.save(update_fields=['quotation_creator_ip'])
         from .approval_rules import (
-            get_estimate_status_actions,
+            allowed_status_choices_for_estimate,
             user_can_approve_estimate_edit,
             user_can_approve_estimate_status,
             user_can_convert_estimate_follow_on,
@@ -956,7 +962,7 @@ class EstimateDetailView(PermissionRequiredMixin, DetailView):
         context['can_approve_estimate_status'] = user_can_approve_estimate_status(
             self.request.user, self.object
         )
-        context['estimate_status_actions'] = get_estimate_status_actions(
+        context['allowed_status_choices'] = allowed_status_choices_for_estimate(
             self.object, self.request.user
         )
         context['can_approve_estimate_edit'] = (
@@ -1037,6 +1043,9 @@ class EstimateDetailView(PermissionRequiredMixin, DetailView):
             context['public_quotation_stats'] = public_quotation_view_stats(self.object)
         else:
             context['show_public_quotation_link'] = False
+        from .estimate_activity import get_estimate_activity_feed
+
+        context['estimate_activity'] = get_estimate_activity_feed(self.object)
         return context
 
 
@@ -1081,6 +1090,9 @@ def estimate_approve_edit(request, pk):
         notify_submitter_estimate_edit_approved(
             estimate, approver=request.user, submitter=submitter
         )
+    from .estimate_audit import log_estimate_edit_review
+
+    log_estimate_edit_review(request.user, estimate, approved=True, request=request)
     messages.success(request, f'{estimate.estimate_number}: edit changes approved.')
     return redirect('sales:estimate_detail', pk=pk)
 
@@ -1116,6 +1128,11 @@ def estimate_reject_edit(request, pk):
     )
     notify_submitter_estimate_edit_rejected(
         estimate, approver=request.user, comment=comment
+    )
+    from .estimate_audit import log_estimate_edit_review
+
+    log_estimate_edit_review(
+        request.user, estimate, approved=False, comment=comment, request=request
     )
     messages.success(request, 'Edit marked as rejected; the assigned user has been notified.')
     return redirect('sales:estimate_detail', pk=pk)
@@ -1175,6 +1192,11 @@ def estimate_duplicate(request, pk):
 
         dest.calculate_totals()
 
+    from .estimate_audit import log_estimate_created
+
+    log_estimate_created(
+        request.user, dest, request=request, duplicated_from=source.estimate_number
+    )
     notify_if_new_assignee(
         dest.assigned_to,
         request.user,
@@ -1346,6 +1368,9 @@ def estimate_convert_to_invoice(request, pk):
         )
     
     invoice.calculate_totals()
+    from .estimate_audit import log_estimate_invoice_conversion
+
+    log_estimate_invoice_conversion(request.user, estimate, invoice, request=request)
     messages.success(request, f'Invoice {invoice.invoice_number} created from estimate.')
     link = reverse('sales:invoice_edit', kwargs={'pk': invoice.pk})
     notify_if_new_assignee(
@@ -1403,6 +1428,9 @@ def estimate_convert_to_project(request, pk):
         include_items=include_items,
         submitted_by=request.user,
     )
+    from .estimate_audit import log_estimate_project_conversion
+
+    log_estimate_project_conversion(request.user, estimate, project, request=request)
     if project.status == 'draft' and project.conversion_approval_status == 'pending':
         messages.success(
             request,
