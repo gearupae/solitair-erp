@@ -179,7 +179,7 @@
         <div class="card-body">
             <div class="row g-3 align-items-end">
                 <div class="col-md-4">
-                    <label class="form-label">Gross total (before retention)</label>
+                    <label class="form-label">Scope subtotal (excl. VAT)</label>
                     <div class="form-control-plaintext fw-semibold" id="grossTotalDisplay">AED 0.00</div>
                 </div>
                 <div class="col-md-4">
@@ -196,6 +196,10 @@
             <div class="alert alert-danger d-none mt-3 mb-0 py-2 small" id="retentionManualAlert" role="alert">
                 <i class="fas fa-exclamation-circle me-1"></i>
                 Retention amount differs from the calculated <span id="retentionSuggestedLabel">0.00</span> AED — adjust manually if needed.
+            </div>
+            <div class="alert alert-info mt-3 mb-0 py-2 small">
+                <i class="fas fa-info-circle me-1"></i>
+                Retention is withheld from the scope subtotal before VAT. It is tracked on the customer / project overview only — finance posts the billable subtotal plus VAT.
             </div>
         </div>
     </div>
@@ -323,30 +327,32 @@ function calculateTotals() {
         subtotal += net;
         vatTotal += vat;
     });
-    
-    const gross = subtotal + vatTotal;
-    document.getElementById('subtotal').textContent = subtotal.toFixed(2);
-    document.getElementById('vatTotal').textContent = vatTotal.toFixed(2);
 
     const retentionInput = document.getElementById('id_retention_amount');
     const retentionRow = document.getElementById('retentionRow');
     const retentionCard = document.getElementById('retentionAdjustCard');
     const manualAlert = document.getElementById('retentionManualAlert');
-
-    if (activeRetentionPercent > 0 && gross > 0) {
-        suggestedRetention = Math.round(gross * activeRetentionPercent) / 100;
+    
+    if (activeRetentionPercent > 0 && subtotal > 0) {
+        suggestedRetention = Math.round(subtotal * activeRetentionPercent) / 100;
         suggestedRetention = Math.round(suggestedRetention * 100) / 100;
         if (retentionCard) retentionCard.classList.remove('d-none');
         if (retentionRow) retentionRow.classList.remove('d-none');
         document.getElementById('retentionPercentLabel').textContent = activeRetentionPercent;
-        document.getElementById('grossTotalDisplay').textContent = 'AED ' + gross.toFixed(2);
+        document.getElementById('grossTotalDisplay').textContent = 'AED ' + subtotal.toFixed(2);
 
         if (retentionInput && !retentionManualOverride) {
             retentionInput.value = suggestedRetention.toFixed(2);
         }
         const retentionAmt = parseFloat(retentionInput?.value) || 0;
-        const payable = Math.max(0, gross - retentionAmt);
+        const billableSubtotal = Math.max(0, subtotal - retentionAmt);
+        const billableVat = subtotal > 0
+            ? Math.round(vatTotal * billableSubtotal / subtotal * 100) / 100
+            : 0;
+        const payable = billableSubtotal + billableVat;
 
+        document.getElementById('subtotal').textContent = billableSubtotal.toFixed(2);
+        document.getElementById('vatTotal').textContent = billableVat.toFixed(2);
         document.getElementById('retentionDisplay').textContent = '-' + retentionAmt.toFixed(2);
         document.getElementById('grandTotal').textContent = payable.toFixed(2);
         document.getElementById('payableTotalDisplay').textContent = 'AED ' + payable.toFixed(2);
@@ -360,7 +366,9 @@ function calculateTotals() {
         if (retentionRow) retentionRow.classList.add('d-none');
         if (retentionInput) retentionInput.value = '0.00';
         if (manualAlert) manualAlert.classList.add('d-none');
-        document.getElementById('grandTotal').textContent = gross.toFixed(2);
+        document.getElementById('subtotal').textContent = subtotal.toFixed(2);
+        document.getElementById('vatTotal').textContent = vatTotal.toFixed(2);
+        document.getElementById('grandTotal').textContent = (subtotal + vatTotal).toFixed(2);
     }
 }
 

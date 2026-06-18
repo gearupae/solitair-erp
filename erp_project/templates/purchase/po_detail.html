@@ -316,7 +316,7 @@
                         <button type="submit" class="btn btn-sm btn-primary w-100">Save</button>
                     </div>
                 </form>
-                <p class="text-muted small mb-0 mt-2">Retention is withheld from vendor bill AP (5% or 10%). Separate from sales invoice retention.</p>
+                <p class="text-muted small mb-0 mt-2">Retention is withheld from scope subtotal (excl. VAT) before VAT. Tracked on vendor / project overview — finance posts billable subtotal + VAT only.</p>
                 {% else %}
                 <div class="row g-3">
                     <div class="col-md-6">
@@ -343,7 +343,7 @@
                         <thead class="table-light">
                             <tr>
                                 <th>Bill</th>
-                                <th class="text-end">Gross total</th>
+                                <th class="text-end">Scope subtotal</th>
                                 <th class="text-end">Retention</th>
                                 <th class="text-end">Payable</th>
                             </tr>

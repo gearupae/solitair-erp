@@ -242,7 +242,8 @@
                         <thead class="table-light">
                             <tr>
                                 <th>Invoice</th>
-                                <th class="text-end">Subtotal (excl. VAT)</th>
+                                <th>Quotation</th>
+                                <th class="text-end">Scope subtotal</th>
                                 <th class="text-end">Retained</th>
                             </tr>
                         </thead>
@@ -250,7 +251,8 @@
                             {% for row in retention_invoices %}
                             <tr>
                                 <td><a href="{% url 'sales:invoice_detail' row.invoice_pk %}" class="text-decoration-none fw-medium">{{ row.invoice_number }}</a></td>
-                                <td class="text-end">AED {{ row.subtotal|floatformat:2 }}</td>
+                                <td class="text-muted small">{{ row.estimate_number }}</td>
+                                <td class="text-end">AED {{ row.scope_subtotal|floatformat:2 }}</td>
                                 <td class="text-end text-danger">AED {{ row.retention_amount|floatformat:2 }}</td>
                             </tr>
                             {% endfor %}

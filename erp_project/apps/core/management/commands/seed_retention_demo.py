@@ -101,6 +101,11 @@ class Command(BaseCommand):
             action='store_true',
             help='Run seed_alnajah_demo and seed_hr_demo first if inventory/HR data is missing',
         )
+        parser.add_argument(
+            '--refresh',
+            action='store_true',
+            help='Delete existing DEMO-RET demo rows and re-seed with current retention logic',
+        )
 
     @transaction.atomic
     def handle(self, *args, **options):
@@ -109,6 +114,10 @@ class Command(BaseCommand):
         if not admin:
             self.stderr.write(self.style.ERROR('No active user found.'))
             return
+
+        if options['refresh']:
+            removed = self._clear_demo_retention()
+            self.stdout.write(self.style.WARNING(f'Removed {removed} prior DEMO-RET record groups'))
 
         if options['with_base']:
             self._ensure_base_data()
@@ -154,6 +163,41 @@ class Command(BaseCommand):
         from apps.sales.models import Estimate
 
         return Estimate.objects.filter(notes__contains=marker).exists()
+
+    def _clear_demo_retention(self) -> int:
+        """Remove prior DEMO-RET quotations, projects, invoices, POs, and vendor bills."""
+        from apps.projects.models import Project, ProjectInvoice
+        from apps.purchase.models import PurchaseOrder, PurchaseRequest, VendorBill
+        from apps.sales.models import Estimate, Invoice
+
+        removed = 0
+        markers = [f'{SEED_TAG}-{spec["key"]}' for spec in SCENARIOS]
+
+        for marker in markers:
+            inv_ids = list(Invoice.objects.filter(notes__contains=marker).values_list('pk', flat=True))
+            if inv_ids:
+                ProjectInvoice.objects.filter(invoice_id__in=inv_ids).delete()
+                Invoice.objects.filter(pk__in=inv_ids).delete()
+                removed += 1
+
+            if VendorBill.objects.filter(notes__contains=marker).delete()[0]:
+                removed += 1
+            if PurchaseOrder.objects.filter(notes__contains=marker).delete()[0]:
+                removed += 1
+            if PurchaseRequest.objects.filter(notes__contains=marker).delete()[0]:
+                removed += 1
+            if Estimate.objects.filter(notes__contains=marker).delete()[0]:
+                removed += 1
+            if Project.objects.filter(description__contains=marker).delete()[0]:
+                removed += 1
+
+        from apps.crm.models import Customer
+
+        for marker in markers:
+            if Customer.objects.filter(notes__contains=marker).delete()[0]:
+                removed += 1
+
+        return removed
 
     def _seed_scenario(self, spec, marker, admin, today, tax_code, items, vendors, technicians) -> dict:
         from apps.crm.models import Customer

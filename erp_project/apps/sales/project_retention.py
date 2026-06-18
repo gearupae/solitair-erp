@@ -36,33 +36,58 @@ def retention_percent_label(percent) -> str:
     return f'{pct}%'
 
 
-def calculate_retention_amount(gross_total: Decimal, retention_percent) -> Decimal:
-    """Retention deducted from gross invoice total (subtotal + VAT)."""
+def calculate_retention_amount(scope_subtotal: Decimal, retention_percent) -> Decimal:
+    """Retention withheld from invoice scope subtotal (excl. VAT)."""
     pct = normalize_retention_percent(retention_percent)
-    gross = Decimal(str(gross_total or '0')).quantize(Decimal('0.01'))
-    if pct is None or gross <= 0:
+    base = Decimal(str(scope_subtotal or '0')).quantize(Decimal('0.01'))
+    if pct is None or base <= 0:
         return Decimal('0.00')
-    return (gross * pct / Decimal('100')).quantize(Decimal('0.01'))
+    return (base * pct / Decimal('100')).quantize(Decimal('0.01'))
 
 
-def apply_retention_to_invoice_totals(invoice, *, retention_amount_override=None) -> None:
+def apply_retention_to_invoice_totals(
+    invoice,
+    *,
+    line_subtotal: Decimal | None = None,
+    line_vat: Decimal | None = None,
+    retention_amount_override=None,
+) -> None:
     """
-    Set ``retention_amount`` and ``total_amount`` on an invoice from line totals.
+    Apply retention on scope subtotal (excl. VAT), then VAT on the billable subtotal.
 
-    ``subtotal`` and ``vat_amount`` remain the full line amounts (excl. retention).
-    ``total_amount`` is what the customer pays now (gross − retention).
+    ``retention_amount`` is informational (customer / project overview only).
+    ``subtotal``, ``vat_amount``, and ``total_amount`` are the billable amounts posted to finance.
     """
-    gross = (invoice.subtotal or Decimal('0.00')) + (invoice.vat_amount or Decimal('0.00'))
+    scope_subtotal = (
+        Decimal(str(line_subtotal or '0')).quantize(Decimal('0.01'))
+        if line_subtotal is not None
+        else Decimal(str(invoice.subtotal or '0')).quantize(Decimal('0.01'))
+    )
+    scope_vat = (
+        Decimal(str(line_vat or '0')).quantize(Decimal('0.01'))
+        if line_vat is not None
+        else Decimal(str(invoice.vat_amount or '0')).quantize(Decimal('0.01'))
+    )
+
     if retention_amount_override is not None:
         retention = Decimal(str(retention_amount_override)).quantize(Decimal('0.01'))
     else:
-        retention = calculate_retention_amount(gross, invoice.retention_percent)
+        retention = calculate_retention_amount(scope_subtotal, invoice.retention_percent)
     if retention < 0:
         retention = Decimal('0.00')
-    if retention > gross:
-        retention = gross
+    if retention > scope_subtotal:
+        retention = scope_subtotal
+
+    billable_subtotal = (scope_subtotal - retention).quantize(Decimal('0.01'))
+    if scope_subtotal > 0:
+        billable_vat = (scope_vat * billable_subtotal / scope_subtotal).quantize(Decimal('0.01'))
+    else:
+        billable_vat = Decimal('0.00')
+
     invoice.retention_amount = retention
-    invoice.total_amount = (gross - retention).quantize(Decimal('0.01'))
+    invoice.subtotal = billable_subtotal
+    invoice.vat_amount = billable_vat
+    invoice.total_amount = (billable_subtotal + billable_vat).quantize(Decimal('0.01'))
 
 
 def resolve_retention_for_project(project) -> Decimal | None:
@@ -122,13 +147,17 @@ def customer_retention_invoice_rows(customer, project=None):
         qs = qs.filter(project=project)
 
     rows = []
-    for inv in qs:
+    for inv in qs.select_related('project', 'estimate'):
+        scope_subtotal = (inv.subtotal or Decimal('0')) + (inv.retention_amount or Decimal('0'))
         rows.append({
             'invoice_number': inv.invoice_number,
             'invoice_pk': inv.pk,
+            'estimate_number': inv.estimate.estimate_number if inv.estimate_id else '—',
             'project_name': inv.project.name if inv.project_id else '—',
+            'project_code': inv.project.project_code if inv.project_id else '—',
             'project_id': inv.project_id,
             'retention_amount': inv.retention_amount,
+            'scope_subtotal': scope_subtotal,
             'subtotal': inv.subtotal,
             'retention_percent': inv.retention_percent,
             'invoice_date': inv.invoice_date,

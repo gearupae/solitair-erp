@@ -794,14 +794,24 @@ class Invoice(BaseModel):
         """Line subtotal + VAT before retention deduction."""
         return (self.subtotal or Decimal('0.00')) + (self.vat_amount or Decimal('0.00'))
 
+    @property
+    def scope_subtotal(self):
+        """Full scope subtotal (excl. VAT) before retention withholding."""
+        return (self.subtotal or Decimal('0.00')) + (self.retention_amount or Decimal('0.00'))
+
     def calculate_totals(self, *, retention_amount=None):
         """Calculate subtotal, VAT, retention, and payable total from items."""
         from apps.sales.project_retention import apply_retention_to_invoice_totals
 
         items = self.items.all()
-        self.subtotal = sum(item.total for item in items)
-        self.vat_amount = sum(item.vat_amount for item in items)
-        apply_retention_to_invoice_totals(self, retention_amount_override=retention_amount)
+        line_subtotal = sum(item.total for item in items)
+        line_vat = sum(item.vat_amount for item in items)
+        apply_retention_to_invoice_totals(
+            self,
+            line_subtotal=line_subtotal,
+            line_vat=line_vat,
+            retention_amount_override=retention_amount,
+        )
         self.save(
             update_fields=['subtotal', 'vat_amount', 'retention_amount', 'total_amount']
         )

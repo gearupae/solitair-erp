@@ -174,7 +174,7 @@
         <div class="card-body">
             <div class="row g-3 align-items-end">
                 <div class="col-md-4">
-                    <label class="form-label">Gross total (before retention)</label>
+                    <label class="form-label">Scope subtotal (excl. VAT)</label>
                     <div class="form-control-plaintext fw-semibold" id="grossTotalDisplay">AED 0.00</div>
                 </div>
                 <div class="col-md-4">
@@ -191,7 +191,7 @@
                 <i class="fas fa-exclamation-circle me-1"></i>
                 Retention differs from calculated <span id="retentionSuggestedLabel">0.00</span> AED — adjust manually if needed.
             </div>
-            <p class="text-muted small mb-0 mt-2">Only the payable amount is posted to Accounts Payable; retention stays withheld.</p>
+            <p class="text-muted small mb-0 mt-2">Retention is withheld from scope subtotal before VAT. Finance posts billable subtotal + VAT only; retention appears on vendor / project overview.</p>
         </div>
     </div>
 
@@ -316,7 +316,6 @@ function calculateTotals() {
         subtotal += net;
         vatTotal += vat;
     });
-    const gross = subtotal + vatTotal;
     document.getElementById('subtotal').textContent = subtotal.toFixed(2);
     document.getElementById('vatTotal').textContent = vatTotal.toFixed(2);
 
@@ -326,19 +325,25 @@ function calculateTotals() {
     const manualAlert = document.getElementById('retentionManualAlert');
     const pctField = document.getElementById('id_retention_percent');
 
-    if (activeRetentionPercent > 0 && gross > 0) {
-        suggestedRetention = Math.round(gross * activeRetentionPercent) / 100;
+    if (activeRetentionPercent > 0 && subtotal > 0) {
+        suggestedRetention = Math.round(subtotal * activeRetentionPercent) / 100;
         suggestedRetention = Math.round(suggestedRetention * 100) / 100;
         if (retentionCard) retentionCard.classList.remove('d-none');
         if (retentionRow) retentionRow.classList.remove('d-none');
         document.getElementById('retentionPercentLabel').textContent = activeRetentionPercent;
-        document.getElementById('grossTotalDisplay').textContent = 'AED ' + gross.toFixed(2);
+        document.getElementById('grossTotalDisplay').textContent = 'AED ' + subtotal.toFixed(2);
         if (pctField) pctField.value = String(activeRetentionPercent);
         if (retentionInput && !retentionManualOverride) {
             retentionInput.value = suggestedRetention.toFixed(2);
         }
         const retentionAmt = parseFloat(retentionInput?.value) || 0;
-        const payable = Math.max(0, gross - retentionAmt);
+        const billableSubtotal = Math.max(0, subtotal - retentionAmt);
+        const billableVat = subtotal > 0
+            ? Math.round(vatTotal * billableSubtotal / subtotal * 100) / 100
+            : 0;
+        const payable = billableSubtotal + billableVat;
+        document.getElementById('subtotal').textContent = billableSubtotal.toFixed(2);
+        document.getElementById('vatTotal').textContent = billableVat.toFixed(2);
         document.getElementById('retentionDisplay').textContent = '-' + retentionAmt.toFixed(2);
         document.getElementById('grandTotal').textContent = payable.toFixed(2);
         document.getElementById('payableTotalDisplay').textContent = 'AED ' + payable.toFixed(2);
@@ -352,7 +357,9 @@ function calculateTotals() {
         if (retentionInput) retentionInput.value = '0.00';
         if (pctField) pctField.value = '';
         if (manualAlert) manualAlert.classList.add('d-none');
-        document.getElementById('grandTotal').textContent = gross.toFixed(2);
+        document.getElementById('subtotal').textContent = subtotal.toFixed(2);
+        document.getElementById('vatTotal').textContent = vatTotal.toFixed(2);
+        document.getElementById('grandTotal').textContent = (subtotal + vatTotal).toFixed(2);
     }
 }
 

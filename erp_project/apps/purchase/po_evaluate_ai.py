@@ -43,9 +43,9 @@ def build_po_snapshot(po) -> dict:
 
     retention_pct = _quantize(po.retention_percent) if po.retention_percent else None
     retention_amount = None
-    if retention_pct and po.total_amount:
+    if retention_pct and po.subtotal:
         retention_amount = _quantize(
-            Decimal(str(po.total_amount)) * Decimal(str(retention_pct)) / Decimal('100')
+            Decimal(str(po.subtotal)) * Decimal(str(retention_pct)) / Decimal('100')
         )
 
     return {

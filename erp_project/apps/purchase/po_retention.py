@@ -29,31 +29,58 @@ def po_retention_percent_label(percent) -> str:
     return f'{pct}%'
 
 
-def calculate_po_retention_amount(gross_total: Decimal, retention_percent) -> Decimal:
+def calculate_po_retention_amount(scope_subtotal: Decimal, retention_percent) -> Decimal:
+    """Retention withheld from bill scope subtotal (excl. VAT)."""
     pct = normalize_po_retention_percent(retention_percent)
-    gross = Decimal(str(gross_total or '0')).quantize(Decimal('0.01'))
-    if pct is None or gross <= 0:
+    base = Decimal(str(scope_subtotal or '0')).quantize(Decimal('0.01'))
+    if pct is None or base <= 0:
         return Decimal('0.00')
-    return (gross * pct / Decimal('100')).quantize(Decimal('0.01'))
+    return (base * pct / Decimal('100')).quantize(Decimal('0.01'))
 
 
-def apply_retention_to_vendor_bill_totals(bill, *, retention_amount_override=None) -> None:
+def apply_retention_to_vendor_bill_totals(
+    bill,
+    *,
+    line_subtotal: Decimal | None = None,
+    line_vat: Decimal | None = None,
+    retention_amount_override=None,
+) -> None:
     """
-    Set retention and payable total on a vendor bill.
+    Apply retention on scope subtotal (excl. VAT), then VAT on the billable subtotal.
 
-    ``subtotal`` / ``vat_amount`` stay as full line amounts; ``total_amount`` is AP payable (gross − retention).
+    ``retention_amount`` is informational (vendor / project overview only).
+    ``subtotal``, ``vat_amount``, and ``total_amount`` are billable amounts posted to finance.
     """
-    gross = (bill.subtotal or Decimal('0.00')) + (bill.vat_amount or Decimal('0.00'))
+    scope_subtotal = (
+        Decimal(str(line_subtotal or '0')).quantize(Decimal('0.01'))
+        if line_subtotal is not None
+        else Decimal(str(bill.subtotal or '0')).quantize(Decimal('0.01'))
+    )
+    scope_vat = (
+        Decimal(str(line_vat or '0')).quantize(Decimal('0.01'))
+        if line_vat is not None
+        else Decimal(str(bill.vat_amount or '0')).quantize(Decimal('0.01'))
+    )
+
     if retention_amount_override is not None:
         retention = Decimal(str(retention_amount_override)).quantize(Decimal('0.01'))
     else:
-        retention = calculate_po_retention_amount(gross, bill.retention_percent)
+        retention = calculate_po_retention_amount(scope_subtotal, bill.retention_percent)
     if retention < 0:
         retention = Decimal('0.00')
-    if retention > gross:
-        retention = gross
+    if retention > scope_subtotal:
+        retention = scope_subtotal
+
+    billable_subtotal = (scope_subtotal - retention).quantize(Decimal('0.01'))
+    if scope_subtotal > 0:
+        billable_vat = (scope_vat * billable_subtotal / scope_subtotal).quantize(Decimal('0.01'))
+    else:
+        billable_vat = Decimal('0.00')
+
     bill.retention_amount = retention
-    bill.total_amount = (gross - retention).quantize(Decimal('0.01'))
+    bill.subtotal = billable_subtotal
+    bill.vat_amount = billable_vat
+    bill.total_amount = (billable_subtotal + billable_vat).quantize(Decimal('0.01'))
 
 
 def resolve_purchase_retention_for_po(purchase_order) -> Decimal | None:
@@ -105,17 +132,18 @@ def vendor_bill_retention_summary_rows(bills) -> list[dict]:
     total_payable = Decimal('0.00')
 
     for bill in bills:
-        gross = (bill.subtotal or Decimal('0')) + (bill.vat_amount or Decimal('0'))
+        scope_subtotal = (bill.subtotal or Decimal('0')) + (bill.retention_amount or Decimal('0'))
         retention = bill.retention_amount or Decimal('0')
         payable = bill.total_amount or Decimal('0')
         total_retention += retention
-        total_gross += gross
+        total_gross += scope_subtotal
         total_payable += payable
         rows.append({
             'bill_number': bill.bill_number,
             'bill_pk': bill.pk,
             'bill_date': bill.bill_date,
-            'gross_total': gross,
+            'scope_subtotal': scope_subtotal,
+            'gross_total': scope_subtotal,
             'retention_amount': retention,
             'retention_percent': bill.retention_percent,
             'payable_amount': payable,
