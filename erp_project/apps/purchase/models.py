@@ -222,6 +222,21 @@ class PurchaseOrder(BaseModel):
         on_delete=models.PROTECT,
         related_name='purchase_orders'
     )
+    project = models.ForeignKey(
+        'projects.Project',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='purchase_orders',
+        help_text='Optional project link for retention and vendor bill allocation.',
+    )
+    retention_percent = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text='Vendor retention held from bills against this PO (5%, 10%, or none).',
+    )
     order_date = models.DateField()
     expected_delivery_date = models.DateField(null=True, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft')
@@ -482,6 +497,19 @@ class VendorBill(BaseModel):
     # Amounts
     subtotal = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     vat_amount = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    retention_percent = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text='Retention % applied to this vendor bill (from PO or project PO).',
+    )
+    retention_amount = models.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        help_text='Amount withheld as retention (deducted from AP payable total).',
+    )
     total_amount = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     paid_amount = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     
@@ -517,13 +545,21 @@ class VendorBill(BaseModel):
     @property
     def balance(self):
         return self.total_amount - self.paid_amount
+
+    @property
+    def gross_total(self):
+        return (self.subtotal or Decimal('0.00')) + (self.vat_amount or Decimal('0.00'))
     
-    def calculate_totals(self):
+    def calculate_totals(self, *, retention_amount=None):
+        from apps.purchase.po_retention import apply_retention_to_vendor_bill_totals
+
         items = self.items.all()
         self.subtotal = sum(item.total for item in items)
         self.vat_amount = sum(item.vat_amount for item in items)
-        self.total_amount = self.subtotal + self.vat_amount
-        self.save(update_fields=['subtotal', 'vat_amount', 'total_amount'])
+        apply_retention_to_vendor_bill_totals(self, retention_amount_override=retention_amount)
+        self.save(
+            update_fields=['subtotal', 'vat_amount', 'retention_amount', 'total_amount']
+        )
     
     def post_to_accounting(self, user=None):
         """

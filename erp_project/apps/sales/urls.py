@@ -48,6 +48,7 @@ urlpatterns = [
         name='estimate_proforma_edit',
     ),
     path('estimates/<int:pk>/send-email/', views.estimate_send_email, name='estimate_send_email'),
+    path('estimates/<int:pk>/retention/', views.estimate_save_project_retention, name='estimate_save_project_retention'),
     path('public/quotation/<uuid:token>/', views.public_quotation_view, name='public_quotation'),
     path(
         'public/quotation/<uuid:token>/download/',
@@ -55,6 +56,7 @@ urlpatterns = [
         name='public_quotation_download',
     ),
     path('api/inventory-item/<int:pk>/', views.inventory_item_json, name='inventory_item_json'),
+    path('api/project/<int:pk>/retention/', views.project_retention_json, name='project_retention_json'),
 
     # Sales orders (quotation-won estimates)
     path('sales-orders/', views.SalesOrderListView.as_view(), name='sales_order_list'),

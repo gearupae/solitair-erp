@@ -109,6 +109,13 @@ class Estimate(BaseModel):
         blank=True,
         related_name='estimates',
     )
+    retention_percent = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text='Project retention held back from invoices (5%, 10%, or none).',
+    )
     scope = models.JSONField(default=list, blank=True, help_text='Legacy scope tags (deprecated)')
     type_of_occupancy = models.CharField(
         max_length=40,
@@ -721,6 +728,26 @@ class Invoice(BaseModel):
         blank=True,
         related_name='invoices'
     )
+    project = models.ForeignKey(
+        'projects.Project',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='sales_invoices',
+    )
+    retention_percent = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text='Retention % applied to this invoice (from linked project/estimate).',
+    )
+    retention_amount = models.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        help_text='Amount held as retention (deducted from invoice total).',
+    )
     customer = models.ForeignKey(
         Customer, 
         on_delete=models.PROTECT, 
@@ -762,13 +789,22 @@ class Invoice(BaseModel):
         """Calculate outstanding balance."""
         return self.total_amount - self.paid_amount
     
-    def calculate_totals(self):
-        """Calculate subtotal, VAT, and total from items."""
+    @property
+    def gross_total(self):
+        """Line subtotal + VAT before retention deduction."""
+        return (self.subtotal or Decimal('0.00')) + (self.vat_amount or Decimal('0.00'))
+
+    def calculate_totals(self, *, retention_amount=None):
+        """Calculate subtotal, VAT, retention, and payable total from items."""
+        from apps.sales.project_retention import apply_retention_to_invoice_totals
+
         items = self.items.all()
         self.subtotal = sum(item.total for item in items)
         self.vat_amount = sum(item.vat_amount for item in items)
-        self.total_amount = self.subtotal + self.vat_amount
-        self.save(update_fields=['subtotal', 'vat_amount', 'total_amount'])
+        apply_retention_to_invoice_totals(self, retention_amount_override=retention_amount)
+        self.save(
+            update_fields=['subtotal', 'vat_amount', 'retention_amount', 'total_amount']
+        )
     
     def post_to_accounting(self, user=None):
         """

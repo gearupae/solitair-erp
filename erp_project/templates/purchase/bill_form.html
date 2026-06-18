@@ -43,6 +43,7 @@
                     {{ form.project }}
                     {% if form.project.errors %}<div class="text-danger small">{{ form.project.errors|join:", " }}</div>{% endif %}
                     <small class="text-muted d-block mt-1">After you post this bill, the amount appears under this project and counts against its budget.</small>
+                    <div class="text-muted small mt-1" id="projectRetentionHint"></div>
                 </div>
                 <div class="col-md-4">
                     <label class="form-label">Vendor Invoice #</label>
@@ -53,6 +54,7 @@
                     <label class="form-label">From PO</label>
                     {{ form.purchase_order }}
                     {% if form.purchase_order.errors %}<div class="text-danger small">{{ form.purchase_order.errors|join:", " }}</div>{% endif %}
+                    <div class="text-muted small mt-1" id="poRetentionHint"></div>
                 </div>
                 <div class="col-md-4">
                     <label class="form-label">Bill Date <span class="text-danger">*</span></label>
@@ -149,14 +151,47 @@
                             <td class="text-end fw-medium" id="vatTotal">0.00</td>
                             <td></td>
                         </tr>
+                        <tr id="retentionRow" class="d-none">
+                            <td colspan="4" class="text-end fw-medium text-danger">
+                                Retention (<span id="retentionPercentLabel">0</span>%):
+                            </td>
+                            <td class="text-end fw-medium text-danger" id="retentionDisplay">0.00</td>
+                            <td></td>
+                        </tr>
                         <tr>
-                            <td colspan="4" class="text-end fw-bold">Total:</td>
+                            <td colspan="4" class="text-end fw-bold">Payable total:</td>
                             <td class="text-end fw-bold" id="grandTotal">0.00</td>
                             <td></td>
                         </tr>
                     </tfoot>
                 </table>
             </div>
+        </div>
+    </div>
+
+    <div class="card mb-4 d-none" id="retentionAdjustCard">
+        <div class="card-header"><h6 class="mb-0 fw-semibold"><i class="fas fa-hand-holding-usd me-2"></i>Project retention (vendor AP)</h6></div>
+        <div class="card-body">
+            <div class="row g-3 align-items-end">
+                <div class="col-md-4">
+                    <label class="form-label">Gross total (before retention)</label>
+                    <div class="form-control-plaintext fw-semibold" id="grossTotalDisplay">AED 0.00</div>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="id_retention_amount">Retention amount (AED)</label>
+                    {{ form.retention_percent }}
+                    {{ form.retention_amount }}
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Payable to vendor</label>
+                    <div class="form-control-plaintext fw-bold text-success" id="payableTotalDisplay">AED 0.00</div>
+                </div>
+            </div>
+            <div class="alert alert-danger d-none mt-3 mb-0 py-2 small" id="retentionManualAlert" role="alert">
+                <i class="fas fa-exclamation-circle me-1"></i>
+                Retention differs from calculated <span id="retentionSuggestedLabel">0.00</span> AED — adjust manually if needed.
+            </div>
+            <p class="text-muted small mb-0 mt-2">Only the payable amount is posted to Accounts Payable; retention stays withheld.</p>
         </div>
     </div>
 
@@ -192,6 +227,12 @@
 
 {% block extra_js %}
 <script>
+const poRetentionApiUrl = "{% url 'purchase:po_retention_json' pk=0 %}".replace('/0/', '/');
+const projectRetentionApiUrl = "{% url 'purchase:project_purchase_retention_json' pk=0 %}".replace('/0/', '/');
+let activeRetentionPercent = parseFloat(document.getElementById('id_retention_percent')?.value || '0') || 0;
+let suggestedRetention = 0;
+let retentionManualOverride = false;
+
 // Tax Code data for JavaScript
 const taxCodes = [
     {% for tc in tax_codes %}
@@ -266,20 +307,115 @@ function calculateTotals() {
         const qty = parseFloat(row.querySelector('.item-qty')?.value) || 0;
         const price = parseFloat(row.querySelector('.item-price')?.value) || 0;
         const taxCodeSelect = row.querySelector('.item-tax-code');
-        
         let vatRate = 0;
         if (taxCodeSelect && taxCodeSelect.selectedOptions[0]) {
             vatRate = parseFloat(taxCodeSelect.selectedOptions[0].dataset.rate) || 0;
         }
-        
         const net = qty * price;
         const vat = net * (vatRate / 100);
         subtotal += net;
         vatTotal += vat;
     });
+    const gross = subtotal + vatTotal;
     document.getElementById('subtotal').textContent = subtotal.toFixed(2);
     document.getElementById('vatTotal').textContent = vatTotal.toFixed(2);
-    document.getElementById('grandTotal').textContent = (subtotal + vatTotal).toFixed(2);
+
+    const retentionInput = document.getElementById('id_retention_amount');
+    const retentionCard = document.getElementById('retentionAdjustCard');
+    const retentionRow = document.getElementById('retentionRow');
+    const manualAlert = document.getElementById('retentionManualAlert');
+    const pctField = document.getElementById('id_retention_percent');
+
+    if (activeRetentionPercent > 0 && gross > 0) {
+        suggestedRetention = Math.round(gross * activeRetentionPercent) / 100;
+        suggestedRetention = Math.round(suggestedRetention * 100) / 100;
+        if (retentionCard) retentionCard.classList.remove('d-none');
+        if (retentionRow) retentionRow.classList.remove('d-none');
+        document.getElementById('retentionPercentLabel').textContent = activeRetentionPercent;
+        document.getElementById('grossTotalDisplay').textContent = 'AED ' + gross.toFixed(2);
+        if (pctField) pctField.value = String(activeRetentionPercent);
+        if (retentionInput && !retentionManualOverride) {
+            retentionInput.value = suggestedRetention.toFixed(2);
+        }
+        const retentionAmt = parseFloat(retentionInput?.value) || 0;
+        const payable = Math.max(0, gross - retentionAmt);
+        document.getElementById('retentionDisplay').textContent = '-' + retentionAmt.toFixed(2);
+        document.getElementById('grandTotal').textContent = payable.toFixed(2);
+        document.getElementById('payableTotalDisplay').textContent = 'AED ' + payable.toFixed(2);
+        document.getElementById('retentionSuggestedLabel').textContent = suggestedRetention.toFixed(2);
+        const differs = Math.abs(retentionAmt - suggestedRetention) > 0.009;
+        if (manualAlert) manualAlert.classList.toggle('d-none', !differs);
+    } else {
+        suggestedRetention = 0;
+        if (retentionCard) retentionCard.classList.add('d-none');
+        if (retentionRow) retentionRow.classList.add('d-none');
+        if (retentionInput) retentionInput.value = '0.00';
+        if (pctField) pctField.value = '';
+        if (manualAlert) manualAlert.classList.add('d-none');
+        document.getElementById('grandTotal').textContent = gross.toFixed(2);
+    }
+}
+
+async function applyPoRetention(poId) {
+    const hint = document.getElementById('poRetentionHint');
+    if (!poId) {
+        if (!document.getElementById('id_project')?.value) {
+            activeRetentionPercent = 0;
+            retentionManualOverride = false;
+            calculateTotals();
+        }
+        if (hint) hint.textContent = '';
+        return;
+    }
+    try {
+        const resp = await fetch(poRetentionApiUrl + poId + '/');
+        const data = await resp.json();
+        if (data.ok && data.retention_percent) {
+            activeRetentionPercent = parseFloat(data.retention_percent) || 0;
+            if (hint) hint.textContent = 'PO retention: ' + (data.retention_label || data.retention_percent + '%');
+            if (data.project_id) {
+                const projectSelect = document.getElementById('id_project');
+                if (projectSelect && !projectSelect.value) projectSelect.value = data.project_id;
+            }
+        } else {
+            activeRetentionPercent = 0;
+            if (hint) hint.textContent = 'No retention on this PO.';
+        }
+    } catch (e) {
+        activeRetentionPercent = 0;
+        if (hint) hint.textContent = '';
+    }
+    retentionManualOverride = false;
+    calculateTotals();
+}
+
+async function applyProjectRetention(projectId) {
+    const hint = document.getElementById('projectRetentionHint');
+    const poSelect = document.getElementById('id_purchase_order');
+    if (poSelect && poSelect.value) return;
+    if (!projectId) {
+        activeRetentionPercent = 0;
+        if (hint) hint.textContent = '';
+        retentionManualOverride = false;
+        calculateTotals();
+        return;
+    }
+    try {
+        const resp = await fetch(projectRetentionApiUrl + projectId + '/');
+        const data = await resp.json();
+        if (data.ok && data.retention_percent) {
+            activeRetentionPercent = parseFloat(data.retention_percent) || 0;
+            if (hint) hint.textContent = 'Project PO retention: ' + (data.retention_label || data.retention_percent + '%');
+        } else {
+            activeRetentionPercent = 0;
+            if (hint) hint.textContent = 'No purchase retention configured for this project.';
+        }
+    } catch (e) {
+        activeRetentionPercent = 0;
+        if (hint) hint.textContent = '';
+    }
+    retentionManualOverride = false;
+    calculateTotals();
 }
 
 function loadPOItems(poId) {
@@ -317,7 +453,16 @@ function loadPOItems(poId) {
                 const vendorSelect = document.getElementById('id_vendor');
                 if (vendorSelect) vendorSelect.value = data.vendor_id;
             }
-            
+            if (data.retention_percent) {
+                activeRetentionPercent = parseFloat(data.retention_percent) || 0;
+                const hint = document.getElementById('poRetentionHint');
+                if (hint) hint.textContent = 'PO retention: ' + (data.retention_label || data.retention_percent + '%');
+            }
+            if (data.project_id) {
+                const projectSelect = document.getElementById('id_project');
+                if (projectSelect) projectSelect.value = data.project_id;
+            }
+            retentionManualOverride = false;
             calculateTotals();
         })
         .catch(error => {
@@ -331,9 +476,23 @@ document.addEventListener('DOMContentLoaded', function() {
         const qty = row.querySelector('.item-qty');
         if (qty) calculateRowTotal(qty);
     });
-    
+
     const poSelect = document.getElementById('id_purchase_order');
+    const projectSelect = document.getElementById('id_project');
+    const retentionInput = document.getElementById('id_retention_amount');
+    const pctField = document.getElementById('id_retention_percent');
+
+    if (pctField && pctField.value) {
+        activeRetentionPercent = parseFloat(pctField.value) || 0;
+    }
+    if (retentionInput && parseFloat(retentionInput.value || '0') > 0) {
+        retentionManualOverride = true;
+    }
+
     if (poSelect) {
+        if (poSelect.value) {
+            applyPoRetention(poSelect.value);
+        }
         poSelect.addEventListener('change', function() {
             const poId = this.value;
             if (poId) {
@@ -346,8 +505,29 @@ document.addEventListener('DOMContentLoaded', function() {
                 loadPOItems(poId);
             } else {
                 loadPOItems(null);
+                applyPoRetention(null);
             }
         });
+    }
+
+    if (projectSelect) {
+        projectSelect.addEventListener('change', function() {
+            applyProjectRetention(this.value);
+        });
+        if (projectSelect.value && !(poSelect && poSelect.value)) {
+            applyProjectRetention(projectSelect.value);
+        }
+    }
+
+    if (retentionInput) {
+        retentionInput.addEventListener('input', function() {
+            retentionManualOverride = true;
+            calculateTotals();
+        });
+    }
+
+    if (!poSelect?.value && !projectSelect?.value) {
+        calculateTotals();
     }
 });
 </script>

@@ -668,6 +668,8 @@ def pr_items_json(request, pk):
 @login_required
 def po_items_json(request, pk):
     """Return PO items as JSON for AJAX requests."""
+    from .po_retention import po_retention_percent_label
+
     po = get_object_or_404(PurchaseOrder, pk=pk)
     items = []
     for item in po.items.all():
@@ -676,11 +678,15 @@ def po_items_json(request, pk):
             'quantity': str(item.quantity),
             'unit_price': str(item.unit_price),
             'vat_rate': str(item.vat_rate),
+            'tax_code_id': item.tax_code_id,
             'inventory_item_id': item.inventory_item_id,
         })
     return JsonResponse({
         'items': items,
-        'vendor_id': po.vendor.id if po.vendor else None
+        'vendor_id': po.vendor.id if po.vendor else None,
+        'project_id': po.project_id,
+        'retention_percent': str(int(po.retention_percent)) if po.retention_percent else '',
+        'retention_label': po_retention_percent_label(po.retention_percent),
     })
 
 
@@ -863,10 +869,14 @@ class PurchaseOrderDetailView(PermissionRequiredMixin, DetailView):
         )
         qs = (
             PurchaseOrder.objects.filter(is_active=True)
-            .select_related('vendor', 'purchase_request', 'service_request', 'created_by')
+            .select_related('vendor', 'purchase_request', 'service_request', 'created_by', 'project')
             .prefetch_related(
                 Prefetch('goods_receipts', queryset=rcpt_qs),
                 'items__inventory_item',
+                Prefetch(
+                    'bills',
+                    queryset=VendorBill.objects.filter(is_active=True).exclude(status='cancelled').order_by('-bill_date', '-pk'),
+                ),
             )
         )
         from apps.core.visibility import filter_purchase_orders_for_user
@@ -910,7 +920,121 @@ class PurchaseOrderDetailView(PermissionRequiredMixin, DetailView):
             and self.object.items.exists()
         )
         context['po_receive_url'] = reverse('purchase:po_receive', args=[self.object.pk])
+        from .po_retention import po_retention_percent_label, vendor_bill_retention_summary_rows
+        from .po_retention_forms import PurchaseOrderRetentionForm
+
+        context['po_retention_form'] = PurchaseOrderRetentionForm(purchase_order=self.object)
+        context['retention_percent_label'] = po_retention_percent_label(self.object.retention_percent)
+        context['po_vendor_bills'] = list(self.object.bills.all())
+        bill_summary = vendor_bill_retention_summary_rows(context['po_vendor_bills'])
+        context['po_bill_retention_rows'] = bill_summary['rows']
+        context['po_total_retention'] = bill_summary['total_retention']
+        context['can_create_bill'] = (
+            context['can_edit']
+            and self.object.status != 'cancelled'
+            and self.object.items.exists()
+        )
         return context
+
+
+@login_required
+@require_POST
+def po_save_retention(request, pk):
+    """Save project + retention % on a purchase order."""
+    po = get_object_or_404(PurchaseOrder.objects.filter(is_active=True), pk=pk)
+    if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'purchase', 'edit')):
+        messages.error(request, 'Permission denied.')
+        return redirect('purchase:po_detail', pk=pk)
+    from .po_retention_forms import PurchaseOrderRetentionForm
+
+    form = PurchaseOrderRetentionForm(request.POST, purchase_order=po)
+    if form.is_valid():
+        form.save(po)
+        messages.success(request, 'Project retention updated on this PO.')
+    else:
+        for _field, errors in form.errors.items():
+            for err in errors:
+                messages.error(request, err)
+    return redirect('purchase:po_detail', pk=pk)
+
+
+@login_required
+def po_retention_json(request, pk):
+    from .po_retention import po_retention_percent_label, resolve_purchase_retention_for_po
+
+    po = get_object_or_404(PurchaseOrder.objects.filter(is_active=True), pk=pk)
+    pct = resolve_purchase_retention_for_po(po)
+    pct_str = str(int(pct)) if pct is not None else ''
+    return JsonResponse({
+        'ok': True,
+        'po_id': po.pk,
+        'po_number': po.po_number,
+        'project_id': po.project_id,
+        'retention_percent': pct_str,
+        'retention_label': po_retention_percent_label(pct),
+    })
+
+
+@login_required
+def project_purchase_retention_json(request, pk):
+    from apps.projects.models import Project
+    from .po_retention import po_retention_percent_label, resolve_purchase_retention_for_project
+
+    project = get_object_or_404(Project, pk=pk, is_active=True)
+    pct = resolve_purchase_retention_for_project(project)
+    pct_str = str(int(pct)) if pct is not None else ''
+    return JsonResponse({
+        'ok': True,
+        'project_id': project.pk,
+        'project_name': project.name,
+        'retention_percent': pct_str,
+        'retention_label': po_retention_percent_label(pct),
+    })
+
+
+@login_required
+def po_convert_to_bill(request, pk):
+    """Create a draft vendor bill from a purchase order."""
+    po = get_object_or_404(
+        PurchaseOrder.objects.filter(is_active=True).prefetch_related('items'),
+        pk=pk,
+    )
+    if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'purchase', 'create')):
+        messages.error(request, 'Permission denied.')
+        return redirect('purchase:po_detail', pk=pk)
+    if po.status == 'cancelled':
+        messages.error(request, 'Cannot create a bill from a cancelled PO.')
+        return redirect('purchase:po_detail', pk=pk)
+    if not po.items.exists():
+        messages.error(request, 'Add line items to the PO before converting to a vendor bill.')
+        return redirect('purchase:po_detail', pk=pk)
+
+    from datetime import timedelta
+
+    bill = VendorBill.objects.create(
+        vendor=po.vendor,
+        purchase_order=po,
+        project=po.project,
+        retention_percent=po.retention_percent,
+        bill_date=date.today(),
+        due_date=date.today() + timedelta(days=30),
+        status='draft',
+        goods_received=po.status == 'received',
+        notes=f'Created from PO {po.po_number}',
+    )
+    for item in po.items.all():
+        VendorBillItem.objects.create(
+            bill=bill,
+            description=item.description,
+            quantity=item.quantity,
+            unit_price=item.unit_price,
+            tax_code=item.tax_code,
+            vat_rate=item.vat_rate,
+            is_vat_inclusive=item.is_vat_inclusive,
+        )
+    bill.calculate_totals()
+    messages.success(request, f'Vendor bill {bill.bill_number} created from PO {po.po_number}.')
+    return redirect('purchase:bill_edit', pk=bill.pk)
 
 
 @login_required
@@ -1261,11 +1385,16 @@ class VendorBillCreateView(CreatePermissionMixin, CreateView):
             return self.form_invalid(form, items_formset)
     
     def form_valid(self, form, items_formset):
-        self.object = form.save()
+        from .po_retention import sync_vendor_bill_retention_links
+
+        retention_amount = form.cleaned_data.get('retention_amount')
+        self.object = form.save(commit=False)
+        sync_vendor_bill_retention_links(self.object)
+        self.object.save()
         items_formset.instance = self.object
         items_formset.save()
         _save_vendor_bill_attachments(self.request, self.object)
-        self.object.calculate_totals()
+        self.object.calculate_totals(retention_amount=retention_amount)
         messages.success(self.request, f'Vendor Bill {self.object.bill_number} created.')
         return redirect(self.success_url)
     
@@ -1326,11 +1455,16 @@ class VendorBillUpdateView(UpdatePermissionMixin, UpdateView):
             return self.form_invalid(form, items_formset)
     
     def form_valid(self, form, items_formset):
-        self.object = form.save()
+        from .po_retention import sync_vendor_bill_retention_links
+
+        retention_amount = form.cleaned_data.get('retention_amount')
+        self.object = form.save(commit=False)
+        sync_vendor_bill_retention_links(self.object)
+        self.object.save()
         items_formset.instance = self.object
         items_formset.save()
         _save_vendor_bill_attachments(self.request, self.object)
-        self.object.calculate_totals()
+        self.object.calculate_totals(retention_amount=retention_amount)
         messages.success(self.request, f'Vendor Bill {self.object.bill_number} updated.')
         return redirect('purchase:bill_detail', pk=self.object.pk)
     

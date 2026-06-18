@@ -10,6 +10,60 @@ from apps.inventory.models import StockMovement
 from apps.inventory.models_reporting import InventoryCostLayer
 
 
+def fifo_issue_unit_cost(item, warehouse, qty: Decimal) -> Decimal:
+    """
+    Consume qty from FIFO cost layers and return weighted-average unit cost.
+
+    Falls back to ``item.get_issue_unit_cost`` when layers are missing or insufficient.
+    """
+    qty = Decimal(str(qty)).quantize(Decimal('0.01'))
+    if qty <= 0:
+        return Decimal('0.00')
+
+    layers = list(
+        InventoryCostLayer.objects.filter(
+            item=item,
+            warehouse=warehouse,
+            qty_remaining__gt=0,
+        ).order_by('received_date', 'id')
+    )
+    if not layers:
+        cost = item.get_issue_unit_cost(warehouse)
+        return cost if cost and cost > 0 else Decimal('0.00')
+
+    remaining = qty
+    total_cost = Decimal('0')
+    consumed = Decimal('0')
+
+    for layer in layers:
+        if remaining <= 0:
+            break
+        if layer.qty_remaining <= 0:
+            continue
+        take = min(layer.qty_remaining, remaining)
+        total_cost += take * (layer.unit_cost or Decimal('0'))
+        consumed += take
+        layer.qty_remaining = (layer.qty_remaining - take).quantize(Decimal('0.01'))
+        layer.save(update_fields=['qty_remaining'])
+        remaining -= take
+
+    if consumed <= 0:
+        cost = item.get_issue_unit_cost(warehouse)
+        return cost if cost and cost > 0 else Decimal('0.00')
+
+    if remaining > 0:
+        fallback = item.get_issue_unit_cost(warehouse) or Decimal('0.00')
+        total_cost += remaining * fallback
+
+    return (total_cost / qty).quantize(Decimal('0.01'))
+
+
+@transaction.atomic
+def consume_fifo_layers(item, warehouse, qty: Decimal) -> Decimal:
+    """Alias for ``fifo_issue_unit_cost`` (atomic layer consumption)."""
+    return fifo_issue_unit_cost(item, warehouse, qty)
+
+
 def _consume_layers(layers: list[InventoryCostLayer], qty: Decimal) -> Decimal:
     """Consume qty from layers list (FIFO). Returns unconsumed qty."""
     remaining = qty

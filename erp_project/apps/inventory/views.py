@@ -1749,7 +1749,7 @@ def consumable_request_dispense(request, pk):
                 items_dispensed = consumable_request.get_items_for_dispense()
                 msg = f'Request {consumable_request.request_number} dispensed.'
                 if consumable_request.project_id:
-                    msg += ' Items are on the project Items list — deliver or return stock from the project page.'
+                    msg += ' Stock delivered to the project (FIFO). Return unused items from the project page if needed.'
                 elif items_dispensed:
                     msg += f' Stock reduced for {len(items_dispensed)} item(s).'
                 if n_lines:

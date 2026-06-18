@@ -20,6 +20,11 @@
             <a href="{% url 'purchase:po_pdf' po.pk %}?format=pdf" class="btn btn-outline-success" target="_blank" rel="noopener">
                 <i class="fas fa-download me-2"></i>Download PDF
             </a>
+            {% if can_create_bill %}
+            <a href="{% url 'purchase:po_convert_bill' po.pk %}" class="btn btn-warning" onclick="return confirm('Create a draft vendor bill from this PO?');">
+                <i class="fas fa-file-invoice-dollar me-2"></i>Convert to vendor bill
+            </a>
+            {% endif %}
             {% if can_receive_po %}
             <a href="{% url 'purchase:po_receive' po.pk %}" class="btn btn-success">
                 <i class="fas fa-dolly me-2"></i>Receive items
@@ -229,6 +234,111 @@
                 </div>
             </div>
         </div>
+
+        {% if po_vendor_bills %}
+        <div class="card mb-4">
+            <div class="card-header bg-transparent py-3">
+                <h6 class="mb-0 fw-semibold"><i class="fas fa-file-invoice-dollar me-2 text-dark"></i>Vendor bills</h6>
+            </div>
+            <ul class="list-group list-group-flush">
+                {% for bill in po_vendor_bills %}
+                <li class="list-group-item d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <div>
+                        <a href="{% url 'purchase:bill_detail' bill.pk %}" class="fw-semibold text-decoration-none">{{ bill.bill_number }}</a>
+                        <div class="text-muted small">{{ bill.bill_date|date:"d/m/Y" }} · {{ bill.get_status_display }}</div>
+                    </div>
+                    <div class="text-end">
+                        <div class="fw-semibold">AED {{ bill.total_amount|floatformat:2 }}</div>
+                        {% if bill.retention_amount > 0 %}
+                        <div class="text-danger small">Retention AED {{ bill.retention_amount|floatformat:2 }}</div>
+                        {% endif %}
+                    </div>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+
+        <div class="card mb-4" id="po-project-retention-card">
+            <div class="card-header bg-transparent py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <h6 class="mb-0 fw-semibold"><i class="fas fa-hand-holding-usd me-2 text-dark"></i>Project retention</h6>
+                {% if po.project %}
+                <a href="{% url 'projects:project_detail' po.project.pk %}" class="btn btn-sm btn-outline-secondary">View project</a>
+                {% endif %}
+            </div>
+            <div class="card-body">
+                {% if can_edit %}
+                <form method="post" action="{% url 'purchase:po_save_retention' po.pk %}" class="row g-3 align-items-end">
+                    {% csrf_token %}
+                    <div class="col-md-6">
+                        <label class="form-label small text-muted mb-1">Project</label>
+                        {{ po_retention_form.project }}
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small text-muted mb-1">Retention amount</label>
+                        {{ po_retention_form.retention_percent }}
+                    </div>
+                    <div class="col-md-2">
+                        <button type="submit" class="btn btn-sm btn-primary w-100">Save</button>
+                    </div>
+                </form>
+                <p class="text-muted small mb-0 mt-2">Retention is withheld from vendor bill AP (5% or 10%). Separate from sales invoice retention.</p>
+                {% else %}
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <p class="text-muted small mb-1">Project</p>
+                        <p class="mb-0 fw-medium">{% if po.project %}{{ po.project.name }}{% else %}—{% endif %}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <p class="text-muted small mb-1">Retention amount</p>
+                        <p class="mb-0 fw-medium">{{ retention_percent_label }}</p>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        {% if po_bill_retention_rows %}
+        <div class="card mb-4">
+            <div class="card-header bg-transparent py-3">
+                <h6 class="mb-0 fw-semibold"><i class="fas fa-list me-2 text-dark"></i>Retention on vendor bills</h6>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Bill</th>
+                                <th class="text-end">Gross total</th>
+                                <th class="text-end">Retention</th>
+                                <th class="text-end">Payable</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in po_bill_retention_rows %}
+                            <tr>
+                                <td><a href="{% url 'purchase:bill_detail' row.bill_pk %}" class="text-decoration-none fw-medium">{{ row.bill_number }}</a></td>
+                                <td class="text-end">AED {{ row.gross_total|floatformat:2 }}</td>
+                                <td class="text-end text-danger">AED {{ row.retention_amount|floatformat:2 }}</td>
+                                <td class="text-end">AED {{ row.payable_amount|floatformat:2 }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                        {% if po_total_retention > 0 %}
+                        <tfoot class="table-light">
+                            <tr>
+                                <td class="fw-semibold">Total retention withheld</td>
+                                <td></td>
+                                <td class="text-end fw-bold text-danger">AED {{ po_total_retention|floatformat:2 }}</td>
+                                <td></td>
+                            </tr>
+                        </tfoot>
+                        {% endif %}
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
 
         {% if can_send_po_email %}
         <div class="card border-primary border-opacity-25">

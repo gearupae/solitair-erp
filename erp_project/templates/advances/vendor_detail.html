@@ -271,6 +271,52 @@
             </div>
         </div>
         {% endif %}
+
+        {% if bill_retention_rows %}
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-transparent py-3">
+                <h6 class="mb-0 fw-semibold">
+                    <i class="fas fa-hand-holding-usd me-2 text-primary"></i>Vendor bill retention
+                </h6>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0 align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th class="ps-3">Bill</th>
+                                <th>PO</th>
+                                <th class="text-end">Gross total</th>
+                                <th class="text-end">Retention</th>
+                                <th class="text-end pe-3">Payable</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in bill_retention_rows %}
+                            <tr>
+                                <td class="ps-3">
+                                    <a href="{% url 'purchase:bill_detail' row.bill_pk %}" class="text-decoration-none fw-medium">{{ row.bill_number }}</a>
+                                    <div class="text-muted small">{{ row.bill_date|date:"d/m/Y" }}</div>
+                                </td>
+                                <td class="text-muted small">{{ row.po_number }}</td>
+                                <td class="text-end">AED {{ row.gross_total|floatformat:2|intcomma }}</td>
+                                <td class="text-end text-danger">AED {{ row.retention_amount|floatformat:2|intcomma }}</td>
+                                <td class="text-end pe-3">AED {{ row.payable_amount|floatformat:2|intcomma }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                        <tfoot class="table-light">
+                            <tr>
+                                <td colspan="3" class="ps-3 fw-semibold">Total retention withheld</td>
+                                <td class="text-end fw-bold text-danger">AED {{ vendor_total_retention|floatformat:2|intcomma }}</td>
+                                <td></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
     </div>
 
     <!-- Sidebar -->

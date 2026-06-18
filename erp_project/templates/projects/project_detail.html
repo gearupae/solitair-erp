@@ -127,7 +127,7 @@
                 <h6 class="mb-0 fw-semibold"><i class="fas fa-address-card me-2 text-dark"></i>Project details</h6>
             </div>
             <div class="card-body pt-0">
-                <div class="row g-4">
+                <div class="row g-4 mt-3">
                     <div class="col-md-4"><h6 class="text-muted mb-2">Customer</h6><p class="mb-0">{{ project.customer.name|default:"-" }}</p></div>
                     <div class="col-md-4"><h6 class="text-muted mb-2">Manager</h6><p class="mb-0">{% if project.manager %}{{ project.manager.get_full_name|default:project.manager.username }}{% else %}-{% endif %}</p></div>
                     <div class="col-md-4"><h6 class="text-muted mb-2">Budget <span class="small fw-normal">(qty × base price)</span></h6><p class="mb-0">AED {{ project.budget|floatformat:2 }}</p></div>
@@ -310,9 +310,6 @@
                                     {% if line.delivered_qty < line.quantity %}<span class="text-muted"> / {{ line.quantity|floatformat:0 }}</span>{% endif %}
                                     {% else %}
                                     <span class="text-muted">0</span><span class="text-muted"> / {{ line.quantity|floatformat:0 }}</span>
-                                    {% endif %}
-                                    {% if line.max_request_qty is not None %}
-                                    <br><small class="text-muted project-remaining-hint">Left to request: {% if line.requires_whole_quantity %}{{ line.max_request_qty|floatformat:0 }}{% else %}{{ line.max_request_qty|floatformat:2 }}{% endif %}</small>
                                     {% endif %}
                                     {% else %}
                                     <span class="text-muted">—</span>

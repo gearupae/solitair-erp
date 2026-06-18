@@ -99,7 +99,7 @@ def pending_consumable_request_qty_by_item(project) -> dict[int, Decimal]:
         ConsumableRequestItem.objects.filter(
             consumable_request__project=project,
             consumable_request__is_active=True,
-            consumable_request__status__in=['pending', 'submitted'],
+            consumable_request__status__in=['pending', 'submitted', 'approved'],
         )
         .values('item_id')
         .annotate(total=Sum('quantity'))
@@ -112,6 +112,9 @@ def pending_consumable_request_qty_by_item(project) -> dict[int, Decimal]:
 
 def attach_project_line_request_limits(item_lines, project) -> None:
     """Set max_request_qty / remaining_request_qty on each project item line."""
+    from apps.inventory.models import Item
+    from apps.projects.item_delivery import project_item_delivered_qty
+
     pending_by_item = pending_consumable_request_qty_by_item(project)
     proposed_by_item: dict[int, Decimal] = {}
     for line in item_lines:
@@ -122,15 +125,28 @@ def attach_project_line_request_limits(item_lines, project) -> None:
         iid = line.inventory_item_id
         proposed_by_item[iid] = proposed_by_item.get(iid, Decimal('0')) + line.quantity
 
+    delivered_by_item: dict[int, Decimal] = {}
+    for iid in proposed_by_item:
+        item = Item.objects.filter(pk=iid).first()
+        if item:
+            delivered_by_item[iid] = project_item_delivered_qty(project, item)
+        else:
+            delivered_by_item[iid] = Decimal('0')
+
+    request_budget: dict[int, Decimal] = {}
+    for iid, total_prop in proposed_by_item.items():
+        pending = pending_by_item.get(iid, Decimal('0'))
+        delivered = delivered_by_item.get(iid, Decimal('0'))
+        request_budget[iid] = max(Decimal('0'), total_prop - delivered - pending)
+
     for line in item_lines:
         if not line.inventory_item_id:
             continue
         iid = line.inventory_item_id
-        pending = pending_by_item.get(iid, Decimal('0'))
-        total_prop = proposed_by_item.get(iid, Decimal('0'))
-        item_remaining = max(Decimal('0'), total_prop - pending)
-        line.remaining_request_qty = item_remaining
-        line.max_request_qty = min(line.quantity, item_remaining).quantize(Decimal('0.01'))
+        budget = request_budget.get(iid, Decimal('0'))
+        line.max_request_qty = min(line.quantity, budget).quantize(Decimal('0.01'))
+        request_budget[iid] = max(Decimal('0'), budget - line.max_request_qty)
+        line.remaining_request_qty = request_budget.get(iid, Decimal('0'))
 
 
 def apply_scope_to_consumable_request(consumable_request) -> None:

@@ -111,8 +111,14 @@
                                 <td colspan="4" class="text-end">VAT:</td>
                                 <td class="text-end fw-medium">AED {{ invoice.vat_amount|floatformat:2 }}</td>
                             </tr>
+                            {% if invoice.retention_amount > 0 %}
                             <tr>
-                                <td colspan="4" class="text-end fw-bold">Total:</td>
+                                <td colspan="4" class="text-end text-danger">Retention{% if invoice.retention_percent %} ({{ invoice.retention_percent|floatformat:0 }}%){% endif %}:</td>
+                                <td class="text-end fw-medium text-danger">− AED {{ invoice.retention_amount|floatformat:2 }}</td>
+                            </tr>
+                            {% endif %}
+                            <tr>
+                                <td colspan="4" class="text-end fw-bold">Invoice total:</td>
                                 <td class="text-end fw-bold">AED {{ invoice.total_amount|floatformat:2 }}</td>
                             </tr>
                         </tfoot>
@@ -157,6 +163,15 @@
                         <span class="badge bg-secondary fs-6">{{ invoice.get_status_display }}</span>
                     {% endif %}
                 </div>
+                
+                {% if invoice.project %}
+                <hr>
+                <h6 class="text-muted mb-2">Project</h6>
+                <p class="mb-0"><a href="{% url 'projects:project_detail' invoice.project.pk %}">{{ invoice.project.name }}</a></p>
+                {% if invoice.retention_amount > 0 %}
+                <p class="text-muted small mb-0 mt-1">Retention: AED {{ invoice.retention_amount|floatformat:2 }}{% if invoice.retention_percent %} ({{ invoice.retention_percent|floatformat:0 }}%){% endif %}</p>
+                {% endif %}
+                {% endif %}
                 
                 {% if can_edit and invoice.status != 'draft' %}
                 <hr>

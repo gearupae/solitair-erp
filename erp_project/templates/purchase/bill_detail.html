@@ -101,8 +101,14 @@
                                 <td colspan="4" class="text-end">VAT:</td>
                                 <td class="text-end fw-medium">AED {{ bill.vat_amount|floatformat:2 }}</td>
                             </tr>
+                            {% if bill.retention_amount > 0 %}
                             <tr>
-                                <td colspan="4" class="text-end fw-bold">Total:</td>
+                                <td colspan="4" class="text-end text-danger">Retention{% if bill.retention_percent %} ({{ bill.retention_percent|floatformat:0 }}%){% endif %}:</td>
+                                <td class="text-end fw-medium text-danger">− AED {{ bill.retention_amount|floatformat:2 }}</td>
+                            </tr>
+                            {% endif %}
+                            <tr>
+                                <td colspan="4" class="text-end fw-bold">Payable (AP):</td>
                                 <td class="text-end fw-bold">AED {{ bill.total_amount|floatformat:2 }}</td>
                             </tr>
                         </tfoot>
@@ -175,8 +181,18 @@
         <div class="card mb-4">
             <div class="card-body">
                 <h6 class="text-muted mb-3">Payment Summary</h6>
+                {% if bill.retention_amount > 0 %}
                 <div class="d-flex justify-content-between mb-2">
-                    <span>Total Amount</span>
+                    <span>Gross total</span>
+                    <span>AED {{ bill.gross_total|floatformat:2 }}</span>
+                </div>
+                <div class="d-flex justify-content-between mb-2 text-danger">
+                    <span>Retention withheld</span>
+                    <span>− AED {{ bill.retention_amount|floatformat:2 }}</span>
+                </div>
+                {% endif %}
+                <div class="d-flex justify-content-between mb-2">
+                    <span>Payable (AP)</span>
                     <span>AED {{ bill.total_amount|floatformat:2 }}</span>
                 </div>
                 <div class="d-flex justify-content-between mb-2">

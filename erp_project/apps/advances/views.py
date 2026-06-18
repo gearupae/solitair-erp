@@ -291,7 +291,14 @@ def vendor_detail(request, pk):
 
     recent_bills = VendorBill.objects.filter(
         vendor=vendor, is_active=True
-    ).order_by('-created_at')[:10]
+    ).select_related('purchase_order', 'project').order_by('-created_at')[:10]
+
+    from apps.purchase.po_retention import vendor_bill_retention_summary_rows
+
+    retention_bills = VendorBill.objects.filter(
+        vendor=vendor, is_active=True, retention_amount__gt=0,
+    ).exclude(status='cancelled').select_related('purchase_order', 'project').order_by('-bill_date', '-pk')
+    bill_retention_summary = vendor_bill_retention_summary_rows(retention_bills)
 
     if request.method == 'POST':
         if not _can(request.user, 'purchase', 'create'):
@@ -319,6 +326,8 @@ def vendor_detail(request, pk):
         'form': form,
         'recent_orders': recent_orders,
         'recent_bills': recent_bills,
+        'bill_retention_rows': bill_retention_summary['rows'],
+        'vendor_total_retention': bill_retention_summary['total_retention'],
         'can_create': _can(request.user, 'purchase', 'create'),
         'can_edit': _can(request.user, 'purchase', 'edit'),
         'today': date.today().isoformat(),

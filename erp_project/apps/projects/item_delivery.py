@@ -269,7 +269,11 @@ def deliver_items_to_project(
             f'Available: {avail}, requested: {qty}.'
         )
 
-    unit_cost = item.get_issue_unit_cost(warehouse)
+    from apps.inventory.services.fifo_service import fifo_issue_unit_cost
+
+    unit_cost = fifo_issue_unit_cost(item, warehouse, qty)
+    if unit_cost <= 0:
+        unit_cost = item.get_issue_unit_cost(warehouse)
     movement = StockMovement.objects.create(
         item=item,
         warehouse=warehouse,

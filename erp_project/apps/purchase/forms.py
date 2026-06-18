@@ -340,12 +340,20 @@ class VendorBillForm(forms.ModelForm):
         fields = [
             'vendor', 'project', 'purchase_order', 'goods_received',
             'vendor_invoice_number', 'bill_date', 'due_date', 'status', 'notes',
+            'retention_percent', 'retention_amount',
         ]
         widgets = {
             'bill_date': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}, format='%Y-%m-%d'),
             'due_date': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}, format='%Y-%m-%d'),
             'notes': forms.Textarea(attrs={'rows': 2, 'class': 'form-control'}),
             'goods_received': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'retention_percent': forms.HiddenInput(),
+            'retention_amount': forms.NumberInput(attrs={
+                'class': 'form-control',
+                'step': '0.01',
+                'min': '0',
+                'id': 'id_retention_amount',
+            }),
         }
 
     def __init__(self, *args, **kwargs):
@@ -365,6 +373,8 @@ class VendorBillForm(forms.ModelForm):
         self.fields['vendor_invoice_number'].widget.attrs['class'] = 'form-control'
         self.fields['vendor_invoice_number'].required = False
         self.fields['notes'].required = False
+        self.fields['retention_amount'].required = False
+        self.fields['retention_amount'].label = 'Retention amount (AED)'
         self.fields['goods_received'].help_text = (
             "Check if this bill is for goods already received into inventory. "
             "This will debit GRN Clearing instead of Expense."

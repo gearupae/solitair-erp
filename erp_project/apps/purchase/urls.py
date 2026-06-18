@@ -53,6 +53,10 @@ urlpatterns = [
     path('orders/<int:pk>/edit/', views.PurchaseOrderUpdateView.as_view(), name='po_edit'),
     path('orders/<int:pk>/delete/', views.po_delete, name='po_delete'),
     path('orders/<int:pk>/items/', views.po_items_json, name='po_items_json'),
+    path('orders/<int:pk>/retention/', views.po_save_retention, name='po_save_retention'),
+    path('orders/<int:pk>/convert-bill/', views.po_convert_to_bill, name='po_convert_bill'),
+    path('api/po/<int:pk>/retention/', views.po_retention_json, name='po_retention_json'),
+    path('api/project/<int:pk>/purchase-retention/', views.project_purchase_retention_json, name='project_purchase_retention_json'),
     
     # Vendor Bills
     path('bills/', views.VendorBillListView.as_view(), name='bill_list'),

@@ -1046,7 +1046,52 @@ class EstimateDetailView(PermissionRequiredMixin, DetailView):
         from .estimate_activity import get_estimate_activity_feed
 
         context['estimate_activity'] = get_estimate_activity_feed(self.object)
+        from .retention_forms import EstimateProjectRetentionForm
+        from .project_retention import retention_percent_label
+
+        context['estimate_retention_form'] = EstimateProjectRetentionForm(estimate=self.object)
+        context['retention_percent_label'] = retention_percent_label(self.object.retention_percent)
         return context
+
+
+@login_required
+def estimate_save_project_retention(request, pk):
+    """Save project + retention % on an estimate."""
+    if request.method != 'POST':
+        return HttpResponseNotAllowed(['POST'])
+    estimate = get_object_or_404(Estimate, pk=pk, is_active=True)
+    if not estimate.allows_edit_by(request.user):
+        messages.error(request, 'Permission denied.')
+        return redirect('sales:estimate_detail', pk=pk)
+    from .retention_forms import EstimateProjectRetentionForm
+
+    form = EstimateProjectRetentionForm(request.POST, estimate=estimate)
+    if form.is_valid():
+        form.save(estimate)
+        messages.success(request, 'Project retention updated.')
+    else:
+        for _field, errors in form.errors.items():
+            for err in errors:
+                messages.error(request, err)
+    return redirect('sales:estimate_detail', pk=pk)
+
+
+@login_required
+def project_retention_json(request, pk):
+    """JSON: retention % configured for a project (from linked estimate)."""
+    from apps.projects.models import Project
+    from .project_retention import resolve_retention_for_project, retention_percent_label
+
+    project = get_object_or_404(Project, pk=pk, is_active=True)
+    pct = resolve_retention_for_project(project)
+    pct_str = str(int(pct)) if pct is not None else ''
+    return JsonResponse({
+        'ok': True,
+        'project_id': project.pk,
+        'project_name': project.name,
+        'retention_percent': pct_str,
+        'retention_label': retention_percent_label(pct),
+    })
 
 
 @login_required
@@ -1349,6 +1394,8 @@ def estimate_convert_to_invoice(request, pk):
     invoice = Invoice.objects.create(
         estimate=estimate,
         customer=estimate.customer,
+        project=estimate.project,
+        retention_percent=estimate.retention_percent,
         invoice_date=date.today(),
         due_date=date.today(),
         status='draft',
@@ -2301,6 +2348,10 @@ class SalesOrderDetailView(PermissionRequiredMixin, DetailView):
         context['project'] = so.project
         context['invoices'] = list(so.active_invoices().order_by('-created_at'))
         context['proforma_invoices'] = list(so.proforma_invoices.all())
+        from .project_retention import customer_retention_invoice_rows, retention_percent_label
+
+        context['retention_percent_label'] = retention_percent_label(so.retention_percent)
+        context['retention_invoices'] = customer_retention_invoice_rows(so.customer, project=so.project)
         from .estimate_pdf_groups import build_expense_type_totals, build_pdf_item_groups
 
         item_groups = build_pdf_item_groups(so)
@@ -2403,10 +2454,15 @@ class InvoiceCreateView(CreatePermissionMixin, CreateView):
             return self.form_invalid(form, items_formset)
     
     def form_valid(self, form, items_formset):
-        self.object = form.save()
+        from .project_retention import sync_invoice_retention_links
+
+        retention_amount = form.cleaned_data.get('retention_amount')
+        self.object = form.save(commit=False)
+        sync_invoice_retention_links(self.object)
+        self.object.save()
         items_formset.instance = self.object
         items_formset.save()
-        self.object.calculate_totals()
+        self.object.calculate_totals(retention_amount=retention_amount)
         messages.success(self.request, f'Invoice {self.object.invoice_number} created successfully.')
         inv = self.object
         est = inv.estimate if inv.estimate_id else None
@@ -2478,14 +2534,15 @@ class InvoiceUpdateView(UpdatePermissionMixin, UpdateView):
             return self.form_invalid(form, items_formset)
     
     def form_valid(self, form, items_formset):
-        # Save the main form first
-        self.object = form.save()
-        # Then save the formset with the instance
+        from .project_retention import sync_invoice_retention_links
+
+        retention_amount = form.cleaned_data.get('retention_amount')
+        self.object = form.save(commit=False)
+        sync_invoice_retention_links(self.object)
+        self.object.save()
         items_formset.instance = self.object
         items_formset.save()
-        # Recalculate totals
-        self.object.calculate_totals()
-        # Refresh from database to ensure we have latest data
+        self.object.calculate_totals(retention_amount=retention_amount)
         self.object.refresh_from_db()
         messages.success(self.request, f'Invoice {self.object.invoice_number} updated successfully.')
         return redirect('sales:invoice_detail', pk=self.object.pk)

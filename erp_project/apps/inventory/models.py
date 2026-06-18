@@ -1202,8 +1202,8 @@ class ConsumableRequest(BaseModel):
         Creates StockMovement record(s) for audit trail.
         Supports multi-item (ConsumableRequestItem) or legacy single item.
 
-        Project-linked requests only add items to the project Items table;
-        delivery/return and stock reduction happen on the project page.
+        Project-linked requests deliver stock to the project (FIFO stock-out) and
+        append new/additional consumable lines to the project Items table when needed.
         """
         from django.utils import timezone
         from datetime import date
@@ -1225,12 +1225,39 @@ class ConsumableRequest(BaseModel):
 
         if self.project_id:
             from apps.inventory.consumable_project_lines import sync_consumable_request_to_project_item_lines
+            from apps.projects.item_delivery import deliver_items_to_project
+            from apps.projects.models import Project
+
+            project = Project.objects.get(pk=self.project_id)
+            dispense_warehouse = warehouse or self.warehouse
+            if not dispense_warehouse:
+                first_item, first_qty = items_to_dispense[0]
+                stock_record = Stock.objects.filter(
+                    item=first_item,
+                    quantity__gte=first_qty,
+                    warehouse__status='active',
+                ).first()
+                if stock_record:
+                    dispense_warehouse = stock_record.warehouse
+                else:
+                    raise ValidationError(
+                        'No warehouse specified and no warehouse found with sufficient stock.'
+                    )
+
+            delivery_date = timezone.now().date()
+            for item, qty in items_to_dispense:
+                deliver_items_to_project(
+                    project,
+                    item,
+                    qty,
+                    delivery_date,
+                    user,
+                    warehouse=dispense_warehouse,
+                )
 
             sync_consumable_request_to_project_item_lines(self)
-            dispense_warehouse = warehouse or self.warehouse
             self.status = 'dispensed'
-            if dispense_warehouse:
-                self.warehouse = dispense_warehouse
+            self.warehouse = dispense_warehouse
             self.dispensed_by = user
             self.dispensed_date = timezone.now()
             if not self.approved_by:

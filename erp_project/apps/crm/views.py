@@ -671,6 +671,9 @@ class CustomerDetailView(PermissionRequiredMixin, DetailView):
             self.object.public_uploads.filter(is_active=True).order_by('-created_at')
         )
         context['customer_activity'] = get_customer_activity_feed(self.object)
+        from apps.sales.project_retention import customer_retention_invoice_rows
+
+        context['retention_invoices'] = customer_retention_invoice_rows(self.object)
         return context
 
 

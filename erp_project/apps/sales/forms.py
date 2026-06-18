@@ -293,15 +293,27 @@ class InvoiceForm(forms.ModelForm):
     
     class Meta:
         model = Invoice
-        fields = ['customer', 'estimate', 'invoice_date', 'due_date', 'status', 'notes']
+        fields = [
+            'customer', 'estimate', 'project', 'invoice_date', 'due_date',
+            'status', 'notes', 'retention_percent', 'retention_amount',
+        ]
         widgets = {
             'invoice_date': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}, format='%Y-%m-%d'),
             'due_date': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}, format='%Y-%m-%d'),
             'notes': forms.Textarea(attrs={'rows': 2, 'class': 'form-control'}),
+            'retention_percent': forms.HiddenInput(),
+            'retention_amount': forms.NumberInput(attrs={
+                'class': 'form-control',
+                'step': '0.01',
+                'min': '0',
+                'id': 'id_retention_amount',
+            }),
         }
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        from apps.projects.models import Project
+
         self.fields['customer'].queryset = Customer.objects.filter(is_active=True)
         self.fields['customer'].widget.attrs['class'] = 'form-select'
         self.fields['estimate'].queryset = Estimate.objects.filter(
@@ -309,8 +321,20 @@ class InvoiceForm(forms.ModelForm):
         )
         self.fields['estimate'].widget.attrs['class'] = 'form-select'
         self.fields['estimate'].required = False
+        self.fields['project'].queryset = Project.objects.filter(is_active=True).order_by('name', 'project_code')
+        self.fields['project'].widget.attrs['class'] = 'form-select'
+        self.fields['project'].required = False
+        self.fields['project'].empty_label = '— No project —'
         self.fields['status'].widget.attrs['class'] = 'form-select'
         self.fields['notes'].required = False
+        self.fields['retention_amount'].required = False
+        self.fields['retention_amount'].label = 'Retention amount (AED)'
+
+    def clean_retention_amount(self):
+        value = self.cleaned_data.get('retention_amount')
+        if value is None:
+            return Decimal('0.00')
+        return Decimal(str(value)).quantize(Decimal('0.01'))
 
 
 class InvoiceItemForm(forms.ModelForm):
