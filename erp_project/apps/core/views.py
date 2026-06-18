@@ -60,7 +60,7 @@ def dashboard(request):
             {'code': code, 'label': label, 'count': status_counts.get(code, 0)}
             for code, label in Project.STATUS_CHOICES
         ]
-        context['project_in_progress'] = status_counts.get('in_progress', 0)
+        context['project_in_progress'] = status_counts.get('ongoing', 0)
         context['project_completed'] = status_counts.get('completed', 0)
         context['project_open'] = pq.exclude(status__in=['completed', 'cancelled']).count()
     except Exception:

@@ -31,6 +31,27 @@
             </div>
         </div>
     </div>
+    {% if is_superuser or 'crm' in user_permissions %}
+    <div class="col-md-6">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body d-flex flex-column">
+                <div class="mb-3">
+                    <span class="badge bg-info-subtle text-info-emphasis mb-2">AI</span>
+                    <h5 class="fw-bold mb-2">Lead Forecasting</h5>
+                    <p class="text-muted mb-0">
+                        AI-driven conversion predictions, salesperson performance scoring,
+                        anomaly detection, and next-month pipeline forecast.
+                    </p>
+                </div>
+                <div class="mt-auto">
+                    <a href="{% url 'reports:lead_forecasting' %}" class="btn btn-info text-white">
+                        <i class="fas fa-chart-line me-2"></i>Open Lead Forecasting
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
     <div class="col-md-6">
         <div class="card border-0 shadow-sm h-100">
             <div class="card-body d-flex flex-column">
@@ -50,6 +71,27 @@
             </div>
         </div>
     </div>
+    {% if is_superuser or 'sales' in user_permissions %}
+    <div class="col-md-6">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body d-flex flex-column">
+                <div class="mb-3">
+                    <span class="badge bg-success-subtle text-success mb-2">AI</span>
+                    <h5 class="fw-bold mb-2">Sales Forecasting</h5>
+                    <p class="text-muted mb-0">
+                        AI-driven estimate win predictions, margin erosion alerts, project learning
+                        from completed jobs, and next-month sales outlook.
+                    </p>
+                </div>
+                <div class="mt-auto">
+                    <a href="{% url 'reports:sales_forecasting' %}" class="btn btn-success">
+                        <i class="fas fa-chart-pie me-2"></i>Open Sales Forecasting
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
     <div class="col-md-6">
         <div class="card border-0 shadow-sm h-100">
             <div class="card-body d-flex flex-column">
@@ -107,5 +149,26 @@
             </div>
         </div>
     </div>
+    {% if is_superuser or 'projects' in user_permissions %}
+    <div class="col-md-6">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body d-flex flex-column">
+                <div class="mb-3">
+                    <span class="badge bg-primary-subtle text-primary mb-2">AI</span>
+                    <h5 class="fw-bold mb-2">Project Forecasting</h5>
+                    <p class="text-muted mb-0">
+                        AI-driven risk scoring, completion and cost forecasts, executive brief,
+                        and anomaly detection across active projects.
+                    </p>
+                </div>
+                <div class="mt-auto">
+                    <a href="{% url 'reports:project_forecasting' %}" class="btn btn-primary">
+                        <i class="fas fa-brain me-2"></i>Open Project Forecasting
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
 </div>
 {% endblock %}

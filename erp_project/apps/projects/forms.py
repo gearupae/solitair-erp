@@ -48,6 +48,7 @@ class ProjectForm(forms.ModelForm):
         model = Project
         fields = [
             'name', 'description', 'customer', 'manager', 'status',
+            'category', 'sub_category',
             'start_date', 'end_date', 'budget', 'estimated_cost', 'members', 'technicians',
         ]
         widgets = {
@@ -76,7 +77,7 @@ class ProjectForm(forms.ModelForm):
         self.fields['technicians'].label = 'Technicians'
         self.fields['technicians'].label_from_instance = project_staff_choice_label
         for name, field in self.fields.items():
-            if name in ['customer', 'manager', 'status']:
+            if name in ['customer', 'manager', 'status', 'category', 'sub_category']:
                 field.widget.attrs['class'] = 'form-select'
             elif name in ('members', 'technicians'):
                 pass  # class set on widget
@@ -84,6 +85,15 @@ class ProjectForm(forms.ModelForm):
                 field.widget.attrs['class'] = 'form-control'
         self.fields['budget'].widget.attrs.setdefault('step', '0.01')
         self.fields['estimated_cost'].widget.attrs.setdefault('step', '0.01')
+
+        create_choices = list(Project.CREATE_STATUS_CHOICES)
+        if self.instance.pk:
+            current = self.instance.status
+            choice_values = {c[0] for c in create_choices}
+            if current and current not in choice_values:
+                label = dict(Project.STATUS_CHOICES).get(current, current.replace('_', ' ').title())
+                create_choices = [(current, label)] + create_choices
+        self.fields['status'].choices = create_choices
 
         from .conversion_approval import project_awaiting_conversion_approval
 

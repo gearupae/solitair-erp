@@ -60,6 +60,7 @@ class CustomerAdmin(admin.ModelAdmin):
                 'trade_license_document',
                 'website',
                 'job_type',
+                'scope',
                 'primary_project',
                 'payment_terms',
                 'credit_limit',

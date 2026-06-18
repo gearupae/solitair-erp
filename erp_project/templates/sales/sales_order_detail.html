@@ -1,0 +1,377 @@
+{% extends 'base.html' %}
+
+{% block extra_css %}
+<style>
+.so-overview-card .list-group-item {
+    border-left: 0;
+    border-right: 0;
+}
+.so-overview-card .list-group-item:first-child {
+    border-top: 0;
+}
+.so-link-card {
+    transition: box-shadow 0.15s ease;
+    height: 100%;
+}
+.so-link-card:hover {
+    box-shadow: 0 0.25rem 0.75rem rgba(0, 0, 0, 0.08);
+}
+.so-link-card .card-body {
+    padding: 1rem 1.15rem;
+}
+.so-link-icon {
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: 0.5rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+}
+.so-summary-row {
+    font-variant-numeric: tabular-nums;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb mb-2">
+            <li class="breadcrumb-item"><a href="{% url 'sales:sales_order_list' %}">Sales Orders</a></li>
+            <li class="breadcrumb-item active">{{ sales_order.display_sales_order_number }}</li>
+        </ol>
+    </nav>
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+        <div>
+            <h4 class="mb-1 fw-bold">{{ sales_order.display_sales_order_number }}</h4>
+            <span class="text-muted">
+                {% if customer.company %}{{ customer.company }}{% if customer.name %} · {{ customer.name }}{% endif %}{% else %}{{ customer.name }}{% endif %}
+            </span>
+            <span class="badge bg-success ms-2">Quotation Won</span>
+            {% if sales_order.revision_label %}
+            <span class="badge bg-info text-dark ms-1">Revision {{ sales_order.revision_label }}</span>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="card h-100">
+            <div class="card-body">
+                <p class="text-muted small mb-1">Order value</p>
+                <h5 class="mb-0 fw-bold">AED {{ sales_order.total_amount|floatformat:2 }}</h5>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card h-100">
+            <div class="card-body">
+                <p class="text-muted small mb-1">Estimate date</p>
+                <h6 class="mb-0 fw-semibold">{{ sales_order.date|date:"d/m/Y" }}</h6>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card h-100">
+            <div class="card-body">
+                <p class="text-muted small mb-1">Assigned to</p>
+                <h6 class="mb-0 fw-semibold">{% if sales_order.assigned_to %}{{ sales_order.assigned_to.get_full_name|default:sales_order.assigned_to.username }}{% else %}—{% endif %}</h6>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card h-100">
+            <div class="card-body">
+                <p class="text-muted small mb-1">Proforma billed</p>
+                <h6 class="mb-0 fw-semibold">AED {{ sales_order.proforma_billed_total|floatformat:2 }}</h6>
+                <p class="text-muted small mb-0 mt-1">Remaining AED {{ sales_order.proforma_remaining_total|floatformat:2 }}</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-6 col-lg-3">
+        <a href="{% url 'sales:estimate_detail' sales_order.pk %}" class="text-decoration-none text-body">
+            <div class="card so-link-card">
+                <div class="card-body d-flex align-items-center gap-3">
+                    <span class="so-link-icon bg-primary bg-opacity-10 text-primary"><i class="fas fa-file-invoice"></i></span>
+                    <div>
+                        <div class="text-muted small text-uppercase fw-semibold">Estimate</div>
+                        <div class="fw-semibold">{{ sales_order.display_estimate_number }}</div>
+                    </div>
+                </div>
+            </div>
+        </a>
+    </div>
+    <div class="col-md-6 col-lg-3">
+        <a href="{% url 'crm:customer_detail' customer.pk %}" class="text-decoration-none text-body">
+            <div class="card so-link-card">
+                <div class="card-body d-flex align-items-center gap-3">
+                    <span class="so-link-icon bg-info bg-opacity-10 text-info"><i class="fas fa-user"></i></span>
+                    <div>
+                        <div class="text-muted small text-uppercase fw-semibold">Customer</div>
+                        <div class="fw-semibold text-truncate">{{ customer.display_name }}</div>
+                    </div>
+                </div>
+            </div>
+        </a>
+    </div>
+    <div class="col-md-6 col-lg-3">
+        {% if project %}
+        <a href="{% url 'projects:project_detail' project.pk %}" class="text-decoration-none text-body">
+            <div class="card so-link-card">
+                <div class="card-body d-flex align-items-center gap-3">
+                    <span class="so-link-icon bg-success bg-opacity-10 text-success"><i class="fas fa-project-diagram"></i></span>
+                    <div>
+                        <div class="text-muted small text-uppercase fw-semibold">Project</div>
+                        <div class="fw-semibold text-truncate">{{ project.name }}</div>
+                    </div>
+                </div>
+            </div>
+        </a>
+        {% else %}
+        <div class="card so-link-card border-dashed opacity-75">
+            <div class="card-body d-flex align-items-center gap-3">
+                <span class="so-link-icon bg-light text-muted"><i class="fas fa-project-diagram"></i></span>
+                <div>
+                    <div class="text-muted small text-uppercase fw-semibold">Project</div>
+                    <div class="text-muted">Not linked yet</div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+    <div class="col-md-6 col-lg-3">
+        {% if sales_order.primary_invoice %}
+        <a href="{% url 'sales:invoice_detail' sales_order.primary_invoice.pk %}" class="text-decoration-none text-body">
+            <div class="card so-link-card">
+                <div class="card-body d-flex align-items-center gap-3">
+                    <span class="so-link-icon bg-warning bg-opacity-10 text-warning"><i class="fas fa-receipt"></i></span>
+                    <div>
+                        <div class="text-muted small text-uppercase fw-semibold">Invoice</div>
+                        <div class="fw-semibold">{{ sales_order.primary_invoice.invoice_number }}</div>
+                    </div>
+                </div>
+            </div>
+        </a>
+        {% else %}
+        <div class="card so-link-card border-dashed opacity-75">
+            <div class="card-body d-flex align-items-center gap-3">
+                <span class="so-link-icon bg-light text-muted"><i class="fas fa-receipt"></i></span>
+                <div>
+                    <div class="text-muted small text-uppercase fw-semibold">Invoice</div>
+                    <div class="text-muted">Not created yet</div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-8">
+        <div class="card mb-4">
+            <div class="card-header bg-transparent py-3">
+                <h6 class="mb-0 fw-semibold"><i class="fas fa-info-circle me-2 text-dark"></i>Order details</h6>
+            </div>
+            <div class="card-body pt-0">
+                <div class="row row-cols-1 row-cols-sm-2 row-cols-lg-3 g-4">
+                    <div class="col">
+                        <h6 class="text-muted mb-2 text-uppercase small fw-semibold">Sales order #</h6>
+                        <p class="fw-medium mb-0 text-success">{{ sales_order.display_sales_order_number }}</p>
+                    </div>
+                    <div class="col">
+                        <h6 class="text-muted mb-2 text-uppercase small fw-semibold">Estimate #</h6>
+                        <p class="mb-0"><a href="{% url 'sales:estimate_detail' sales_order.pk %}">{{ sales_order.display_estimate_number }}</a></p>
+                    </div>
+                    <div class="col">
+                        <h6 class="text-muted mb-2 text-uppercase small fw-semibold">Valid until</h6>
+                        <p class="mb-0">{{ sales_order.valid_until|date:"d/m/Y"|default:"—" }}</p>
+                    </div>
+                    <div class="col">
+                        <h6 class="text-muted mb-2 text-uppercase small fw-semibold">Prepared by</h6>
+                        <p class="mb-0">{{ sales_order.prepared_by|default:"—" }}</p>
+                    </div>
+                    {% if sales_order.type_of_occupancy %}
+                    <div class="col">
+                        <h6 class="text-muted mb-2 text-uppercase small fw-semibold">Type of occupancy</h6>
+                        <p class="mb-0">{{ sales_order.get_type_of_occupancy_display }}</p>
+                    </div>
+                    {% endif %}
+                    {% if sales_order.type_of_work %}
+                    <div class="col">
+                        <h6 class="text-muted mb-2 text-uppercase small fw-semibold">Type of work</h6>
+                        <p class="mb-0">{{ sales_order.get_type_of_work_display }}</p>
+                    </div>
+                    {% endif %}
+                    {% if sales_order.scope_of_work %}
+                    <div class="col">
+                        <h6 class="text-muted mb-2 text-uppercase small fw-semibold">Scope of work</h6>
+                        <p class="mb-0">{{ sales_order.scope_of_work_label }}</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        {% if proforma_invoices %}
+        <div class="card mb-4 so-overview-card">
+            <div class="card-header bg-transparent py-3 d-flex justify-content-between align-items-center">
+                <h6 class="mb-0 fw-semibold"><i class="fas fa-file-invoice-dollar me-2 text-dark"></i>Proforma invoices</h6>
+                <a href="{% url 'sales:estimate_detail' sales_order.pk %}" class="btn btn-sm btn-outline-primary">Manage on estimate</a>
+            </div>
+            <ul class="list-group list-group-flush">
+                {% for pf in proforma_invoices %}
+                <li class="list-group-item d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <div>
+                        <a href="{% url 'sales:estimate_proforma_invoice_pdf' sales_order.pk pf.pk %}" class="fw-semibold text-decoration-none" target="_blank">{{ pf.proforma_number }}</a>
+                        <div class="text-muted small">{{ pf.name|default:"—" }}</div>
+                    </div>
+                    <div class="text-end">
+                        <div class="fw-semibold">AED {{ pf.total_amount|floatformat:2 }}</div>
+                        <div class="text-muted small">{{ pf.created_at|date:"d/m/Y" }}</div>
+                    </div>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+
+        {% if invoices %}
+        <div class="card mb-4 so-overview-card">
+            <div class="card-header bg-transparent py-3">
+                <h6 class="mb-0 fw-semibold"><i class="fas fa-receipt me-2 text-dark"></i>Invoices</h6>
+            </div>
+            <ul class="list-group list-group-flush">
+                {% for inv in invoices %}
+                <li class="list-group-item d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <div>
+                        <a href="{% url 'sales:invoice_detail' inv.pk %}" class="fw-semibold text-decoration-none">{{ inv.invoice_number }}</a>
+                        <div class="text-muted small">{{ inv.get_status_display }}</div>
+                    </div>
+                    <div class="text-end">
+                        <div class="fw-semibold">AED {{ inv.total_amount|floatformat:2 }}</div>
+                        <div class="text-muted small">{{ inv.date|date:"d/m/Y" }}</div>
+                    </div>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+
+        <div class="card mb-4">
+            <div class="card-header bg-transparent py-3">
+                <h6 class="mb-0 fw-semibold"><i class="fas fa-list-ul me-2 text-dark"></i>Line items summary</h6>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Description</th>
+                                <th class="text-end">Qty</th>
+                                <th class="text-end">Amount</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in sales_order.items.all %}
+                            <tr>
+                                <td>{{ forloop.counter }}</td>
+                                <td>{{ item.description|truncatechars:80 }}</td>
+                                <td class="text-end">{{ item.quantity|floatformat:2 }}</td>
+                                <td class="text-end">AED {{ item.total|floatformat:2 }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="4" class="text-muted text-center py-3">No line items</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card mb-4">
+            <div class="card-header bg-transparent py-3">
+                <h6 class="mb-0 fw-semibold"><i class="fas fa-calculator me-2 text-dark"></i>Totals</h6>
+            </div>
+            <div class="card-body">
+                <div class="d-flex justify-content-between mb-2 so-summary-row">
+                    <span>Subtotal</span>
+                    <span>AED {{ sales_order.subtotal|floatformat:2 }}</span>
+                </div>
+                {% if sales_order.discount_applied and sales_order.discount_applied > 0 %}
+                <div class="d-flex justify-content-between mb-2 so-summary-row">
+                    <span>Discount (before VAT)</span>
+                    <span class="text-danger">− AED {{ sales_order.discount_applied|floatformat:2 }}</span>
+                </div>
+                {% endif %}
+                <div class="d-flex justify-content-between mb-2 so-summary-row">
+                    <span>VAT</span>
+                    <span>AED {{ sales_order.vat_amount|floatformat:2 }}</span>
+                </div>
+                <hr>
+                <div class="d-flex justify-content-between fw-bold so-summary-row">
+                    <span>Grand total</span>
+                    <span>AED {{ sales_order.total_amount|floatformat:2 }}</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header bg-transparent py-3">
+                <h6 class="mb-0 fw-semibold"><i class="fas fa-user me-2 text-dark"></i>Customer</h6>
+            </div>
+            <div class="card-body">
+                <p class="fw-semibold mb-1">{{ customer.display_name }}</p>
+                {% if customer.email %}<p class="mb-1 small"><i class="fas fa-envelope me-1 text-muted"></i>{{ customer.email }}</p>{% endif %}
+                {% if customer.phone %}<p class="mb-1 small"><i class="fas fa-phone me-1 text-muted"></i>{{ customer.phone }}</p>{% endif %}
+                {% if customer.trn %}<p class="mb-0 small text-muted">TRN: {{ customer.trn }}</p>{% endif %}
+                <a href="{% url 'crm:customer_detail' customer.pk %}" class="btn btn-sm btn-outline-primary mt-3 w-100">View customer</a>
+            </div>
+        </div>
+
+        {% if project %}
+        <div class="card mb-4">
+            <div class="card-header bg-transparent py-3">
+                <h6 class="mb-0 fw-semibold"><i class="fas fa-project-diagram me-2 text-dark"></i>Project</h6>
+            </div>
+            <div class="card-body">
+                <p class="fw-semibold mb-1">{{ project.name }}</p>
+                <p class="text-muted small mb-2">Status: {{ project.get_status_display }}</p>
+                {% if project.contract_value %}
+                <p class="mb-0 small">Contract value: AED {{ project.contract_value|floatformat:2 }}</p>
+                {% endif %}
+                <a href="{% url 'projects:project_detail' project.pk %}" class="btn btn-sm btn-outline-primary mt-3 w-100">View project</a>
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="card">
+            <div class="card-header bg-transparent py-3">
+                <h6 class="mb-0 fw-semibold"><i class="fas fa-external-link-alt me-2 text-dark"></i>Quick links</h6>
+            </div>
+            <div class="list-group list-group-flush">
+                <a href="{% url 'sales:estimate_detail' sales_order.pk %}" class="list-group-item list-group-item-action">
+                    <i class="fas fa-file-invoice me-2 text-primary"></i>Open estimate
+                </a>
+                <a href="{% url 'sales:estimate_pdf' sales_order.pk %}" class="list-group-item list-group-item-action" target="_blank">
+                    <i class="fas fa-file-pdf me-2 text-danger"></i>Estimate PDF
+                </a>
+                {% if sales_order.primary_invoice %}
+                <a href="{% url 'sales:invoice_detail' sales_order.primary_invoice.pk %}" class="list-group-item list-group-item-action">
+                    <i class="fas fa-receipt me-2 text-warning"></i>View invoice
+                </a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -24,7 +24,7 @@ def active_technician_projects(user):
     return Project.objects.filter(
         is_active=True,
         technicians=user,
-        status__in=['planning', 'in_progress'],
+        status__in=['planning', 'ongoing'],
     )
 
 

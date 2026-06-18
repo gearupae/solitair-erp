@@ -66,7 +66,7 @@
                         <i class="fas fa-tasks text-info"></i>
                     </div>
                     <div>
-                        <p class="text-muted mb-0 small">In Progress</p>
+                        <p class="text-muted mb-0 small">Ongoing</p>
                         <h5 class="mb-0 fw-bold">{{ in_progress_projects|default:0 }}</h5>
                     </div>
                 </div>
@@ -210,7 +210,7 @@
                         <td>{% if project.manager %}{{ project.manager.get_full_name|default:project.manager.username }}{% else %}-{% endif %}</td>
                         <td>
                             {% if project.status == 'completed' %}<span class="badge badge-active">Completed</span>
-                            {% elif project.status == 'in_progress' %}<span class="badge" style="background:#dbeafe;color:#1e40af;">In Progress</span>
+                            {% elif project.status == 'ongoing' %}<span class="badge" style="background:#dbeafe;color:#1e40af;">ongoing</span>
                             {% elif project.status == 'on_hold' %}<span class="badge" style="background:#fef3c7;color:#92400e;">On Hold</span>
                             {% else %}<span class="badge bg-secondary">{{ project.get_status_display }}</span>{% endif %}
                             {% if project.conversion_approval_status == 'pending' and project.status == 'draft' %}

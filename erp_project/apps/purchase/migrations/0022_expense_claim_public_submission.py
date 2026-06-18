@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('purchase', '0020_procurement_models'),
+        ('purchase', '0021_vendor_location_link'),
     ]
 
     operations = [

@@ -59,6 +59,7 @@
     margin-top: 0.75rem;
     padding-top: 0.75rem;
 }
+{% include 'projects/partials/checklist_styles.html' %}
 </style>
 {% endblock %}
 {% block content %}
@@ -194,46 +195,20 @@
                 <h6 class="mb-0 fw-semibold"><i class="fas fa-boxes me-2 text-dark"></i>Items</h6>
                 <div class="d-flex flex-wrap gap-2 align-items-center">
                     {% if can_deliver_items %}
-                    <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#itemDeliveryFormPanel" aria-expanded="false" title="Record delivery" aria-label="Record delivery">
-                        <i class="fas fa-truck"></i>
-                    </button>
                     <button class="btn btn-sm btn-outline-dark" type="button" data-bs-toggle="collapse" data-bs-target="#itemReturnFormPanel" aria-expanded="false" title="Return to stock" aria-label="Return to stock">
                         <i class="fas fa-undo"></i>
                     </button>
                     {% endif %}
-                    <a href="{% url 'inventory:consumable_request_create' %}?project={{ project.pk }}" class="btn btn-sm btn-primary">
+                    <button type="button" class="btn btn-sm btn-outline-primary d-none" id="projectBulkRequestBtn">
+                        <i class="fas fa-clipboard-list me-1"></i>Request selected items
+                    </button>
+                    <span class="small text-muted d-none" id="projectItemsBulkCount"></span>
+                    <a href="{% url 'inventory:consumable_request_create' %}?project={{ project.pk }}" class="btn btn-sm btn-primary" title="Request new items not on this list (approval via Consumables)">
                         <i class="fas fa-plus me-1"></i>Request items
                     </a>
                 </div>
             </div>
             {% if can_deliver_items %}
-            <div class="collapse {% if item_delivery_form.errors %}show{% endif %}" id="itemDeliveryFormPanel">
-                <div class="card-body border-bottom bg-light">
-                    <p class="small text-muted mb-2">Deliver inventory to this project. Quantity cannot exceed what is on the project Items list (from the estimate). Serial-tracked units are assigned automatically (FIFO).</p>
-                    <form method="post" class="row g-3 align-items-end">
-                        {% csrf_token %}
-                        <input type="hidden" name="action" value="record_item_delivery">
-                        <div class="col-md-5">
-                            <label class="form-label small fw-semibold">Item</label>
-                            {{ item_delivery_form.item }}
-                            {% if item_delivery_form.item.errors %}<div class="text-danger small">{{ item_delivery_form.item.errors|join:", " }}</div>{% endif %}
-                        </div>
-                        <div class="col-md-2">
-                            <label class="form-label small fw-semibold">Quantity</label>
-                            {{ item_delivery_form.quantity }}
-                            {% if item_delivery_form.quantity.errors %}<div class="text-danger small">{{ item_delivery_form.quantity.errors|join:", " }}</div>{% endif %}
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label small fw-semibold">Delivery date</label>
-                            {{ item_delivery_form.delivered_date }}
-                            {% if item_delivery_form.delivered_date.errors %}<div class="text-danger small">{{ item_delivery_form.delivered_date.errors|join:", " }}</div>{% endif %}
-                        </div>
-                        <div class="col-md-2">
-                            <button type="submit" class="btn btn-primary w-100"><i class="fas fa-check me-1"></i>Deliver</button>
-                        </div>
-                    </form>
-                </div>
-            </div>
             <div class="collapse {% if item_return_form.errors %}show{% endif %}" id="itemReturnFormPanel">
                 <div class="card-body border-bottom bg-light">
                     <p class="small text-muted mb-2">Return unused items from this project back to inventory. Serial units are returned LIFO (most recently delivered first). Stock levels update immediately.</p>
@@ -264,6 +239,11 @@
             {% endif %}
             <div class="card-body p-0">
                 {% if project_item_lines %}
+                <form id="projectBulkRequestForm" method="post" action="{% url 'projects:project_detail' project.pk %}" class="d-none">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="bulk_item_request">
+                    <div id="projectBulkRequestFields"></div>
+                </form>
                 <div class="table-responsive">
                     <table class="table mb-0 table-sm align-middle" id="projectItemsTable">
                         <thead class="table-light">
@@ -278,8 +258,9 @@
                                 <th class="text-center">Delivered</th>
                                 <th class="text-end">Net (excl. VAT)</th>
                                 {% if can_deliver_items %}
-                                <th class="text-center line-action-col d-none" style="min-width:10rem;">Deliver / Return</th>
+                                <th class="text-center line-action-col d-none" style="min-width:11rem;">Request qty / Return</th>
                                 {% endif %}
+                                <th class="text-center" style="min-width:4.5rem;">Request</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -287,7 +268,7 @@
                             {% ifchanged line.group_name %}
                             {% if line.group_name %}
                             <tr class="table-secondary">
-                                <td colspan="{% if can_deliver_items %}7{% else %}4{% endif %}" class="fw-semibold small text-uppercase">{{ line.group_name }}</td>
+                                <td colspan="{% if can_deliver_items %}8{% else %}5{% endif %}" class="fw-semibold small text-uppercase">{{ line.group_name }}</td>
                             </tr>
                             {% endif %}
                             {% endifchanged %}
@@ -297,13 +278,14 @@
                                 data-line-id="{{ line.pk }}"
                                 data-max-deliver="{{ line.max_deliver_qty }}"
                                 data-max-return="{{ line.max_return_qty }}"
+                                data-max-request="{{ line.max_request_qty|default:0 }}"
                                 data-can-return="{% if line.returnable_qty > 0 %}1{% else %}0{% endif %}"
                                 data-serial="{% if line.track_by_serial %}1{% else %}0{% endif %}"
                                 {% endif %}>
                                 {% if can_deliver_items %}
                                 <td class="text-center">
                                     {% if line.inventory_item_id %}
-                                    {% if line.max_deliver_qty > 0 or line.returnable_qty > 0 %}
+                                    {% if line.max_request_qty > 0 or line.returnable_qty > 0 %}
                                     <input type="checkbox" class="form-check-input project-item-select" aria-label="Select {{ line.inventory_item.name }}">
                                     {% endif %}
                                     {% endif %}
@@ -329,6 +311,9 @@
                                     {% else %}
                                     <span class="text-muted">0</span><span class="text-muted"> / {{ line.quantity|floatformat:0 }}</span>
                                     {% endif %}
+                                    {% if line.max_request_qty is not None %}
+                                    <br><small class="text-muted project-remaining-hint">Left to request: {% if line.requires_whole_quantity %}{{ line.max_request_qty|floatformat:0 }}{% else %}{{ line.max_request_qty|floatformat:2 }}{% endif %}</small>
+                                    {% endif %}
                                     {% else %}
                                     <span class="text-muted">—</span>
                                     {% endif %}
@@ -336,23 +321,20 @@
                                 <td class="text-end fw-medium text-nowrap">AED {{ line.line_net|floatformat:2 }}</td>
                                 {% if can_deliver_items %}
                                 <td class="line-action-cell d-none text-center">
-                                    {% if line.inventory_item_id and line.max_deliver_qty > 0 or line.returnable_qty > 0 %}
+                                    {% if line.inventory_item_id %}
                                     <div class="d-inline-flex flex-wrap gap-1 align-items-center justify-content-center project-line-actions">
-                                        {% if line.max_deliver_qty > 0 %}
-                                        <form method="post" class="d-flex gap-1 align-items-center project-inline-deliver-form m-0" id="deliver-form-{{ line.pk }}">
-                                            {% csrf_token %}
-                                            <input type="hidden" name="action" value="inline_deliver_item">
-                                            <input type="hidden" name="item_id" value="{{ line.inventory_item_id }}">
-                                            <input type="hidden" name="line_id" value="{{ line.pk }}">
-                                            <input type="number" name="quantity" class="form-control form-control-sm project-inline-qty"
+                                        {% if line.max_request_qty > 0 %}
+                                        <div class="d-flex flex-column align-items-center gap-1">
+                                            <input type="number"
+                                                   class="form-control form-control-sm project-inline-qty project-request-qty"
                                                    min="{% if line.track_by_serial %}1{% else %}0.01{% endif %}"
-                                                   max="{{ line.max_deliver_qty }}"
+                                                   max="{{ line.max_request_qty }}"
                                                    step="{% if line.track_by_serial %}1{% else %}0.01{% endif %}"
-                                                   value="{% if line.track_by_serial %}{{ line.max_deliver_qty|floatformat:0 }}{% else %}{{ line.max_deliver_qty }}{% endif %}"
-                                                   title="Max {{ line.max_deliver_qty }} for this line"
-                                                   required>
-                                        </form>
-                                        <button type="submit" form="deliver-form-{{ line.pk }}" class="btn btn-sm btn-success" title="Deliver to project"><i class="fas fa-check"></i></button>
+                                                   value="{% if line.track_by_serial %}{{ line.max_request_qty|floatformat:0 }}{% else %}{{ line.max_request_qty }}{% endif %}"
+                                                   title="Request qty (max {{ line.max_request_qty }})"
+                                                   aria-label="Request quantity">
+                                            <small class="text-muted project-row-remaining" style="font-size:0.65rem;">max {{ line.max_request_qty|floatformat:0 }}</small>
+                                        </div>
                                         {% endif %}
                                         {% if line.returnable_qty > 0 %}
                                         <form method="post" class="d-flex gap-1 align-items-center project-inline-return-form m-0" id="return-form-{{ line.pk }}">
@@ -374,6 +356,17 @@
                                     {% endif %}
                                 </td>
                                 {% endif %}
+                                <td class="text-center">
+                                    {% if line.inventory_item_id and line.max_request_qty > 0 %}
+                                    <a href="{% url 'inventory:consumable_request_create' %}?project={{ project.pk }}&amp;item={{ line.inventory_item_id }}"
+                                       class="btn btn-sm btn-outline-primary py-0 px-2"
+                                       title="Request this item via Consumables">
+                                        <i class="fas fa-clipboard-list"></i>
+                                    </a>
+                                    {% else %}
+                                    <span class="text-muted">—</span>
+                                    {% endif %}
+                                </td>
                             </tr>
                             {% endfor %}
                         </tbody>
@@ -568,6 +561,71 @@
                 </div>
             </div>
         </div>
+
+        <div class="card mb-4" id="projectChecklistCard">
+            <div class="card-header bg-transparent py-3 d-flex flex-wrap justify-content-between align-items-center gap-2">
+                <h6 class="mb-0 fw-semibold"><i class="fas fa-clipboard-check me-2 text-dark"></i>Checklist</h6>
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="btnCopyChecklistLink" data-url="{{ checklist_public_url }}">
+                    <i class="fas fa-copy me-1"></i>Copy public link
+                </button>
+            </div>
+            <div class="card-body pt-0">
+                {% if can_edit %}
+                <form id="checklistAddForm" class="row g-2 align-items-end mb-3" autocomplete="off">
+                    {% csrf_token %}
+                    <div class="col-md-8">
+                        <label class="form-label small mb-1">Item</label>
+                        <input type="text" name="checklist_text" id="checklistAddText" class="form-control form-control-sm" maxlength="500" placeholder="Enter checklist note…" required>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small mb-1">Date</label>
+                        <input type="date" name="checklist_date" id="checklistAddDate" class="form-control form-control-sm" value="{{ today|date:'Y-m-d' }}">
+                    </div>
+                    <div class="col-md-1">
+                        <label class="form-label small mb-1 d-none d-md-block">&nbsp;</label>
+                        <button type="submit" class="btn btn-primary btn-sm w-100" title="Add"><i class="fas fa-plus"></i></button>
+                    </div>
+                </form>
+                {% endif %}
+
+                <div class="checklist-panel mb-3">
+                    <div id="checklistItemsList">
+                        {% for item in checklist_items %}
+                        {% include 'projects/partials/checklist_item_row.html' with item=item show_delete=can_edit toggle_class='checklist-toggle' %}
+                        {% empty %}
+                        <div class="checklist-empty" id="checklistEmptyState">No checklist items yet.{% if can_edit %} Add one above.{% endif %}</div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                {% if checklist_uploads %}
+                <h6 class="small text-muted text-uppercase fw-semibold mb-2">Attachments</h6>
+                <div class="row g-3">
+                    {% for u in checklist_uploads %}
+                    <div class="col-md-4 col-sm-6">
+                        <div class="border rounded p-2 h-100">
+                            {% if u.is_probably_image %}
+                            <a href="{{ u.file.url }}" target="_blank" rel="noopener" class="d-block mb-2">
+                                <img src="{{ u.file.url }}" alt="" class="img-fluid rounded" style="max-height: 120px; width: 100%; object-fit: cover;">
+                            </a>
+                            {% else %}
+                            <div class="text-center py-3 mb-2 bg-light rounded">
+                                <i class="fas fa-file fa-2x text-secondary"></i>
+                            </div>
+                            {% endif %}
+                            <div class="small">
+                                <a href="{{ u.file.url }}" target="_blank" rel="noopener" class="fw-medium text-break d-block">{{ u.original_filename|default:u.file.name }}</a>
+                                {% if u.checklist_item %}<div class="text-muted mt-1">Re: {{ u.checklist_item.text|truncatechars:40 }}</div>{% endif %}
+                                {% if u.note %}<div class="text-muted mt-1">{{ u.note }}</div>{% endif %}
+                                <div class="text-muted mt-1">{{ u.created_at|date:"d/m/Y H:i" }}</div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
     </div>
     
     <div class="col-lg-4">
@@ -700,7 +758,9 @@
             <div class="card-body">
                 <h6 class="mb-3 fw-semibold"><i class="fas fa-flag me-2 text-dark"></i>Status</h6>
                 {% if project.status == 'completed' %}<span class="badge badge-active fs-6">Completed</span>
-                {% elif project.status == 'in_progress' %}<span class="badge fs-6" style="background:#dbeafe;color:#1e40af;">In Progress</span>
+                {% elif project.status == 'ongoing' %}<span class="badge fs-6" style="background:#dbeafe;color:#1e40af;">ongoing</span>
+                {% elif project.status == 'completed_payment_pending' %}<span class="badge fs-6" style="background:#fef3c7;color:#92400e;">Completed Payment Pending</span>
+                {% elif project.status == 'ongoing_payment_received' %}<span class="badge fs-6" style="background:#d1fae5;color:#065f46;">ongoing payment received</span>
                 {% else %}<span class="badge bg-secondary fs-6">{{ project.get_status_display }}</span>{% endif %}
                 {% if conversion_approval_pending %}
                 <p class="small text-warning mb-0 mt-2"><i class="fas fa-lock me-1"></i>Locked at <strong>Draft</strong> until conversion is approved. Status changes to <strong>Planning</strong> when the approver confirms.</p>
@@ -787,7 +847,7 @@
                         {% endfor %}
                     </ul>
                     <div class="mt-2 pt-2 border-top d-flex justify-content-between align-items-center">
-                        <span class="text-muted">Approved requests appear in Items.</span>
+                        <span class="text-muted">All requests are approved at <a href="{% url 'inventory:consumable_request_list' %}?project={{ project.pk }}">Consumables</a>.</span>
                         <a href="{% url 'inventory:consumable_request_list' %}?project={{ project.pk }}" class="small text-decoration-none">View all</a>
                     </div>
                     {% else %}
@@ -992,10 +1052,13 @@ $(function () {
     }
 
     var itemsTable = document.getElementById('projectItemsTable');
-    if (!itemsTable) return;
-
+    if (itemsTable) {
     var headerActionCols = itemsTable.querySelectorAll('thead .line-action-col');
     var selectAll = document.getElementById('projectItemSelectAll');
+    var bulkCount = document.getElementById('projectItemsBulkCount');
+    var bulkBtn = document.getElementById('projectBulkRequestBtn');
+    var bulkForm = document.getElementById('projectBulkRequestForm');
+    var bulkFields = document.getElementById('projectBulkRequestFields');
 
     function setRowSelected(row, selected) {
         row.querySelectorAll('.line-action-cell').forEach(function (cell) {
@@ -1007,11 +1070,23 @@ $(function () {
         });
     }
 
+    function syncBulkBar() {
+        var checked = itemsTable.querySelectorAll('.project-item-select:checked');
+        if (bulkBtn) {
+            bulkBtn.classList.toggle('d-none', checked.length === 0);
+        }
+        if (bulkCount) {
+            bulkCount.classList.toggle('d-none', checked.length === 0);
+            bulkCount.textContent = checked.length > 0 ? '(' + checked.length + ' selected)' : '';
+        }
+    }
+
     function syncHeaderActionCols() {
         var anySelected = itemsTable.querySelector('.project-item-select:checked');
         headerActionCols.forEach(function (th) {
             th.classList.toggle('d-none', !anySelected);
         });
+        syncBulkBar();
     }
 
     function syncSelectAll() {
@@ -1043,7 +1118,7 @@ $(function () {
         });
     }
 
-    itemsTable.querySelectorAll('.project-inline-deliver-form, .project-inline-return-form').forEach(function (form) {
+    itemsTable.querySelectorAll('.project-inline-return-form').forEach(function (form) {
         form.addEventListener('submit', function (e) {
             var input = form.querySelector('.project-inline-qty');
             if (!input) return;
@@ -1061,6 +1136,207 @@ $(function () {
             }
         });
     });
+
+    itemsTable.querySelectorAll('.project-request-qty').forEach(function (input) {
+        input.addEventListener('input', function () {
+            var row = input.closest('tr');
+            if (!row) return;
+            var max = parseFloat(row.getAttribute('data-max-request'), 10);
+            var val = parseFloat(input.value, 10);
+            var hint = row.querySelector('.project-row-remaining');
+            if (!hint || isNaN(max)) return;
+            if (isNaN(val) || val < 0) {
+                hint.textContent = 'max ' + max;
+                return;
+            }
+            var left = Math.max(0, max - val);
+            hint.textContent = left > 0 ? left + ' left after' : 'max ' + max;
+        });
+    });
+
+    if (bulkBtn && bulkForm && bulkFields) {
+        bulkBtn.addEventListener('click', function () {
+            var rows = [];
+            itemsTable.querySelectorAll('.project-item-select:checked').forEach(function (cb) {
+                var row = cb.closest('tr');
+                if (row) rows.push(row);
+            });
+            if (!rows.length) {
+                alert('Select at least one item.');
+                return;
+            }
+            bulkFields.innerHTML = '';
+            var hasRequestLine = false;
+            for (var i = 0; i < rows.length; i++) {
+                var row = rows[i];
+                var itemId = row.getAttribute('data-item-id');
+                var qtyInp = row.querySelector('.project-request-qty');
+                if (!itemId || !qtyInp) continue;
+                var val = parseFloat(qtyInp.value, 10);
+                var max = parseFloat(row.getAttribute('data-max-request'), 10);
+                var min = parseFloat(qtyInp.getAttribute('min'), 10);
+                if (isNaN(val) || val < min) {
+                    alert('Enter a valid request quantity for each selected item.');
+                    return;
+                }
+                if (!isNaN(max) && val > max) {
+                    alert('Request quantity cannot exceed remaining ' + max + ' for one or more items.');
+                    return;
+                }
+                hasRequestLine = true;
+                var idField = document.createElement('input');
+                idField.type = 'hidden';
+                idField.name = 'request_item_id';
+                idField.value = itemId;
+                bulkFields.appendChild(idField);
+                var qtyField = document.createElement('input');
+                qtyField.type = 'hidden';
+                qtyField.name = 'request_quantity';
+                qtyField.value = val;
+                bulkFields.appendChild(qtyField);
+            }
+            if (!hasRequestLine) {
+                alert('Selected rows must have a request quantity (items with nothing left to request cannot be bulk-requested).');
+                return;
+            }
+            bulkForm.submit();
+        });
+    }
+    }
+
+    var copyBtn = document.getElementById('btnCopyChecklistLink');
+    if (copyBtn) {
+        copyBtn.addEventListener('click', function () {
+            var url = copyBtn.getAttribute('data-url') || '';
+            if (!url) return;
+            function done() {
+                var orig = copyBtn.innerHTML;
+                copyBtn.innerHTML = '<i class="fas fa-check me-1"></i>Copied!';
+                setTimeout(function () { copyBtn.innerHTML = orig; }, 2000);
+            }
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(url).then(done).catch(function () {
+                    window.prompt('Copy this link:', url);
+                });
+            } else {
+                window.prompt('Copy this link:', url);
+            }
+        });
+    }
+
+    var toggleUrl = "{% url 'projects:project_checklist_toggle' project.pk %}";
+    var addUrl = "{% url 'projects:project_checklist_add' project.pk %}";
+    var deleteUrl = "{% url 'projects:project_checklist_delete' project.pk %}";
+    var csrfInput = document.querySelector('#checklistAddForm [name=csrfmiddlewaretoken]') || document.querySelector('[name=csrfmiddlewaretoken]');
+    var csrfToken = csrfInput ? csrfInput.value : '';
+
+    function bindChecklistRow(row) {
+        if (!row) return;
+        var toggleBtn = row.querySelector('.checklist-toggle');
+        if (toggleBtn && !toggleBtn.dataset.bound) {
+            toggleBtn.dataset.bound = '1';
+            toggleBtn.addEventListener('click', function () {
+                var itemId = toggleBtn.getAttribute('data-item-id');
+                var body = new FormData();
+                body.append('item_id', itemId);
+                fetch(toggleUrl, {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': csrfToken,
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                    body: body,
+                    credentials: 'same-origin',
+                })
+                    .then(function (r) { return r.json(); })
+                    .then(function (data) {
+                        if (!data.ok) return;
+                        row.classList.toggle('is-done', data.is_flagged_red);
+                        toggleBtn.setAttribute(
+                            'aria-label',
+                            data.is_flagged_red ? 'Mark incomplete' : 'Mark complete'
+                        );
+                    });
+            });
+        }
+        var deleteBtn = row.querySelector('.checklist-delete');
+        if (deleteBtn && !deleteBtn.dataset.bound) {
+            deleteBtn.dataset.bound = '1';
+            deleteBtn.addEventListener('click', function () {
+                if (!confirm('Remove this checklist item?')) return;
+                var itemId = deleteBtn.getAttribute('data-item-id');
+                var body = new FormData();
+                body.append('item_id', itemId);
+                fetch(deleteUrl, {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': csrfToken,
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                    body: body,
+                    credentials: 'same-origin',
+                })
+                    .then(function (r) { return r.json(); })
+                    .then(function (data) {
+                        if (!data.ok) return;
+                        row.remove();
+                        var list = document.getElementById('checklistItemsList');
+                        if (list && !list.querySelector('.checklist-item-row')) {
+                            var empty = document.createElement('div');
+                            empty.className = 'checklist-empty';
+                            empty.id = 'checklistEmptyState';
+                            empty.textContent = 'No checklist items yet. Add one above.';
+                            list.appendChild(empty);
+                        }
+                    });
+            });
+        }
+    }
+
+    document.querySelectorAll('#checklistItemsList .checklist-item-row').forEach(bindChecklistRow);
+
+    var addForm = document.getElementById('checklistAddForm');
+    if (addForm) {
+        addForm.addEventListener('submit', function (e) {
+            e.preventDefault();
+            var textInput = document.getElementById('checklistAddText');
+            var dateInput = document.getElementById('checklistAddDate');
+            var text = (textInput && textInput.value || '').trim();
+            if (!text) return;
+
+            var body = new FormData(addForm);
+            fetch(addUrl, {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': csrfToken,
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                body: body,
+                credentials: 'same-origin',
+            })
+                .then(function (r) {
+                    if (!r.ok) throw new Error('Request failed');
+                    return r.json();
+                })
+                .then(function (data) {
+                    if (!data.ok || !data.html) {
+                        alert(data.error || 'Could not add checklist item.');
+                        return;
+                    }
+                    var list = document.getElementById('checklistItemsList');
+                    var empty = document.getElementById('checklistEmptyState');
+                    if (empty) empty.remove();
+                    list.insertAdjacentHTML('beforeend', data.html);
+                    bindChecklistRow(list.lastElementChild);
+                    textInput.value = '';
+                    textInput.focus();
+                    if (dateInput) dateInput.value = new Date().toISOString().slice(0, 10);
+                })
+                .catch(function () {
+                    alert('Could not add checklist item. Please try again.');
+                });
+        });
+    }
 });
 
 </script>

@@ -19,7 +19,7 @@ def estimate_convert_to_project_block_reason(estimate) -> str:
     Empty string if conversion is allowed (status/permissions checked elsewhere).
     """
     if not estimate.allows_follow_on_conversion:
-        return 'Only approved or quotation-won estimates can be converted to a project.'
+        return 'Only quotation-won estimates can be converted to a project.'
     if estimate.project_id:
         project = estimate.project
         if project and getattr(project, 'status', None) == 'draft':

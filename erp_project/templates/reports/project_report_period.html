@@ -183,7 +183,7 @@
                         <td class="text-nowrap">{{ row.completed_tasks }}/{{ row.total_tasks }} <span class="text-muted">({{ row.task_progress_percent }}%)</span></td>
                         <td>
                             {% if row.status == 'completed' %}<span class="badge bg-success">{{ row.status_display }}</span>
-                            {% elif row.status == 'in_progress' %}<span class="badge bg-primary">{{ row.status_display }}</span>
+                            {% elif row.status == 'ongoing' %}<span class="badge bg-primary">{{ row.status_display }}</span>
                             {% elif row.status == 'on_hold' %}<span class="badge bg-warning text-dark">{{ row.status_display }}</span>
                             {% else %}<span class="badge bg-secondary">{{ row.status_display }}</span>{% endif %}
                         </td>
@@ -227,7 +227,7 @@
                         <td class="text-nowrap">{{ row.completed_tasks }}/{{ row.total_tasks }} <span class="text-muted">({{ row.task_progress_percent }}%)</span></td>
                         <td>
                             {% if row.status == 'completed' %}<span class="badge bg-success">{{ row.status_display }}</span>
-                            {% elif row.status == 'in_progress' %}<span class="badge bg-primary">{{ row.status_display }}</span>
+                            {% elif row.status == 'ongoing' %}<span class="badge bg-primary">{{ row.status_display }}</span>
                             {% elif row.status == 'on_hold' %}<span class="badge bg-warning text-dark">{{ row.status_display }}</span>
                             {% else %}<span class="badge bg-secondary">{{ row.status_display }}</span>{% endif %}
                         </td>

@@ -25,7 +25,10 @@ class VendorForm(forms.ModelForm):
     
     class Meta:
         model = Vendor
-        fields = ['name', 'contact_person', 'email', 'phone', 'address', 'status', 'notes']
+        fields = [
+            'name', 'contact_person', 'email', 'phone', 'address',
+            'trn', 'location_link', 'status', 'notes',
+        ]
         widgets = {
             'address': forms.Textarea(attrs={'rows': 2}),
             'notes': forms.Textarea(attrs={'rows': 2}),
@@ -40,6 +43,15 @@ class VendorForm(forms.ModelForm):
                 field.widget.attrs['class'] = 'form-select'
             else:
                 field.widget.attrs['class'] = 'form-control'
+            if field_name == 'trn':
+                field.label = 'TRN'
+                field.widget.attrs['placeholder'] = 'VAT / TRN number'
+            elif field_name == 'location_link':
+                field.label = 'Location link'
+                field.widget = forms.URLInput(attrs={
+                    **field.widget.attrs,
+                    'placeholder': 'https://maps.google.com/...',
+                })
 
 
 class PurchaseRequestForm(forms.ModelForm):

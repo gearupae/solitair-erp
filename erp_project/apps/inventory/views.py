@@ -41,6 +41,7 @@ from .consumable_inventory_reports import REPORT_BUILDERS, build_report
 from .consumable_report_export import export_report_pdf, export_report_xlsx
 from apps.purchase.models import ItemPurchaseReceiptHistory
 from .consumable_project_lines import sync_consumable_request_to_project_item_lines
+from .consumable_project_scope import apply_scope_to_consumable_request, project_scope_item_map
 from .serial_stock import annotate_item_available_stock, unregistered_on_hand_count, register_on_hand_model_numbers
 from .forms import (
     CategoryForm, WarehouseForm, ItemForm, StockAdjustmentForm,
@@ -1476,6 +1477,7 @@ def consumable_request_create(request):
             items_formset.instance = consumable_request
             items_formset.save()
             consumable_request.recalculate_total()
+            apply_scope_to_consumable_request(consumable_request)
             # Save attachments
             for f in request.FILES.getlist('attachments'):
                 ConsumableRequestAttachment.objects.create(
@@ -1485,9 +1487,7 @@ def consumable_request_create(request):
                     uploaded_by=request.user
                 )
             messages.success(request, f'Request {consumable_request.request_number} submitted!')
-            if consumable_request.project_id:
-                return redirect('projects:project_detail', pk=consumable_request.project_id)
-            return redirect('inventory:consumable_request_list')
+            return redirect('inventory:consumable_request_detail', pk=consumable_request.pk)
     else:
         initial = {}
         raw_project = (request.GET.get('project') or '').strip()
@@ -1500,17 +1500,57 @@ def consumable_request_create(request):
         form = ConsumableRequestForm(initial=initial)
         items_formset = ConsumableRequestItemFormSet()
     
-    return render(request, 'inventory/consumable_request_form.html', {
-        'title': 'Request items',
+    return render(
+        request,
+        'inventory/consumable_request_form.html',
+        _consumable_request_form_context(
+            request,
+            form=form,
+            items_formset=items_formset,
+            title='Request items',
+        ),
+    )
+
+
+def _consumable_request_form_context(request, *, form, items_formset, title, request_obj=None, is_edit=False):
+    """Shared template context for create/edit consumable request."""
+    from datetime import date
+    import json
+
+    project = None
+    if request.method == 'POST':
+        raw_pid = (request.POST.get('project') or '').strip()
+    else:
+        raw_pid = (request.GET.get('project') or '').strip()
+        if not raw_pid and request_obj and request_obj.project_id:
+            raw_pid = str(request_obj.project_id)
+
+    if raw_pid.isdigit():
+        from apps.projects.models import Project
+
+        project = Project.objects.filter(pk=int(raw_pid), is_active=True).first()
+
+    prefill_item_id = None
+    if not is_edit:
+        raw_item = (request.GET.get('item') or '').strip()
+        if raw_item.isdigit():
+            prefill_item_id = int(raw_item)
+
+    return {
+        'title': title,
         'form': form,
         'items_formset': items_formset,
+        'request_obj': request_obj,
+        'is_edit': is_edit,
         'today': date.today().isoformat(),
-    })
+        'linked_project': project,
+        'project_scope_items_json': json.dumps(project_scope_item_map(project) if project else {}),
+        'prefill_item_id': prefill_item_id,
+    }
 
 
 def _consumable_request_redirect(consumable_request):
-    if consumable_request.project_id:
-        return redirect('projects:project_detail', pk=consumable_request.project_id)
+    """All requests are managed from the consumables module."""
     return redirect('inventory:consumable_request_detail', pk=consumable_request.pk)
 
 
@@ -1540,6 +1580,7 @@ def consumable_request_edit(request, pk):
             form.save()
             items_formset.save()
             consumable_request.recalculate_total()
+            apply_scope_to_consumable_request(consumable_request)
             for f in request.FILES.getlist('attachments'):
                 ConsumableRequestAttachment.objects.create(
                     consumable_request=consumable_request,
@@ -1553,14 +1594,18 @@ def consumable_request_edit(request, pk):
         form = ConsumableRequestForm(instance=consumable_request)
         items_formset = ConsumableRequestItemFormSet(instance=consumable_request)
 
-    return render(request, 'inventory/consumable_request_form.html', {
-        'title': f'Edit request {consumable_request.request_number}',
-        'form': form,
-        'items_formset': items_formset,
-        'request_obj': consumable_request,
-        'is_edit': True,
-        'today': date.today().isoformat(),
-    })
+    return render(
+        request,
+        'inventory/consumable_request_form.html',
+        _consumable_request_form_context(
+            request,
+            form=form,
+            items_formset=items_formset,
+            title=f'Edit request {consumable_request.request_number}',
+            request_obj=consumable_request,
+            is_edit=True,
+        ),
+    )
 
 
 @login_required
@@ -1622,6 +1667,9 @@ def consumable_request_detail(request, pk):
             and consumable_request.requested_by == user
         ),
         'requires_project_delivery': consumable_request.uses_project_item_flow(),
+        'has_scope_notes': any(
+            li.scope_classification for li in consumable_request.items.all()
+        ),
     }
     
     # For admin: show approve/dispense forms

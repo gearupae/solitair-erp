@@ -1,0 +1,15 @@
+<div class="checklist-item-row{% if item.is_flagged_red %} is-done{% endif %}" data-item-id="{{ item.pk }}">
+    <button type="button"
+            class="checklist-status-btn {% if toggle_class %}{{ toggle_class }}{% else %}checklist-toggle{% endif %}"
+            data-item-id="{{ item.pk }}"
+            aria-label="{% if item.is_flagged_red %}Mark incomplete{% else %}Mark complete{% endif %}">
+        <span class="checklist-status-icon" aria-hidden="true"></span>
+    </button>
+    <span class="checklist-item-text">{{ item.text }}</span>
+    <span class="checklist-item-date">{{ item.item_date|date:"M j, Y" }}</span>
+    {% if show_delete %}
+    <button type="button" class="checklist-delete-btn checklist-delete" data-item-id="{{ item.pk }}" aria-label="Delete item">
+        <i class="far fa-trash-alt"></i>
+    </button>
+    {% endif %}
+</div>

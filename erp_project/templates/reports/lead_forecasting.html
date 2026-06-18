@@ -1,0 +1,393 @@
+{% extends 'base.html' %}
+{% load humanize static %}
+
+{% block extra_css %}
+<style>
+.lf-kpi { border-left: 4px solid var(--lf-accent, #153a5c); }
+.lf-kpi--conv { --lf-accent: #065f46; background: #ecfdf5; }
+.lf-kpi--value { --lf-accent: #153a5c; background: #f8fafc; }
+.lf-kpi--loss { --lf-accent: #991b1b; background: #fef2f2; }
+.lf-kpi--conf { --lf-accent: #92400e; background: #fffbeb; }
+
+.lf-brief {
+    background: #eef3fa;
+    border-left: 4px solid #e8c97a;
+    border-radius: 0.375rem;
+}
+.lf-brief__body { font-style: italic; line-height: 1.65; }
+
+.lf-prob {
+    display: inline-block;
+    border-radius: 9999px;
+    padding: 0.2rem 0.6rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+}
+.lf-prob-high { background: #d1fae5; color: #065f46; }
+.lf-prob-mid { background: #fef3c7; color: #92400e; }
+.lf-prob-low { background: #fee2e2; color: #991b1b; }
+
+.lf-table th {
+    white-space: nowrap;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    user-select: none;
+}
+.lf-table th .sort-icon { opacity: 0.35; font-size: 0.65rem; margin-left: 0.25rem; }
+.lf-table th.sorted .sort-icon { opacity: 1; }
+
+.lf-row-high { background: rgba(209, 250, 229, 0.35); }
+.lf-row-mid { background: rgba(254, 243, 199, 0.35); }
+.lf-row-low { background: rgba(254, 226, 226, 0.35); }
+
+.lf-anomaly { border-left: 3px solid #e5e7eb; padding-left: 0.75rem; }
+.lf-anomaly--high { border-left-color: #dc2626; }
+.lf-anomaly--medium { border-left-color: #2563eb; }
+
+.lf-next-month dt { font-weight: 600; }
+.lf-next-month dd { margin-bottom: 0.5rem; }
+
+@media print { .no-print { display: none !important; } }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <div>
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-1 small">
+                <li class="breadcrumb-item"><a href="{% url 'reports:index' %}">Reports</a></li>
+                <li class="breadcrumb-item active">Lead Forecasting</li>
+            </ol>
+        </nav>
+        <h4 class="mb-0 fw-bold">{{ title }}</h4>
+        <p class="text-muted small mb-0">
+            {{ start_date|date:"d/m/Y" }} – {{ end_date|date:"d/m/Y" }}
+            · {{ lead_count|intcomma }} lead{{ lead_count|pluralize }}
+            {% if from_cache %}<span class="badge bg-secondary-subtle text-secondary ms-1">Cached</span>{% endif %}
+        </p>
+    </div>
+    <div class="d-flex gap-2 flex-wrap no-print">
+        <a href="?start_date={{ start_date|date:'Y-m-d' }}&end_date={{ end_date|date:'Y-m-d' }}{% if stage_filter %}&stage={{ stage_filter }}{% endif %}{% if salesperson_filter %}&salesperson={{ salesperson_filter }}{% endif %}{% if source_filter %}&source={{ source_filter|urlencode }}{% endif %}&export=xlsx" class="btn btn-outline-success btn-sm">
+            <i class="fas fa-file-excel me-1"></i>Export Excel
+        </a>
+        <a href="?start_date={{ start_date|date:'Y-m-d' }}&end_date={{ end_date|date:'Y-m-d' }}{% if stage_filter %}&stage={{ stage_filter }}{% endif %}{% if salesperson_filter %}&salesperson={{ salesperson_filter }}{% endif %}{% if source_filter %}&source={{ source_filter|urlencode }}{% endif %}&export=pdf" class="btn btn-outline-danger btn-sm" target="_blank">
+            <i class="fas fa-file-pdf me-1"></i>Export PDF
+        </a>
+    </div>
+</div>
+
+{% if not openai_configured %}
+<div class="alert alert-warning no-print">
+    Configure OpenAI API key in <a href="{% url 'settings:company' %}">Settings → Company</a> for full AI analysis. Heuristic scoring is used as fallback.
+</div>
+{% endif %}
+
+<div class="card mb-3 border-0 shadow-sm no-print">
+    <div class="card-body py-2 px-3">
+        <form method="get" class="row g-2 align-items-end">
+            <div class="col-sm-6 col-md-2">
+                <label class="form-label small mb-1">Start date</label>
+                <input type="date" name="start_date" class="form-control form-control-sm" value="{{ start_date|date:'Y-m-d' }}">
+            </div>
+            <div class="col-sm-6 col-md-2">
+                <label class="form-label small mb-1">End date</label>
+                <input type="date" name="end_date" class="form-control form-control-sm" value="{{ end_date|date:'Y-m-d' }}">
+            </div>
+            <div class="col-sm-6 col-md-2">
+                <label class="form-label small mb-1">Pipeline stage</label>
+                <select name="stage" class="form-select form-select-sm">
+                    {% for s in stage_choices %}
+                    <option value="{{ s.id }}" {% if stage_filter == s.id|stringformat:"s" %}selected{% endif %}>{{ s.label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-sm-6 col-md-2">
+                <label class="form-label small mb-1">Salesperson</label>
+                <select name="salesperson" class="form-select form-select-sm">
+                    <option value="">All</option>
+                    <option value="none" {% if salesperson_filter == 'none' %}selected{% endif %}>Unassigned</option>
+                    {% for sp in salesperson_choices %}
+                    <option value="{{ sp.id }}" {% if salesperson_filter == sp.id|stringformat:"s" %}selected{% endif %}>{{ sp.label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-sm-6 col-md-2">
+                <label class="form-label small mb-1">Lead source</label>
+                <select name="source" class="form-select form-select-sm">
+                    {% for s in source_choices %}
+                    <option value="{{ s.id }}" {% if source_filter == s.id %}selected{% endif %}>{{ s.label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-sm-6 col-md-2 d-flex gap-1">
+                <button type="submit" class="btn btn-primary btn-sm flex-grow-1"><i class="fas fa-filter me-1"></i>Apply</button>
+                <a href="?start_date={{ start_date|date:'Y-m-d' }}&end_date={{ end_date|date:'Y-m-d' }}{% if stage_filter %}&stage={{ stage_filter }}{% endif %}{% if salesperson_filter %}&salesperson={{ salesperson_filter }}{% endif %}{% if source_filter %}&source={{ source_filter|urlencode }}{% endif %}&refresh=1" class="btn btn-outline-secondary btn-sm" title="Re-run AI analysis">
+                    <i class="fas fa-sync-alt"></i>
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Section 1: Forecast Summary Cards -->
+<div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+        <div class="card lf-kpi lf-kpi--conv border-0 shadow-sm h-100">
+            <div class="card-body py-3">
+                <div class="small text-muted">Predicted Conversions</div>
+                <div class="fw-bold fs-4">{{ summary.predicted_conversions|default:0 }}</div>
+                <div class="small text-muted">{{ summary.avg_confidence_pct|default:0 }}% confidence</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card lf-kpi lf-kpi--value border-0 shadow-sm h-100">
+            <div class="card-body py-3">
+                <div class="small text-muted">Pipeline Value Won</div>
+                <div class="fw-bold fs-5">AED {{ summary.predicted_pipeline_value_won|default:0|floatformat:0|intcomma }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card lf-kpi lf-kpi--loss border-0 shadow-sm h-100">
+            <div class="card-body py-3">
+                <div class="small text-muted">Predicted Loss Count</div>
+                <div class="fw-bold fs-4">{{ summary.predicted_loss_count|default:0 }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card lf-kpi lf-kpi--conf border-0 shadow-sm h-100">
+            <div class="card-body py-3">
+                <div class="small text-muted">AI Confidence Score</div>
+                <div class="fw-bold fs-4">{{ summary.avg_confidence_pct|default:0 }}%</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Section 2: AI Executive Brief -->
+<div class="card border-0 shadow-sm mb-4 lf-brief">
+    <div class="card-body">
+        <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+            <h6 class="fw-bold mb-0">AI Executive Brief</h6>
+            <button type="button" id="btnRegenerateBrief" class="btn btn-outline-primary btn-sm no-print">
+                <i class="fas fa-magic me-1"></i>Regenerate Brief
+            </button>
+        </div>
+        <div id="executiveBrief" class="lf-brief__body text-secondary mb-0">
+            {% if executive_brief %}{{ executive_brief }}{% else %}
+            <span class="text-muted">No brief available. Click Regenerate Brief to generate one.</span>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Section 3: Salesperson Performance -->
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white fw-bold">Salesperson Performance</div>
+    <div class="card-body p-0">
+        {% if sp_rows %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 lf-table" id="lfSpTable">
+                <thead class="table-light">
+                    <tr>
+                        <th data-sort="label">Salesperson <span class="sort-icon">↕</span></th>
+                        <th data-sort="active_leads">Active Leads <span class="sort-icon">↕</span></th>
+                        <th data-sort="predicted_conversions" data-sort-default="desc">Predicted Conversions <span class="sort-icon">↕</span></th>
+                        <th data-sort="conversion_rate_12mo">Conversion Rate (12 mo) <span class="sort-icon">↕</span></th>
+                        <th data-sort="avg_deal_size">Avg Deal Size <span class="sort-icon">↕</span></th>
+                        <th data-sort="trend_pct">Trend <span class="sort-icon">↕</span></th>
+                        <th data-sort="best_source">Best Source <span class="sort-icon">↕</span></th>
+                        <th data-sort="ai_verdict">AI Verdict <span class="sort-icon">↕</span></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in sp_rows %}
+                    <tr>
+                        <td class="fw-semibold">{{ row.label }}</td>
+                        <td data-value="{{ row.active_leads }}">{{ row.active_leads }}</td>
+                        <td data-value="{{ row.predicted_conversions }}">{{ row.predicted_conversions }}</td>
+                        <td data-value="{{ row.conversion_rate_12mo }}">{{ row.conversion_rate_display }}</td>
+                        <td data-value="{{ row.avg_deal_size }}">{{ row.avg_deal_display }}</td>
+                        <td data-value="{{ row.trend_pct }}" class="{{ row.trend_class }} fw-semibold">{{ row.trend_display }}</td>
+                        <td>{{ row.best_source }}</td>
+                        <td class="small">{{ row.ai_verdict }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center text-muted py-4">No salesperson data for the selected filters.</div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Section 4: Lead-Level Forecast -->
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white fw-bold">Lead-Level Forecast</div>
+    <div class="card-body p-0">
+        {% if lead_rows %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 lf-table" id="lfLeadTable">
+                <thead class="table-light">
+                    <tr>
+                        <th data-sort="lead_name">Lead <span class="sort-icon">↕</span></th>
+                        <th data-sort="salesperson">Salesperson <span class="sort-icon">↕</span></th>
+                        <th data-sort="stage_label">Stage <span class="sort-icon">↕</span></th>
+                        <th data-sort="days_in_stage">Days in Stage <span class="sort-icon">↕</span></th>
+                        <th data-sort="win_probability" data-sort-default="desc">Win Probability <span class="sort-icon">↕</span></th>
+                        <th data-sort="predicted_outcome">Predicted Outcome <span class="sort-icon">↕</span></th>
+                        <th data-sort="predicted_close_date">Predicted Close Date <span class="sort-icon">↕</span></th>
+                        <th data-sort="top_factor">Top Factor <span class="sort-icon">↕</span></th>
+                        <th data-sort="ai_action">AI Action <span class="sort-icon">↕</span></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in lead_rows %}
+                    <tr class="lf-row-{{ row.row_class }}">
+                        <td>
+                            <a href="{{ row.detail_url }}" target="_blank" rel="noopener" class="fw-semibold">{{ row.lead_name }}</a>
+                            <div class="small text-muted">{{ row.customer_number }}</div>
+                        </td>
+                        <td>{{ row.salesperson }}</td>
+                        <td>{{ row.stage_label }}</td>
+                        <td data-value="{{ row.days_in_stage|default:0 }}">{{ row.days_in_stage|default:"—" }}</td>
+                        <td data-value="{{ row.win_probability }}">
+                            <span class="lf-prob lf-prob-{{ row.row_class }}">{{ row.win_probability }}%</span>
+                        </td>
+                        <td>{{ row.predicted_outcome }}</td>
+                        <td>{{ row.predicted_close_date }}</td>
+                        <td class="small">{{ row.top_factor }}</td>
+                        <td class="small">{{ row.ai_action }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center text-muted py-5">
+            <i class="fas fa-user-clock fa-2x mb-2 opacity-50"></i>
+            <p class="mb-0">No active leads match the selected filters.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Section 5: Anomaly Detection -->
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white fw-bold">Pattern &amp; Anomaly Detection</div>
+    <div class="card-body">
+        {% if anomalies %}
+        <ul class="list-unstyled mb-0">
+            {% for a in anomalies %}
+            <li class="lf-anomaly lf-anomaly--{{ a.severity|default:'medium' }} mb-3">
+                <div class="d-flex gap-2 align-items-start">
+                    {% if a.severity == 'high' %}
+                    <i class="fas fa-exclamation-triangle text-danger mt-1"></i>
+                    {% else %}
+                    <i class="fas fa-info-circle text-primary mt-1"></i>
+                    {% endif %}
+                    <div>
+                        <div class="small text-muted">{{ a.category }}</div>
+                        <div>
+                            {% if a.detail_url %}
+                            <a href="{{ a.detail_url }}" target="_blank" rel="noopener" class="fw-semibold">Lead #{{ a.lead_id }}</a>
+                            {% elif a.salesperson_label %}
+                            <span class="fw-semibold">{{ a.salesperson_label }}</span>
+                            {% endif %}
+                            — {{ a.description }}
+                        </div>
+                        <div class="small text-muted mt-1"><em>Suggested:</em> {{ a.suggested_action }}</div>
+                    </div>
+                </div>
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <div class="text-center text-muted py-4">
+            <i class="fas fa-check-circle text-success fa-2x mb-2"></i>
+            <p class="mb-0">No anomalies detected for the current filter set.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Section 6: Next Month Forecast -->
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white fw-bold">Next Month Forecast</div>
+    <div class="card-body">
+        {% if next_month %}
+        <div class="row g-4">
+            <div class="col-md-6">
+                <dl class="lf-next-month mb-0">
+                    <dt>Expected new leads</dt>
+                    <dd>{{ next_month.expected_new_leads|default:0|intcomma }}</dd>
+                    <dt>Expected conversions</dt>
+                    <dd>{{ next_month.expected_conversions|default:0|intcomma }}</dd>
+                    <dt>Expected pipeline value won</dt>
+                    <dd>AED {{ next_month.expected_pipeline_value_won_aed|default:0|floatformat:0|intcomma }}</dd>
+                    <dt>Expected losses</dt>
+                    <dd>{{ next_month.expected_losses|default:0|intcomma }}</dd>
+                </dl>
+            </div>
+            <div class="col-md-6">
+                <div class="p-3 bg-light rounded">
+                    <div class="small text-muted mb-1">Confidence range</div>
+                    <div class="fw-bold fs-5">
+                        AED {{ next_month.value_low_aed|default:0|floatformat:0|intcomma }}
+                        –
+                        {{ next_month.value_high_aed|default:0|floatformat:0|intcomma }}
+                        <span class="text-muted fs-6 fw-normal">({{ next_month.confidence_pct|default:0 }}% confidence)</span>
+                    </div>
+                </div>
+                {% if next_month.key_assumptions %}
+                <div class="mt-3">
+                    <div class="small fw-semibold text-muted">Key assumptions</div>
+                    <ul class="small mb-0">
+                        {% for item in next_month.key_assumptions %}
+                        <li>{{ item }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% endif %}
+                {% if next_month.risks %}
+                <div class="mt-2">
+                    <div class="small fw-semibold text-muted">Risks</div>
+                    <ul class="small mb-0 text-danger">
+                        {% for item in next_month.risks %}
+                        <li>{{ item }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% else %}
+        <div class="text-muted">Next month forecast unavailable.</div>
+        {% endif %}
+    </div>
+</div>
+
+<form id="lfCsrfForm" class="d-none">{% csrf_token %}</form>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'reports/js/lead_forecasting.js' %}"></script>
+<script>
+window.LF_CONFIG = {
+    regenerateUrl: "{% url 'reports:lead_forecasting_regenerate_brief' %}",
+    filters: {
+        start_date: "{{ start_date|date:'Y-m-d' }}",
+        end_date: "{{ end_date|date:'Y-m-d' }}",
+        stage: "{{ stage_filter|escapejs }}",
+        salesperson: "{{ salesperson_filter|escapejs }}",
+        source: "{{ source_filter|escapejs }}"
+    }
+};
+</script>
+{% endblock %}

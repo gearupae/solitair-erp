@@ -62,7 +62,7 @@
                     <label class="form-label">Project</label>
                     {{ form.project }}
                     {% if form.project.errors %}<div class="text-danger small">{{ form.project.errors }}</div>{% endif %}
-                    <small class="text-muted">Link this request to an existing project (optional).</small>
+                    <small class="text-muted">Link to a project to compare each line with the project Items list. All requests are approved at <a href="{% url 'inventory:consumable_request_list' %}">Consumables</a>.</small>
                 </div>
                 <div class="col-12">
                     <label class="form-label">Notes</label>
@@ -72,6 +72,16 @@
         </div>
     </div>
     
+    {% if linked_project %}
+    <div class="alert alert-info mb-4">
+        <i class="fas fa-info-circle me-2"></i>
+        <strong>Project linked:</strong> {{ linked_project.project_code }} — {{ linked_project.name }}.
+        Items already on the project list are <strong>standard</strong> requests.
+        Items not on the list are flagged as <strong>new additions</strong>;
+        quantities above the proposed amount are flagged as <strong>additional quantity</strong>.
+    </div>
+    {% endif %}
+
     <div class="card mb-4">
         <div class="card-header d-flex justify-content-between align-items-center">
             <h6 class="mb-0 fw-semibold">Line Items</h6>
@@ -85,9 +95,10 @@
                 <table class="table mb-0">
                     <thead>
                         <tr>
-                            <th style="width:55%">Consumable Item</th>
-                            <th style="width:25%">Quantity</th>
-                            <th style="width:20%"></th>
+                            <th style="width:40%">Consumable Item</th>
+                            <th style="width:15%">Quantity</th>
+                            <th style="width:30%">Project scope</th>
+                            <th style="width:15%"></th>
                         </tr>
                     </thead>
                     <tbody id="itemsBody">
@@ -98,6 +109,7 @@
                                 {{ item_form.item }}
                             </td>
                             <td>{{ item_form.quantity }}</td>
+                            <td class="scope-hint-cell small text-muted align-middle">—</td>
                             <td class="text-center">
                                 {% if item_form.instance.pk %}
                                 <input type="checkbox" name="{{ item_form.prefix }}-DELETE" class="d-none delete-check"
@@ -140,6 +152,60 @@
 {% block extra_js %}
 <script>
 let formCount = {{ items_formset.total_form_count }};
+const projectScopeItems = {{ project_scope_items_json|safe }};
+const prefillItemId = {{ prefill_item_id|default:"null" }};
+
+function classifyLine(itemId, qty) {
+    if (!itemId) return { html: '<span class="text-muted">Select item</span>' };
+    const proposed = projectScopeItems[String(itemId)] || projectScopeItems[parseInt(itemId, 10)];
+    const q = parseFloat(qty);
+    if (!proposed) {
+        return {
+            html: '<span class="badge bg-warning text-dark">New addition</span><div class="mt-1">Not on project Items list.</div>'
+        };
+    }
+    const p = parseFloat(proposed);
+    if (isNaN(q) || q <= 0) {
+        return { html: '<span class="badge bg-light text-dark border">Standard</span><div class="mt-1">Proposed: ' + proposed + '</div>' };
+    }
+    if (q <= p) {
+        return {
+            html: '<span class="badge bg-light text-dark border">Standard</span><div class="mt-1">Within proposed (' + proposed + ').</div>'
+        };
+    }
+    const extra = (q - p).toFixed(2).replace(/\.?0+$/, '');
+    return {
+        html: '<span class="badge bg-info text-dark">+' + extra + ' additional</span><div class="mt-1">Proposed ' + proposed + '; request exceeds scope.</div>'
+    };
+}
+
+function updateScopeHint(row) {
+    const hint = row.querySelector('.scope-hint-cell');
+    if (!hint) return;
+    const itemSel = row.querySelector('select[name*="-item"]');
+    const qtyInp = row.querySelector('input[name*="-quantity"]');
+    if (!Object.keys(projectScopeItems).length) {
+        hint.innerHTML = '<span class="text-muted">Link a project to compare scope.</span>';
+        return;
+    }
+    const info = classifyLine(itemSel && itemSel.value, qtyInp && qtyInp.value);
+    hint.innerHTML = info.html;
+}
+
+function bindScopeRow(row) {
+    row.querySelectorAll('select[name*="-item"], input[name*="-quantity"]').forEach(function (el) {
+        el.addEventListener('change', function () { updateScopeHint(row); });
+        el.addEventListener('input', function () { updateScopeHint(row); });
+    });
+    updateScopeHint(row);
+}
+
+function refreshAllScopeHints() {
+    document.querySelectorAll('#itemsBody .item-row').forEach(function (row) {
+        if (row.style.display === 'none') return;
+        updateScopeHint(row);
+    });
+}
 
 function addItemRow() {
     const tbody = document.getElementById('itemsBody');
@@ -156,9 +222,11 @@ function addItemRow() {
     newRow.innerHTML = `
         <td><select name="items-${formCount}-item" class="form-select" id="id_items-${formCount}-item">${optionsHtml}</select></td>
         <td><input type="number" name="items-${formCount}-quantity" class="form-control" value="1" step="1" min="1"></td>
+        <td class="scope-hint-cell small text-muted align-middle">—</td>
         <td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger" onclick="removeItemRow(this)"><i class="fas fa-times"></i></button></td>
     `;
     tbody.appendChild(newRow);
+    bindScopeRow(newRow);
     formCount++;
     document.getElementById('id_items-TOTAL_FORMS').value = formCount;
 }
@@ -173,6 +241,30 @@ function removeItemRow(btn) {
         row.remove();
     }
 }
+
+document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('#itemsBody .item-row').forEach(bindScopeRow);
+    const projectSel = document.getElementById('id_project');
+    const isEdit = {{ is_edit|yesno:"true,false" }};
+    if (projectSel && !isEdit) {
+        projectSel.addEventListener('change', function () {
+            const pid = projectSel.value;
+            if (pid) {
+                const params = new URLSearchParams(window.location.search);
+                params.set('project', pid);
+                window.location = '{% url "inventory:consumable_request_create" %}?' + params.toString();
+            }
+        });
+    }
+    if (prefillItemId) {
+        const firstItem = document.querySelector('#itemsBody select[name*="-item"]');
+        if (firstItem && !firstItem.value) {
+            firstItem.value = String(prefillItemId);
+            firstItem.dispatchEvent(new Event('change'));
+        }
+    }
+    refreshAllScopeHints();
+});
 </script>
 {% endblock %}
 {% endblock %}

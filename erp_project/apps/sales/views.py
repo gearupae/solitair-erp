@@ -79,15 +79,6 @@ def _estimate_save_success_message(
     return msg
 
 
-def _set_estimate_creator_ip(estimate, request) -> None:
-    from apps.core.utils import get_client_ip
-
-    ip = get_client_ip(request)
-    if ip:
-        estimate.creator_ip = ip
-        estimate.save(update_fields=['creator_ip'])
-
-
 def _inventory_item_estimate_json(item):
     """Serialize inventory item bounds as effective AED amounts for estimate line validation."""
     return {
@@ -401,7 +392,7 @@ class EstimateListView(PermissionRequiredMixin, ListView):
         ).annotate(
             public_view_count=Count(
                 'public_views',
-                filter=Q(public_views__excluded=False),
+                filter=Q(public_views__is_counted=True),
             ),
         ).prefetch_related(
             Prefetch(
@@ -654,9 +645,14 @@ class EstimateCreateView(CreatePermissionMixin, CreateView):
                     items_formset = EstimateItemFormSet(request.POST, request.FILES, prefix='items')
                     return self.form_invalid(form, items_formset)
                 self.object = form.save()
+                from apps.core.utils import get_client_ip
+
+                creator_ip = get_client_ip(request)
+                if creator_ip:
+                    self.object.quotation_creator_ip = creator_ip
+                    self.object.save(update_fields=['quotation_creator_ip'])
                 apply_company_default_estimate_signatures(self.object, request.FILES)
                 bulk_create_estimate_items(self.object, rows, replace_existing=False)
-                _set_estimate_creator_ip(self.object, request)
                 messages.success(request, f'Estimate {self.object.estimate_number} created successfully.')
                 est = self.object
                 link = reverse('sales:estimate_detail', kwargs={'pk': est.pk})
@@ -681,11 +677,16 @@ class EstimateCreateView(CreatePermissionMixin, CreateView):
     
     def form_valid(self, form, items_formset):
         self.object = form.save()
+        from apps.core.utils import get_client_ip
+
+        creator_ip = get_client_ip(self.request)
+        if creator_ip:
+            self.object.quotation_creator_ip = creator_ip
+            self.object.save(update_fields=['quotation_creator_ip'])
         apply_company_default_estimate_signatures(self.object, self.request.FILES)
         items_formset.instance = self.object
         items_formset.save()
         self.object.calculate_totals()
-        _set_estimate_creator_ip(self.object, self.request)
         messages.success(self.request, f'Estimate {self.object.estimate_number} created successfully.')
         est = self.object
         link = reverse('sales:estimate_detail', kwargs={'pk': est.pk})
@@ -931,11 +932,16 @@ class EstimateDetailView(PermissionRequiredMixin, DetailView):
         context = super().get_context_data(**kwargs)
         context['title'] = f'Estimate: {self.object.estimate_number}'
         if (
-            not self.object.creator_ip
+            not self.object.quotation_creator_ip
             and self.object.created_by_id
             and self.object.created_by_id == self.request.user.id
         ):
-            _set_estimate_creator_ip(self.object, self.request)
+            from apps.core.utils import get_client_ip
+
+            creator_ip = get_client_ip(self.request)
+            if creator_ip:
+                self.object.quotation_creator_ip = creator_ip
+                self.object.save(update_fields=['quotation_creator_ip'])
         from .approval_rules import (
             get_estimate_status_actions,
             user_can_approve_estimate_edit,
@@ -1019,13 +1025,18 @@ class EstimateDetailView(PermissionRequiredMixin, DetailView):
                 Decimal('0.00'),
             )
         context['revision_snapshots'] = list(self.object.revision_snapshots.all())
-        self.object.ensure_public_view_token()
-        context['public_estimate_url'] = self.request.build_absolute_uri(
-            reverse('sales:public_estimate', kwargs={'token': self.object.public_view_token})
+        from .estimate_public_link import (
+            estimate_public_link_eligible,
+            public_quotation_url,
+            public_quotation_view_stats,
         )
-        from .estimate_public_view import public_view_stats
 
-        context['public_view_stats'] = public_view_stats(self.object)
+        if estimate_public_link_eligible(self.object):
+            context['show_public_quotation_link'] = True
+            context['public_quotation_url'] = public_quotation_url(self.request, self.object)
+            context['public_quotation_stats'] = public_quotation_view_stats(self.object)
+        else:
+            context['show_public_quotation_link'] = False
         return context
 
 
@@ -1145,7 +1156,6 @@ def estimate_duplicate(request, pk):
             project=None,
         )
         dest.save()
-        _set_estimate_creator_ip(dest, request)
 
         for it in items_qs:
             EstimateItem.objects.create(
@@ -1210,7 +1220,7 @@ def estimate_update_status(request, pk, status):
         messages.error(request, 'Invalid status.')
         return redirect('sales:estimate_detail', pk=pk)
 
-    if status in ('approved', 'rejected'):
+    if status in ('approved', 'rejected') and not request.user.is_superuser:
         from .approval_rules import user_can_approve_estimate_status
 
         if not user_can_approve_estimate_status(request.user, estimate):
@@ -1288,7 +1298,7 @@ def estimate_update_status(request, pk, status):
 
 @login_required
 def estimate_convert_to_invoice(request, pk):
-    """Convert an approved or quotation-won estimate to invoice."""
+    """Convert a quotation-won estimate to invoice."""
     estimate = get_object_or_404(Estimate, pk=pk)
 
     from .approval_rules import user_can_convert_estimate_follow_on
@@ -1301,7 +1311,7 @@ def estimate_convert_to_invoice(request, pk):
         return redirect('sales:estimate_detail', pk=pk)
 
     if not estimate.allows_follow_on_conversion:
-        messages.error(request, 'Only approved or quotation-won estimates can be converted to an invoice.')
+        messages.error(request, 'Only quotation-won estimates can be converted to an invoice.')
         return redirect('sales:estimate_detail', pk=pk)
 
     existing = estimate.primary_invoice
@@ -1352,7 +1362,7 @@ def estimate_convert_to_invoice(request, pk):
 
 @login_required
 def estimate_convert_to_project(request, pk):
-    """Create a project from an approved or quotation-won estimate; optionally copy estimate lines."""
+    """Create a project from a quotation-won estimate; optionally copy estimate lines."""
     if request.method != 'POST':
         return HttpResponseNotAllowed(['POST'])
 
@@ -1369,7 +1379,7 @@ def estimate_convert_to_project(request, pk):
         return redirect('sales:estimate_detail', pk=pk)
 
     if not estimate.allows_follow_on_conversion:
-        messages.error(request, 'Only approved or quotation-won estimates can be converted to a project.')
+        messages.error(request, 'Only quotation-won estimates can be converted to a project.')
         return redirect('sales:estimate_detail', pk=pk)
 
     from .estimate_conversion import estimate_convert_to_project_block_reason
@@ -1525,6 +1535,76 @@ def estimate_pdf(request, pk):
         'pdf_date_label': 'Quotation date',
     })
     return render(request, 'sales/estimate_pdf.html', context)
+
+
+def public_quotation_view(request, token):
+    """
+    Public quotation page — web-friendly layout (separate from PDF template).
+    Records view analytics (creator IP excluded from counts).
+    """
+    from django.http import Http404
+    from .estimate_public_link import get_estimate_for_public_token, record_public_quotation_view
+
+    estimate = get_estimate_for_public_token(token)
+    if not estimate:
+        raise Http404('Quotation not found.')
+
+    items_qs = EstimateItem.objects.select_related('inventory_item', 'tax_code').order_by('sort_order', 'id')
+    estimate = (
+        Estimate.objects.select_related('customer', 'assigned_to', 'project')
+        .prefetch_related(Prefetch('items', queryset=items_qs))
+        .get(pk=estimate.pk)
+    )
+
+    record_public_quotation_view(request, estimate)
+
+    context = _build_estimate_pdf_context(request, estimate)
+    context.update({
+        'public_quotation_download_url': reverse(
+            'sales:public_quotation_download', kwargs={'token': token}
+        ),
+    })
+    return render(request, 'sales/public_quotation.html', context)
+
+
+def public_quotation_download(request, token):
+    """Download quotation PDF via public share token (no login)."""
+    from django.http import Http404
+    from io import BytesIO
+
+    from django.http import FileResponse
+
+    from .estimate_public_link import get_estimate_for_public_token
+
+    estimate = get_estimate_for_public_token(token)
+    if not estimate:
+        raise Http404('Quotation not found.')
+
+    items_qs = EstimateItem.objects.select_related('inventory_item', 'tax_code').order_by('sort_order', 'id')
+    estimate = (
+        Estimate.objects.select_related('customer', 'assigned_to', 'project')
+        .prefetch_related(Prefetch('items', queryset=items_qs))
+        .get(pk=estimate.pk)
+    )
+
+    try:
+        pdf_bytes, err = render_estimate_quotation_pdf_bytes(request, estimate)
+    except Exception as exc:
+        return HttpResponse(f'Could not generate PDF: {exc}', status=500)
+
+    if not pdf_bytes:
+        return HttpResponse(err or 'Could not generate PDF.', status=500)
+
+    safe_name = ''.join(
+        c for c in estimate.display_estimate_number if c.isalnum() or c in ('-', '_')
+    ) or str(estimate.pk)
+    filename = f'Quotation_{safe_name}.pdf'
+    return FileResponse(
+        BytesIO(pdf_bytes),
+        as_attachment=True,
+        filename=filename,
+        content_type='application/pdf',
+    )
 
 
 @login_required
@@ -1929,7 +2009,7 @@ def estimate_set_status(request, pk):
         messages.error(request, 'Permission denied.')
         return redirect('sales:estimate_list')
 
-    if status in ('approved', 'rejected'):
+    if status in ('approved', 'rejected') and not request.user.is_superuser:
         if not user_can_approve_estimate_status(request.user, estimate):
             messages.error(request, 'Only the configured estimate approver can approve or reject this estimate.')
             next_url = request.POST.get('next', '').strip()
@@ -2033,6 +2113,178 @@ def inventory_item_json(request, pk):
         'maximum_selling_price': str(item.get_effective_maximum_selling_price()),
         'tax_code_id': item.tax_code_id,
     })
+
+
+# ============ SALES ORDER VIEWS (quotation-won estimates) ============
+
+SALES_ORDER_LIST_SORT_FIELDS = {
+    'sales_order_number': 'sales_order_number',
+    'estimate_number': 'estimate_number',
+    'customer': 'customer__company',
+    'date': 'date',
+    'amount': 'total_amount',
+}
+
+
+def _sales_order_list_sort_querystring(request_get, field):
+    params = request_get.copy()
+    params.pop('page', None)
+    if field not in SALES_ORDER_LIST_SORT_FIELDS:
+        field = 'date'
+    current = params.get('sort', 'date')
+    if current not in SALES_ORDER_LIST_SORT_FIELDS:
+        current = 'date'
+    order = (params.get('order') or 'desc').lower()
+    if order not in ('asc', 'desc'):
+        order = 'desc'
+    if current == field:
+        params['sort'] = field
+        params['order'] = 'asc' if order == 'desc' else 'desc'
+    else:
+        params['sort'] = field
+        params['order'] = 'desc'
+    return params.urlencode()
+
+
+class SalesOrderListView(PermissionRequiredMixin, ListView):
+    """List quotation-won estimates as sales orders."""
+    model = Estimate
+    template_name = 'sales/sales_order_list.html'
+    context_object_name = 'sales_orders'
+    module_name = 'sales'
+    permission_type = 'view'
+    paginate_by = 25
+
+    def _get_list_sort(self):
+        sort_key = self.request.GET.get('sort') or 'date'
+        if sort_key not in SALES_ORDER_LIST_SORT_FIELDS:
+            sort_key = 'date'
+        order = (self.request.GET.get('order') or 'desc').lower()
+        if order not in ('asc', 'desc'):
+            order = 'desc'
+        return sort_key, order
+
+    def get_queryset(self):
+        queryset = (
+            Estimate.objects.filter(is_active=True, status='quotation_won')
+            .select_related('customer', 'assigned_to', 'project', 'created_by')
+            .prefetch_related(
+                Prefetch(
+                    'invoices',
+                    queryset=Invoice.objects.exclude(status='cancelled').order_by('-created_at'),
+                ),
+                Prefetch(
+                    'proforma_invoices',
+                    queryset=EstimateProformaInvoice.objects.order_by('-created_at'),
+                ),
+            )
+        )
+        from apps.core.visibility import filter_estimates_for_user
+
+        queryset = filter_estimates_for_user(queryset, self.request.user)
+
+        search = self.request.GET.get('search')
+        if search:
+            queryset = queryset.filter(
+                Q(sales_order_number__icontains=search)
+                | Q(estimate_number__icontains=search)
+                | Q(customer__name__icontains=search)
+                | Q(customer__company__icontains=search)
+            )
+
+        sort_key, order = self._get_list_sort()
+        field = SALES_ORDER_LIST_SORT_FIELDS[sort_key]
+        prefix = '' if order == 'asc' else '-'
+        return queryset.order_by(f'{prefix}{field}', f'{prefix}pk')
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        sort_key, order_dir = self._get_list_sort()
+        context['sort_field'] = sort_key
+        context['sort_order'] = order_dir
+        context['sort_links'] = {
+            k: _sales_order_list_sort_querystring(self.request.GET, k)
+            for k in SALES_ORDER_LIST_SORT_FIELDS
+        }
+        context['title'] = 'Sales Orders'
+        base_qs = self.get_queryset()
+        context['total_sales_orders'] = base_qs.count()
+        context['total_amount'] = base_qs.aggregate(Sum('total_amount'))['total_amount__sum'] or 0
+        with_project = base_qs.filter(project__isnull=False).count()
+        context['with_project_count'] = with_project
+        context['with_invoice_count'] = base_qs.filter(invoices__isnull=False).distinct().count()
+        return context
+
+
+class SalesOrderDetailView(PermissionRequiredMixin, DetailView):
+    """Read-only overview for a quotation-won estimate (sales order)."""
+    model = Estimate
+    template_name = 'sales/sales_order_detail.html'
+    context_object_name = 'sales_order'
+    module_name = 'sales'
+    permission_type = 'view'
+
+    def get_queryset(self):
+        items_qs = EstimateItem.objects.select_related('inventory_item', 'tax_code').order_by(
+            'sort_order', 'id'
+        )
+        qs = (
+            Estimate.objects.filter(is_active=True, status='quotation_won')
+            .select_related(
+                'customer',
+                'assigned_to',
+                'project',
+                'created_by',
+                'updated_by',
+            )
+            .prefetch_related(
+                Prefetch('items', queryset=items_qs),
+                Prefetch(
+                    'proforma_invoices',
+                    queryset=EstimateProformaInvoice.objects.select_related('created_by'),
+                ),
+                Prefetch(
+                    'invoices',
+                    queryset=Invoice.objects.exclude(status='cancelled').order_by('-created_at'),
+                ),
+            )
+        )
+        from apps.core.visibility import filter_estimates_for_user
+
+        return filter_estimates_for_user(qs, self.request.user)
+
+    def dispatch(self, request, *args, **kwargs):
+        pk = kwargs.get('pk')
+        est = Estimate.objects.filter(pk=pk, is_active=True, status='quotation_won').first()
+        if est:
+            from apps.core.visibility import user_can_access_estimate
+
+            if not user_can_access_estimate(request.user, est):
+                messages.error(request, 'You do not have permission to view this sales order.')
+                return redirect('sales:sales_order_list')
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        so = self.object
+        context['title'] = f'Sales Order: {so.display_sales_order_number}'
+        context['estimate'] = so
+        context['customer'] = so.customer
+        context['project'] = so.project
+        context['invoices'] = list(so.active_invoices().order_by('-created_at'))
+        context['proforma_invoices'] = list(so.proforma_invoices.all())
+        from .estimate_pdf_groups import build_expense_type_totals, build_pdf_item_groups
+
+        item_groups = build_pdf_item_groups(so)
+        expense_type_totals = build_expense_type_totals(item_groups)
+        context['item_groups'] = item_groups
+        context['expense_type_totals'] = expense_type_totals
+        if expense_type_totals:
+            context['expense_type_grand_total'] = sum(
+                (row['line_total'] for row in expense_type_totals),
+                Decimal('0.00'),
+            )
+        return context
 
 
 # ============ INVOICE VIEWS ============

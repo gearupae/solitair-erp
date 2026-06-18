@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Project, Task, ProjectGatepass, ProjectPublicUpload, ProjectItemLine
+from .models import Project, Task, ProjectGatepass, ProjectPublicUpload, ProjectItemLine, ProjectChecklistItem, ProjectChecklistUpload
 
 
 class ProjectItemLineInline(admin.TabularInline):
@@ -42,5 +42,20 @@ class ProjectPublicUploadAdmin(admin.ModelAdmin):
     raw_id_fields = ['project']
     readonly_fields = ['created_at', 'updated_at', 'created_by', 'updated_by']
 
+
+@admin.register(ProjectChecklistItem)
+class ProjectChecklistItemAdmin(admin.ModelAdmin):
+    list_display = ['project', 'text', 'item_date', 'is_flagged_red', 'is_active']
+    list_filter = ['is_flagged_red', 'is_active']
+    search_fields = ['text', 'project__project_code']
+    raw_id_fields = ['project']
+
+
+@admin.register(ProjectChecklistUpload)
+class ProjectChecklistUploadAdmin(admin.ModelAdmin):
+    list_display = ['project', 'original_filename', 'checklist_item', 'created_at', 'is_active']
+    list_filter = ['is_active', 'created_at']
+    search_fields = ['original_filename', 'project__project_code']
+    raw_id_fields = ['project', 'checklist_item']
 
 
