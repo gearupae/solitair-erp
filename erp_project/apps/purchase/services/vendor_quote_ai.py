@@ -93,6 +93,8 @@ def _heuristic_analysis(pr: PurchaseRequest, attachments: list[PurchaseRequestAt
         bullets.append(f'Spread between quoted totals: AED {spread:,.2f}.')
 
     return {
+        'recommended_vendor': lowest['vendor'] if lowest else '',
+        'recommended_reason': bullets[0] if bullets else '',
         'lowest_total_vendor': lowest['vendor'] if lowest else '',
         'lowest_total_amount': lowest['total'] if lowest else None,
         'currency': 'AED',
@@ -157,12 +159,18 @@ def _fetch_analysis_from_openai(
         'Tasks:\n'
         '1. Identify each vendor quote and its grand total.\n'
         '2. State which vendor has the lowest overall total.\n'
-        '3. Match line items across quotes where possible; for each item show which vendor '
-        'has the lowest unit or line price.\n'
-        '4. Note gaps (items only in some quotes, unreadable files, missing totals).\n'
-        '5. Give a short executive summary and 2–4 practical recommendations.\n\n'
+        '3. Match line items across ALL quotes (even if descriptions differ slightly). '
+        'For EVERY item found in any quote, list each vendor\'s unit price and line total. '
+        'Mark is_lowest=true on the cheapest price for that item.\n'
+        '4. If different vendors win on different line items, note that a single-vendor '
+        'choice may not be cheapest — mention split sourcing only if materially cheaper.\n'
+        '5. Recommend which single vendor quote to accept (recommended_vendor) with a '
+        'one-sentence recommended_reason (lowest total, best coverage, or best value).\n'
+        '6. Note gaps (items only in some quotes, unreadable files, missing totals).\n'
+        '7. Give a short executive summary and 2–4 practical recommendations.\n\n'
         'Return ONLY valid JSON with this shape:\n'
-        '{"lowest_total_vendor": "<name>", "lowest_total_amount": <number|null>, '
+        '{"recommended_vendor": "<name>", "recommended_reason": "<one sentence>", '
+        '"lowest_total_vendor": "<name>", "lowest_total_amount": <number|null>, '
         '"currency": "AED", '
         '"vendor_totals": [{"vendor": "<name>", "total": <number|null>, '
         '"attachment_id": <int|null>, "source": "file|manual|both", "is_lowest": <bool>}], '
@@ -204,6 +212,8 @@ def _fetch_analysis_from_openai(
     data = _parse_json_content(content)
 
     data.setdefault('currency', 'AED')
+    data.setdefault('recommended_vendor', data.get('lowest_total_vendor') or '')
+    data.setdefault('recommended_reason', '')
     data.setdefault('vendor_totals', [])
     data.setdefault('item_comparisons', [])
     data.setdefault('summary', '')

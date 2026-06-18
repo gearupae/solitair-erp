@@ -197,68 +197,80 @@
                         </tbody>
                     </table>
                 </div>
-
-                {% if has_quote_attachments %}
-                <hr class="my-3">
-                <div id="vendor-quote-ai-section">
-                    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
-                        <h6 class="mb-0 fw-semibold">
-                            <i class="fas fa-robot text-primary me-1"></i>AI quote comparison
-                        </h6>
-                        <button type="button" class="btn btn-outline-primary btn-sm" id="btn-analyze-quotes">
-                            <i class="fas fa-magic me-1"></i>Analyze quotes
-                        </button>
-                    </div>
-                    {% if openai_configured %}
-                    <p class="text-muted small mb-2">
-                        Extracts line items and totals from attached PDF/Excel quotes and highlights the lowest overall quote and per-item prices.
-                    </p>
-                    {% endif %}
-                    <div id="vendor-quote-ai-loading" class="text-muted small py-2" style="display:none;">
-                        <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
-                        Analyzing quotations…
-                    </div>
-                    <div id="vendor-quote-ai-error" class="alert alert-danger py-2 small mb-2" style="display:none;"></div>
-                    <div id="vendor-quote-ai-results" style="display:none;">
-                        <div class="alert alert-success py-2 small mb-2" id="vendor-quote-ai-lowest"></div>
-                        <p class="small mb-2" id="vendor-quote-ai-summary"></p>
-                        <div class="table-responsive mb-2" id="vendor-quote-ai-totals-wrap" style="display:none;">
-                            <table class="table table-sm table-bordered mb-0">
-                                <thead class="table-light">
-                                    <tr>
-                                        <th>Vendor</th>
-                                        <th class="text-end">Quoted total</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="vendor-quote-ai-totals"></tbody>
-                            </table>
-                        </div>
-                        <div class="table-responsive mb-2" id="vendor-quote-ai-items-wrap" style="display:none;">
-                            <p class="small fw-semibold mb-1">Per-item price comparison</p>
-                            <table class="table table-sm table-bordered mb-0">
-                                <thead class="table-light">
-                                    <tr>
-                                        <th>Item</th>
-                                        <th>Lowest vendor</th>
-                                        <th>Details</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="vendor-quote-ai-items"></tbody>
-                            </table>
-                        </div>
-                        <ul class="small mb-2 ps-3" id="vendor-quote-ai-recommendations"></ul>
-                        <ul class="small mb-0 ps-3 text-warning" id="vendor-quote-ai-warnings"></ul>
-                        <p class="text-muted small mb-0 mt-2" id="vendor-quote-ai-meta"></p>
-                    </div>
-                    <p class="text-muted small mb-0" id="vendor-quote-ai-placeholder">
-                        Click <strong>Analyze quotes</strong> to compare attached vendor quotations.
-                    </p>
-                </div>
-                {% endif %}
             </div>
         </div>
     </div>
 </div>
+
+{% if has_quote_attachments %}
+<div class="card mb-4 border-primary border-opacity-25" id="vendor-quote-ai-section">
+    <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <h6 class="mb-0 fw-semibold">
+            <i class="fas fa-robot text-primary me-1"></i>AI quote comparison
+        </h6>
+        <button type="button" class="btn btn-outline-primary btn-sm" id="btn-analyze-quotes">
+            <i class="fas fa-magic me-1"></i>Analyze quotes
+        </button>
+    </div>
+    <div class="card-body">
+        {% if openai_configured %}
+        <p class="text-muted small mb-3">
+            Reads attached PDF/Excel quotes, compares totals and every line item across vendors,
+            and recommends which quote to accept. When item prices differ by vendor, the per-item
+            table below shows the lowest price for each line.
+        </p>
+        {% else %}
+        <p class="text-muted small mb-3">
+            OpenAI is not configured — analysis will compare manually entered vendor totals only.
+            Add your API key in Settings → Company for full quote file extraction.
+        </p>
+        {% endif %}
+        <div id="vendor-quote-ai-loading" class="text-muted small py-2" style="display:none;">
+            <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+            Reading quote files and comparing prices…
+        </div>
+        <div id="vendor-quote-ai-error" class="alert alert-danger py-2 small mb-2" style="display:none;"></div>
+        <div id="vendor-quote-ai-results" style="display:none;">
+            <div class="alert alert-primary py-2 small mb-2" id="vendor-quote-ai-recommend" style="display:none;"></div>
+            <div class="alert alert-success py-2 small mb-2" id="vendor-quote-ai-lowest"></div>
+            <p class="small mb-3" id="vendor-quote-ai-summary"></p>
+            <div class="table-responsive mb-3" id="vendor-quote-ai-totals-wrap" style="display:none;">
+                <p class="small fw-semibold mb-1">Overall quote totals</p>
+                <table class="table table-sm table-bordered mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Vendor</th>
+                            <th class="text-end">Quoted total</th>
+                        </tr>
+                    </thead>
+                    <tbody id="vendor-quote-ai-totals"></tbody>
+                </table>
+            </div>
+            <div class="table-responsive mb-3" id="vendor-quote-ai-items-wrap" style="display:none;">
+                <p class="small fw-semibold mb-1">Per-item price comparison</p>
+                <table class="table table-sm table-bordered mb-0" id="vendor-quote-ai-items-table">
+                    <thead class="table-light" id="vendor-quote-ai-items-head"></thead>
+                    <tbody id="vendor-quote-ai-items"></tbody>
+                </table>
+            </div>
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <p class="small fw-semibold mb-1">Recommendations</p>
+                    <ul class="small mb-0 ps-3" id="vendor-quote-ai-recommendations"></ul>
+                </div>
+                <div class="col-md-6">
+                    <p class="small fw-semibold mb-1 text-warning">Warnings / notes</p>
+                    <ul class="small mb-0 ps-3 text-warning" id="vendor-quote-ai-warnings"></ul>
+                </div>
+            </div>
+            <p class="text-muted small mb-0 mt-3" id="vendor-quote-ai-meta"></p>
+        </div>
+        <p class="text-muted small mb-0" id="vendor-quote-ai-placeholder">
+            Click <strong>Analyze quotes</strong> to compare attached vendor quotations.
+        </p>
+    </div>
+</div>
+{% endif %}
 
 {% if can_reject or can_return %}
 <div class="card mb-4">
@@ -323,6 +335,19 @@
         placeholder.style.display = 'none';
         results.style.display = 'block';
 
+        const recommendEl = document.getElementById('vendor-quote-ai-recommend');
+        if (data.recommended_vendor) {
+            let html = '<strong><i class="fas fa-check-circle me-1"></i>Recommended quote:</strong> '
+                + escapeHtml(data.recommended_vendor);
+            if (data.recommended_reason) {
+                html += ' — ' + escapeHtml(data.recommended_reason);
+            }
+            recommendEl.innerHTML = html;
+            recommendEl.style.display = 'block';
+        } else {
+            recommendEl.style.display = 'none';
+        }
+
         const lowestEl = document.getElementById('vendor-quote-ai-lowest');
         if (data.lowest_total_vendor) {
             lowestEl.innerHTML = '<strong>Lowest overall quote:</strong> '
@@ -354,23 +379,62 @@
         }
 
         const itemsWrap = document.getElementById('vendor-quote-ai-items-wrap');
+        const itemsHead = document.getElementById('vendor-quote-ai-items-head');
         const itemsBody = document.getElementById('vendor-quote-ai-items');
+        itemsHead.innerHTML = '';
         itemsBody.innerHTML = '';
         const items = data.item_comparisons || [];
         if (items.length) {
+            const vendorNames = [];
+            const vendorSet = new Set();
+            (data.vendor_totals || []).forEach(v => {
+                if (v.vendor && !vendorSet.has(v.vendor)) {
+                    vendorSet.add(v.vendor);
+                    vendorNames.push(v.vendor);
+                }
+            });
+            items.forEach(row => {
+                (row.vendor_prices || []).forEach(vp => {
+                    if (vp.vendor && !vendorSet.has(vp.vendor)) {
+                        vendorSet.add(vp.vendor);
+                        vendorNames.push(vp.vendor);
+                    }
+                });
+            });
+
+            const headTr = document.createElement('tr');
+            headTr.innerHTML = '<th>Item</th><th class="text-center">Qty</th><th>Unit</th>';
+            vendorNames.forEach(v => {
+                headTr.innerHTML += '<th class="text-end">' + escapeHtml(v) + '</th>';
+            });
+            headTr.innerHTML += '<th>Lowest</th>';
+            itemsHead.appendChild(headTr);
+
             items.forEach(row => {
                 const tr = document.createElement('tr');
-                const details = (row.vendor_prices || []).map(vp => {
-                    let s = (vp.vendor || '?') + ': ';
-                    if (vp.unit_price != null) s += fmtMoney(vp.unit_price, data.currency) + '/unit';
-                    else if (vp.line_total != null) s += fmtMoney(vp.line_total, data.currency);
-                    else s += '—';
-                    if (vp.is_lowest) s += ' ✓';
-                    return s;
-                }).join('; ');
-                tr.innerHTML = '<td>' + escapeHtml(row.item_description || '—') + '</td>'
-                    + '<td>' + escapeHtml(row.lowest_vendor || '—') + '</td>'
-                    + '<td class="small">' + escapeHtml(details) + '</td>';
+                let rowHtml = '<td>' + escapeHtml(row.item_description || '—') + '</td>'
+                    + '<td class="text-center">' + (row.quantity != null ? escapeHtml(String(row.quantity)) : '—') + '</td>'
+                    + '<td>' + escapeHtml(row.unit || '—') + '</td>';
+                const priceMap = {};
+                (row.vendor_prices || []).forEach(vp => {
+                    priceMap[vp.vendor] = vp;
+                });
+                vendorNames.forEach(v => {
+                    const vp = priceMap[v];
+                    let cell = '—';
+                    let cls = 'text-end';
+                    if (vp) {
+                        if (vp.unit_price != null) {
+                            cell = fmtMoney(vp.unit_price, data.currency) + '/unit';
+                        } else if (vp.line_total != null) {
+                            cell = fmtMoney(vp.line_total, data.currency);
+                        }
+                        if (vp.is_lowest) cls += ' table-success fw-semibold';
+                    }
+                    rowHtml += '<td class="' + cls + '">' + escapeHtml(cell) + '</td>';
+                });
+                rowHtml += '<td class="small">' + escapeHtml(row.lowest_vendor || '—') + '</td>';
+                tr.innerHTML = rowHtml;
                 itemsBody.appendChild(tr);
             });
             itemsWrap.style.display = 'block';
@@ -450,6 +514,9 @@
     }
 
     window.triggerVendorQuoteAnalysis = function() { runAnalysis(true); };
+
+    // Auto-analyze when page loads with attached quotes
+    runAnalysis(false);
 })();
 </script>
 {% endif %}
