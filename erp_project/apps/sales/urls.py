@@ -5,6 +5,7 @@ from django.urls import path
 from django.views.generic import RedirectView
 
 from . import views
+from . import views_estimate_public
 
 app_name = 'sales'
 
@@ -48,6 +49,7 @@ urlpatterns = [
         name='estimate_proforma_edit',
     ),
     path('estimates/<int:pk>/send-email/', views.estimate_send_email, name='estimate_send_email'),
+    path('quote/<uuid:token>/', views_estimate_public.public_estimate_view, name='public_estimate'),
     path('api/inventory-item/<int:pk>/', views.inventory_item_json, name='inventory_item_json'),
 
     # Legacy /quotations/ URLs → estimates (permanent redirect)

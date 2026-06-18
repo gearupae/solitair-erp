@@ -4,6 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ page_title|default:"Quotation" }}</title>
+    {% if is_public_view %}
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    {% endif %}
     <style>
         @page {
             size: A4;
@@ -41,6 +46,199 @@
             line-height: 1.45;
             color: var(--ink-soft);
             background: var(--white);
+        }
+
+        body.public-quote-page {
+            --ink: #0f172a;
+            --ink-soft: #334155;
+            --graphite: #64748b;
+            --silver: #94a3b8;
+            --mist: #e2e8f0;
+            --paper: #f8fafc;
+            --white: #ffffff;
+            --accent: #1e40af;
+            --accent-soft: #3b82f6;
+            --accent-tint: #eff6ff;
+            --accent-border: #bfdbfe;
+            --head-bg: #1e3a8a;
+            --head-bg-light: #1e40af;
+            --row-alt: #f1f5f9;
+            --discount: #dc2626;
+
+            font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+            font-size: 12px;
+            background: #0f172a;
+            background: linear-gradient(165deg, #0f172a 0%, #1e293b 38%, #334155 100%);
+            min-height: 100vh;
+            padding: 0 0 48px;
+            color: var(--ink-soft);
+        }
+
+        body.public-quote-page .public-quote-shell {
+            max-width: 920px;
+            margin: 0 auto;
+            padding: 20px 16px 0;
+        }
+
+        body.public-quote-page .public-quote-topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 16px;
+            padding: 0 4px;
+        }
+
+        body.public-quote-page .public-quote-topbar-label {
+            color: rgba(255, 255, 255, 0.72);
+            font-size: 11px;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+            font-weight: 600;
+        }
+
+        body.public-quote-page .print-actions {
+            position: static;
+            max-width: none;
+            margin: 0;
+            justify-content: flex-end;
+        }
+
+        body.public-quote-page .print-btn {
+            background: #ffffff;
+            color: #1e3a8a;
+            border: none;
+            border-radius: 999px;
+            padding: 10px 20px;
+            box-shadow: 0 4px 14px rgba(15, 23, 42, 0.25);
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
+        }
+
+        body.public-quote-page .print-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 18px rgba(15, 23, 42, 0.3);
+        }
+
+        body.public-quote-page .estimate-container {
+            box-shadow: 0 24px 48px rgba(15, 23, 42, 0.28);
+            border-radius: 16px;
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            padding: 24px 24px 32px;
+        }
+
+        body.public-quote-page .title-strip {
+            background: linear-gradient(135deg, #1e3a8a 0%, #1d4ed8 55%, #2563eb 100%);
+            color: #fff;
+            border: none;
+            border-radius: 12px;
+            padding: 22px 24px;
+            margin-bottom: 22px;
+        }
+
+        body.public-quote-page .estimate-title-text {
+            color: #fff;
+            font-size: 26px;
+            letter-spacing: 0.12em;
+        }
+
+        body.public-quote-page .estimate-number {
+            color: #fde68a;
+            font-size: 18px;
+        }
+
+        body.public-quote-page .addr-grid {
+            border-radius: 12px;
+            overflow: hidden;
+            border-color: #dbeafe;
+            background: #f8fafc;
+        }
+
+        body.public-quote-page .addr-block + .addr-block {
+            border-left-color: #dbeafe;
+        }
+
+        body.public-quote-page .addr-label {
+            color: #1e40af;
+        }
+
+        body.public-quote-page .addr-name {
+            color: #0f172a;
+        }
+
+        body.public-quote-page .items-table thead th {
+            background: #1e3a8a;
+            color: #fff;
+            border-color: #1e40af;
+            border-bottom-color: #3b82f6;
+        }
+
+        body.public-quote-page .items-table tbody tr:nth-child(even) {
+            background: #f8fafc;
+        }
+
+        body.public-quote-page .group-row td {
+            background: #e0e7ff !important;
+            color: #1e3a8a;
+        }
+
+        body.public-quote-page .totals-row.total {
+            background: #eff6ff;
+            border-color: #bfdbfe;
+            border-left-color: #2563eb;
+            border-radius: 8px;
+        }
+
+        body.public-quote-page .totals-row.total .totals-value {
+            color: #1d4ed8;
+        }
+
+        body.public-quote-page .amount-words {
+            background: #f8fafc;
+            border-color: #dbeafe;
+            border-radius: 10px;
+        }
+
+        body.public-quote-page .terms-section {
+            border-radius: 10px;
+            border-color: #e2e8f0;
+        }
+
+        @media print {
+            body.public-quote-page {
+                background: #fff;
+                padding: 0;
+            }
+            body.public-quote-page .public-quote-shell,
+            body.public-quote-page .public-quote-topbar {
+                display: none !important;
+            }
+            body.public-quote-page .estimate-container {
+                box-shadow: none;
+                border-radius: 0;
+                border: none;
+            }
+        }
+
+        @media (max-width: 640px) {
+            body.public-quote-page .public-quote-topbar {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            body.public-quote-page .print-actions {
+                justify-content: center;
+            }
+            body.public-quote-page .estimate-container {
+                padding: 16px 14px 24px;
+                border-radius: 12px;
+            }
+            body.public-quote-page .addr-grid {
+                flex-direction: column;
+            }
+            body.public-quote-page .addr-block + .addr-block {
+                border-left: none;
+                border-top: 1px solid #dbeafe;
+            }
         }
 
         .estimate-container {
@@ -513,12 +711,22 @@
         }
     </style>
 </head>
-<body>
+<body{% if is_public_view %} class="public-quote-page"{% endif %}>
     {% if request.GET.pdf_error %}
     <div class="no-print pdf-flash-messages">
         <div class="pdf-flash">{{ request.GET.pdf_error }}</div>
     </div>
     {% endif %}
+    {% if is_public_view %}
+    <div class="public-quote-shell">
+        <div class="public-quote-topbar no-print">
+            <span class="public-quote-topbar-label">Official quotation</span>
+            <div class="print-actions">
+                <button type="button" class="print-btn" onclick="window.print()">{{ print_button_label|default:"Print quotation" }}</button>
+            </div>
+        </div>
+    {% endif %}
+    {% if not is_public_view %}
     <div class="print-actions no-print">
         <button type="button" class="print-btn" onclick="window.print()">{{ print_button_label|default:"Print quotation" }}</button>
         {% if pdf_variant == 'quotation' %}
@@ -532,6 +740,7 @@
         {% endif %}
         <a href="{% url 'sales:estimate_detail' estimate.pk %}" class="print-btn print-btn-secondary">Back to estimate</a>
     </div>
+    {% endif %}
 
     <div class="estimate-container">
         <!-- Top heading -->
@@ -961,6 +1170,9 @@
             <p style="margin-top:8px;text-align:center;color:#a3a3a3;">Thank you for your business.</p>
         </footer>
     </div>
+    {% if is_public_view %}
+    </div>
+    {% endif %}
 
     <script>
         const urlParams = new URLSearchParams(window.location.search);

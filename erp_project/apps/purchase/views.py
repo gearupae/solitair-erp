@@ -376,6 +376,13 @@ class PurchaseRequestDetailView(PermissionRequiredMixin, DetailView):
             'purchase:pr_vendor_attachment_update',
             args=[self.object.pk, _ph],
         ).replace(str(_ph), '__ATT_ID__')
+        from apps.inventory.utils import get_openai_api_key
+
+        context['openai_configured'] = bool(get_openai_api_key())
+        context['pr_vendor_analyze_url'] = reverse(
+            'purchase:pr_vendor_quote_analyze', args=[self.object.pk]
+        )
+        context['has_quote_attachments'] = self.object.attachments.exists()
         return context
 
 
@@ -455,6 +462,33 @@ def pr_vendor_attachment_update(request, pk, attachment_id):
     payload = _serialize_pr_vendor_attachment(att)
     payload['ok'] = True
     return JsonResponse(payload)
+
+
+def _user_can_view_pr(user, pr) -> bool:
+    if not user.is_authenticated:
+        return False
+    from apps.core.visibility import filter_purchase_requests_for_user
+
+    return filter_purchase_requests_for_user(
+        PurchaseRequest.objects.filter(pk=pr.pk, is_active=True),
+        user,
+    ).exists()
+
+
+@login_required
+@require_POST
+def pr_vendor_quote_analyze(request, pk):
+    """AI comparison of attached vendor quotation PDFs / Excel files."""
+    pr = get_object_or_404(PurchaseRequest, pk=pk, is_active=True)
+    if not _user_can_view_pr(request.user, pr):
+        return JsonResponse({'ok': False, 'error': 'Permission denied.'}, status=403)
+
+    force = (request.POST.get('force') or '').lower() in ('1', 'true', 'yes')
+    from apps.purchase.services.vendor_quote_ai import analyze_vendor_quotes
+
+    result = analyze_vendor_quotes(pr, force=force)
+    status = 200 if result.get('ok') else 400
+    return JsonResponse(result, status=status)
 
 
 @login_required
@@ -1418,6 +1452,7 @@ class ExpenseClaimListView(PermissionRequiredMixin, ListView):
         context['can_create'] = self.request.user.is_superuser or PermissionChecker.has_permission(self.request.user, 'purchase', 'create')
         context['can_edit'] = self.request.user.is_superuser or PermissionChecker.has_permission(self.request.user, 'purchase', 'edit')
         context['can_approve'] = self.request.user.is_superuser or PermissionChecker.has_permission(self.request.user, 'purchase', 'approve')
+        context['public_expense_claim_url'] = reverse('purchase:public_expense_claim')
         context['today'] = date.today().isoformat()
         
         # Metrics
@@ -1464,6 +1499,60 @@ class ExpenseClaimCreateView(CreatePermissionMixin, CreateView):
             return self.render_to_response(context)
 
 
+class ExpenseClaimUpdateView(UpdatePermissionMixin, UpdateView):
+    """Edit expense claim (draft, or submitted for approvers)."""
+    model = ExpenseClaim
+    form_class = ExpenseClaimForm
+    template_name = 'purchase/expenseclaim_form.html'
+    module_name = 'purchase'
+
+    def get_queryset(self):
+        return ExpenseClaim.objects.filter(is_active=True)
+
+    def dispatch(self, request, *args, **kwargs):
+        claim = self.get_object()
+        can_edit = request.user.is_superuser or PermissionChecker.has_permission(
+            request.user, 'purchase', 'edit'
+        )
+        can_approve = request.user.is_superuser or PermissionChecker.has_permission(
+            request.user, 'purchase', 'approve'
+        )
+        if claim.status == 'draft' and can_edit:
+            return super().dispatch(request, *args, **kwargs)
+        if claim.status == 'submitted' and can_approve:
+            return super().dispatch(request, *args, **kwargs)
+        messages.error(request, 'This claim cannot be edited.')
+        return redirect('purchase:expenseclaim_detail', pk=claim.pk)
+
+    def get_success_url(self):
+        return reverse('purchase:expenseclaim_detail', kwargs={'pk': self.object.pk})
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['title'] = f'Edit Expense Claim: {self.object.claim_number}'
+        context['today'] = date.today().isoformat()
+        context['is_edit'] = True
+        if self.request.POST:
+            context['items_formset'] = ExpenseClaimItemFormSet(
+                self.request.POST, self.request.FILES, instance=self.object
+            )
+        else:
+            context['items_formset'] = ExpenseClaimItemFormSet(instance=self.object)
+        return context
+
+    def form_valid(self, form):
+        context = self.get_context_data()
+        items_formset = context['items_formset']
+        if items_formset.is_valid():
+            self.object = form.save()
+            items_formset.instance = self.object
+            items_formset.save()
+            self.object.calculate_totals()
+            messages.success(self.request, f'Expense Claim {self.object.claim_number} updated.')
+            return redirect(self.get_success_url())
+        return self.render_to_response(context)
+
+
 class ExpenseClaimDetailView(PermissionRequiredMixin, DetailView):
     """View expense claim details."""
     model = ExpenseClaim
@@ -1486,6 +1575,10 @@ class ExpenseClaimDetailView(PermissionRequiredMixin, DetailView):
         context['can_approve'] = can_approve and self.object.status == 'submitted'
         context['can_reject'] = can_approve and self.object.status == 'submitted'
         context['can_pay'] = has_permission and self.object.status == 'approved'
+        context['can_edit'] = (
+            (has_permission and self.object.status == 'draft')
+            or (can_approve and self.object.status == 'submitted')
+        )
         
         # Payment form for approved claims
         if self.object.status == 'approved':

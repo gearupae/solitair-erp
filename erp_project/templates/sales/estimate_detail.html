@@ -135,6 +135,10 @@
             <a href="{% url 'sales:estimate_pdf' estimate.pk %}" class="btn btn-outline-danger" target="_blank">
                 <i class="fas fa-file-pdf me-2"></i>PDF
             </a>
+            <button type="button" class="btn btn-outline-primary" id="btn-copy-public-quote"
+                    data-public-url="{{ public_estimate_url }}">
+                <i class="fas fa-link me-2"></i>Public link
+            </button>
         </div>
     </div>
 </div>
@@ -420,6 +424,29 @@
             </div>
         </div>
 
+        <div class="card mb-4 mt-3 border-primary border-opacity-25">
+            <div class="card-header bg-transparent py-3">
+                <h6 class="mb-0 fw-semibold"><i class="fas fa-chart-bar me-2 text-primary"></i>Public link analytics</h6>
+            </div>
+            <div class="card-body pt-0">
+                <div class="row g-2 text-center mt-3">
+                    <div class="col-6">
+                        <div class="border rounded py-2 px-1 bg-light">
+                            <div class="fs-4 fw-bold text-primary">{{ public_view_stats.view_count|default:0 }}</div>
+                            <div class="text-muted small">Views</div>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="border rounded py-2 px-1 bg-light">
+                            <div class="fs-4 fw-bold text-primary">{{ public_view_stats.device_count|default:0 }}</div>
+                            <div class="text-muted small">Devices</div>
+                        </div>
+                    </div>
+                </div>
+                <p class="text-muted small mb-0 mt-2">Each time the public link is opened counts as one view. Devices are unique browsers.</p>
+            </div>
+        </div>
+
         {% if revision_snapshots %}
         <div class="card mb-4">
             <div class="card-header bg-transparent py-3">
@@ -673,6 +700,24 @@
 
 {% block extra_js %}
 {{ block.super }}
+<script>
+(function() {
+    function copyPublicUrl(url) {
+        if (!url) return;
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(url).then(function() {
+                if (typeof toastr !== 'undefined') toastr.success('Public link copied.');
+            }).catch(function() { window.prompt('Copy this link:', url); });
+        } else {
+            window.prompt('Copy this link:', url);
+        }
+    }
+    var url = document.getElementById('btn-copy-public-quote')?.getAttribute('data-public-url') || '';
+    document.getElementById('btn-copy-public-quote')?.addEventListener('click', function() {
+        copyPublicUrl(this.getAttribute('data-public-url') || url);
+    });
+})();
+</script>
 {% if can_send_estimate_email %}
 <script>
 (function() {

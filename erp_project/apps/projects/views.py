@@ -815,10 +815,12 @@ class ProjectDetailView(PermissionRequiredMixin, DetailView):
         context['recorded_expenses_total'] = recorded
         budget_prop = self.object.budget
         context['budget_profit'] = budget_prop - recorded
-        # Header “profit” vs expenses: use contract value when set (e.g. from estimate conversion),
-        # since budget may hold cost baseline rather than customer revenue.
+        est_cost = self.object.estimated_cost or Decimal('0.00')
         cv = self.object.contract_value or Decimal('0.00')
-        if cv > 0:
+        if est_cost > 0:
+            context['header_profit_vs_expenses'] = est_cost - recorded
+            context['header_profit_label'] = 'Estimate (excl. VAT) − expenses'
+        elif cv > 0:
             context['header_profit_vs_expenses'] = cv - recorded
             context['header_profit_label'] = 'Contract value − total expense'
         else:

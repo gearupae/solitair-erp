@@ -78,6 +78,16 @@ def _estimate_save_success_message(
             msg += f' Resubmitted as revision {estimate.revision_label}.'
     return msg
 
+
+def _set_estimate_creator_ip(estimate, request) -> None:
+    from apps.core.utils import get_client_ip
+
+    ip = get_client_ip(request)
+    if ip:
+        estimate.creator_ip = ip
+        estimate.save(update_fields=['creator_ip'])
+
+
 def _inventory_item_estimate_json(item):
     """Serialize inventory item bounds as effective AED amounts for estimate line validation."""
     return {
@@ -388,6 +398,11 @@ class EstimateListView(PermissionRequiredMixin, ListView):
             'customer',
             'assigned_to',
             'created_by',
+        ).annotate(
+            public_view_count=Count(
+                'public_views',
+                filter=Q(public_views__excluded=False),
+            ),
         ).prefetch_related(
             Prefetch(
                 'proforma_invoices',
@@ -641,6 +656,7 @@ class EstimateCreateView(CreatePermissionMixin, CreateView):
                 self.object = form.save()
                 apply_company_default_estimate_signatures(self.object, request.FILES)
                 bulk_create_estimate_items(self.object, rows, replace_existing=False)
+                _set_estimate_creator_ip(self.object, request)
                 messages.success(request, f'Estimate {self.object.estimate_number} created successfully.')
                 est = self.object
                 link = reverse('sales:estimate_detail', kwargs={'pk': est.pk})
@@ -669,6 +685,7 @@ class EstimateCreateView(CreatePermissionMixin, CreateView):
         items_formset.instance = self.object
         items_formset.save()
         self.object.calculate_totals()
+        _set_estimate_creator_ip(self.object, self.request)
         messages.success(self.request, f'Estimate {self.object.estimate_number} created successfully.')
         est = self.object
         link = reverse('sales:estimate_detail', kwargs={'pk': est.pk})
@@ -913,6 +930,12 @@ class EstimateDetailView(PermissionRequiredMixin, DetailView):
 
         context = super().get_context_data(**kwargs)
         context['title'] = f'Estimate: {self.object.estimate_number}'
+        if (
+            not self.object.creator_ip
+            and self.object.created_by_id
+            and self.object.created_by_id == self.request.user.id
+        ):
+            _set_estimate_creator_ip(self.object, self.request)
         from .approval_rules import (
             get_estimate_status_actions,
             user_can_approve_estimate_edit,
@@ -996,6 +1019,13 @@ class EstimateDetailView(PermissionRequiredMixin, DetailView):
                 Decimal('0.00'),
             )
         context['revision_snapshots'] = list(self.object.revision_snapshots.all())
+        self.object.ensure_public_view_token()
+        context['public_estimate_url'] = self.request.build_absolute_uri(
+            reverse('sales:public_estimate', kwargs={'token': self.object.public_view_token})
+        )
+        from .estimate_public_view import public_view_stats
+
+        context['public_view_stats'] = public_view_stats(self.object)
         return context
 
 
@@ -1115,6 +1145,7 @@ def estimate_duplicate(request, pk):
             project=None,
         )
         dest.save()
+        _set_estimate_creator_ip(dest, request)
 
         for it in items_qs:
             EstimateItem.objects.create(

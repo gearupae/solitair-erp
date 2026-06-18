@@ -39,8 +39,10 @@ def create_project_from_estimate(*, estimate, include_items: bool, submitted_by=
     ProjectItemLine rows (shown under “Items” on the project — not as tasks).
     `estimate` must be approved or quotation-won and not already linked to a project.
 
-    Project fields: ``contract_value`` = estimate selling total; ``budget`` = sum of line
-    base cost (qty × unit_price); ``estimated_cost`` is left at zero for manual entry later.
+    Project fields on conversion:
+    - ``contract_value`` = estimate grand total (incl. VAT)
+    - ``budget`` = sum of line base cost (qty × unit_price)
+    - ``estimated_cost`` = estimate net subtotal excluding VAT
     """
     name = f'{estimate.estimate_number} — {estimate.customer.name}'[:200]
     desc_parts = []
@@ -66,7 +68,7 @@ def create_project_from_estimate(*, estimate, include_items: bool, submitted_by=
         start_date=estimate.date,
         contract_value=estimate.total_amount or Decimal('0.00'),
         budget=estimate.total_cost(),
-        estimated_cost=Decimal('0.00'),
+        estimated_cost=estimate.net_subtotal_ex_vat,
     )
     if estimate.assigned_to_id:
         project.members.add(estimate.assigned_to)

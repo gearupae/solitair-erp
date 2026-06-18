@@ -191,6 +191,64 @@
                         </tbody>
                     </table>
                 </div>
+
+                {% if has_quote_attachments %}
+                <hr class="my-3">
+                <div id="vendor-quote-ai-section">
+                    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+                        <h6 class="mb-0 fw-semibold">
+                            <i class="fas fa-robot text-primary me-1"></i>AI quote comparison
+                        </h6>
+                        <button type="button" class="btn btn-outline-primary btn-sm" id="btn-analyze-quotes">
+                            <i class="fas fa-magic me-1"></i>Analyze quotes
+                        </button>
+                    </div>
+                    {% if openai_configured %}
+                    <p class="text-muted small mb-2">
+                        Extracts line items and totals from attached PDF/Excel quotes and highlights the lowest overall quote and per-item prices.
+                    </p>
+                    {% endif %}
+                    <div id="vendor-quote-ai-loading" class="text-muted small py-2" style="display:none;">
+                        <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                        Analyzing quotations…
+                    </div>
+                    <div id="vendor-quote-ai-error" class="alert alert-danger py-2 small mb-2" style="display:none;"></div>
+                    <div id="vendor-quote-ai-results" style="display:none;">
+                        <div class="alert alert-success py-2 small mb-2" id="vendor-quote-ai-lowest"></div>
+                        <p class="small mb-2" id="vendor-quote-ai-summary"></p>
+                        <div class="table-responsive mb-2" id="vendor-quote-ai-totals-wrap" style="display:none;">
+                            <table class="table table-sm table-bordered mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Vendor</th>
+                                        <th class="text-end">Quoted total</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="vendor-quote-ai-totals"></tbody>
+                            </table>
+                        </div>
+                        <div class="table-responsive mb-2" id="vendor-quote-ai-items-wrap" style="display:none;">
+                            <p class="small fw-semibold mb-1">Per-item price comparison</p>
+                            <table class="table table-sm table-bordered mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Item</th>
+                                        <th>Lowest vendor</th>
+                                        <th>Details</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="vendor-quote-ai-items"></tbody>
+                            </table>
+                        </div>
+                        <ul class="small mb-2 ps-3" id="vendor-quote-ai-recommendations"></ul>
+                        <ul class="small mb-0 ps-3 text-warning" id="vendor-quote-ai-warnings"></ul>
+                        <p class="text-muted small mb-0 mt-2" id="vendor-quote-ai-meta"></p>
+                    </div>
+                    <p class="text-muted small mb-0" id="vendor-quote-ai-placeholder">
+                        Click <strong>Analyze quotes</strong> to compare attached vendor quotations.
+                    </p>
+                </div>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -224,10 +282,171 @@
 
 <a href="{% url 'purchase:pr_list' %}" class="btn btn-light"><i class="fas fa-arrow-left me-2"></i>Back to List</a>
 
-{% if can_manage_vendor_quotes %}{% csrf_token %}{% endif %}
+{% if can_manage_vendor_quotes or has_quote_attachments %}{% csrf_token %}{% endif %}
 {% endblock %}
 
 {% block extra_js %}
+{% if has_quote_attachments %}
+<script>
+(function() {
+    const CSRF = document.querySelector('[name=csrfmiddlewaretoken]')?.value || '';
+    const ANALYZE_URL = "{{ pr_vendor_analyze_url|escapejs }}";
+
+    function fmtMoney(val, currency) {
+        if (val == null || val === '') return '—';
+        const n = Number(val);
+        if (Number.isNaN(n)) return '—';
+        return (currency || 'AED') + ' ' + n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    function renderAnalysis(data) {
+        const loading = document.getElementById('vendor-quote-ai-loading');
+        const errorEl = document.getElementById('vendor-quote-ai-error');
+        const results = document.getElementById('vendor-quote-ai-results');
+        const placeholder = document.getElementById('vendor-quote-ai-placeholder');
+        loading.style.display = 'none';
+        errorEl.style.display = 'none';
+
+        if (!data.ok) {
+            errorEl.textContent = data.error || 'Analysis failed.';
+            errorEl.style.display = 'block';
+            results.style.display = 'none';
+            return;
+        }
+
+        placeholder.style.display = 'none';
+        results.style.display = 'block';
+
+        const lowestEl = document.getElementById('vendor-quote-ai-lowest');
+        if (data.lowest_total_vendor) {
+            lowestEl.innerHTML = '<strong>Lowest overall quote:</strong> '
+                + escapeHtml(data.lowest_total_vendor)
+                + (data.lowest_total_amount != null ? ' — ' + fmtMoney(data.lowest_total_amount, data.currency) : '');
+            lowestEl.style.display = 'block';
+        } else {
+            lowestEl.style.display = 'none';
+        }
+
+        document.getElementById('vendor-quote-ai-summary').textContent = data.summary || '';
+
+        const totalsWrap = document.getElementById('vendor-quote-ai-totals-wrap');
+        const totalsBody = document.getElementById('vendor-quote-ai-totals');
+        totalsBody.innerHTML = '';
+        const totals = data.vendor_totals || [];
+        if (totals.length) {
+            totals.forEach(v => {
+                const tr = document.createElement('tr');
+                if (v.is_lowest) tr.className = 'table-success';
+                tr.innerHTML = '<td>' + escapeHtml(v.vendor || '—')
+                    + (v.is_lowest ? ' <span class="badge bg-success">Lowest</span>' : '')
+                    + '</td><td class="text-end">' + fmtMoney(v.total, data.currency) + '</td>';
+                totalsBody.appendChild(tr);
+            });
+            totalsWrap.style.display = 'block';
+        } else {
+            totalsWrap.style.display = 'none';
+        }
+
+        const itemsWrap = document.getElementById('vendor-quote-ai-items-wrap');
+        const itemsBody = document.getElementById('vendor-quote-ai-items');
+        itemsBody.innerHTML = '';
+        const items = data.item_comparisons || [];
+        if (items.length) {
+            items.forEach(row => {
+                const tr = document.createElement('tr');
+                const details = (row.vendor_prices || []).map(vp => {
+                    let s = (vp.vendor || '?') + ': ';
+                    if (vp.unit_price != null) s += fmtMoney(vp.unit_price, data.currency) + '/unit';
+                    else if (vp.line_total != null) s += fmtMoney(vp.line_total, data.currency);
+                    else s += '—';
+                    if (vp.is_lowest) s += ' ✓';
+                    return s;
+                }).join('; ');
+                tr.innerHTML = '<td>' + escapeHtml(row.item_description || '—') + '</td>'
+                    + '<td>' + escapeHtml(row.lowest_vendor || '—') + '</td>'
+                    + '<td class="small">' + escapeHtml(details) + '</td>';
+                itemsBody.appendChild(tr);
+            });
+            itemsWrap.style.display = 'block';
+        } else {
+            itemsWrap.style.display = 'none';
+        }
+
+        const recEl = document.getElementById('vendor-quote-ai-recommendations');
+        recEl.innerHTML = '';
+        (data.recommendations || []).forEach(text => {
+            const li = document.createElement('li');
+            li.textContent = text;
+            recEl.appendChild(li);
+        });
+
+        const warnEl = document.getElementById('vendor-quote-ai-warnings');
+        warnEl.innerHTML = '';
+        (data.warnings || []).forEach(text => {
+            const li = document.createElement('li');
+            li.textContent = text;
+            warnEl.appendChild(li);
+        });
+
+        const metaEl = document.getElementById('vendor-quote-ai-meta');
+        if (data.generated_at) {
+            let meta = 'Generated ' + data.generated_at.slice(0, 19).replace('T', ' ');
+            if (data.from_cache) meta += ' (cached)';
+            metaEl.textContent = meta;
+        } else {
+            metaEl.textContent = '';
+        }
+    }
+
+    function escapeHtml(str) {
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    function runAnalysis(force) {
+        const loading = document.getElementById('vendor-quote-ai-loading');
+        const errorEl = document.getElementById('vendor-quote-ai-error');
+        const btn = document.getElementById('btn-analyze-quotes');
+        loading.style.display = 'block';
+        errorEl.style.display = 'none';
+        if (btn) btn.disabled = true;
+
+        const fd = new FormData();
+        if (force) fd.append('force', '1');
+
+        fetch(ANALYZE_URL, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': CSRF },
+            body: fd,
+        })
+            .then(r => r.json().then(data => ({ ok: r.ok, data })))
+            .then(({ ok, data }) => {
+                if (!ok && !data.ok) {
+                    renderAnalysis({ ok: false, error: data.error || 'Analysis failed.' });
+                    return;
+                }
+                renderAnalysis(data);
+            })
+            .catch(() => {
+                renderAnalysis({ ok: false, error: 'Network error while analyzing quotes.' });
+            })
+            .finally(() => {
+                if (btn) btn.disabled = false;
+            });
+    }
+
+    const analyzeBtn = document.getElementById('btn-analyze-quotes');
+    if (analyzeBtn) {
+        analyzeBtn.addEventListener('click', () => runAnalysis(true));
+    }
+
+    window.triggerVendorQuoteAnalysis = function() { runAnalysis(true); };
+})();
+</script>
+{% endif %}
 {% if can_manage_vendor_quotes %}
 <script>
 (function() {
@@ -359,6 +578,9 @@
                     (data.attachments || []).forEach(appendAttachmentRow);
                     toastr.success('File(s) uploaded.');
                     fileInput.value = '';
+                    if (typeof window.triggerVendorQuoteAnalysis === 'function') {
+                        setTimeout(window.triggerVendorQuoteAnalysis, 400);
+                    }
                 })
                 .catch(() => toastr.error('Upload failed.'));
         });

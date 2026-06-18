@@ -13,6 +13,11 @@
         <h4 class="mb-0 fw-bold">{{ title }}</h4>
     </div>
     <div>
+        {% if can_edit %}
+        <a href="{% url 'purchase:expenseclaim_edit' claim.pk %}" class="btn btn-outline-primary">
+            <i class="fas fa-edit me-2"></i>Edit
+        </a>
+        {% endif %}
         {% if can_submit %}
         <a href="{% url 'purchase:expenseclaim_submit' claim.pk %}" class="btn btn-primary"
            onclick="return confirm('Submit this claim for approval?')">
@@ -62,6 +67,9 @@
                                 <td>
                                     {% if item.has_receipt %}
                                     <span class="badge bg-success"><i class="fas fa-check"></i></span>
+                                    {% if item.receipt %}
+                                    <a href="{{ item.receipt.url }}" target="_blank" rel="noopener" class="small d-block">View bill</a>
+                                    {% endif %}
                                     {% else %}
                                     <span class="badge bg-secondary"><i class="fas fa-times"></i></span>
                                     {% endif %}
@@ -209,6 +217,9 @@
                             <span class="badge bg-danger">Rejected</span>
                             {% elif claim.status == 'paid' %}
                             <span class="badge bg-primary">Paid</span>
+                            {% endif %}
+                            {% if claim.submission_source == 'public_link' %}
+                            <span class="badge bg-warning text-dark ms-1">Public link</span>
                             {% endif %}
                         </td>
                     </tr>

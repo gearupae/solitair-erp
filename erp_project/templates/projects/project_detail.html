@@ -129,8 +129,8 @@
                 <div class="row g-4">
                     <div class="col-md-4"><h6 class="text-muted mb-2">Customer</h6><p class="mb-0">{{ project.customer.name|default:"-" }}</p></div>
                     <div class="col-md-4"><h6 class="text-muted mb-2">Manager</h6><p class="mb-0">{% if project.manager %}{{ project.manager.get_full_name|default:project.manager.username }}{% else %}-{% endif %}</p></div>
-                    <div class="col-md-4"><h6 class="text-muted mb-2">Budget</h6><p class="mb-0">AED {{ project.budget|floatformat:2 }}</p></div>
-                    <div class="col-md-4"><h6 class="text-muted mb-2">Estimated cost</h6><p class="mb-0">{% if project.estimated_cost and project.estimated_cost > 0 %}AED {{ project.estimated_cost|floatformat:2 }}{% else %}—{% endif %}</p></div>
+                    <div class="col-md-4"><h6 class="text-muted mb-2">Budget <span class="small fw-normal">(qty × base price)</span></h6><p class="mb-0">AED {{ project.budget|floatformat:2 }}</p></div>
+                    <div class="col-md-4"><h6 class="text-muted mb-2">Estimated cost <span class="small fw-normal">(excl. VAT)</span></h6><p class="mb-0">{% if project.estimated_cost and project.estimated_cost > 0 %}AED {{ project.estimated_cost|floatformat:2 }}{% else %}—{% endif %}</p></div>
                     <div class="col-md-4">
                         <h6 class="text-muted mb-2">Total profit <span class="small fw-normal">({{ header_profit_label }})</span></h6>
                         <p class="mb-0 fw-semibold d-flex align-items-center flex-wrap gap-2">

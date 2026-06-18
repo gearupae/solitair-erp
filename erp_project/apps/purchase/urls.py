@@ -4,6 +4,7 @@ Purchase URL configuration - Including Expense Claims and Recurring Expenses
 from django.urls import path
 from . import views
 from . import views_procurement
+from . import views_expense_public
 
 app_name = 'purchase'
 
@@ -35,6 +36,11 @@ urlpatterns = [
         views.pr_vendor_attachment_update,
         name='pr_vendor_attachment_update',
     ),
+    path(
+        'requests/<int:pk>/vendor-quotes/analyze/',
+        views.pr_vendor_quote_analyze,
+        name='pr_vendor_quote_analyze',
+    ),
     
     # Purchase Orders
     path('orders/', views.PurchaseOrderListView.as_view(), name='po_list'),
@@ -60,7 +66,11 @@ urlpatterns = [
     # Expense Claims (moved from Finance)
     path('expense-claims/', views.ExpenseClaimListView.as_view(), name='expenseclaim_list'),
     path('expense-claims/create/', views.ExpenseClaimCreateView.as_view(), name='expenseclaim_create'),
+    path('expense-claims/public/submit/', views_expense_public.PublicExpenseClaimView.as_view(), name='public_expense_claim'),
+    path('expense-claims/public/done/', views_expense_public.PublicExpenseClaimDoneView.as_view(), name='public_expense_claim_done'),
+    path('expense-claims/public/lookup/', views_expense_public.public_expense_claim_lookup, name='public_expense_claim_lookup'),
     path('expense-claims/<int:pk>/', views.ExpenseClaimDetailView.as_view(), name='expenseclaim_detail'),
+    path('expense-claims/<int:pk>/edit/', views.ExpenseClaimUpdateView.as_view(), name='expenseclaim_edit'),
     path('expense-claims/<int:pk>/submit/', views.expenseclaim_submit, name='expenseclaim_submit'),
     path('expense-claims/<int:pk>/approve/', views.expenseclaim_approve, name='expenseclaim_approve'),
     path('expense-claims/<int:pk>/reject/', views.expenseclaim_reject, name='expenseclaim_reject'),

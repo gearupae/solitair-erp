@@ -432,7 +432,7 @@ VendorBillItemFormSet = forms.inlineformset_factory(
 
 class ExpenseClaimForm(forms.ModelForm):
     """Form for creating/editing expense claims."""
-    
+
     class Meta:
         model = ExpenseClaim
         fields = ['claim_date', 'description']
@@ -440,6 +440,48 @@ class ExpenseClaimForm(forms.ModelForm):
             'claim_date': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
             'description': forms.Textarea(attrs={'rows': 2, 'class': 'form-control'}),
         }
+
+
+class PublicExpenseClaimForm(forms.Form):
+    """Anonymous public submission — employee code + bill attachments."""
+
+    employee_code = forms.CharField(
+        max_length=80,
+        widget=forms.TextInput(attrs={
+            'class': 'form-control',
+            'placeholder': 'e.g. EMP-001',
+            'autocomplete': 'off',
+        }),
+    )
+
+    def clean_employee_code(self):
+        from apps.hr.models import Employee
+
+        code = (self.cleaned_data.get('employee_code') or '').strip()
+        if not code:
+            raise forms.ValidationError('Employee code is required.')
+        emp = Employee.objects.filter(employee_code__iexact=code, is_active=True).first()
+        if not emp or emp.status != 'active':
+            raise forms.ValidationError('Employee not found. Check your code or contact HR.')
+        self.cleaned_data['employee'] = emp
+        return code
+
+    def clean(self):
+        cleaned = super().clean()
+        files = self.files.getlist('bills') if hasattr(self, 'files') else []
+        if not files:
+            raise forms.ValidationError('Attach at least one bill (PDF or image).')
+        from pathlib import Path as _Path
+        from apps.purchase.services.expense_bill_ai import ALLOWED_EXTENSIONS
+
+        for f in files:
+            ext = _Path(f.name).suffix.lower()
+            if ext not in ALLOWED_EXTENSIONS:
+                raise forms.ValidationError(
+                    f'File type not allowed: {f.name}. Use PDF, JPG, PNG, or Excel.'
+                )
+        cleaned['bills'] = files
+        return cleaned
 
 
 class ExpenseClaimItemForm(forms.ModelForm):

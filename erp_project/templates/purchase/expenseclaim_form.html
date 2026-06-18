@@ -5,7 +5,7 @@
     <nav aria-label="breadcrumb">
         <ol class="breadcrumb mb-2">
             <li class="breadcrumb-item"><a href="{% url 'purchase:expenseclaim_list' %}">Expense Claims</a></li>
-            <li class="breadcrumb-item active">New Claim</li>
+            <li class="breadcrumb-item active">{% if is_edit %}Edit{% else %}New Claim{% endif %}</li>
         </ol>
     </nav>
     <h4 class="mb-0 fw-bold">{{ title }}</h4>
@@ -91,9 +91,13 @@
     <div class="card border-0 shadow-sm">
         <div class="card-body">
             <button type="submit" class="btn btn-dark">
-                <i class="fas fa-save me-2"></i>Save Claim
+                <i class="fas fa-save me-2"></i>{% if is_edit %}Update Claim{% else %}Save Claim{% endif %}
             </button>
+            {% if is_edit %}
+            <a href="{% url 'purchase:expenseclaim_detail' object.pk %}" class="btn btn-light">Cancel</a>
+            {% else %}
             <a href="{% url 'purchase:expenseclaim_list' %}" class="btn btn-light">Cancel</a>
+            {% endif %}
         </div>
     </div>
 </form>

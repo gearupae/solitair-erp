@@ -999,6 +999,11 @@ class ExpenseClaim(BaseModel):
         ('rejected', 'Rejected'),
         ('paid', 'Paid'),
     ]
+
+    SUBMISSION_SOURCE_CHOICES = [
+        ('internal', 'Internal'),
+        ('public_link', 'Public link'),
+    ]
     
     claim_number = models.CharField(max_length=50, unique=True, editable=False)
     employee = models.ForeignKey(
@@ -1009,6 +1014,11 @@ class ExpenseClaim(BaseModel):
     claim_date = models.DateField()
     description = models.TextField(blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft')
+    submission_source = models.CharField(
+        max_length=20,
+        choices=SUBMISSION_SOURCE_CHOICES,
+        default='internal',
+    )
     
     # Totals
     total_amount = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))

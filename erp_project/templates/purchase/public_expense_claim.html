@@ -1,0 +1,90 @@
+{% extends 'hr/base_public.html' %}
+{% block title %}Submit expense bills{% endblock %}
+{% block heading %}{{ heading }}{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card shadow-sm border-0">
+            <div class="card-body p-4">
+                <p class="text-muted small mb-4">
+                    Enter your employee code and attach bill receipts (PDF or photos). Each file becomes one expense line.
+                    AI reads vendor, amount, and date where possible. Finance will review before approval.
+                </p>
+                <form method="post" enctype="multipart/form-data" id="public-expense-form">
+                    {% csrf_token %}
+                    {% if form.non_field_errors %}
+                    <div class="alert alert-danger">{{ form.non_field_errors }}</div>
+                    {% endif %}
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold" for="{{ form.employee_code.id_for_label }}">Employee code</label>
+                        {{ form.employee_code }}
+                        {% if form.employee_code.errors %}
+                        <div class="text-danger small mt-1">{{ form.employee_code.errors|join:", " }}</div>
+                        {% endif %}
+                        <div id="employee-lookup-result" class="small mt-2 text-muted"></div>
+                    </div>
+                    <div class="mb-4">
+                        <label class="form-label fw-semibold" for="id_bills">Bill attachments</label>
+                        <input type="file" name="bills" id="id_bills" class="form-control" multiple
+                               accept=".pdf,.jpg,.jpeg,.png,.webp,.xlsx,.xls,application/pdf,image/*">
+                        <div class="form-text">Select one or more bills — PDF, JPG, PNG, or Excel.</div>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100" id="submit-btn">
+                        <span class="spinner-border spinner-border-sm d-none me-2" id="submit-spinner" role="status"></span>
+                        Submit for approval
+                    </button>
+                </form>
+            </div>
+        </div>
+        <p class="text-center small text-muted mt-3 mb-0">Having trouble? Contact finance or HR.</p>
+    </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+(function() {
+    const lookupUrl = "{% url 'purchase:public_expense_claim_lookup' %}";
+    const codeInput = document.getElementById('{{ form.employee_code.id_for_label }}');
+    const resultEl = document.getElementById('employee-lookup-result');
+    let lookupTimer;
+
+    function lookupEmployee() {
+        const code = (codeInput?.value || '').trim();
+        if (!code) {
+            resultEl.textContent = '';
+            return;
+        }
+        fetch(lookupUrl + '?code=' + encodeURIComponent(code))
+            .then(r => r.json().then(d => ({ ok: r.ok, d })))
+            .then(({ ok, d }) => {
+                if (!ok || !d.ok) {
+                    resultEl.innerHTML = '<span class="text-danger">' + (d.error || 'Not found') + '</span>';
+                    return;
+                }
+                resultEl.innerHTML = '<span class="text-success"><i class="fas fa-check-circle"></i> '
+                    + d.name + (d.department ? ' · ' + d.department : '') + '</span>';
+            })
+            .catch(() => { resultEl.textContent = ''; });
+    }
+
+    if (codeInput) {
+        codeInput.addEventListener('input', function() {
+            clearTimeout(lookupTimer);
+            lookupTimer = setTimeout(lookupEmployee, 400);
+        });
+        codeInput.addEventListener('blur', lookupEmployee);
+    }
+
+    const form = document.getElementById('public-expense-form');
+    const spinner = document.getElementById('submit-spinner');
+    const btn = document.getElementById('submit-btn');
+    if (form) {
+        form.addEventListener('submit', function() {
+            if (spinner) spinner.classList.remove('d-none');
+            if (btn) btn.disabled = true;
+        });
+    }
+})();
+</script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"/>
+{% endblock %}

@@ -86,13 +86,18 @@ class Project(BaseModel):
     
     # Budget & Billing
     billing_type = models.CharField(max_length=20, choices=BILLING_TYPE_CHOICES, default='fixed')
-    budget = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    budget = models.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        help_text='From estimate conversion: sum of qty × base price per line.',
+    )
     estimated_cost = models.DecimalField(
         max_digits=15,
         decimal_places=2,
         default=Decimal('0.00'),
         verbose_name='Estimated cost',
-        help_text='Expected cost to deliver this project',
+        help_text='From estimate conversion: net subtotal excluding VAT.',
     )
     contract_value = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     members = models.ManyToManyField(

@@ -7,6 +7,8 @@ VAT LOGIC (Tax Code Driven - SAP/Oracle Standard):
 - No Tax Code = No VAT (Out of Scope)
 - Tax Code classification preserved for VAT reporting: Standard, Zero Rated, Exempt, Out of Scope
 """
+import uuid
+
 from django.db import models
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -198,6 +200,19 @@ class Estimate(BaseModel):
         max_digits=15, decimal_places=2, default=Decimal('0.00'),
         help_text='Last calculated discount amount on subtotal (excl. VAT)',
     )
+
+    public_view_token = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        editable=False,
+        db_index=True,
+        help_text='Secret token for the customer-facing public quotation link.',
+    )
+    creator_ip = models.GenericIPAddressField(
+        null=True,
+        blank=True,
+        help_text='IP of the user who created this estimate; excluded from public view analytics.',
+    )
     
     class Meta:
         ordering = ['-created_at']
@@ -256,7 +271,15 @@ class Estimate(BaseModel):
     def save(self, *args, **kwargs):
         if not self.estimate_number:
             self.estimate_number = generate_number('ESTIMATE', Estimate, 'estimate_number')
+        if not self.public_view_token:
+            self.public_view_token = uuid.uuid4()
         super().save(*args, **kwargs)
+
+    def ensure_public_view_token(self) -> None:
+        if self.public_view_token:
+            return
+        self.public_view_token = uuid.uuid4()
+        self.save(update_fields=['public_view_token'])
     
     def total_cost(self) -> Decimal:
         """Sum of line base cost (qty × unit_price) before profit markup; used when converting to project budget."""
@@ -274,6 +297,11 @@ class Estimate(BaseModel):
         if val is None:
             return Decimal('0.00')
         return val.quantize(Decimal('0.01'))
+
+    @property
+    def net_subtotal_ex_vat(self) -> Decimal:
+        """Subtotal after header discount, excluding VAT (selling net)."""
+        return (self.subtotal - self.discount_applied).quantize(Decimal('0.01'))
 
     def compute_discount_amount(self, subtotal: Decimal) -> Decimal:
         """Discount applied to subtotal (excl. VAT) before tax."""
@@ -401,6 +429,34 @@ class Estimate(BaseModel):
         from apps.sales.approval_rules import user_can_edit_estimate
 
         return user_can_edit_estimate(user, self)
+
+
+class EstimatePublicView(models.Model):
+    """Analytics for customer-facing public quotation link opens."""
+
+    estimate = models.ForeignKey(
+        Estimate,
+        on_delete=models.CASCADE,
+        related_name='public_views',
+    )
+    device_id = models.CharField(max_length=64, db_index=True)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.CharField(max_length=500, blank=True, default='')
+    viewed_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    excluded = models.BooleanField(
+        default=False,
+        help_text='True when view is from the estimate creator IP (not counted in stats).',
+    )
+
+    class Meta:
+        ordering = ['-viewed_at']
+        indexes = [
+            models.Index(fields=['estimate', 'excluded']),
+            models.Index(fields=['estimate', 'device_id']),
+        ]
+
+    def __str__(self):
+        return f'{self.estimate_id} · {self.device_id[:8]}… · {self.viewed_at:%Y-%m-%d %H:%M}'
 
 
 class EstimateRevisionSnapshot(models.Model):
