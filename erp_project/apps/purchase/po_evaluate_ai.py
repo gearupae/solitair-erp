@@ -317,6 +317,10 @@ def _fetch_evaluation_from_openai(snapshot: dict) -> dict:
     import urllib.error
     import urllib.request
 
+    from apps.core.ai_knowledge import get_ai_knowledge_prompt_block
+    from apps.core.models import AiModuleKnowledge
+
+    knowledge = get_ai_knowledge_prompt_block(AiModuleKnowledge.MODULE_PURCHASE_ORDER)
     system = (
         'You are a UAE procurement reviewer for a fire & safety ERP. '
         'Review purchase order terms & conditions, vendor retention (5%/10% on projects), '
@@ -326,6 +330,7 @@ def _fetch_evaluation_from_openai(snapshot: dict) -> dict:
         '"title":"short title","detail":"one or two sentences"}],'
         '"summary":"2-3 sentence overall assessment"} '
         'Use green for OK/pass, red for must-fix issues, amber for warnings.'
+        f'{knowledge}'
     )
     user_payload = json.dumps(snapshot, default=str)[:14000]
     body = json.dumps({

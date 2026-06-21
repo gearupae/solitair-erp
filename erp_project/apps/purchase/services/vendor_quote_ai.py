@@ -120,6 +120,11 @@ def _fetch_analysis_from_openai(
 
     company = _company_context()
 
+    from apps.core.ai_knowledge import get_ai_knowledge_prompt_block
+    from apps.core.models import AiModuleKnowledge
+
+    knowledge = get_ai_knowledge_prompt_block(AiModuleKnowledge.MODULE_PURCHASE_REQUEST)
+
     prompt = (
         f'You are a procurement analyst for {company["company_name"]} ({company["country"]}). '
         f'Compare vendor quotations for purchase request {pr.pr_number}. Currency: AED unless stated otherwise.\n\n'
@@ -141,6 +146,7 @@ def _fetch_analysis_from_openai(
         'List favorable_terms[] where applicable.\n'
         '6. Recommend single vendor (recommended_vendor + recommended_reason).\n'
         '7. Executive summary + 2–4 recommendations + warnings for unreadable/missing data.\n\n'
+        f'{knowledge}\n\n'
         'Return ONLY valid JSON:\n'
         '{"recommended_vendor":"","recommended_reason":"","lowest_total_vendor":"","lowest_total_amount":null,'
         '"currency":"AED",'

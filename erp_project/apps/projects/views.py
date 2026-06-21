@@ -1144,6 +1144,18 @@ class ProjectDetailView(PermissionRequiredMixin, DetailView):
             .prefetch_related('items__item')
             .order_by('-created_at')
         )
+        from apps.inventory.utils import get_openai_api_key
+        from .project_evaluate_ai import get_cached_project_evaluation
+
+        context['openai_configured'] = bool(get_openai_api_key())
+        context['project_ai_evaluation'] = get_cached_project_evaluation(
+            self.object,
+            recorded_expenses=recorded,
+            budget_pct_used=context.get('budget_pct_used'),
+        )
+        context['project_ai_evaluate_url'] = reverse(
+            'projects:project_ai_evaluate', args=[self.object.pk]
+        )
         return context
 
     def post(self, request, *args, **kwargs):
@@ -1551,6 +1563,52 @@ class ProjectDetailView(PermissionRequiredMixin, DetailView):
         context = self.get_context_data()
         context['task_form'] = form
         return self.render_to_response(context)
+
+
+@login_required
+def project_ai_evaluate(request, pk):
+    """AJAX: AI review of project budget, timeline, and compliance."""
+    if request.method != 'POST':
+        return HttpResponseNotAllowed(['POST'])
+    project = get_object_or_404(
+        Project.objects.filter(is_active=True).select_related('customer', 'manager'),
+        pk=pk,
+    )
+    from apps.core.visibility import user_can_access_project
+
+    if not user_can_access_project(request.user, project):
+        return JsonResponse({'ok': False, 'error': 'Permission denied.'}, status=403)
+    if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'projects', 'view')):
+        return JsonResponse({'ok': False, 'error': 'Permission denied.'}, status=403)
+
+    from .item_delivery import project_inventory_spend_total
+    from .project_evaluate_ai import evaluate_project
+
+    pe = project.project_expenses.filter(is_active=True).exclude(status='rejected').exclude(
+        vendor_bill__isnull=False
+    )
+    manual_total = pe.aggregate(s=Sum('total_amount'))['s'] or Decimal('0.00')
+    bills_total = (
+        project.vendor_bills.filter(is_active=True).exclude(status='cancelled')
+        .aggregate(s=Sum('total_amount'))['s'] or Decimal('0.00')
+    )
+    inventory_spend = project_inventory_spend_total(project)
+    recorded = manual_total + bills_total + inventory_spend
+    budget_pct_used = None
+    if project.budget and project.budget > 0:
+        budget_pct_used = (recorded / project.budget * Decimal('100')).quantize(Decimal('0.1'))
+
+    force = request.POST.get('force') == '1'
+    try:
+        result = evaluate_project(
+            project,
+            force_refresh=force,
+            recorded_expenses=recorded,
+            budget_pct_used=budget_pct_used,
+        )
+        return JsonResponse({'ok': True, 'evaluation': result})
+    except Exception as exc:
+        return JsonResponse({'ok': False, 'error': str(exc)}, status=500)
 
 
 @login_required

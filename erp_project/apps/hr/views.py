@@ -427,7 +427,35 @@ class EmployeeDetailView(PermissionRequiredMixin, DetailView):
         else:
             context['gratuity_national_message'] = ''
 
+        from apps.inventory.utils import get_openai_api_key
+        from .employee_evaluate_ai import get_cached_employee_evaluation
+
+        context['openai_configured'] = bool(get_openai_api_key())
+        context['employee_ai_evaluation'] = get_cached_employee_evaluation(self.object)
+        context['employee_ai_evaluate_url'] = reverse(
+            'hr:employee_ai_evaluate', args=[self.object.pk]
+        )
+
         return context
+
+
+@login_required
+def employee_ai_evaluate(request, pk):
+    """AJAX: AI review of employee HR/UAE compliance."""
+    if request.method != 'POST':
+        from django.http import HttpResponseNotAllowed
+        return HttpResponseNotAllowed(['POST'])
+    employee = get_object_or_404(Employee, pk=pk, is_active=True)
+    if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'hr', 'view')):
+        return JsonResponse({'ok': False, 'error': 'Permission denied.'}, status=403)
+    from .employee_evaluate_ai import evaluate_employee
+
+    force = request.POST.get('force') == '1'
+    try:
+        result = evaluate_employee(employee, force_refresh=force)
+        return JsonResponse({'ok': True, 'evaluation': result})
+    except Exception as exc:
+        return JsonResponse({'ok': False, 'error': str(exc)}, status=500)
 
 
 @login_required

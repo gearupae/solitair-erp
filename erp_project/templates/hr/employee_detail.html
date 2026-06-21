@@ -1,4 +1,18 @@
 {% extends 'base.html' %}
+{% block extra_css %}
+<style>
+.ai-eval-flag {
+    border-radius: 0.375rem;
+    padding: 0.65rem 0.85rem;
+    border: 1px solid var(--bs-border-color);
+}
+.ai-eval-flag--green { background: rgba(25, 135, 84, 0.08); border-color: rgba(25, 135, 84, 0.25); }
+.ai-eval-flag--red { background: rgba(220, 53, 69, 0.08); border-color: rgba(220, 53, 69, 0.25); }
+.ai-eval-flag--amber { background: rgba(255, 193, 7, 0.12); border-color: rgba(255, 193, 7, 0.35); }
+.ai-eval-flag-title { font-weight: 600; font-size: 0.875rem; }
+.ai-eval-flag-detail { font-size: 0.8125rem; color: var(--bs-secondary-color); margin-top: 0.25rem; }
+</style>
+{% endblock %}
 {% block content %}
 <div class="page-header">
     <nav aria-label="breadcrumb"><ol class="breadcrumb mb-2"><li class="breadcrumb-item"><a href="{% url 'hr:employee_list' %}">Employees</a></li><li class="breadcrumb-item active">{{ employee.employee_code }}</li></ol></nav>
@@ -159,6 +173,8 @@
         </div>
     </div>
     <div class="col-lg-4">
+        {% include 'includes/ai_evaluate_card.html' with prefix='employee' description='Reviews UAE HR compliance, documents, visa/Emirates ID expiry, WPS bank details, and payroll readiness. Green flags are OK; red flags need attention.' openai_configured=openai_configured ai_evaluation=employee_ai_evaluation show_csrf=True %}
+
         <div class="card mb-4">
             <div class="card-body">
                 <h6 class="text-muted mb-3">Status</h6>
@@ -261,4 +277,5 @@
 })();
 </script>
 {% endif %}
+{% include 'includes/ai_evaluate_card_js.html' with prefix='employee' evaluate_url=employee_ai_evaluate_url %}
 {% endblock %}

@@ -254,6 +254,10 @@ def _fetch_evaluation_from_openai(snapshot: dict) -> dict:
     import urllib.error
     import urllib.request
 
+    from apps.core.ai_knowledge import get_ai_knowledge_prompt_block
+    from apps.core.models import AiModuleKnowledge
+
+    knowledge = get_ai_knowledge_prompt_block(AiModuleKnowledge.MODULE_ESTIMATE)
     system = (
         'You are a UAE fire & safety ERP quotation reviewer. '
         'Review terms & conditions, pricing logic, and VAT/tax compliance for a sales estimate. '
@@ -264,6 +268,7 @@ def _fetch_evaluation_from_openai(snapshot: dict) -> dict:
         'Use green for OK/pass, red for must-fix issues, amber for warnings. '
         'Focus on: missing/weak T&C, validity, TRN, mixed VAT, zero rates, discount errors, '
         'unusual margins, VAT mismatch between lines and totals.'
+        f'{knowledge}'
     )
     user_payload = json.dumps(snapshot, default=str)[:14000]
     body = json.dumps({

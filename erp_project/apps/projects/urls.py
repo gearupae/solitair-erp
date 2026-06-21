@@ -18,6 +18,7 @@ urlpatterns = [
     path('<int:pk>/checklist/toggle/', views.project_checklist_toggle, name='project_checklist_toggle'),
     path('<int:pk>/checklist/add/', views.project_checklist_add, name='project_checklist_add'),
     path('<int:pk>/checklist/delete/', views.project_checklist_delete, name='project_checklist_delete'),
+    path('<int:pk>/ai-evaluate/', views.project_ai_evaluate, name='project_ai_evaluate'),
     path('<int:pk>/', views.ProjectDetailView.as_view(), name='project_detail'),
     path('<int:pk>/edit/', views.ProjectUpdateView.as_view(), name='project_edit'),
     path('<int:pk>/request-completion/', views.project_request_completion, name='project_request_completion'),

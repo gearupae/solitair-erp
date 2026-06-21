@@ -60,6 +60,16 @@
     padding-top: 0.75rem;
 }
 {% include 'projects/partials/checklist_styles.html' %}
+.ai-eval-flag {
+    border-radius: 0.375rem;
+    padding: 0.65rem 0.85rem;
+    border: 1px solid var(--bs-border-color);
+}
+.ai-eval-flag--green { background: rgba(25, 135, 84, 0.08); border-color: rgba(25, 135, 84, 0.25); }
+.ai-eval-flag--red { background: rgba(220, 53, 69, 0.08); border-color: rgba(220, 53, 69, 0.25); }
+.ai-eval-flag--amber { background: rgba(255, 193, 7, 0.12); border-color: rgba(255, 193, 7, 0.35); }
+.ai-eval-flag-title { font-weight: 600; font-size: 0.875rem; }
+.ai-eval-flag-detail { font-size: 0.8125rem; color: var(--bs-secondary-color); margin-top: 0.25rem; }
 </style>
 {% endblock %}
 {% block content %}
@@ -626,6 +636,8 @@
     </div>
     
     <div class="col-lg-4">
+        {% include 'includes/ai_evaluate_card.html' with prefix='project' description='Reviews budget vs spend, timeline, team, checklist, and compliance for this project. Green flags are OK; red flags need attention.' openai_configured=openai_configured ai_evaluation=project_ai_evaluation show_csrf=True %}
+
         {% if show_expense_comparison_card %}
         <div class="card mb-4 border-0 shadow-sm">
             <div class="card-header bg-transparent py-3 border-bottom">
@@ -1337,5 +1349,6 @@ $(function () {
 });
 
 </script>
+{% include 'includes/ai_evaluate_card_js.html' with prefix='project' evaluate_url=project_ai_evaluate_url %}
 {% endblock %}
 

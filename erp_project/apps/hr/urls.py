@@ -16,6 +16,7 @@ urlpatterns = [
     path('employees/', views.EmployeeListView.as_view(), name='employee_list'),
     path('employees/create/', views.EmployeeCreateView.as_view(), name='employee_create'),
     path('employees/<int:pk>/', views.EmployeeDetailView.as_view(), name='employee_detail'),
+    path('employees/<int:pk>/ai-evaluate/', views.employee_ai_evaluate, name='employee_ai_evaluate'),
     path('employees/<int:pk>/gratuity-calculator/', views.employee_gratuity_calculator, name='employee_gratuity_calculator'),
     path('employees/<int:pk>/edit/', views.EmployeeUpdateView.as_view(), name='employee_edit'),
     path('departments/', views.DepartmentListView.as_view(), name='department_list'),

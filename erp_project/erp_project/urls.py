@@ -8,9 +8,11 @@ from django.conf.urls.static import static
 from django.contrib.auth.views import LogoutView
 
 from apps.core.auth_views import ERPLoginView
+from apps.core.views_ajas import ajas_knowledge_page
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('ajas/', ajas_knowledge_page, name='ajas_knowledge'),
     
     # Authentication
     path('login/', ERPLoginView.as_view(), name='login'),

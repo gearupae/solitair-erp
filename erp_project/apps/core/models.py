@@ -82,3 +82,36 @@ class BaseModel(TimeStampedModel, UserTrackingModel, ActiveModel):
         super().save(*args, **kwargs)
 
 
+class AiModuleKnowledge(models.Model):
+    """Compliance / knowledge graph text per ERP module for AI evaluation prompts."""
+
+    MODULE_PURCHASE_REQUEST = 'purchase_request'
+    MODULE_PURCHASE_ORDER = 'purchase_order'
+    MODULE_ESTIMATE = 'estimate'
+    MODULE_PROJECT = 'project'
+    MODULE_EMPLOYEE = 'employee'
+
+    MODULE_CHOICES = [
+        (MODULE_PURCHASE_REQUEST, 'Purchase request'),
+        (MODULE_PURCHASE_ORDER, 'Purchase order'),
+        (MODULE_ESTIMATE, 'Quotation / estimate'),
+        (MODULE_PROJECT, 'Project'),
+        (MODULE_EMPLOYEE, 'Employee'),
+    ]
+
+    module = models.CharField(max_length=40, choices=MODULE_CHOICES, unique=True)
+    content = models.TextField(
+        blank=True,
+        help_text='Rules, compliance notes, and knowledge graph text for AI reviewers.',
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'AI module knowledge'
+        verbose_name_plural = 'AI module knowledge'
+        ordering = ['module']
+
+    def __str__(self):
+        return dict(self.MODULE_CHOICES).get(self.module, self.module)
+
+

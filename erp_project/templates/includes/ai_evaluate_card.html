@@ -1,0 +1,44 @@
+<div class="card mb-4" id="{{ prefix }}-ai-evaluate-card">
+    <div class="card-header bg-transparent py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <h6 class="mb-0 fw-semibold"><i class="fas fa-robot me-2 text-dark"></i>AI evaluate</h6>
+        <button type="button" class="btn btn-sm btn-outline-primary" id="{{ prefix }}AiEvaluateBtn">
+            <i class="fas fa-magic me-1"></i>Run evaluation
+        </button>
+    </div>
+    <div class="card-body pt-0">
+        <p class="text-muted small mb-3">{{ description }}</p>
+        {% if show_csrf %}
+        {% csrf_token %}
+        {% endif %}
+        {% if not openai_configured %}
+        <div class="alert alert-warning py-2 small mb-3">
+            OpenAI is not configured — rule-based checks only.
+            <a href="{% url 'settings:company' %}#openai-key-settings">Add API key</a> for full AI review.
+        </div>
+        {% endif %}
+        <div id="{{ prefix }}AiEvaluateStatus" class="text-muted small mb-2{% if not ai_evaluation %} d-none{% endif %}">
+            {% if ai_evaluation %}
+            Last run: {{ ai_evaluation.generated_at|slice:":16"|default:"—" }}
+            {% if ai_evaluation.from_cache %} (cached){% endif %}
+            {% endif %}
+        </div>
+        <div id="{{ prefix }}AiEvaluateSummary" class="small mb-3{% if not ai_evaluation %} d-none{% endif %}">
+            {% if ai_evaluation %}{{ ai_evaluation.summary }}{% endif %}
+        </div>
+        <div id="{{ prefix }}AiEvaluateFlags">
+            {% if ai_evaluation and ai_evaluation.flags %}
+            {% for flag in ai_evaluation.flags %}
+            <div class="ai-eval-flag ai-eval-flag--{{ flag.severity }} mb-2">
+                <div class="d-flex justify-content-between align-items-start gap-2">
+                    <div class="ai-eval-flag-title">{{ flag.title }}</div>
+                    <span class="badge {% if flag.severity == 'green' %}bg-success{% elif flag.severity == 'red' %}bg-danger{% else %}bg-warning text-dark{% endif %} text-uppercase" style="font-size:0.6rem;">{{ flag.category }}</span>
+                </div>
+                {% if flag.detail %}<div class="ai-eval-flag-detail">{{ flag.detail }}</div>{% endif %}
+            </div>
+            {% endfor %}
+            {% else %}
+            <p class="text-muted small mb-0" id="{{ prefix }}AiEvaluateEmpty">Click <strong>Run evaluation</strong> to analyse this record.</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
