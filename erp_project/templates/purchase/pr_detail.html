@@ -147,7 +147,7 @@
             </div>
             <div class="card-body">
                 <p class="text-muted small mb-2">
-                    Each PDF or Excel file is one row. Vendor and total price save automatically when you change them (no save button).
+                    Each PDF or Excel file is one vendor quote. Vendor and total fields below are for your notes only — AI reads attached files only.
                 </p>
                 {% if can_manage_vendor_quotes %}
                 <div class="mb-3">
@@ -202,32 +202,35 @@
     </div>
 </div>
 
-{% if has_quote_attachments %}
+{% if show_vendor_quote_ai %}
 <div class="card mb-4 border-primary border-opacity-25" id="vendor-quote-ai-section">
     <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
         <h6 class="mb-0 fw-semibold">
             <i class="fas fa-robot text-primary me-1"></i>AI quote comparison
         </h6>
+        {% if has_quote_attachments %}
         <button type="button" class="btn btn-outline-primary btn-sm" id="btn-analyze-quotes">
             <i class="fas fa-magic me-1"></i>Analyze quotes
         </button>
+        {% endif %}
     </div>
     <div class="card-body">
         {% if openai_configured %}
         <p class="text-muted small mb-3">
-            Reads attached PDF/Excel quotes, compares totals and every line item across vendors,
-            and recommends which quote to accept. When item prices differ by vendor, the per-item
-            table below shows the lowest price for each line.
+            Reads attached PDF/Excel quotes only (not the vendor/total fields above). Compares totals and line items,
+            checks prices against past purchases, and flags unfavorable terms &amp; conditions.
         </p>
         {% else %}
         <p class="text-muted small mb-3">
-            OpenAI is not configured — analysis will compare manually entered vendor totals only.
-            Add your API key in Settings → Company for full quote file extraction.
+            Configure OpenAI in Settings → Company to analyze attached quote files.
         </p>
         {% endif %}
+        {% if not has_quote_attachments %}
+        <p class="text-muted small mb-0">Upload vendor quote files above, then run analysis.</p>
+        {% else %}
         <div id="vendor-quote-ai-loading" class="text-muted small py-2" style="display:none;">
             <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
-            Reading quote files and comparing prices…
+            Reading quote files, comparing prices, and checking compliance…
         </div>
         <div id="vendor-quote-ai-error" class="alert alert-danger py-2 small mb-2" style="display:none;"></div>
         <div id="vendor-quote-ai-results" style="display:none;">
@@ -235,7 +238,7 @@
             <div class="alert alert-success py-2 small mb-2" id="vendor-quote-ai-lowest"></div>
             <p class="small mb-3" id="vendor-quote-ai-summary"></p>
             <div class="table-responsive mb-3" id="vendor-quote-ai-totals-wrap" style="display:none;">
-                <p class="small fw-semibold mb-1">Overall quote totals</p>
+                <p class="small fw-semibold mb-1">Overall quote totals (from files)</p>
                 <table class="table table-sm table-bordered mb-0">
                     <thead class="table-light">
                         <tr>
@@ -253,6 +256,28 @@
                     <tbody id="vendor-quote-ai-items"></tbody>
                 </table>
             </div>
+            <div class="table-responsive mb-3" id="vendor-quote-ai-history-wrap" style="display:none;">
+                <p class="small fw-semibold mb-1">Price vs previous purchases</p>
+                <table class="table table-sm table-bordered mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Item</th>
+                            <th>Quote prices</th>
+                            <th>History (avg / low / high)</th>
+                            <th>Trend</th>
+                            <th>Comment</th>
+                        </tr>
+                    </thead>
+                    <tbody id="vendor-quote-ai-history"></tbody>
+                </table>
+            </div>
+            <div class="mb-3" id="vendor-quote-ai-compliance-wrap" style="display:none;">
+                <p class="small fw-semibold mb-1">Terms &amp; compliance review</p>
+                <div class="alert alert-secondary py-2 small mb-2" id="vendor-quote-ai-compliance-risk"></div>
+                <ul class="small mb-2 ps-3" id="vendor-quote-ai-compliance-issues"></ul>
+                <p class="small fw-semibold mb-1">Favorable terms</p>
+                <ul class="small mb-0 ps-3" id="vendor-quote-ai-compliance-favorable"></ul>
+            </div>
             <div class="row g-3">
                 <div class="col-md-6">
                     <p class="small fw-semibold mb-1">Recommendations</p>
@@ -268,6 +293,7 @@
         <p class="text-muted small mb-0" id="vendor-quote-ai-placeholder">
             Click <strong>Analyze quotes</strong> to compare attached vendor quotations.
         </p>
+        {% endif %}
     </div>
 </div>
 {% endif %}
@@ -300,11 +326,11 @@
 
 <a href="{% url 'purchase:pr_list' %}" class="btn btn-light"><i class="fas fa-arrow-left me-2"></i>Back to List</a>
 
-{% if can_manage_vendor_quotes or has_quote_attachments %}{% csrf_token %}{% endif %}
+{% if can_manage_vendor_quotes or show_vendor_quote_ai %}{% csrf_token %}{% endif %}
 {% endblock %}
 
 {% block extra_js %}
-{% if has_quote_attachments %}
+{% if show_vendor_quote_ai and has_quote_attachments %}
 <script>
 (function() {
     const CSRF = document.querySelector('[name=csrfmiddlewaretoken]')?.value || '';
@@ -440,6 +466,75 @@
             itemsWrap.style.display = 'block';
         } else {
             itemsWrap.style.display = 'none';
+        }
+
+        const historyWrap = document.getElementById('vendor-quote-ai-history-wrap');
+        const historyBody = document.getElementById('vendor-quote-ai-history');
+        historyBody.innerHTML = '';
+        const historyRows = data.price_history_comparisons || [];
+        if (historyRows.length) {
+            historyRows.forEach(row => {
+                const tr = document.createElement('tr');
+                const quotes = (row.quoted_vendors || []).map(qv => {
+                    let s = (qv.vendor || '?') + ': ';
+                    s += qv.unit_price != null ? fmtMoney(qv.unit_price, data.currency) : '—';
+                    return s;
+                }).join('; ');
+                const histParts = [];
+                if (row.historical_avg != null) histParts.push('avg ' + fmtMoney(row.historical_avg, data.currency));
+                if (row.historical_low != null) histParts.push('low ' + fmtMoney(row.historical_low, data.currency));
+                if (row.historical_high != null) histParts.push('high ' + fmtMoney(row.historical_high, data.currency));
+                const trend = row.trend || '—';
+                let trendCls = '';
+                if (trend === 'higher') trendCls = 'text-danger';
+                else if (trend === 'lower') trendCls = 'text-success';
+                tr.innerHTML = '<td>' + escapeHtml(row.item_description || '—') + '</td>'
+                    + '<td class="small">' + escapeHtml(quotes || '—') + '</td>'
+                    + '<td class="small">' + escapeHtml(histParts.join(' · ') || 'No history') + '</td>'
+                    + '<td class="small fw-semibold ' + trendCls + '">' + escapeHtml(trend) + '</td>'
+                    + '<td class="small">' + escapeHtml(row.comment || '—') + '</td>';
+                historyBody.appendChild(tr);
+            });
+            historyWrap.style.display = 'block';
+        } else {
+            historyWrap.style.display = 'none';
+        }
+
+        const complianceWrap = document.getElementById('vendor-quote-ai-compliance-wrap');
+        const compliance = data.compliance_review || {};
+        const issues = compliance.issues || [];
+        const favorable = compliance.favorable_terms || [];
+        if (issues.length || favorable.length || compliance.overall_risk) {
+            const riskEl = document.getElementById('vendor-quote-ai-compliance-risk');
+            const risk = compliance.overall_risk || 'unknown';
+            let riskBadge = 'secondary';
+            if (risk === 'high') riskBadge = 'danger';
+            else if (risk === 'medium') riskBadge = 'warning';
+            else if (risk === 'low') riskBadge = 'success';
+            riskEl.innerHTML = '<strong>Overall compliance risk:</strong> '
+                + '<span class="badge bg-' + riskBadge + '">' + escapeHtml(risk) + '</span>';
+            const issuesEl = document.getElementById('vendor-quote-ai-compliance-issues');
+            issuesEl.innerHTML = '';
+            issues.forEach(issue => {
+                const li = document.createElement('li');
+                li.className = 'mb-1';
+                li.innerHTML = '<strong>' + escapeHtml(issue.vendor || 'Vendor') + '</strong>'
+                    + (issue.severity ? ' [' + escapeHtml(issue.severity) + ']' : '')
+                    + (issue.topic ? ' — ' + escapeHtml(issue.topic) + ':' : ':')
+                    + ' ' + escapeHtml(issue.detail || '');
+                issuesEl.appendChild(li);
+            });
+            const favEl = document.getElementById('vendor-quote-ai-compliance-favorable');
+            favEl.innerHTML = '';
+            favorable.forEach(text => {
+                if (!text) return;
+                const li = document.createElement('li');
+                li.textContent = text;
+                favEl.appendChild(li);
+            });
+            complianceWrap.style.display = 'block';
+        } else {
+            complianceWrap.style.display = 'none';
         }
 
         const recEl = document.getElementById('vendor-quote-ai-recommendations');
@@ -637,25 +732,58 @@
 
     const fileInput = document.getElementById('pr-vendor-file-input');
     if (fileInput) {
-        fileInput.addEventListener('change', function() {
+        fileInput.addEventListener('change', async function() {
             if (!this.files || !this.files.length) return;
-            const fd = new FormData();
-            for (const f of this.files) fd.append('files', f);
-            fetch(UPLOAD_URL, { method: 'POST', headers: { 'X-CSRFToken': CSRF }, body: fd })
-                .then(r => r.json().then(data => ({ ok: r.ok, data })))
-                .then(({ ok, data }) => {
-                    if (!ok || !data.ok) {
-                        toastr.error(data.error || 'Upload failed.');
-                        return;
+            const fileList = Array.from(this.files);
+            fileInput.disabled = true;
+            let uploaded = 0;
+            const failed = [];
+
+            async function uploadOne(file) {
+                const fd = new FormData();
+                fd.append('files', file);
+                const resp = await fetch(UPLOAD_URL, {
+                    method: 'POST',
+                    headers: { 'X-CSRFToken': CSRF },
+                    body: fd,
+                });
+                let data;
+                try {
+                    data = await resp.json();
+                } catch (e) {
+                    throw new Error('Server error uploading ' + file.name);
+                }
+                if (!resp.ok || !data.ok) {
+                    throw new Error(data.error || ('Failed: ' + file.name));
+                }
+                return data;
+            }
+
+            try {
+                for (const f of fileList) {
+                    try {
+                        await uploadOne(f);
+                        uploaded += 1;
+                    } catch (err) {
+                        failed.push(err.message || String(err));
                     }
-                    (data.attachments || []).forEach(appendAttachmentRow);
-                    toastr.success('File(s) uploaded.');
-                    fileInput.value = '';
-                    if (typeof window.triggerVendorQuoteAnalysis === 'function') {
-                        setTimeout(window.triggerVendorQuoteAnalysis, 400);
-                    }
-                })
-                .catch(() => toastr.error('Upload failed.'));
+                }
+                if (uploaded === 0) {
+                    toastr.error(failed[0] || 'Upload failed.');
+                    return;
+                }
+                if (failed.length) {
+                    toastr.warning(uploaded + ' file(s) uploaded. Some failed: ' + failed.join('; '));
+                } else {
+                    toastr.success(uploaded === 1 ? 'File uploaded.' : uploaded + ' files uploaded.');
+                }
+                window.location.reload();
+            } catch (err) {
+                toastr.error(err.message || 'Upload failed.');
+            } finally {
+                fileInput.disabled = false;
+                fileInput.value = '';
+            }
         });
     }
 })();

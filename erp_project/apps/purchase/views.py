@@ -409,6 +409,7 @@ class PurchaseRequestDetailView(PermissionRequiredMixin, DetailView):
             'purchase:pr_vendor_quote_analyze', args=[self.object.pk]
         )
         context['has_quote_attachments'] = self.object.attachments.exists()
+        context['show_vendor_quote_ai'] = True
         context['pr_pdf_url'] = reverse('purchase:pr_pdf', args=[self.object.pk])
         return context
 
@@ -473,20 +474,35 @@ def pr_vendor_attachment_upload(request, pk):
                 status=400,
             )
     created = []
+    errors = []
     for f in files:
-        att = PurchaseRequestAttachment.objects.create(
-            purchase_request=pr,
-            file=f,
-            filename=f.name,
-            uploaded_by=request.user,
+        try:
+            att = PurchaseRequestAttachment.objects.create(
+                purchase_request=pr,
+                file=f,
+                filename=f.name,
+                uploaded_by=request.user,
+            )
+            created.append(att)
+        except Exception as exc:
+            errors.append(f'{f.name}: {exc}')
+    if not created:
+        return JsonResponse(
+            {
+                'ok': False,
+                'error': errors[0] if len(errors) == 1 else 'Upload failed for all files.',
+                'errors': errors,
+            },
+            status=400,
         )
-        created.append(att)
-    return JsonResponse(
-        {
-            'ok': True,
-            'attachments': [_serialize_pr_vendor_attachment(a) for a in created],
-        }
-    )
+    payload = {
+        'ok': True,
+        'attachments': [_serialize_pr_vendor_attachment(a) for a in created],
+    }
+    if errors:
+        payload['partial'] = True
+        payload['errors'] = errors
+    return JsonResponse(payload)
 
 
 @login_required
