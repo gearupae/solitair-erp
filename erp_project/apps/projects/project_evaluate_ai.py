@@ -31,7 +31,8 @@ def build_project_snapshot(project, *, recorded_expenses=None, budget_pct_used=N
         task_counts[status] = task_counts.get(status, 0) + 1
 
     checklist_total = project.checklist_items.filter(is_active=True).count()
-    checklist_done = project.checklist_items.filter(is_active=True, is_completed=True).count()
+    checklist_flagged_red = project.checklist_items.filter(is_active=True, is_flagged_red=True).count()
+    checklist_ok = checklist_total - checklist_flagged_red
 
     return {
         'project_code': project.project_code,
@@ -59,7 +60,8 @@ def build_project_snapshot(project, *, recorded_expenses=None, budget_pct_used=N
         'conversion_approval_status': project.conversion_approval_status,
         'edit_approval_status': project.edit_approval_status,
         'task_counts': task_counts,
-        'checklist_completed': checklist_done,
+        'checklist_ok': checklist_ok,
+        'checklist_flagged_red': checklist_flagged_red,
         'checklist_total': checklist_total,
         'description': (project.description or '')[:2000],
         'updated_at': project.updated_at.isoformat() if project.updated_at else '',
@@ -175,13 +177,20 @@ def _heuristic_evaluation(snapshot: dict) -> dict:
         })
 
     checklist_total = snapshot.get('checklist_total', 0)
-    checklist_done = snapshot.get('checklist_completed', 0)
-    if checklist_total > 0 and checklist_done < checklist_total:
+    checklist_flagged_red = snapshot.get('checklist_flagged_red', 0)
+    if checklist_flagged_red > 0:
         flags.append({
-            'severity': 'amber',
+            'severity': 'red',
             'category': 'compliance',
-            'title': 'Incomplete checklist',
-            'detail': f'{checklist_done} of {checklist_total} checklist items completed.',
+            'title': f'{checklist_flagged_red} checklist item(s) flagged red',
+            'detail': f'{checklist_flagged_red} of {checklist_total} site checklist row(s) are marked as issues.',
+        })
+    elif checklist_total > 0:
+        flags.append({
+            'severity': 'green',
+            'category': 'compliance',
+            'title': 'Checklist clear',
+            'detail': f'All {checklist_total} checklist item(s) are green (no issues flagged).',
         })
 
     red_count = sum(1 for f in flags if f['severity'] == 'red')
