@@ -5,6 +5,9 @@ import hashlib
 import json
 from pathlib import Path
 
+from datetime import timedelta
+
+from django.core.cache import cache
 from django.utils import timezone
 
 from apps.inventory.utils import get_openai_api_key
@@ -194,8 +197,26 @@ def _fetch_analysis_from_openai(
     data = _parse_json_content(content)
     return _normalize_ai_response(data, pr_items, price_history)
 
+CACHE_HOURS = 24
+CACHE_PREFIX = 'pr_vendor_quote_ai:'
 
-_analysis_cache: dict[str, dict] = {}
+
+def _django_cache_key(pr: PurchaseRequest, attachments: list[PurchaseRequestAttachment]) -> str:
+    return f'{CACHE_PREFIX}{_analysis_cache_key(pr, attachments)}'
+
+
+def get_cached_pr_quote_analysis(pr: PurchaseRequest) -> dict | None:
+    attachments = list(pr.attachments.order_by('id'))
+    if not attachments:
+        return None
+    key = _django_cache_key(pr, attachments)
+    cached = cache.get(key)
+    if cached:
+        cached = dict(cached)
+        cached['from_cache'] = True
+        cached['ok'] = True
+        return cached
+    return None
 
 
 def analyze_vendor_quotes(pr: PurchaseRequest, *, force: bool = False) -> dict:
@@ -213,12 +234,14 @@ def analyze_vendor_quotes(pr: PurchaseRequest, *, force: bool = False) -> dict:
             'error': 'OpenAI is not configured. Add your API key in Settings → Company to analyze quote files.',
         }
 
-    cache_key = _analysis_cache_key(pr, attachments)
-    if not force and cache_key in _analysis_cache:
-        cached = dict(_analysis_cache[cache_key])
-        cached['from_cache'] = True
-        cached['ok'] = True
-        return cached
+    django_key = _django_cache_key(pr, attachments)
+    if not force:
+        cached = cache.get(django_key)
+        if cached:
+            cached = dict(cached)
+            cached['from_cache'] = True
+            cached['ok'] = True
+            return cached
 
     extracted = []
     readable_count = 0
@@ -250,7 +273,11 @@ def analyze_vendor_quotes(pr: PurchaseRequest, *, force: bool = False) -> dict:
     try:
         result = _fetch_analysis_from_openai(pr, attachments, extracted, price_history)
         result['ok'] = True
-        _analysis_cache[cache_key] = result
+        cache.set(
+            django_key,
+            result,
+            timeout=int(timedelta(hours=CACHE_HOURS).total_seconds()),
+        )
         return result
     except OpenAINotConfigured as exc:
         return {'ok': False, 'error': str(exc)}

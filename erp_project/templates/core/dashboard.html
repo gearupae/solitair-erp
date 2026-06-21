@@ -147,8 +147,8 @@
     </div>
 </div>
 
-{% if gatepass_expiry_alerts or fleet_expiry_alerts %}
-<div class="row g-4 mb-4 mt-4 pt-1{% if gatepass_expiry_alerts and not fleet_expiry_alerts %} d-none{% endif %}">
+{% if gatepass_expiry_alerts or fleet_expiry_alerts or compliance_alerts %}
+<div class="row g-4 mb-4 mt-4 pt-1{% if gatepass_expiry_alerts and not fleet_expiry_alerts and not compliance_alerts %} d-none{% endif %}">
     {% if gatepass_expiry_alerts %}
     {# Hidden on dashboard only — data still loaded; remove d-none to show again #}
     <div class="col-12 d-none" id="dashboard-gatepass-expiry">
@@ -184,6 +184,43 @@
                 </div>
                 <div class="px-3 py-3 border-top bg-light bg-opacity-50">
                     <p class="small text-muted mb-0">Passes shown here are expired or expiring within 10 days.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+    {% if compliance_alerts %}
+    <div class="col-12">
+        <div class="card border-0 shadow-sm border-danger border-opacity-25">
+            <div class="card-header bg-transparent border-0 py-3 d-flex flex-wrap justify-content-between align-items-center gap-2">
+                <h5 class="mb-0 fw-semibold">
+                    <i class="fas fa-shield-alt text-danger me-2"></i>Compliance alerts
+                </h5>
+                <span class="small text-muted">{{ compliance_alerts|length }} issue{% if compliance_alerts|length != 1 %}s{% endif %}</span>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0 align-middle">
+                        <thead><tr><th>Module</th><th>Record</th><th>Issue</th><th></th></tr></thead>
+                        <tbody>
+                            {% for row in compliance_alerts %}
+                            <tr>
+                                <td><span class="badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25">{{ row.module_label }}</span></td>
+                                <td class="fw-medium">{{ row.record_label }}</td>
+                                <td>
+                                    <div class="fw-semibold small">{{ row.title }}</div>
+                                    {% if row.detail %}<div class="text-muted small">{{ row.detail|truncatechars:160 }}</div>{% endif %}
+                                </td>
+                                <td class="text-end">
+                                    <a class="btn btn-sm btn-light" href="{{ row.link }}"><i class="fas fa-external-link-alt me-1"></i>Open</a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                <div class="px-3 py-3 border-top bg-light bg-opacity-50">
+                    <p class="small text-muted mb-0">Red flags from automatic compliance checks on quotations, purchase orders, purchase requests, projects, and employees. Rules are configured at <code>/ajas</code>.</p>
                 </div>
             </div>
         </div>

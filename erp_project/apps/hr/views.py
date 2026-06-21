@@ -428,13 +428,18 @@ class EmployeeDetailView(PermissionRequiredMixin, DetailView):
             context['gratuity_national_message'] = ''
 
         from apps.inventory.utils import get_openai_api_key
-        from .employee_evaluate_ai import get_cached_employee_evaluation
+        from apps.core.compliance_service import auto_compliance_on_detail, run_employee_compliance
 
         context['openai_configured'] = bool(get_openai_api_key())
-        context['employee_ai_evaluation'] = get_cached_employee_evaluation(self.object)
-        context['employee_ai_evaluate_url'] = reverse(
-            'hr:employee_ai_evaluate', args=[self.object.pk]
+        evaluation = run_employee_compliance(self.object, full_run=True)
+        auto_compliance_on_detail(
+            self.request.user,
+            'employee',
+            evaluation,
+            record_label=self.object.employee_code,
+            link=reverse('hr:employee_detail', args=[self.object.pk]),
         )
+        context['employee_ai_evaluation'] = evaluation
 
         return context
 

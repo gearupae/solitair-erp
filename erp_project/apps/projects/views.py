@@ -1145,17 +1145,28 @@ class ProjectDetailView(PermissionRequiredMixin, DetailView):
             .order_by('-created_at')
         )
         from apps.inventory.utils import get_openai_api_key
-        from .project_evaluate_ai import get_cached_project_evaluation
+        from apps.core.compliance_service import (
+            auto_compliance_on_detail,
+            run_project_compliance,
+            _project_expense_context,
+        )
 
         context['openai_configured'] = bool(get_openai_api_key())
-        context['project_ai_evaluation'] = get_cached_project_evaluation(
+        recorded, budget_pct_used = _project_expense_context(self.object)
+        evaluation = run_project_compliance(
             self.object,
+            full_run=True,
             recorded_expenses=recorded,
-            budget_pct_used=context.get('budget_pct_used'),
+            budget_pct_used=budget_pct_used,
         )
-        context['project_ai_evaluate_url'] = reverse(
-            'projects:project_ai_evaluate', args=[self.object.pk]
+        auto_compliance_on_detail(
+            self.request.user,
+            'project',
+            evaluation,
+            record_label=self.object.project_code,
+            link=reverse('projects:project_detail', args=[self.object.pk]),
         )
+        context['project_ai_evaluation'] = evaluation
         return context
 
     def post(self, request, *args, **kwargs):

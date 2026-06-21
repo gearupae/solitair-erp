@@ -411,6 +411,20 @@ class PurchaseRequestDetailView(PermissionRequiredMixin, DetailView):
         context['has_quote_attachments'] = self.object.attachments.exists()
         context['show_vendor_quote_ai'] = True
         context['pr_pdf_url'] = reverse('purchase:pr_pdf', args=[self.object.pk])
+
+        import json
+
+        from apps.purchase.services.vendor_quote_ai import analyze_vendor_quotes
+        from apps.core.compliance_service import auto_pr_compliance_on_detail
+
+        vendor_quote_analysis = None
+        if context['has_quote_attachments']:
+            vendor_quote_analysis = analyze_vendor_quotes(self.object)
+            auto_pr_compliance_on_detail(self.request.user, self.object, vendor_quote_analysis)
+        context['vendor_quote_analysis'] = vendor_quote_analysis
+        context['vendor_quote_analysis_json'] = (
+            json.dumps(vendor_quote_analysis) if vendor_quote_analysis else ''
+        )
         return context
 
 
@@ -1022,11 +1036,18 @@ class PurchaseOrderDetailView(PermissionRequiredMixin, DetailView):
             and self.object.items.exists()
         )
         from apps.inventory.utils import get_openai_api_key
-        from .po_evaluate_ai import get_cached_po_evaluation
+        from apps.core.compliance_service import auto_compliance_on_detail, run_po_compliance
 
         context['openai_configured'] = bool(get_openai_api_key())
-        context['po_ai_evaluation'] = get_cached_po_evaluation(self.object)
-        context['po_ai_evaluate_url'] = reverse('purchase:po_ai_evaluate', args=[self.object.pk])
+        evaluation = run_po_compliance(self.object, full_run=True)
+        auto_compliance_on_detail(
+            self.request.user,
+            'purchase_order',
+            evaluation,
+            record_label=self.object.po_number,
+            link=reverse('purchase:po_detail', args=[self.object.pk]),
+        )
+        context['po_ai_evaluation'] = evaluation
         return context
 
 

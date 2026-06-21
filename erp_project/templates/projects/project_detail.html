@@ -636,7 +636,7 @@
     </div>
     
     <div class="col-lg-4">
-        {% include 'includes/ai_evaluate_card.html' with prefix='project' description='Reviews budget vs spend, timeline, team, checklist, and compliance for this project. Green flags are OK; red flags need attention.' openai_configured=openai_configured ai_evaluation=project_ai_evaluation show_csrf=True %}
+        {% include 'includes/ai_evaluate_card.html' with prefix='project' description='Reviews budget vs spend, timeline, team, checklist, and compliance. Runs automatically — red flags need attention.' openai_configured=openai_configured ai_evaluation=project_ai_evaluation %}
 
         {% if show_expense_comparison_card %}
         <div class="card mb-4 border-0 shadow-sm">
@@ -1349,6 +1349,5 @@ $(function () {
 });
 
 </script>
-{% include 'includes/ai_evaluate_card_js.html' with prefix='project' evaluate_url=project_ai_evaluate_url %}
 {% endblock %}
 

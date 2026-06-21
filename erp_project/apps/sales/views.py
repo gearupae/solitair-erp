@@ -1052,13 +1052,18 @@ class EstimateDetailView(PermissionRequiredMixin, DetailView):
         context['estimate_retention_form'] = EstimateProjectRetentionForm(estimate=self.object)
         context['retention_percent_label'] = retention_percent_label(self.object.retention_percent)
         from apps.inventory.utils import get_openai_api_key
-        from .estimate_evaluate_ai import get_cached_estimate_evaluation
+        from apps.core.compliance_service import auto_compliance_on_detail, run_estimate_compliance
 
         context['openai_configured'] = bool(get_openai_api_key())
-        context['estimate_ai_evaluation'] = get_cached_estimate_evaluation(self.object)
-        context['estimate_ai_evaluate_url'] = reverse(
-            'sales:estimate_ai_evaluate', args=[self.object.pk]
+        evaluation = run_estimate_compliance(self.object, full_run=True)
+        auto_compliance_on_detail(
+            self.request.user,
+            'estimate',
+            evaluation,
+            record_label=self.object.display_estimate_number,
+            link=reverse('sales:estimate_detail', args=[self.object.pk]),
         )
+        context['estimate_ai_evaluation'] = evaluation
         return context
 
 

@@ -206,12 +206,10 @@
 <div class="card mb-4 border-primary border-opacity-25" id="vendor-quote-ai-section">
     <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
         <h6 class="mb-0 fw-semibold">
-            <i class="fas fa-robot text-primary me-1"></i>AI quote comparison
+            <i class="fas fa-shield-alt text-danger me-1"></i>Compliance — vendor quotes
         </h6>
-        {% if has_quote_attachments %}
-        <button type="button" class="btn btn-outline-primary btn-sm" id="btn-analyze-quotes">
-            <i class="fas fa-magic me-1"></i>Analyze quotes
-        </button>
+        {% if vendor_quote_analysis and vendor_quote_analysis.generated_at %}
+        <span class="text-muted small">Checked {{ vendor_quote_analysis.generated_at|slice:":16" }}</span>
         {% endif %}
     </div>
     <div class="card-body">
@@ -290,8 +288,8 @@
             </div>
             <p class="text-muted small mb-0 mt-3" id="vendor-quote-ai-meta"></p>
         </div>
-        <p class="text-muted small mb-0" id="vendor-quote-ai-placeholder">
-            Click <strong>Analyze quotes</strong> to compare attached vendor quotations.
+        <p class="text-muted small mb-0" id="vendor-quote-ai-placeholder"{% if vendor_quote_analysis %} style="display:none;"{% endif %}>
+            Quote compliance runs automatically when vendor files are attached.
         </p>
         {% endif %}
     </div>
@@ -610,8 +608,15 @@
 
     window.triggerVendorQuoteAnalysis = function() { runAnalysis(true); };
 
-    // Auto-analyze when page loads with attached quotes
+    {% if vendor_quote_analysis_json %}
+    try {
+        renderAnalysis({{ vendor_quote_analysis_json|safe }});
+    } catch (e) {
+        runAnalysis(false);
+    }
+    {% else %}
     runAnalysis(false);
+    {% endif %}
 })();
 </script>
 {% endif %}
