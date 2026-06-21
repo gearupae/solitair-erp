@@ -173,7 +173,8 @@
         </div>
     </div>
     <div class="col-lg-4">
-        {% include 'includes/ai_evaluate_card.html' with prefix='employee' description='Reviews UAE HR compliance, documents, visa/Emirates ID expiry, WPS bank details, and payroll readiness. Runs automatically — red flags need attention.' openai_configured=openai_configured ai_evaluation=employee_ai_evaluation %}
+        {% include 'includes/ai_evaluate_card.html' with prefix='employee' openai_configured=openai_configured ai_evaluation=employee_ai_evaluation ai_analysis_auto_run=ai_analysis_auto_run %}
+        {% include 'includes/ai_evaluate_card_js.html' with prefix='employee' evaluate_url=employee_ai_evaluate_url ai_compliance_auto_fetch=ai_compliance_auto_fetch %}
 
         <div class="card mb-4">
             <div class="card-body">

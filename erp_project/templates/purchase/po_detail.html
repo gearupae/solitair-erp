@@ -384,7 +384,8 @@
         </div>
         {% endif %}
 
-        {% include 'includes/ai_evaluate_card.html' with prefix='po' description='Reviews terms & conditions, retention, vendor, product lines, and VAT. Runs automatically — red flags need attention.' openai_configured=openai_configured ai_evaluation=po_ai_evaluation %}
+        {% include 'includes/ai_evaluate_card.html' with prefix='po' openai_configured=openai_configured ai_evaluation=po_ai_evaluation ai_analysis_auto_run=ai_analysis_auto_run %}
+        {% include 'includes/ai_evaluate_card_js.html' with prefix='po' evaluate_url=po_ai_evaluate_url ai_compliance_auto_fetch=ai_compliance_auto_fetch %}
 
         {% if can_send_po_email %}
         <div class="card border-primary border-opacity-25">

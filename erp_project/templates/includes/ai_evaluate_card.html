@@ -1,15 +1,28 @@
 <div class="card mb-4" id="{{ prefix }}-compliance-card">
     <div class="card-header bg-transparent py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
         <h6 class="mb-0 fw-semibold"><i class="fas fa-shield-alt me-2 text-danger"></i>Compliance</h6>
-        {% if ai_evaluation and ai_evaluation.generated_at %}
-        <span class="text-muted small">
-            Checked {{ ai_evaluation.generated_at|slice:":16"|default:"—" }}
-            {% if ai_evaluation.from_cache %}(cached){% endif %}
-        </span>
-        {% endif %}
+        <div class="d-flex align-items-center gap-2 flex-wrap">
+            {% if ai_evaluation and ai_evaluation.generated_at %}
+            <span class="text-muted small" id="{{ prefix }}ComplianceStatus">
+                Checked {{ ai_evaluation.generated_at|slice:":16"|default:"—" }}
+                {% if ai_evaluation.from_cache %}(cached){% endif %}
+            </span>
+            {% else %}
+            <span class="text-muted small d-none" id="{{ prefix }}ComplianceStatus"></span>
+            {% endif %}
+            <button type="button" class="btn btn-sm btn-outline-danger" id="{{ prefix }}AiEvaluateBtn">
+                <i class="fas fa-play me-1"></i>Run compliance check
+            </button>
+        </div>
     </div>
     <div class="card-body pt-0">
-        <p class="text-muted small mb-3">{{ description }}</p>
+        <p class="text-muted small mb-3">
+            {% if ai_analysis_auto_run %}
+            Reviews this record using cached results first, then runs a full check in the background when needed.
+            {% else %}
+            Click <strong>Run compliance check</strong> to analyze this record. Automatic background checks are turned off in <a href="/ajas/">AI settings</a>.
+            {% endif %}
+        </p>
         {% if not openai_configured %}
         <div class="alert alert-warning py-2 small mb-3">
             OpenAI is not configured — rule-based checks only.
@@ -31,7 +44,13 @@
             </div>
             {% endfor %}
             {% else %}
-            <p class="text-muted small mb-0">Compliance check runs automatically when you open this record.</p>
+            <p class="text-muted small mb-0" id="{{ prefix }}CompliancePlaceholder">
+                {% if ai_analysis_auto_run %}
+                Loading cached compliance results…
+                {% else %}
+                No compliance check has been run yet.
+                {% endif %}
+            </p>
             {% endif %}
         </div>
     </div>

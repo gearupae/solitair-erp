@@ -697,7 +697,8 @@
             </div>
         </div>
 
-        {% include 'includes/ai_evaluate_card.html' with prefix='estimate' description='Reviews terms & conditions, pricing, and VAT for this quotation. Runs automatically — red flags need attention.' openai_configured=openai_configured ai_evaluation=estimate_ai_evaluation %}
+        {% include 'includes/ai_evaluate_card.html' with prefix='estimate' openai_configured=openai_configured ai_evaluation=estimate_ai_evaluation ai_analysis_auto_run=ai_analysis_auto_run %}
+        {% include 'includes/ai_evaluate_card_js.html' with prefix='estimate' evaluate_url=estimate_ai_evaluate_url ai_compliance_auto_fetch=ai_compliance_auto_fetch %}
 
         {% if can_create_proforma and not estimate.has_invoice %}
         <div class="card mb-4" id="proforma-create">

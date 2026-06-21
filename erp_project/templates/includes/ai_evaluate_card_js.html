@@ -4,15 +4,26 @@
     var btn = document.getElementById(prefix + 'AiEvaluateBtn');
     if (!btn) return;
     var url = "{{ evaluate_url|escapejs }}";
+    var autoRun = {{ ai_compliance_auto_fetch|yesno:"true,false" }};
     var csrf = document.querySelector('[name=csrfmiddlewaretoken]')?.value || '';
-    var statusEl = document.getElementById(prefix + 'AiEvaluateStatus');
-    var summaryEl = document.getElementById(prefix + 'AiEvaluateSummary');
-    var flagsEl = document.getElementById(prefix + 'AiEvaluateFlags');
+    var statusEl = document.getElementById(prefix + 'ComplianceStatus');
+    var summaryEl = document.getElementById(prefix + 'ComplianceSummary');
+    var flagsEl = document.getElementById(prefix + 'ComplianceFlags');
+    var placeholderEl = document.getElementById(prefix + 'CompliancePlaceholder');
+    var running = false;
 
     function badgeClass(severity) {
         if (severity === 'green') return 'bg-success';
         if (severity === 'red') return 'bg-danger';
         return 'bg-warning text-dark';
+    }
+
+    function escapeHtml(str) {
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
     }
 
     function renderFlags(flags) {
@@ -23,9 +34,9 @@
         }
         flagsEl.innerHTML = flags.map(function(flag) {
             var sev = flag.severity || 'amber';
-            var cat = (flag.category || 'general').toUpperCase();
-            var title = flag.title || 'Flag';
-            var detail = flag.detail ? '<div class="ai-eval-flag-detail">' + flag.detail + '</div>' : '';
+            var cat = escapeHtml((flag.category || 'general').toUpperCase());
+            var title = escapeHtml(flag.title || 'Flag');
+            var detail = flag.detail ? '<div class="ai-eval-flag-detail">' + escapeHtml(flag.detail) + '</div>' : '';
             return '<div class="ai-eval-flag ai-eval-flag--' + sev + ' mb-2">' +
                 '<div class="d-flex justify-content-between align-items-start gap-2">' +
                 '<div class="ai-eval-flag-title">' + title + '</div>' +
@@ -34,46 +45,63 @@
         }).join('');
     }
 
-    btn.addEventListener('click', function() {
-        btn.disabled = true;
-        var origHtml = btn.innerHTML;
-        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Evaluating…';
+    function renderEvaluation(ev) {
+        if (placeholderEl) placeholderEl.remove();
         if (statusEl) {
             statusEl.classList.remove('d-none');
-            statusEl.textContent = 'Running evaluation…';
+            var when = (ev.generated_at || '').slice(0, 16).replace('T', ' ');
+            var suffix = ev.from_cache ? ' (cached)' : '';
+            statusEl.textContent = when ? ('Checked ' + when + suffix) : 'Check complete.';
         }
+        if (summaryEl) {
+            summaryEl.classList.remove('d-none');
+            summaryEl.textContent = ev.summary || '';
+        }
+        renderFlags(ev.flags || []);
+    }
+
+    function runEvaluation(force) {
+        if (running) return;
+        running = true;
+        btn.disabled = true;
+        var origHtml = btn.innerHTML;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Checking…';
+        if (statusEl) {
+            statusEl.classList.remove('d-none');
+            statusEl.textContent = 'Running compliance check…';
+        }
+
         var fd = new FormData();
         fd.append('csrfmiddlewaretoken', csrf);
+        if (force) fd.append('force', '1');
+
         fetch(url, { method: 'POST', headers: { 'X-CSRFToken': csrf }, body: fd })
             .then(function(r) { return r.json().then(function(data) { return { ok: r.ok, data: data }; }); })
             .then(function(res) {
-                btn.disabled = false;
-                btn.innerHTML = origHtml;
-                var data = res.data;
+                var data = res.data || {};
                 if (!res.ok || !data.ok) {
                     if (statusEl) statusEl.textContent = '';
-                    if (typeof toastr !== 'undefined') toastr.error(data.error || 'Evaluation failed.');
+                    if (typeof toastr !== 'undefined') toastr.error(data.error || 'Compliance check failed.');
                     return;
                 }
-                var ev = data.evaluation || {};
-                if (statusEl) {
-                    statusEl.classList.remove('d-none');
-                    var when = (ev.generated_at || '').slice(0, 16).replace('T', ' ');
-                    statusEl.textContent = when ? 'Last run: ' + when : 'Evaluation complete.';
-                }
-                if (summaryEl) {
-                    summaryEl.classList.remove('d-none');
-                    summaryEl.textContent = ev.summary || '';
-                }
-                renderFlags(ev.flags);
-                if (typeof toastr !== 'undefined') toastr.success('Evaluation complete.');
+                renderEvaluation(data.evaluation || {});
             })
             .catch(function() {
-                btn.disabled = false;
-                btn.innerHTML = origHtml;
                 if (statusEl) statusEl.textContent = '';
                 if (typeof toastr !== 'undefined') toastr.error('Network error.');
+            })
+            .finally(function() {
+                running = false;
+                btn.disabled = false;
+                btn.innerHTML = origHtml;
             });
-    });
+    }
+
+    btn.addEventListener('click', function() { runEvaluation(true); });
+
+    var hasRenderedFlags = flagsEl && flagsEl.querySelector('.ai-eval-flag');
+    if (autoRun) {
+        runEvaluation(false);
+    }
 })();
 </script>

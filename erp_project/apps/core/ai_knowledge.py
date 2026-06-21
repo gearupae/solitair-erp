@@ -1,13 +1,24 @@
 """Load module knowledge for AI compliance evaluation prompts."""
 from __future__ import annotations
 
-from apps.core.models import AiModuleKnowledge
+from apps.core.models import AiComplianceSettings, AiModuleKnowledge
 
 MAX_KNOWLEDGE_CHARS = 12000
 
 
 def module_choices() -> list[tuple[str, str]]:
     return list(AiModuleKnowledge.MODULE_CHOICES)
+
+
+def is_ai_analysis_auto_run() -> bool:
+    """Whether detail pages should trigger AI compliance checks after load."""
+    return AiComplianceSettings.get_settings().auto_run_enabled
+
+
+def save_ai_compliance_settings(*, auto_run_enabled: bool) -> None:
+    settings = AiComplianceSettings.get_settings()
+    settings.auto_run_enabled = bool(auto_run_enabled)
+    settings.save(update_fields=['auto_run_enabled', 'updated_at'])
 
 
 def get_knowledge_entries() -> dict[str, str]:

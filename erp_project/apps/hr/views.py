@@ -428,10 +428,14 @@ class EmployeeDetailView(PermissionRequiredMixin, DetailView):
             context['gratuity_national_message'] = ''
 
         from apps.inventory.utils import get_openai_api_key
+        from apps.core.ai_knowledge import is_ai_analysis_auto_run
         from apps.core.compliance_service import auto_compliance_on_detail, run_employee_compliance
 
         context['openai_configured'] = bool(get_openai_api_key())
-        evaluation = run_employee_compliance(self.object, full_run=True)
+        context['ai_analysis_auto_run'] = is_ai_analysis_auto_run()
+        context['employee_ai_evaluate_url'] = reverse('hr:employee_ai_evaluate', args=[self.object.pk])
+        evaluation = run_employee_compliance(self.object, full_run=False)
+        context['ai_compliance_auto_fetch'] = context['ai_analysis_auto_run'] and not evaluation.get('from_cache')
         auto_compliance_on_detail(
             self.request.user,
             'employee',
@@ -458,6 +462,15 @@ def employee_ai_evaluate(request, pk):
     force = request.POST.get('force') == '1'
     try:
         result = evaluate_employee(employee, force_refresh=force)
+        from apps.core.compliance_service import auto_compliance_on_detail
+
+        auto_compliance_on_detail(
+            request.user,
+            'employee',
+            result,
+            record_label=employee.employee_code,
+            link=reverse('hr:employee_detail', args=[employee.pk]),
+        )
         return JsonResponse({'ok': True, 'evaluation': result})
     except Exception as exc:
         return JsonResponse({'ok': False, 'error': str(exc)}, status=500)

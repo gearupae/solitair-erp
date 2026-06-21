@@ -115,3 +115,24 @@ class AiModuleKnowledge(models.Model):
         return dict(self.MODULE_CHOICES).get(self.module, self.module)
 
 
+class AiComplianceSettings(models.Model):
+    """Global toggles for AI compliance behaviour (edited at /ajas/)."""
+
+    auto_run_enabled = models.BooleanField(
+        default=True,
+        help_text='When enabled, compliance AI runs automatically in the background after a detail page loads.',
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'AI compliance settings'
+        verbose_name_plural = 'AI compliance settings'
+
+    @classmethod
+    def get_settings(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+    def __str__(self):
+        return 'AI compliance settings'
+

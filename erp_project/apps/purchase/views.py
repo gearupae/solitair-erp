@@ -414,13 +414,21 @@ class PurchaseRequestDetailView(PermissionRequiredMixin, DetailView):
 
         import json
 
-        from apps.purchase.services.vendor_quote_ai import analyze_vendor_quotes
+        from apps.core.ai_knowledge import is_ai_analysis_auto_run
+        from apps.purchase.services.vendor_quote_ai import get_cached_pr_quote_analysis
         from apps.core.compliance_service import auto_pr_compliance_on_detail
 
+        context['ai_analysis_auto_run'] = is_ai_analysis_auto_run()
         vendor_quote_analysis = None
         if context['has_quote_attachments']:
-            vendor_quote_analysis = analyze_vendor_quotes(self.object)
-            auto_pr_compliance_on_detail(self.request.user, self.object, vendor_quote_analysis)
+            vendor_quote_analysis = get_cached_pr_quote_analysis(self.object)
+            if vendor_quote_analysis:
+                auto_pr_compliance_on_detail(self.request.user, self.object, vendor_quote_analysis)
+        context['pr_quote_auto_fetch'] = (
+            context['ai_analysis_auto_run']
+            and context['has_quote_attachments']
+            and not vendor_quote_analysis
+        )
         context['vendor_quote_analysis'] = vendor_quote_analysis
         context['vendor_quote_analysis_json'] = (
             json.dumps(vendor_quote_analysis) if vendor_quote_analysis else ''
@@ -579,6 +587,10 @@ def pr_vendor_quote_analyze(request, pk):
     from apps.purchase.services.vendor_quote_ai import analyze_vendor_quotes
 
     result = analyze_vendor_quotes(pr, force=force)
+    if result.get('ok'):
+        from apps.core.compliance_service import auto_pr_compliance_on_detail
+
+        auto_pr_compliance_on_detail(request.user, pr, result)
     status = 200 if result.get('ok') else 400
     return JsonResponse(result, status=status)
 
@@ -1036,10 +1048,14 @@ class PurchaseOrderDetailView(PermissionRequiredMixin, DetailView):
             and self.object.items.exists()
         )
         from apps.inventory.utils import get_openai_api_key
+        from apps.core.ai_knowledge import is_ai_analysis_auto_run
         from apps.core.compliance_service import auto_compliance_on_detail, run_po_compliance
 
         context['openai_configured'] = bool(get_openai_api_key())
-        evaluation = run_po_compliance(self.object, full_run=True)
+        context['ai_analysis_auto_run'] = is_ai_analysis_auto_run()
+        context['po_ai_evaluate_url'] = reverse('purchase:po_ai_evaluate', args=[self.object.pk])
+        evaluation = run_po_compliance(self.object, full_run=False)
+        context['ai_compliance_auto_fetch'] = context['ai_analysis_auto_run'] and not evaluation.get('from_cache')
         auto_compliance_on_detail(
             self.request.user,
             'purchase_order',
@@ -1074,6 +1090,15 @@ def po_ai_evaluate(request, pk):
     force = request.POST.get('force') == '1'
     try:
         result = evaluate_purchase_order(po, force_refresh=force)
+        from apps.core.compliance_service import auto_compliance_on_detail
+
+        auto_compliance_on_detail(
+            request.user,
+            'purchase_order',
+            result,
+            record_label=po.po_number,
+            link=reverse('purchase:po_detail', args=[po.pk]),
+        )
         return JsonResponse({'ok': True, 'evaluation': result})
     except Exception as exc:
         return JsonResponse({'ok': False, 'error': str(exc)}, status=500)

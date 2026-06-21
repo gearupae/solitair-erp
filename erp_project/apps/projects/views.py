@@ -1145,6 +1145,7 @@ class ProjectDetailView(PermissionRequiredMixin, DetailView):
             .order_by('-created_at')
         )
         from apps.inventory.utils import get_openai_api_key
+        from apps.core.ai_knowledge import is_ai_analysis_auto_run
         from apps.core.compliance_service import (
             auto_compliance_on_detail,
             run_project_compliance,
@@ -1152,13 +1153,16 @@ class ProjectDetailView(PermissionRequiredMixin, DetailView):
         )
 
         context['openai_configured'] = bool(get_openai_api_key())
+        context['ai_analysis_auto_run'] = is_ai_analysis_auto_run()
+        context['project_ai_evaluate_url'] = reverse('projects:project_ai_evaluate', args=[self.object.pk])
         recorded, budget_pct_used = _project_expense_context(self.object)
         evaluation = run_project_compliance(
             self.object,
-            full_run=True,
+            full_run=False,
             recorded_expenses=recorded,
             budget_pct_used=budget_pct_used,
         )
+        context['ai_compliance_auto_fetch'] = context['ai_analysis_auto_run'] and not evaluation.get('from_cache')
         auto_compliance_on_detail(
             self.request.user,
             'project',
@@ -1616,6 +1620,15 @@ def project_ai_evaluate(request, pk):
             force_refresh=force,
             recorded_expenses=recorded,
             budget_pct_used=budget_pct_used,
+        )
+        from apps.core.compliance_service import auto_compliance_on_detail
+
+        auto_compliance_on_detail(
+            request.user,
+            'project',
+            result,
+            record_label=project.project_code,
+            link=reverse('projects:project_detail', args=[project.pk]),
         )
         return JsonResponse({'ok': True, 'evaluation': result})
     except Exception as exc:
