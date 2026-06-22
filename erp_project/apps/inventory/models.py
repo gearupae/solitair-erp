@@ -294,6 +294,14 @@ class Item(BaseModel):
     vat_rate = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal('0.00'))
 
     # Shelf / storage (consumables labelling & reports)
+    warehouse = models.ForeignKey(
+        'Warehouse',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='items',
+        help_text='Primary warehouse where this item is stored',
+    )
     storage_location_master = models.ForeignKey(
         'StorageLocation',
         on_delete=models.SET_NULL,
@@ -475,10 +483,31 @@ class Item(BaseModel):
         super().save(*args, **kwargs)
 
     def get_storage_shelf_label(self):
-        """Storage location label for QR, reports, and exports."""
+        """Rack/shelf label for QR, reports, and exports."""
         if self.storage_location_master_id:
             return self.storage_location_master.name
         return self.storage_location or ''
+
+    def get_warehouse_label(self):
+        """Warehouse label for display and exports."""
+        if not self.warehouse_id:
+            return ''
+        wh = self.warehouse
+        code = getattr(wh, 'code', '') or ''
+        if code:
+            return f'{wh.name} ({code})'
+        return wh.name
+
+    def get_storage_display_label(self):
+        """Combined warehouse + rack for compact display."""
+        parts = []
+        wh = self.get_warehouse_label()
+        rack = self.get_storage_shelf_label()
+        if wh:
+            parts.append(wh)
+        if rack:
+            parts.append(rack)
+        return ' · '.join(parts)
     
     @property
     def total_stock(self):

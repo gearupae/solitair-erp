@@ -317,58 +317,14 @@ class CompanySettingsView(PermissionRequiredMixin, UpdateView):
             ],
             cls=DjangoJSONEncoder,
         )
-        from apps.inventory.utils import openai_key_status
-
-        context['openai_key_status'] = openai_key_status()
-        try:
-            context['openai_key_masked'] = self.get_object().openai_api_key_masked()
-        except Exception:
-            context['openai_key_masked'] = ''
         return context
 
     def post(self, request, *args, **kwargs):
-        if request.POST.get('openai_key_action'):
-            return self._handle_openai_key_post(request)
         if request.POST.get('estimate_template_action'):
             return self._handle_estimate_template_post(request)
         if request.POST.get('po_terms_template_action'):
             return self._handle_po_terms_template_post(request)
         return super().post(request, *args, **kwargs)
-
-    def _handle_openai_key_post(self, request):
-        from django.core.exceptions import ImproperlyConfigured
-
-        action = request.POST.get('openai_key_action')
-        cs = CompanySettings.get_settings()
-        redirect_url = f'{reverse("settings:company")}#openai-key-settings'
-
-        if action == 'clear':
-            cs.openai_api_key = ''
-            cs.save(update_fields=['openai_api_key'])
-            messages.success(request, 'OpenAI API key removed.')
-            return redirect(redirect_url)
-
-        raw_key = (request.POST.get('openai_api_key') or '').strip()
-        if not raw_key:
-            messages.warning(request, 'Enter an OpenAI API key, then click Save API Key.')
-            return redirect(redirect_url)
-
-        try:
-            cs.set_openai_api_key(raw_key)
-            cs.save(update_fields=['openai_api_key'])
-        except ImproperlyConfigured as exc:
-            messages.error(
-                request,
-                f'OpenAI key could not be saved: {exc} '
-                'Ask your administrator to run pip install -r requirements.txt on the server.',
-            )
-            return redirect(redirect_url)
-        except Exception as exc:
-            messages.error(request, f'OpenAI API key could not be saved: {exc}')
-            return redirect(redirect_url)
-
-        messages.success(request, 'OpenAI API key saved for AI forecasting.')
-        return redirect(redirect_url)
 
     def _handle_estimate_template_post(self, request):
         action = request.POST.get('estimate_template_action')

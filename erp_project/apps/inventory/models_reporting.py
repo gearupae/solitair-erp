@@ -86,3 +86,64 @@ class InventoryAIActionSummary(BaseModel):
 
     def __str__(self):
         return f'AI actions ({self.cache_key[:12]}…)'
+
+
+class InventoryComplianceFlag(BaseModel):
+    """Watchdog flags surfaced on the Inventory Compliance tab."""
+
+    SEVERITY_HIGH = 'high'
+    SEVERITY_MEDIUM = 'medium'
+    SEVERITY_LOW = 'low'
+    SEVERITY_CHOICES = [
+        (SEVERITY_HIGH, 'High'),
+        (SEVERITY_MEDIUM, 'Med'),
+        (SEVERITY_LOW, 'Low'),
+    ]
+
+    check_code = models.CharField(max_length=60, db_index=True)
+    severity = models.CharField(max_length=10, choices=SEVERITY_CHOICES, default=SEVERITY_MEDIUM)
+    issue = models.CharField(max_length=300)
+    item = models.ForeignKey(
+        'inventory.Item',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='compliance_flags',
+    )
+    sku = models.CharField(max_length=80, blank=True, default='')
+    warehouse = models.ForeignKey(
+        'inventory.Warehouse',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='compliance_flags',
+    )
+    value_impact = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0'))
+    suggested_fix = models.TextField(blank=True, default='')
+    run_key = models.CharField(max_length=64, db_index=True, default='')
+    is_resolved = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['run_key', 'check_code']),
+            models.Index(fields=['is_resolved', '-created_at']),
+        ]
+
+    def __str__(self):
+        return f'{self.check_code}: {self.issue[:40]}'
+
+
+class InventoryAIHubCache(models.Model):
+    """Daily cached payloads for AI inventory hub tabs (cheap-model summaries)."""
+
+    cache_key = models.CharField(max_length=128, unique=True)
+    tab = models.CharField(max_length=40, db_index=True)
+    payload = models.JSONField(default=dict)
+    generated_at = models.DateTimeField()
+
+    class Meta:
+        ordering = ['-generated_at']
+
+    def __str__(self):
+        return f'{self.tab} ({self.cache_key[:16]}…)'

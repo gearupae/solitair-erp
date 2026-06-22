@@ -40,6 +40,16 @@ def build_employee_snapshot(employee) -> dict:
 
     payroll_count = employee.payrolls.filter(is_active=True).count()
 
+    attachments = list(employee.attachments.order_by('id'))
+    attachment_rows = []
+    for att in attachments:
+        attachment_rows.append({
+            'id': att.pk,
+            'filename': att.filename or (att.file.name.split('/')[-1] if att.file else ''),
+            'label': att.label or '',
+            'uploaded_at': att.uploaded_at.isoformat() if att.uploaded_at else '',
+        })
+
     snapshot = {
         'employee_code': employee.employee_code,
         'full_name': employee.full_name,
@@ -62,6 +72,11 @@ def build_employee_snapshot(employee) -> dict:
         'visa_expiry': str(employee.visa_expiry) if employee.visa_expiry else '',
         'leave_balances': leave_balances,
         'payroll_record_count': payroll_count,
+        'attachments': attachment_rows,
+        'attachment_count': len(attachment_rows),
+        'attachment_signature': '|'.join(
+            f'{a.pk}:{a.uploaded_at.isoformat() if a.uploaded_at else ""}' for a in attachments
+        ),
         'updated_at': employee.updated_at.isoformat() if employee.updated_at else '',
     }
 
@@ -90,7 +105,10 @@ def build_employee_snapshot(employee) -> dict:
 
 
 def _cache_key(employee, snapshot: dict) -> str:
-    raw = f"{employee.pk}|{snapshot.get('updated_at')}|{snapshot.get('status')}"
+    raw = (
+        f"{employee.pk}|{snapshot.get('updated_at')}|{snapshot.get('status')}|"
+        f"{snapshot.get('attachment_signature', '')}"
+    )
     digest = hashlib.sha256(raw.encode('utf-8')).hexdigest()[:16]
     return f'{CACHE_PREFIX}{employee.pk}:{digest}'
 
@@ -193,11 +211,27 @@ def _heuristic_evaluation(snapshot: dict) -> dict:
             'detail': 'Active employee has zero basic salary — confirm payroll setup.',
         })
 
+    attachment_count = int(snapshot.get('attachment_count') or 0)
+    if attachment_count:
+        flags.append({
+            'severity': 'green',
+            'category': 'documents',
+            'title': f'{attachment_count} HR document(s) attached',
+            'detail': 'Compliance documents are on file for AI/manual review.',
+        })
+    elif snapshot.get('location') == 'uae' and snapshot.get('status') == 'active':
+        flags.append({
+            'severity': 'amber',
+            'category': 'documents',
+            'title': 'No HR documents attached',
+            'detail': 'Upload passport, visa, Emirates ID, or labour card copies for document verification.',
+        })
+
     red_count = sum(1 for f in flags if f['severity'] == 'red')
     green_count = sum(1 for f in flags if f['severity'] == 'green')
     summary = (
         f'Rule-based check: {green_count} green flag(s), {red_count} red flag(s). '
-        'Configure OpenAI in Settings for deeper AI review.'
+        'Set OPENAI_API_KEY in .env for deeper AI review.'
     )
     return {
         'flags': flags,
@@ -215,7 +249,7 @@ def _parse_json_content(content: str) -> dict:
     return json.loads(content)
 
 
-def _fetch_evaluation_from_openai(snapshot: dict) -> dict:
+def _fetch_evaluation_from_openai(snapshot: dict, employee=None) -> dict:
     api_key = get_openai_api_key()
     if not api_key:
         result = _heuristic_evaluation(snapshot)
@@ -227,12 +261,15 @@ def _fetch_evaluation_from_openai(snapshot: dict) -> dict:
 
     from apps.core.ai_knowledge import get_ai_knowledge_prompt_block
     from apps.core.models import AiModuleKnowledge
+    from apps.hr.services.employee_attachment_extract import build_attachment_ai_parts
 
     knowledge = get_ai_knowledge_prompt_block(AiModuleKnowledge.MODULE_EMPLOYEE)
     system = (
         'You are a UAE HR compliance reviewer for a fire & safety ERP. '
         'Review employee records for UAE labour law compliance: visa, Emirates ID, passport, '
         'labour card, medical insurance, WPS bank details, probation, salary, and leave. '
+        'When employee documents are attached, read them carefully and cross-check names, '
+        'ID numbers, and expiry dates against the employee snapshot. '
         'Return ONLY valid JSON with this shape: '
         '{"flags":[{"severity":"green|red|amber","category":"compliance|documents|payroll|general",'
         '"title":"short title","detail":"one or two sentences"}],'
@@ -241,11 +278,30 @@ def _fetch_evaluation_from_openai(snapshot: dict) -> dict:
         f'{knowledge}'
     )
     user_payload = json.dumps(snapshot, default=str)[:14000]
+    attachment_parts = []
+    if employee is not None:
+        attachment_parts = build_attachment_ai_parts(list(employee.attachments.order_by('id')))
+
+    if attachment_parts:
+        user_content = [
+            {
+                'type': 'text',
+                'text': (
+                    'Employee snapshot (structured fields):\n'
+                    f'{user_payload}\n\n'
+                    'Review the attached employee documents below and compare them to the snapshot.'
+                ),
+            },
+            *attachment_parts,
+        ]
+    else:
+        user_content = f'Employee snapshot:\n{user_payload}'
+
     body = json.dumps({
         'model': 'gpt-4o-mini',
         'messages': [
             {'role': 'system', 'content': system},
-            {'role': 'user', 'content': f'Employee snapshot:\n{user_payload}'},
+            {'role': 'user', 'content': user_content},
         ],
         'temperature': 0.2,
     }).encode('utf-8')
@@ -289,7 +345,7 @@ def evaluate_employee(employee, *, force_refresh: bool = False) -> dict:
             cached['from_cache'] = True
             return cached
 
-    result = _fetch_evaluation_from_openai(snapshot)
+    result = _fetch_evaluation_from_openai(snapshot, employee=employee)
     result['from_cache'] = False
     result['employee_code'] = snapshot.get('employee_code', '')
     cache.set(key, result, timeout=int(timedelta(hours=CACHE_HOURS).total_seconds()))

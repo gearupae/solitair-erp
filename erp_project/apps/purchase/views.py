@@ -415,10 +415,11 @@ class PurchaseRequestDetailView(PermissionRequiredMixin, DetailView):
         import json
 
         from apps.core.ai_knowledge import is_ai_analysis_auto_run
+        from apps.core.models import AiModuleKnowledge
         from apps.purchase.services.vendor_quote_ai import get_cached_pr_quote_analysis
         from apps.core.compliance_service import auto_pr_compliance_on_detail
 
-        context['ai_analysis_auto_run'] = is_ai_analysis_auto_run()
+        context['ai_analysis_auto_run'] = is_ai_analysis_auto_run(AiModuleKnowledge.MODULE_PURCHASE_REQUEST)
         vendor_quote_analysis = None
         if context['has_quote_attachments']:
             vendor_quote_analysis = get_cached_pr_quote_analysis(self.object)
@@ -1049,10 +1050,11 @@ class PurchaseOrderDetailView(PermissionRequiredMixin, DetailView):
         )
         from apps.inventory.utils import get_openai_api_key
         from apps.core.ai_knowledge import is_ai_analysis_auto_run
+        from apps.core.models import AiModuleKnowledge
         from apps.core.compliance_service import auto_compliance_on_detail, run_po_compliance
 
         context['openai_configured'] = bool(get_openai_api_key())
-        context['ai_analysis_auto_run'] = is_ai_analysis_auto_run()
+        context['ai_analysis_auto_run'] = is_ai_analysis_auto_run(AiModuleKnowledge.MODULE_PURCHASE_ORDER)
         context['po_ai_evaluate_url'] = reverse('purchase:po_ai_evaluate', args=[self.object.pk])
         evaluation = run_po_compliance(self.object, full_run=False)
         context['ai_compliance_auto_fetch'] = context['ai_analysis_auto_run'] and not evaluation.get('from_cache')

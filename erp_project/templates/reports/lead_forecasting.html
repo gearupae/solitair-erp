@@ -81,7 +81,7 @@
 
 {% if not openai_configured %}
 <div class="alert alert-warning no-print">
-    Configure OpenAI API key in <a href="{% url 'settings:company' %}">Settings → Company</a> for full AI analysis. Heuristic scoring is used as fallback.
+    Set <code>OPENAI_API_KEY</code> in your <code>.env</code> file for full AI analysis. Heuristic scoring is used as fallback.
 </div>
 {% endif %}
 

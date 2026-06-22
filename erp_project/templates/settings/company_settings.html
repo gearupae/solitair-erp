@@ -223,54 +223,6 @@
     </div>
 </div>
 
-<div class="card border-0 shadow-sm mb-4" id="openai-key-settings">
-    <div class="card-body p-4">
-        <h5 class="fw-semibold mb-2">
-            <i class="fas fa-robot me-2 text-primary"></i>OpenAI API Key (for AI Forecasting)
-        </h5>
-        <p class="text-muted small mb-3">
-            Used by Inventory → AI Forecast Report. Save the key here — it is stored separately from other company settings.
-            Environment variable <code>OPENAI_API_KEY</code> overrides the value stored here.
-        </p>
-        {% if openai_key_status == 'env' %}
-        <span class="badge bg-success mb-3">Configured via .env</span>
-        {% elif openai_key_status == 'database' %}
-        <span class="badge bg-info text-dark mb-3">Set in database{% if openai_key_masked %} ({{ openai_key_masked }}){% endif %}</span>
-        {% elif openai_key_status == 'invalid' %}
-        <span class="badge bg-danger mb-3">Key stored but unreadable — re-enter and save</span>
-        {% else %}
-        <span class="badge bg-secondary mb-3">Not configured</span>
-        {% endif %}
-
-        <form method="post" id="openaiKeyForm" class="row g-3 align-items-end">
-            {% csrf_token %}
-            <input type="hidden" name="openai_key_action" value="save">
-            <div class="col-md-8">
-                <label class="form-label" for="openai_api_key">OpenAI API Key</label>
-                <input type="password" id="openai_api_key" name="openai_api_key" class="form-control" placeholder="sk-…" autocomplete="off" spellcheck="false">
-                <div class="form-text">
-                    For security, this field stays blank after save. Use the badge above to confirm the key is stored.
-                    {% if openai_key_masked and openai_key_status == 'database' %}
-                    Current key ends with: <strong>{{ openai_key_masked|slice:"-4:" }}</strong>.
-                    {% endif %}
-                </div>
-            </div>
-            <div class="col-md-4 d-flex flex-wrap gap-2">
-                <button type="submit" class="btn btn-primary" id="openaiKeySaveBtn">
-                    <i class="fas fa-key me-1"></i>Save API Key
-                </button>
-                {% if openai_key_status == 'database' or openai_key_status == 'invalid' %}
-                <button type="submit" name="openai_key_action" value="clear" class="btn btn-outline-danger"
-                    formaction="{% url 'settings:company' %}" formmethod="post"
-                    onclick="return confirm('Remove the stored OpenAI API key?');">
-                    Remove
-                </button>
-                {% endif %}
-            </div>
-        </form>
-    </div>
-</div>
-
 <div class="card border-0 shadow-sm" id="estimate-templates">
     <div class="card-body p-4">
         <h5 class="fw-semibold mb-1">
@@ -577,35 +529,6 @@ function setupEstimateTemplateEditor(config) {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
-    const openaiKeyForm = document.getElementById('openaiKeyForm');
-    const openaiKeySaveBtn = document.getElementById('openaiKeySaveBtn');
-    if (openaiKeyForm && openaiKeySaveBtn) {
-        openaiKeyForm.addEventListener('submit', function(e) {
-            const action = (e.submitter && e.submitter.name === 'openai_key_action')
-                ? e.submitter.value
-                : 'save';
-            if (action === 'clear') {
-                return;
-            }
-            const keyInput = document.getElementById('openai_api_key');
-            if (!keyInput || !keyInput.value.trim()) {
-                e.preventDefault();
-                alert('Paste your OpenAI API key first.');
-                keyInput && keyInput.focus();
-                return;
-            }
-            openaiKeySaveBtn.disabled = true;
-            openaiKeySaveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Saving…';
-        });
-    }
-
-    if (window.location.hash === '#openai-key-settings') {
-        const section = document.getElementById('openai-key-settings');
-        if (section) {
-            section.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }
-    }
-
     setupEstimateTemplateEditor({
         templates: clientNoteTemplates,
         selectId: 'cnTemplateSelect',

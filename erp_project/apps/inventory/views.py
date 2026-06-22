@@ -330,7 +330,7 @@ def item_export_csv(request):
     )
     qs = (
         Item.objects.filter(is_active=True)
-        .select_related('category', 'tax_code', 'storage_location_master')
+        .select_related('category', 'tax_code', 'storage_location_master', 'warehouse')
         .prefetch_related('item_groups')
         .order_by('item_code')
     )

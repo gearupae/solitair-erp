@@ -35,18 +35,30 @@ from apps.hr.attendance_utils import (
     month_absent_rate_pct,
     open_attendance_session,
 )
-from apps.hr.forms_extended import EmployeeAdvanceForm, PayrollSettingsForm, PayrollTemplateForm
+from apps.hr.forms_extended import (
+    EmployeeAdvanceForm,
+    EmployeeAllowanceExpenseForm,
+    EmployeeCommissionForm,
+    EmployeeHRProfileForm,
+    EmployeeSalaryDeductionForm,
+    PayrollSettingsForm,
+    PayrollTemplateForm,
+)
 from apps.hr.models import Department, Employee, LeaveBalance, LeaveRequest, Payroll
 from apps.hr.models_extended import (
     AdvanceRepayment,
     AttendanceRecord,
     AttendanceSummary,
     EmployeeAdvance,
+    EmployeeAllowanceExpense,
+    EmployeeCommission,
+    EmployeeSalaryDeduction,
     EmployeeHRProfile,
     GOSIRecord,
     KSACompliance,
     PayrollSettings,
     PayrollTemplate,
+    SalaryDeductionApplication,
     UAECompliance,
     WPSRecord,
 )
@@ -819,6 +831,7 @@ def payroll_deduction_preview(request):
             'iloe': _s(prev['iloe']),
             'gosi_employee': _s(prev['gosi_employee']),
             'advance': _s(prev['advance']),
+            'salary_deduction': _s(prev.get('salary_deduction', Decimal('0'))),
             'manual': _s(prev['manual']),
             'total': _s(prev['total']),
             'estimated_net': _s(prev['estimated_net']),
@@ -900,6 +913,269 @@ class EmployeeAdvanceDetailView(PermissionRequiredMixin, DetailView):
         ctx['title'] = f'Advance — {self.object.employee.full_name}'
         ctx['repayments'] = self.object.repayments.select_related('payroll').order_by('-date', '-pk')
         return ctx
+
+
+class EmployeeSalaryDeductionListView(PermissionRequiredMixin, ListView):
+    model = EmployeeSalaryDeduction
+    template_name = 'hr/payroll_salary_deduction_list.html'
+    context_object_name = 'salary_deductions'
+    module_name = 'hr'
+    permission_type = 'view'
+    paginate_by = 50
+
+    def get_queryset(self):
+        qs = EmployeeSalaryDeduction.objects.filter(is_active=True).select_related(
+            'employee', 'approved_by'
+        ).order_by('-created_at', '-pk')
+        eid = self.request.GET.get('employee')
+        if eid and str(eid).isdigit():
+            qs = qs.filter(employee_id=int(eid))
+        st = self.request.GET.get('status')
+        if st in dict(EmployeeSalaryDeduction.STATUS_CHOICES):
+            qs = qs.filter(status=st)
+        cat = self.request.GET.get('category')
+        if cat in dict(EmployeeSalaryDeduction.CATEGORY_CHOICES):
+            qs = qs.filter(category=cat)
+        return qs
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx['title'] = 'Salary deductions'
+        ctx['employees'] = Employee.objects.filter(is_active=True).order_by('first_name', 'last_name')
+        ctx['status_choices'] = EmployeeSalaryDeduction.STATUS_CHOICES
+        ctx['category_choices'] = EmployeeSalaryDeduction.CATEGORY_CHOICES
+        ctx['filter_employee'] = self.request.GET.get('employee', '')
+        ctx['filter_status'] = self.request.GET.get('status', '')
+        ctx['filter_category'] = self.request.GET.get('category', '')
+        ctx['can_add'] = self.request.user.is_superuser or PermissionChecker.has_permission(
+            self.request.user, 'hr', 'edit'
+        )
+        return ctx
+
+
+class EmployeeSalaryDeductionCreateView(CreatePermissionMixin, CreateView):
+    model = EmployeeSalaryDeduction
+    form_class = EmployeeSalaryDeductionForm
+    template_name = 'hr/payroll_salary_deduction_form.html'
+    success_url = reverse_lazy('hr:payroll_salary_deduction_list')
+    module_name = 'hr'
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx['title'] = 'Add salary deduction'
+        return ctx
+
+    def form_valid(self, form):
+        messages.success(self.request, 'Salary deduction saved.')
+        return super().form_valid(form)
+
+
+class EmployeeSalaryDeductionDetailView(PermissionRequiredMixin, DetailView):
+    model = EmployeeSalaryDeduction
+    template_name = 'hr/payroll_salary_deduction_detail.html'
+    context_object_name = 'salary_deduction'
+    module_name = 'hr'
+    permission_type = 'view'
+
+    def get_queryset(self):
+        return EmployeeSalaryDeduction.objects.filter(is_active=True).select_related('employee', 'approved_by')
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx['title'] = f'Salary deduction — {self.object.employee.full_name}'
+        ctx['applications'] = self.object.applications.select_related('payroll').order_by('-date', '-pk')
+        return ctx
+
+
+class EmployeeAllowanceExpenseListView(PermissionRequiredMixin, ListView):
+    model = EmployeeAllowanceExpense
+    template_name = 'hr/payroll_allowance_expense_list.html'
+    context_object_name = 'allowance_expenses'
+    module_name = 'hr'
+    permission_type = 'view'
+    paginate_by = 50
+
+    def get_queryset(self):
+        qs = EmployeeAllowanceExpense.objects.filter(is_active=True).select_related(
+            'employee', 'approved_by'
+        ).order_by('-created_at', '-pk')
+        eid = self.request.GET.get('employee')
+        if eid and str(eid).isdigit():
+            qs = qs.filter(employee_id=int(eid))
+        st = self.request.GET.get('status')
+        if st in dict(EmployeeAllowanceExpense.STATUS_CHOICES):
+            qs = qs.filter(status=st)
+        cat = self.request.GET.get('category')
+        if cat in dict(EmployeeAllowanceExpense.CATEGORY_CHOICES):
+            qs = qs.filter(category=cat)
+        kind = self.request.GET.get('kind')
+        if kind == 'allowance':
+            qs = qs.exclude(category__startswith=EmployeeAllowanceExpense.EXPENSE_CATEGORY_PREFIX)
+        elif kind == 'expense':
+            qs = qs.filter(category__startswith=EmployeeAllowanceExpense.EXPENSE_CATEGORY_PREFIX)
+        return qs
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx['title'] = 'Allowances & expenses'
+        ctx['employees'] = Employee.objects.filter(is_active=True).order_by('first_name', 'last_name')
+        ctx['status_choices'] = EmployeeAllowanceExpense.STATUS_CHOICES
+        ctx['category_choices'] = EmployeeAllowanceExpense.CATEGORY_CHOICES
+        ctx['filter_employee'] = self.request.GET.get('employee', '')
+        ctx['filter_status'] = self.request.GET.get('status', '')
+        ctx['filter_category'] = self.request.GET.get('category', '')
+        ctx['filter_kind'] = self.request.GET.get('kind', '')
+        ctx['can_add'] = self.request.user.is_superuser or PermissionChecker.has_permission(
+            self.request.user, 'hr', 'edit'
+        )
+        return ctx
+
+
+class EmployeeAllowanceExpenseCreateView(CreatePermissionMixin, CreateView):
+    model = EmployeeAllowanceExpense
+    form_class = EmployeeAllowanceExpenseForm
+    template_name = 'hr/payroll_allowance_expense_form.html'
+    success_url = reverse_lazy('hr:payroll_allowance_expense_list')
+    module_name = 'hr'
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx['title'] = 'Add allowance / expense'
+        return ctx
+
+    def form_valid(self, form):
+        messages.success(self.request, 'Allowance / expense saved.')
+        return super().form_valid(form)
+
+
+class EmployeeAllowanceExpenseDetailView(PermissionRequiredMixin, DetailView):
+    model = EmployeeAllowanceExpense
+    template_name = 'hr/payroll_allowance_expense_detail.html'
+    context_object_name = 'allowance_expense'
+    module_name = 'hr'
+    permission_type = 'view'
+
+    def get_queryset(self):
+        return EmployeeAllowanceExpense.objects.filter(is_active=True).select_related('employee', 'approved_by')
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx['title'] = f'Allowance / expense — {self.object.employee.full_name}'
+        ctx['applications'] = self.object.applications.select_related('payroll').order_by('-date', '-pk')
+        first_pay = self.object.first_payroll_month()
+        ctx['first_payroll_month'] = first_pay
+        return ctx
+
+
+class EmployeeCommissionListView(PermissionRequiredMixin, ListView):
+    model = EmployeeCommission
+    template_name = 'hr/payroll_commission_list.html'
+    context_object_name = 'commissions'
+    module_name = 'hr'
+    permission_type = 'view'
+    paginate_by = 50
+
+    def get_queryset(self):
+        qs = EmployeeCommission.objects.filter(is_active=True).select_related(
+            'employee', 'approved_by', 'payroll'
+        ).order_by('-month', '-pk')
+        eid = self.request.GET.get('employee')
+        if eid and str(eid).isdigit():
+            qs = qs.filter(employee_id=int(eid))
+        st = self.request.GET.get('status')
+        if st in dict(EmployeeCommission.STATUS_CHOICES):
+            qs = qs.filter(status=st)
+        m = self.request.GET.get('month')
+        if m and isinstance(m, str) and len(m) >= 7 and m[4:5] == '-':
+            try:
+                y, mo = m.split('-', 1)
+                qs = qs.filter(month__year=int(y), month__month=int(mo))
+            except ValueError:
+                pass
+        return qs
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx['title'] = 'Commissions'
+        ctx['employees'] = Employee.objects.filter(is_active=True).order_by('first_name', 'last_name')
+        ctx['status_choices'] = EmployeeCommission.STATUS_CHOICES
+        ctx['filter_employee'] = self.request.GET.get('employee', '')
+        ctx['filter_status'] = self.request.GET.get('status', '')
+        ctx['filter_month'] = self.request.GET.get('month', '')
+        ctx['can_add'] = self.request.user.is_superuser or PermissionChecker.has_permission(
+            self.request.user, 'hr', 'edit'
+        )
+        return ctx
+
+
+class EmployeeCommissionCreateView(CreatePermissionMixin, CreateView):
+    model = EmployeeCommission
+    form_class = EmployeeCommissionForm
+    template_name = 'hr/payroll_commission_form.html'
+    success_url = reverse_lazy('hr:payroll_commission_list')
+    module_name = 'hr'
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx['title'] = 'Add commission'
+        ctx['preview_url'] = reverse('hr:payroll_commission_preview')
+        return ctx
+
+    def form_valid(self, form):
+        messages.success(self.request, 'Commission saved.')
+        return super().form_valid(form)
+
+
+class EmployeeCommissionDetailView(PermissionRequiredMixin, DetailView):
+    model = EmployeeCommission
+    template_name = 'hr/payroll_commission_detail.html'
+    context_object_name = 'commission'
+    module_name = 'hr'
+    permission_type = 'view'
+
+    def get_queryset(self):
+        return EmployeeCommission.objects.filter(is_active=True).select_related(
+            'employee', 'approved_by', 'payroll'
+        )
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx['title'] = f'Commission — {self.object.employee.full_name} ({self.object.month:%b %Y})'
+        return ctx
+
+
+@login_required
+def payroll_commission_preview(request):
+    if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'hr', 'view')):
+        return JsonResponse({'error': 'Permission denied'}, status=403)
+    epk = request.GET.get('employee')
+    if not epk or not str(epk).isdigit():
+        return JsonResponse({'error': 'employee required'}, status=400)
+    month_first = _parse_month_query(request.GET.get('month'))
+    if not month_first:
+        return JsonResponse({'error': 'month required'}, status=400)
+
+    emp = Employee.objects.filter(pk=int(epk), is_active=True).first()
+    if not emp:
+        return JsonResponse({'error': 'employee not found'}, status=404)
+
+    from apps.hr.services.commission_service import build_commission_preview
+
+    preview = build_commission_preview(emp, month_first)
+
+    def _s(d: Decimal) -> str:
+        return str(d.quantize(Decimal('0.01')))
+
+    return JsonResponse(
+        {
+            'total_sales': _s(preview['total_sales']),
+            'commission_amount': _s(preview['commission_amount']),
+            'invoice_count': preview['invoice_count'],
+            'configured': preview['configured'],
+            'commission_type_label': preview['commission_type_label'],
+            'commission_rate_label': preview.get('commission_rate_label', ''),
+        }
+    )
 
 
 class PayrollTemplateDeleteView(UpdatePermissionMixin, DeleteView):

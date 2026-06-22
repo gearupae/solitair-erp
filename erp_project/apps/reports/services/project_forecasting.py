@@ -123,7 +123,7 @@ def _urllib_ssl_context():
 def _call_openai(*, system: str, user_payload: dict | list, temperature: float = 0.25, call_label: str = 'openai') -> dict | list:
     api_key = get_openai_api_key()
     if not api_key:
-        raise OpenAINotConfigured('OpenAI API key not configured (set OPENAI_API_KEY or save key in Company Settings)')
+        raise OpenAINotConfigured('OpenAI API key not configured — set OPENAI_API_KEY in .env')
 
     import urllib.error
     import urllib.request

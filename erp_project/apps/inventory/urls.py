@@ -84,6 +84,12 @@ urlpatterns = [
         report_views.ai_forecast_action_summary_refresh,
         name='ai_forecast_action_summary_refresh',
     ),
+    path('reports/ai-forecast/chat/', report_views.ai_forecast_chat, name='ai_forecast_chat'),
+    path(
+        'reports/ai-forecast/compliance-refresh/',
+        report_views.ai_forecast_compliance_refresh,
+        name='ai_forecast_compliance_refresh',
+    ),
 
     # Inter-entity transfers
     path('inter-entity/', views_procurement.InterEntityTransferListView.as_view(), name='inter_entity_transfer_list'),

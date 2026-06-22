@@ -223,13 +223,19 @@
         <div class="card-body">
             <div class="row g-3">
                 <div class="col-md-6">
-                    <label class="form-label">Storage Location</label>
+                    <label class="form-label">Warehouse</label>
+                    {{ form.warehouse }}
+                    <small class="text-muted"><a href="{% url 'inventory:warehouse_list' %}" target="_blank">Manage warehouses</a></small>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Rack / shelf location</label>
                     <div class="input-group">
                         {{ form.storage_location_master }}
-                        <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#addLocationModal" title="Add location" aria-label="Add location">
+                        <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#addLocationModal" title="Add rack location" aria-label="Add rack location">
                             <i class="fas fa-plus"></i>
                         </button>
                     </div>
+                    <small class="text-muted">Shelf, rack, or bin within the warehouse (e.g. Rack B1).</small>
                 </div>
                 <div class="col-md-6">
                     <label class="form-label">Barcode / Asset Code</label>

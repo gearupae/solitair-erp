@@ -1053,10 +1053,11 @@ class EstimateDetailView(PermissionRequiredMixin, DetailView):
         context['retention_percent_label'] = retention_percent_label(self.object.retention_percent)
         from apps.inventory.utils import get_openai_api_key
         from apps.core.ai_knowledge import is_ai_analysis_auto_run
+        from apps.core.models import AiModuleKnowledge
         from apps.core.compliance_service import auto_compliance_on_detail, run_estimate_compliance
 
         context['openai_configured'] = bool(get_openai_api_key())
-        context['ai_analysis_auto_run'] = is_ai_analysis_auto_run()
+        context['ai_analysis_auto_run'] = is_ai_analysis_auto_run(AiModuleKnowledge.MODULE_ESTIMATE)
         context['estimate_ai_evaluate_url'] = reverse('sales:estimate_ai_evaluate', args=[self.object.pk])
         evaluation = run_estimate_compliance(self.object, full_run=False)
         context['ai_compliance_auto_fetch'] = context['ai_analysis_auto_run'] and not evaluation.get('from_cache')

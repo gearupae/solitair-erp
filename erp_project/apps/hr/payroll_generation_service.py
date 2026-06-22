@@ -4,11 +4,10 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
-from django.db.models import Q, Sum
+from django.db.models import Q
 
 from apps.hr.models import Employee, Payroll
 from apps.hr.models_extended import PayrollAllowanceLine, PayrollTemplate
-from apps.hr.salary_payroll_utils import compute_gross_salary_structural
 from apps.settings_app.models import Company
 
 
@@ -124,17 +123,9 @@ def generate_draft_payrolls_for_month(
                         Payroll.objects.filter(pk=pay.pk).update(basic_salary=bs_t)
 
         pay.refresh_from_db()
-        gross = compute_gross_salary_structural(pay)
-        total_allow = (
-            PayrollAllowanceLine.objects.filter(payroll=pay).aggregate(s=Sum('amount'))['s'] or Decimal('0')
-        ).quantize(Decimal('0.01'))
-        ded = pay.deductions or Decimal('0')
-        net = (pay.basic_salary or Decimal('0')) + total_allow - ded
-        Payroll.objects.filter(pk=pay.pk).update(
-            allowances=total_allow,
-            gross_salary=gross,
-            net_salary=net.quantize(Decimal('0.01')),
-        )
+        from apps.hr.payroll_processing import apply_payroll_computations
+
+        apply_payroll_computations(pay)
         created += 1
 
     suffix = f'{mf:%B %Y}'

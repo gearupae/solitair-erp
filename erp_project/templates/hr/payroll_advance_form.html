@@ -36,15 +36,35 @@
             {{ form.date_issued }}
         </div>
         <div class="col-md-4">
-            <label class="form-label" for="{{ form.repayment_months.id_for_label }}">{{ form.repayment_months.label }}</label>
-            {{ form.repayment_months.errors }}
-            {{ form.repayment_months }}
-            <div class="form-text">Monthly deduction = amount ÷ months (on payroll processing).</div>
+            <label class="form-label" for="{{ form.repayment_frequency.id_for_label }}">Repayment frequency</label>
+            {{ form.repayment_frequency.errors }}
+            {{ form.repayment_frequency }}
         </div>
+        <div class="col-md-4" id="repaymentPeriodWrap">
+            <label class="form-label" for="{{ form.repayment_period.id_for_label }}" id="repaymentPeriodLabel">Repayment period</label>
+            {{ form.repayment_period.errors }}
+            {{ form.repayment_period }}
+            <div class="form-text" id="repaymentPeriodHelp">Number of installments. Each installment = amount ÷ period.</div>
+        </div>
+    </div>
+    <div class="row g-3 mb-1 d-none" id="repaymentIntervalWrap">
+        <div class="col-md-4">
+            <label class="form-label" for="{{ form.repayment_interval_months.id_for_label }}">Interval (months)</label>
+            {{ form.repayment_interval_months.errors }}
+            {{ form.repayment_interval_months }}
+            <div class="form-text">Months between each installment when frequency is Other.</div>
+        </div>
+    </div>
+    <div class="row g-3 mb-1">
         <div class="col-md-4">
             <label class="form-label" for="{{ form.approved_by.id_for_label }}">{{ form.approved_by.label }}</label>
             {{ form.approved_by.errors }}
             {{ form.approved_by }}
+        </div>
+        <div class="col-md-8">
+            <div class="alert alert-light border small mb-0 py-2" id="repaymentSummary">
+                Select frequency and period to preview the deduction schedule.
+            </div>
         </div>
     </div>
     <div class="row g-3 mb-3">
@@ -66,4 +86,87 @@
     <a href="{% url 'hr:payroll_advance_list' %}" class="btn btn-light">Cancel</a>
 </form>
 </div></div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function(){
+    var freqEl = document.getElementById('id_repayment_frequency');
+    var periodWrap = document.getElementById('repaymentPeriodWrap');
+    var periodEl = document.getElementById('id_repayment_period');
+    var periodLabel = document.getElementById('repaymentPeriodLabel');
+    var periodHelp = document.getElementById('repaymentPeriodHelp');
+    var intervalWrap = document.getElementById('repaymentIntervalWrap');
+    var intervalEl = document.getElementById('id_repayment_interval_months');
+    var amountEl = document.getElementById('id_amount');
+    var summaryEl = document.getElementById('repaymentSummary');
+
+    var INTERVALS = { monthly: 1, '3_month': 3, '6_month': 6, yearly: 12 };
+
+    function parseMoney(el){
+        if(!el) return 0;
+        var v = parseFloat(String(el.value || '').replace(/,/g, ''));
+        return isNaN(v) ? 0 : v;
+    }
+
+    function updateRepaymentUI(){
+        if(!freqEl) return;
+        var freq = freqEl.value;
+        var isOneTime = freq === 'one_time';
+        var isOther = freq === 'other';
+
+        periodWrap.classList.toggle('d-none', isOneTime);
+        intervalWrap.classList.toggle('d-none', !isOther);
+
+        if(isOneTime){
+            if(periodEl) periodEl.value = '1';
+        }
+
+        var period = parseInt(periodEl && periodEl.value, 10) || 1;
+        var interval = isOther
+            ? (parseInt(intervalEl && intervalEl.value, 10) || 1)
+            : (INTERVALS[freq] || 1);
+
+        if(freq === 'monthly'){
+            periodLabel.textContent = 'Repayment period (months)';
+            periodHelp.textContent = 'Deduct amount ÷ period every month for the next ' + period + ' month(s).';
+        } else if(freq === '3_month'){
+            periodLabel.textContent = 'Number of installments';
+            periodHelp.textContent = 'Deduct amount ÷ period every 3 months, ' + period + ' time(s).';
+        } else if(freq === '6_month'){
+            periodLabel.textContent = 'Number of installments';
+            periodHelp.textContent = 'Deduct amount ÷ period every 6 months, ' + period + ' time(s).';
+        } else if(freq === 'yearly'){
+            periodLabel.textContent = 'Number of installments';
+            periodHelp.textContent = 'Deduct amount ÷ period once per year, ' + period + ' time(s).';
+        } else if(freq === 'one_time'){
+            periodHelp.textContent = 'Full amount deducted on the first applicable payroll.';
+        } else {
+            periodLabel.textContent = 'Number of installments';
+            periodHelp.textContent = 'Deduct amount ÷ period every ' + interval + ' month(s), ' + period + ' time(s).';
+        }
+
+        var amt = parseMoney(amountEl);
+        if(summaryEl){
+            if(isOneTime && amt > 0){
+                summaryEl.textContent = 'One-time deduction of AED ' + amt.toFixed(2) + ' on the first payroll after issue date.';
+            } else if(amt > 0 && period > 0){
+                var inst = (amt / period).toFixed(2);
+                var span = isOther ? ((period - 1) * interval + 1) : ((period - 1) * interval + 1);
+                summaryEl.textContent = 'Each installment: AED ' + inst + ' · ' + period + ' deduction(s) over ~' + span + ' month(s).';
+            } else {
+                summaryEl.textContent = 'Enter amount, frequency, and period to preview the schedule.';
+            }
+        }
+    }
+
+    ['change', 'input'].forEach(function(evt){
+        if(freqEl) freqEl.addEventListener(evt, updateRepaymentUI);
+        if(periodEl) periodEl.addEventListener(evt, updateRepaymentUI);
+        if(intervalEl) intervalEl.addEventListener(evt, updateRepaymentUI);
+        if(amountEl) amountEl.addEventListener(evt, updateRepaymentUI);
+    });
+    updateRepaymentUI();
+})();
+</script>
 {% endblock %}

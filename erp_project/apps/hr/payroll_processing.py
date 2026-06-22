@@ -31,9 +31,13 @@ from apps.hr.salary_payroll_utils import (
 from apps.hr.models import Payroll
 from apps.hr.models_extended import (
     AdvanceRepayment,
+    AllowanceExpenseApplication,
     AttendanceSettings,
     AttendanceSummary,
     EmployeeAdvance,
+    EmployeeAllowanceExpense,
+    EmployeeCommission,
+    EmployeeSalaryDeduction,
     EmployeeHRProfile,
     GOSIRecord,
     GratuityRecord,
@@ -42,6 +46,7 @@ from apps.hr.models_extended import (
     PayrollDeductionLine,
     PayrollEmployerContribution,
     PayrollSettings,
+    SalaryDeductionApplication,
     UAECompliance,
 )
 
@@ -114,6 +119,16 @@ def apply_payroll_computations(payroll: Payroll) -> None:
         payroll=payroll,
         source=PayrollAllowanceLine.SOURCE_ATTENDANCE,
         code=PayrollAllowanceLine.CODE_OVERTIME,
+    ).delete()
+    PayrollAllowanceLine.objects.filter(
+        payroll=payroll,
+        source=PayrollAllowanceLine.SOURCE_AUTO,
+        code=PayrollAllowanceLine.CODE_COMMISSION,
+    ).delete()
+    PayrollAllowanceLine.objects.filter(
+        payroll=payroll,
+        source=PayrollAllowanceLine.SOURCE_AUTO,
+        code=PayrollAllowanceLine.CODE_ALLOWANCE_EXPENSE,
     ).delete()
 
     PayrollDeductionLine.objects.filter(payroll=payroll).delete()
@@ -302,10 +317,9 @@ def apply_payroll_computations(payroll: Payroll) -> None:
         status=EmployeeAdvance.STATUS_ACTIVE,
         amount_remaining__gt=0,
     ).order_by('pk'):
-        rem = adv.amount_remaining
-        deduction = adv.monthly_deduction
-        if deduction > rem:
-            deduction = rem
+        if not adv.is_due_for_payroll_month(payroll.month):
+            continue
+        deduction = adv.installment_amount_for_payroll()
         if deduction <= 0:
             continue
         PayrollDeductionLine.objects.create(
@@ -313,6 +327,65 @@ def apply_payroll_computations(payroll: Payroll) -> None:
             code=PayrollDeductionLine.CODE_ADVANCE_REPAYMENT,
             label=f'Advance repayment ({adv.get_advance_type_display()}) [id:{adv.pk}]',
             amount=deduction,
+        )
+
+    month_start = _month_first(payroll.month)
+    for sd in EmployeeSalaryDeduction.objects.filter(
+        employee=emp,
+        status=EmployeeSalaryDeduction.STATUS_ACTIVE,
+        is_active=True,
+    ).order_by('pk'):
+        if not sd.is_applicable_for_payroll_month(month_start):
+            continue
+        if SalaryDeductionApplication.objects.filter(
+            salary_deduction=sd,
+            payroll__month=month_start,
+        ).exists():
+            continue
+        amt = sd.amount.quantize(Decimal('0.01'))
+        if amt <= 0:
+            continue
+        PayrollDeductionLine.objects.create(
+            payroll=payroll,
+            code=PayrollDeductionLine.CODE_SALARY_DEDUCTION,
+            label=f'Salary deduction ({sd.get_category_display()}) [sd:{sd.pk}]',
+            amount=amt,
+        )
+
+    comm = EmployeeCommission.objects.filter(
+        employee=emp,
+        month=month_start,
+        status=EmployeeCommission.STATUS_ACTIVE,
+        is_active=True,
+    ).first()
+    if comm and (comm.commission_amount or Decimal('0')) > 0:
+        PayrollAllowanceLine.objects.create(
+            payroll=payroll,
+            code=PayrollAllowanceLine.CODE_COMMISSION,
+            description=f'Sales commission ({comm.month:%b %Y}) [cm:{comm.pk}]',
+            amount=comm.commission_amount.quantize(Decimal('0.01')),
+            is_taxable=False,
+            source=PayrollAllowanceLine.SOURCE_AUTO,
+        )
+
+    for ae in EmployeeAllowanceExpense.objects.filter(
+        employee=emp,
+        status=EmployeeAllowanceExpense.STATUS_ACTIVE,
+        is_active=True,
+    ).order_by('pk'):
+        if not ae.is_applicable_for_payroll_month(month_start):
+            continue
+        amt = ae.amount.quantize(Decimal('0.01'))
+        if amt <= 0:
+            continue
+        kind = 'Expense' if ae.is_expense else 'Allowance'
+        PayrollAllowanceLine.objects.create(
+            payroll=payroll,
+            code=PayrollAllowanceLine.CODE_ALLOWANCE_EXPENSE,
+            description=f'{kind} ({ae.get_category_display()}) [ae:{ae.pk}]',
+            amount=amt,
+            is_taxable=False,
+            source=PayrollAllowanceLine.SOURCE_AUTO,
         )
 
     if manual_misc > 0:
@@ -356,7 +429,128 @@ def apply_payroll_computations(payroll: Payroll) -> None:
         )
 
 
+def payroll_module_breakdown(payroll: Payroll) -> dict[str, Decimal]:
+    """Amounts from HR payroll modules: commission, allowances/expenses, advances, salary deductions."""
+    zero = Decimal('0')
+    commission = zero
+    allowance_expense = zero
+    advance = zero
+    salary_deduction = zero
+
+    for ln in payroll.allowance_lines.all():
+        if ln.code == PayrollAllowanceLine.CODE_COMMISSION:
+            commission += ln.amount or zero
+        elif ln.code == PayrollAllowanceLine.CODE_ALLOWANCE_EXPENSE:
+            allowance_expense += ln.amount or zero
+
+    for ln in payroll.deduction_lines.all():
+        if ln.code == PayrollDeductionLine.CODE_ADVANCE_REPAYMENT:
+            advance += ln.amount or zero
+        elif ln.code == PayrollDeductionLine.CODE_SALARY_DEDUCTION:
+            salary_deduction += ln.amount or zero
+
+    return {
+        'commission': commission.quantize(Decimal('0.01')),
+        'allowance_expense': allowance_expense.quantize(Decimal('0.01')),
+        'advance': advance.quantize(Decimal('0.01')),
+        'salary_deduction': salary_deduction.quantize(Decimal('0.01')),
+        'payroll_adds': (commission + allowance_expense).quantize(Decimal('0.01')),
+        'payroll_cuts': (advance + salary_deduction).quantize(Decimal('0.01')),
+    }
+
+
+def refresh_draft_payroll_computations(payroll: Payroll) -> None:
+    """Recompute draft payroll lines and totals (attendance, modules, net)."""
+    if payroll.status == 'draft':
+        apply_payroll_computations(payroll)
+        payroll.refresh_from_db()
+
+
 _ADVANCE_ID_LABEL = re.compile(r'\[id:(\d+)\]')
+_SALARY_DEDUCTION_ID_LABEL = re.compile(r'\[sd:(\d+)\]')
+
+
+@transaction.atomic
+def finalize_salary_deduction_applications_for_payroll(payroll: Payroll) -> None:
+    """After payroll is processed, record salary deduction applications."""
+    if payroll.status != 'processed':
+        return
+    for line in payroll.deduction_lines.filter(code=PayrollDeductionLine.CODE_SALARY_DEDUCTION):
+        m = _SALARY_DEDUCTION_ID_LABEL.search(line.label or '')
+        if not m:
+            continue
+        sd_id = int(m.group(1))
+        try:
+            sd = EmployeeSalaryDeduction.objects.select_for_update().get(pk=sd_id)
+        except EmployeeSalaryDeduction.DoesNotExist:
+            continue
+        if SalaryDeductionApplication.objects.filter(payroll=payroll, salary_deduction=sd).exists():
+            continue
+        amt = line.amount
+        SalaryDeductionApplication.objects.create(
+            salary_deduction=sd,
+            payroll=payroll,
+            amount=amt,
+            date=payroll.month,
+            notes='',
+        )
+        if sd.payment_frequency == EmployeeSalaryDeduction.FREQ_ONE_TIME:
+            sd.status = EmployeeSalaryDeduction.STATUS_COMPLETED
+            sd.save(update_fields=['status', 'updated_at'])
+
+
+_COMMISSION_ID_LABEL = re.compile(r'\[cm:(\d+)\]')
+_ALLOWANCE_EXPENSE_ID_LABEL = re.compile(r'\[ae:(\d+)\]')
+
+
+@transaction.atomic
+def finalize_allowance_expense_applications_for_payroll(payroll: Payroll) -> None:
+    """After payroll is processed, record allowance/expense applications."""
+    if payroll.status != 'processed':
+        return
+    for line in payroll.allowance_lines.filter(code=PayrollAllowanceLine.CODE_ALLOWANCE_EXPENSE):
+        m = _ALLOWANCE_EXPENSE_ID_LABEL.search(line.description or '')
+        if not m:
+            continue
+        ae_id = int(m.group(1))
+        try:
+            ae = EmployeeAllowanceExpense.objects.select_for_update().get(pk=ae_id)
+        except EmployeeAllowanceExpense.DoesNotExist:
+            continue
+        if AllowanceExpenseApplication.objects.filter(payroll=payroll, allowance_expense=ae).exists():
+            continue
+        AllowanceExpenseApplication.objects.create(
+            allowance_expense=ae,
+            payroll=payroll,
+            amount=line.amount,
+            date=payroll.month,
+            notes='',
+        )
+        if ae.payment_frequency == EmployeeAllowanceExpense.FREQ_ONE_TIME:
+            ae.status = EmployeeAllowanceExpense.STATUS_COMPLETED
+            ae.save(update_fields=['status', 'updated_at'])
+
+
+@transaction.atomic
+def finalize_commission_for_payroll(payroll: Payroll) -> None:
+    """After payroll is processed, mark linked commission records as paid."""
+    if payroll.status != 'processed':
+        return
+    month_start = _month_first(payroll.month)
+    for line in payroll.allowance_lines.filter(code=PayrollAllowanceLine.CODE_COMMISSION):
+        m = _COMMISSION_ID_LABEL.search(line.description or '')
+        if not m:
+            continue
+        cm_id = int(m.group(1))
+        try:
+            comm = EmployeeCommission.objects.select_for_update().get(pk=cm_id)
+        except EmployeeCommission.DoesNotExist:
+            continue
+        if comm.status == EmployeeCommission.STATUS_PAID:
+            continue
+        comm.status = EmployeeCommission.STATUS_PAID
+        comm.payroll = payroll
+        comm.save(update_fields=['status', 'payroll', 'updated_at'])
 
 
 @transaction.atomic
@@ -416,6 +610,7 @@ def estimate_payroll_deductions_preview(
             'iloe': Decimal('0'),
             'gosi_employee': Decimal('0'),
             'advance': Decimal('0'),
+            'salary_deduction': Decimal('0'),
             'manual': manual_misc,
             'total': manual_misc,
             'estimated_net': basic_salary + allowances_total - manual_misc,
@@ -471,11 +666,24 @@ def estimate_payroll_deductions_preview(
         status=EmployeeAdvance.STATUS_ACTIVE,
         amount_remaining__gt=0,
     ).order_by('pk'):
-        rem = adv.amount_remaining
-        d = adv.monthly_deduction
-        if d > rem:
-            d = rem
-        advance_amt += d
+        if not adv.is_due_for_payroll_month(month_start):
+            continue
+        advance_amt += adv.installment_amount_for_payroll()
+
+    salary_ded_amt = Decimal('0')
+    for sd in EmployeeSalaryDeduction.objects.filter(
+        employee=emp,
+        status=EmployeeSalaryDeduction.STATUS_ACTIVE,
+        is_active=True,
+    ).order_by('pk'):
+        if not sd.is_applicable_for_payroll_month(month_start):
+            continue
+        if SalaryDeductionApplication.objects.filter(
+            salary_deduction=sd,
+            payroll__month=month_start,
+        ).exists():
+            continue
+        salary_ded_amt += sd.amount.quantize(Decimal('0.01'))
 
     manual = (manual_misc or Decimal('0')).quantize(Decimal('0.01'))
     total = (
@@ -487,6 +695,7 @@ def estimate_payroll_deductions_preview(
         + iloe_amt
         + gosi_amt
         + advance_amt
+        + salary_ded_amt
         + manual
     ).quantize(Decimal('0.01'))
     est_net = (basic_salary + allowances_total - total).quantize(Decimal('0.01'))
@@ -500,6 +709,7 @@ def estimate_payroll_deductions_preview(
         'iloe': iloe_amt,
         'gosi_employee': gosi_amt,
         'advance': advance_amt,
+        'salary_deduction': salary_ded_amt,
         'manual': manual,
         'total': total,
         'estimated_net': est_net,

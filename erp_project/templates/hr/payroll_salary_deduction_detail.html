@@ -1,0 +1,70 @@
+{% extends 'base.html' %}
+{% load humanize %}
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-start flex-wrap gap-2 mb-4">
+    <div>
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-2">
+                <li class="breadcrumb-item"><a href="{% url 'hr:payroll_list' %}">Payroll</a></li>
+                <li class="breadcrumb-item"><a href="{% url 'hr:payroll_salary_deduction_list' %}">Salary deductions</a></li>
+                <li class="breadcrumb-item active">Detail</li>
+            </ol>
+        </nav>
+        <h4 class="mb-1 fw-bold">{{ title }}</h4>
+    </div>
+</div>
+
+<div class="row g-3">
+    <div class="col-lg-5">
+        <div class="card h-100">
+            <div class="card-header fw-semibold">Salary deduction</div>
+            <div class="card-body">
+                <table class="table table-sm table-borderless mb-0">
+                    <tr><td class="text-muted">Employee</td><td><a href="{% url 'hr:employee_detail' salary_deduction.employee_id %}">{{ salary_deduction.employee.full_name }}</a></td></tr>
+                    <tr><td class="text-muted">Category</td><td>{{ salary_deduction.get_category_display }}</td></tr>
+                    <tr><td class="text-muted">Amount</td><td class="fw-medium">AED {{ salary_deduction.amount|floatformat:2|intcomma }}</td></tr>
+                    <tr><td class="text-muted">Frequency</td><td>{{ salary_deduction.get_payment_frequency_display }}</td></tr>
+                    <tr><td class="text-muted">Status</td><td><span class="badge bg-secondary">{{ salary_deduction.get_status_display }}</span></td></tr>
+                    <tr><td class="text-muted">Effective from</td><td>{% if salary_deduction.effective_from %}{{ salary_deduction.effective_from|date:"d/m/Y" }}{% else %}—{% endif %}</td></tr>
+                    <tr><td class="text-muted">Effective to</td><td>{% if salary_deduction.effective_to %}{{ salary_deduction.effective_to|date:"d/m/Y" }}{% else %}—{% endif %}</td></tr>
+                    {% if salary_deduction.approved_by %}
+                    <tr><td class="text-muted">Approved by</td><td>{{ salary_deduction.approved_by.get_full_name|default:salary_deduction.approved_by.username }}</td></tr>
+                    {% endif %}
+                </table>
+                {% if salary_deduction.description %}
+                <p class="small text-muted mt-3 mb-0"><strong>Description:</strong> {{ salary_deduction.description }}</p>
+                {% endif %}
+                {% if salary_deduction.notes %}
+                <p class="small mt-2 mb-0"><strong>Notes:</strong> {{ salary_deduction.notes }}</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-7">
+        <div class="card h-100">
+            <div class="card-header fw-semibold">Deduction history</div>
+            <div class="table-responsive">
+                <table class="table table-sm mb-0">
+                    <thead class="table-light"><tr><th>Date</th><th>Amount</th><th>Payroll</th><th>Notes</th></tr></thead>
+                    <tbody>
+                        {% for app in applications %}
+                        <tr>
+                            <td>{{ app.date|date:"M Y" }}</td>
+                            <td class="text-end">AED {{ app.amount|floatformat:2|intcomma }}</td>
+                            <td>
+                                {% if app.payroll_id %}
+                                <a href="{% url 'hr:payroll_detail' app.payroll_id %}">Payroll #{{ app.payroll_id }}</a>
+                                {% else %}—{% endif %}
+                            </td>
+                            <td class="small text-muted">{{ app.notes|default:"—" }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="4" class="text-muted text-center py-3">No payroll deductions yet (applied when payroll is processed).</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -204,6 +204,30 @@
         </div>
     </div>
 
+    <div class="card mb-4" id="hr-section-commission">
+        <div class="card-header"><h6 class="mb-0 fw-semibold">Sales commission (payroll)</h6></div>
+        <div class="card-body">
+            <p class="small text-muted mb-3">Used when recording monthly commissions under Payroll → Commissions. Percentage applies to posted invoice subtotals (ex-VAT) for the month.</p>
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <label class="form-label" for="{{ hr_profile_form.commission_type.id_for_label }}">{{ hr_profile_form.commission_type.label }}</label>
+                    {{ hr_profile_form.commission_type }}
+                    {% if hr_profile_form.commission_type.errors %}<div class="text-danger small">{{ hr_profile_form.commission_type.errors|join:", " }}</div>{% endif %}
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label" for="{{ hr_profile_form.commission_percentage.id_for_label }}">{{ hr_profile_form.commission_percentage.label }}</label>
+                    {{ hr_profile_form.commission_percentage }}
+                    {% if hr_profile_form.commission_percentage.errors %}<div class="text-danger small">{{ hr_profile_form.commission_percentage.errors|join:", " }}</div>{% endif %}
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label" for="{{ hr_profile_form.commission_fixed_amount.id_for_label }}">{{ hr_profile_form.commission_fixed_amount.label }}</label>
+                    {{ hr_profile_form.commission_fixed_amount }}
+                    {% if hr_profile_form.commission_fixed_amount.errors %}<div class="text-danger small">{{ hr_profile_form.commission_fixed_amount.errors|join:", " }}</div>{% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="card mb-4 border-primary border-opacity-25" id="hr-section-uae">
         <div class="card-header bg-primary bg-opacity-10"><h6 class="mb-0 fw-semibold">UAE — employee record &amp; documents</h6></div>
         <div class="card-body">

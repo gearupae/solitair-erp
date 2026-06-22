@@ -116,7 +116,7 @@ def _parse_openai_json(content: str) -> dict | list:
 def _call_openai(*, system: str, user_payload: dict | list, temperature: float = 0.25) -> dict | list:
     api_key = get_openai_api_key()
     if not api_key:
-        raise OpenAINotConfigured('Configure OpenAI API key in Settings → Company')
+        raise OpenAINotConfigured('Configure OpenAI API key — set OPENAI_API_KEY in .env')
 
     import urllib.error
     import urllib.request
@@ -1029,7 +1029,7 @@ def _heuristic_brief(
     parts = []
     if note and 'Configure OpenAI' in note:
         parts.append(
-            'AI brief unavailable — configure OpenAI in Settings → Company for richer insights.'
+            'AI brief unavailable — set OPENAI_API_KEY in .env for richer insights.'
         )
     parts.append(
         f"Forecast: {summary.get('predicted_conversions', 0)} likely conversions worth "

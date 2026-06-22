@@ -1,0 +1,113 @@
+{% extends 'base.html' %}
+{% load humanize %}
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+    <div>
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-2">
+                <li class="breadcrumb-item"><a href="{% url 'hr:payroll_list' %}">Payroll</a></li>
+                <li class="breadcrumb-item active">Allowances &amp; expenses</li>
+            </ol>
+        </nav>
+        <h4 class="mb-1 fw-bold">{{ title }}</h4>
+        <p class="text-muted mb-0 small">Recurring allowances and expense reimbursements added to payroll. Expenses dated before the 15th pay in that month; on or after the 15th they roll to the next month.</p>
+    </div>
+    {% if can_add %}
+    <a href="{% url 'hr:payroll_allowance_expense_create' %}" class="btn btn-primary"><i class="fas fa-plus me-1"></i>Add allowance / expense</a>
+    {% endif %}
+</div>
+
+<div class="card mb-3">
+    <div class="card-body py-3">
+        <form method="get" class="row g-2 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label small mb-0">Employee</label>
+                <select name="employee" class="form-select form-select-sm">
+                    <option value="">All</option>
+                    {% for e in employees %}
+                    <option value="{{ e.pk }}" {% if filter_employee == e.pk|stringformat:"s" %}selected{% endif %}>{{ e.full_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small mb-0">Type</label>
+                <select name="kind" class="form-select form-select-sm">
+                    <option value="">All</option>
+                    <option value="allowance" {% if filter_kind == 'allowance' %}selected{% endif %}>Allowance</option>
+                    <option value="expense" {% if filter_kind == 'expense' %}selected{% endif %}>Expense</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small mb-0">Category</label>
+                <select name="category" class="form-select form-select-sm">
+                    <option value="">All</option>
+                    {% for val, label in category_choices %}
+                    <option value="{{ val }}" {% if filter_category == val %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small mb-0">Status</label>
+                <select name="status" class="form-select form-select-sm">
+                    <option value="">All</option>
+                    {% for val, label in status_choices %}
+                    <option value="{{ val }}" {% if filter_status == val %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-sm btn-outline-primary w-100">Filter</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card">
+    <div class="table-responsive">
+        <table class="table table-hover mb-0 align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th>Employee</th>
+                    <th>Category</th>
+                    <th class="text-end">Amount</th>
+                    <th>Frequency</th>
+                    <th>Status</th>
+                    <th>Start / effective</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in allowance_expenses %}
+                <tr>
+                    <td><a href="{% url 'hr:employee_detail' item.employee_id %}">{{ item.employee.full_name }}</a></td>
+                    <td>{{ item.get_category_display }}</td>
+                    <td class="text-end">AED {{ item.amount|floatformat:2|intcomma }}</td>
+                    <td>{{ item.get_payment_frequency_display }}</td>
+                    <td><span class="badge bg-{% if item.status == 'active' %}warning text-dark{% elif item.status == 'completed' %}success{% else %}secondary{% endif %}">{{ item.get_status_display }}</span></td>
+                    <td class="small">
+                        {% if item.start_date %}{{ item.start_date|date:"d/m/Y" }}{% else %}—{% endif %}
+                        {% if item.effective_to %} – {{ item.effective_to|date:"d/m/Y" }}{% endif %}
+                    </td>
+                    <td><a href="{% url 'hr:payroll_allowance_expense_detail' item.pk %}" class="btn btn-sm btn-outline-secondary">View</a></td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="7" class="text-muted text-center py-4">No records match your filters.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% if is_paginated %}
+<nav class="mt-3">
+    <ul class="pagination pagination-sm mb-0">
+        {% if page_obj.has_previous %}
+        <li class="page-item"><a class="page-link" href="?page={{ page_obj.previous_page_number }}&employee={{ filter_employee }}&status={{ filter_status }}&category={{ filter_category }}&kind={{ filter_kind }}">Previous</a></li>
+        {% endif %}
+        <li class="page-item disabled"><span class="page-link">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span></li>
+        {% if page_obj.has_next %}
+        <li class="page-item"><a class="page-link" href="?page={{ page_obj.next_page_number }}&employee={{ filter_employee }}&status={{ filter_status }}&category={{ filter_category }}&kind={{ filter_kind }}">Next</a></li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+{% endblock %}

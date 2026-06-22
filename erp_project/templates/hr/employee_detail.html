@@ -95,6 +95,93 @@
         </div>
         {% endif %}
 
+        <div class="card mb-4" id="employee-attachments">
+            <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <h6 class="mb-0 fw-semibold"><i class="fas fa-paperclip me-2 text-muted"></i>HR documents</h6>
+                {% if has_employee_attachments %}
+                <span class="badge bg-light text-dark">{{ employee_attachments|length }} file{{ employee_attachments|length|pluralize }}</span>
+                {% endif %}
+            </div>
+            <div class="card-body">
+                <p class="text-muted small mb-3">
+                    Upload passport, visa, Emirates ID, labour card, insurance, or other HR documents.
+                    {% if openai_configured %}
+                    AI compliance checks read these files and compare them to the employee record.
+                    {% else %}
+                    Attachments are stored for reference; set <code>OPENAI_API_KEY</code> in <code>.env</code> for AI document review.
+                    {% endif %}
+                </p>
+
+                {% if can_edit %}
+                <div class="border rounded p-3 mb-3 bg-light-subtle">
+                    <div class="row g-2 align-items-end">
+                        <div class="col-md-5">
+                            <label class="form-label small mb-1" for="employeeAttachmentFiles">Add files</label>
+                            <input type="file" id="employeeAttachmentFiles" class="form-control form-control-sm" multiple
+                                   accept=".pdf,.xlsx,.xls,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small mb-1" for="employeeAttachmentLabel">Label (optional, single file)</label>
+                            <input type="text" id="employeeAttachmentLabel" class="form-control form-control-sm"
+                                   maxlength="200" placeholder="e.g. Passport copy">
+                        </div>
+                        <div class="col-md-3">
+                            <button type="button" class="btn btn-primary btn-sm w-100" id="employeeAttachmentUploadBtn">
+                                <i class="fas fa-upload me-1"></i>Upload
+                            </button>
+                        </div>
+                    </div>
+                    <div id="employeeAttachmentUploadError" class="alert alert-danger py-2 small mt-2 mb-0 d-none"></div>
+                </div>
+                {% csrf_token %}
+                {% endif %}
+
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Document</th>
+                                <th>Uploaded</th>
+                                <th class="text-end" style="min-width:8rem;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="employee-attachments-tbody">
+                            {% for att in employee_attachments %}
+                            <tr data-attachment-id="{{ att.pk }}">
+                                <td>
+                                    <div class="fw-medium">{{ att.display_name }}</div>
+                                    {% if att.label and att.filename %}
+                                    <div class="small text-muted">{{ att.filename }}</div>
+                                    {% endif %}
+                                </td>
+                                <td class="small text-muted">
+                                    {{ att.uploaded_at|date:"d/m/Y H:i" }}
+                                    {% if att.uploaded_by %}<br>{{ att.uploaded_by.get_full_name }}{% endif %}
+                                </td>
+                                <td class="text-end">
+                                    <a href="{% url 'hr:employee_attachment_download' employee.pk att.pk %}?preview=1"
+                                       target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary">View</a>
+                                    <a href="{% url 'hr:employee_attachment_download' employee.pk att.pk %}"
+                                       class="btn btn-sm btn-outline-primary">Download</a>
+                                    {% if can_edit %}
+                                    <button type="button" class="btn btn-sm btn-outline-danger employee-att-delete"
+                                            data-delete-url="{% url 'hr:employee_attachment_delete' employee.pk att.pk %}">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr id="employee-attachments-empty">
+                                <td colspan="3" class="text-center text-muted py-3">No documents attached yet.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
         {% if employee.location == 'uae' %}
         <div class="card mb-4 border-warning border-opacity-25" id="gratuity-summary">
             <div class="card-header bg-warning bg-opacity-10 d-flex justify-content-between align-items-center">
@@ -240,6 +327,118 @@
 {% endblock %}
 
 {% block extra_js %}
+<script>
+(function () {
+    var uploadBtn = document.getElementById('employeeAttachmentUploadBtn');
+    if (!uploadBtn) return;
+
+    var uploadUrl = "{{ employee_attachment_upload_url|escapejs }}";
+    var deleteUrlTemplate = "{% url 'hr:employee_attachment_delete' employee.pk 99999 %}".replace('99999', '__ID__');
+    var csrf = document.querySelector('[name=csrfmiddlewaretoken]')?.value || '';
+    var fileInput = document.getElementById('employeeAttachmentFiles');
+    var labelInput = document.getElementById('employeeAttachmentLabel');
+    var errorEl = document.getElementById('employeeAttachmentUploadError');
+    var tbody = document.getElementById('employee-attachments-tbody');
+
+    function escapeHtml(text) {
+        var div = document.createElement('div');
+        div.textContent = text || '';
+        return div.innerHTML;
+    }
+
+    function removeEmptyRow() {
+        var empty = document.getElementById('employee-attachments-empty');
+        if (empty) empty.remove();
+    }
+
+    function appendAttachmentRow(att) {
+        removeEmptyRow();
+        var tr = document.createElement('tr');
+        tr.setAttribute('data-attachment-id', att.id);
+        var labelHtml = att.label
+            ? '<div class="fw-medium">' + escapeHtml(att.label) + '</div><div class="small text-muted">' + escapeHtml(att.filename) + '</div>'
+            : '<div class="fw-medium">' + escapeHtml(att.filename) + '</div>';
+        tr.innerHTML =
+            '<td>' + labelHtml + '</td>' +
+            '<td class="small text-muted">' + escapeHtml((att.uploaded_at || '').slice(0, 16).replace('T', ' ')) +
+            (att.uploaded_by ? '<br>' + escapeHtml(att.uploaded_by) : '') + '</td>' +
+            '<td class="text-end">' +
+            '<a href="' + escapeHtml(att.download_url) + '?preview=1" target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary">View</a> ' +
+            '<a href="' + escapeHtml(att.download_url) + '" class="btn btn-sm btn-outline-primary">Download</a> ' +
+            '<button type="button" class="btn btn-sm btn-outline-danger employee-att-delete" data-delete-url="' +
+            escapeHtml(deleteUrlTemplate.replace('__ID__', String(att.id))) + '">' +
+            '<i class="fas fa-trash"></i></button></td>';
+        tbody.prepend(tr);
+    }
+
+    uploadBtn.addEventListener('click', function () {
+        errorEl.classList.add('d-none');
+        var files = fileInput && fileInput.files ? Array.from(fileInput.files) : [];
+        if (!files.length) {
+            errorEl.textContent = 'Choose one or more files to upload.';
+            errorEl.classList.remove('d-none');
+            return;
+        }
+        var fd = new FormData();
+        files.forEach(function (f) { fd.append('files', f); });
+        if (files.length === 1 && labelInput && labelInput.value.trim()) {
+            fd.append('label', labelInput.value.trim());
+        }
+        uploadBtn.disabled = true;
+        fetch(uploadUrl, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrf, 'X-Requested-With': 'XMLHttpRequest' },
+            body: fd,
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                uploadBtn.disabled = false;
+                if (!data.ok) {
+                    errorEl.textContent = data.error || 'Upload failed.';
+                    errorEl.classList.remove('d-none');
+                    return;
+                }
+                (data.attachments || []).forEach(appendAttachmentRow);
+                if (fileInput) fileInput.value = '';
+                if (labelInput) labelInput.value = '';
+            })
+            .catch(function () {
+                uploadBtn.disabled = false;
+                errorEl.textContent = 'Network error during upload.';
+                errorEl.classList.remove('d-none');
+            });
+    });
+
+    document.addEventListener('click', function (e) {
+        var btn = e.target.closest('.employee-att-delete');
+        if (!btn) return;
+        if (!confirm('Remove this document?')) return;
+        var url = btn.getAttribute('data-delete-url');
+        btn.disabled = true;
+        fetch(url, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrf, 'X-Requested-With': 'XMLHttpRequest' },
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (!data.ok) {
+                    alert(data.error || 'Could not delete attachment.');
+                    btn.disabled = false;
+                    return;
+                }
+                var row = btn.closest('tr');
+                if (row) row.remove();
+                if (tbody && !tbody.querySelector('tr')) {
+                    tbody.innerHTML = '<tr id="employee-attachments-empty"><td colspan="3" class="text-center text-muted py-3">No documents attached yet.</td></tr>';
+                }
+            })
+            .catch(function () {
+                btn.disabled = false;
+                alert('Network error.');
+            });
+    });
+})();
+</script>
 {% if gratuity_eligible %}
 <script>
 (function () {

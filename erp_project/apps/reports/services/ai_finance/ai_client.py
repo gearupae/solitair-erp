@@ -27,7 +27,7 @@ def parse_openai_json(content: str) -> dict | list:
 def call_openai_json(*, system: str, user_payload: dict | list, temperature: float = 0.2) -> dict | list:
     api_key = get_openai_api_key()
     if not api_key:
-        raise OpenAINotConfigured('Configure OpenAI API key in Settings → Company')
+        raise OpenAINotConfigured('Configure OpenAI API key — set OPENAI_API_KEY in .env')
 
     import urllib.error
     import urllib.request

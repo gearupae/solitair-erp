@@ -1,0 +1,84 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-header mb-4">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb mb-2">
+            <li class="breadcrumb-item"><a href="{% url 'hr:payroll_list' %}">Payroll</a></li>
+            <li class="breadcrumb-item"><a href="{% url 'hr:payroll_allowance_expense_list' %}">Allowances &amp; expenses</a></li>
+            <li class="breadcrumb-item active">{{ title }}</li>
+        </ol>
+    </nav>
+    <h4 class="mb-1 fw-bold">{{ title }}</h4>
+    <p class="text-muted small mb-0">Expenses dated before the 15th are paid in that month's salary; on or after the 15th they roll to the next month.</p>
+</div>
+
+<div class="card"><div class="card-body">
+<form method="post">{% csrf_token %}
+    <div class="row g-3 mb-1">
+        <div class="col-md-6">
+            <label class="form-label" for="{{ form.employee.id_for_label }}">{{ form.employee.label }}</label>
+            {{ form.employee.errors }}
+            {{ form.employee }}
+        </div>
+        <div class="col-md-6">
+            <label class="form-label" for="{{ form.category.id_for_label }}">{{ form.category.label }}</label>
+            {{ form.category.errors }}
+            {{ form.category }}
+        </div>
+    </div>
+    <div class="row g-3 mb-1">
+        <div class="col-md-4">
+            <label class="form-label" for="{{ form.amount.id_for_label }}">{{ form.amount.label }}</label>
+            {{ form.amount.errors }}
+            {{ form.amount }}
+        </div>
+        <div class="col-md-4">
+            <label class="form-label" for="{{ form.payment_frequency.id_for_label }}">{{ form.payment_frequency.label }}</label>
+            {{ form.payment_frequency.errors }}
+            {{ form.payment_frequency }}
+        </div>
+        <div class="col-md-4">
+            <label class="form-label" for="{{ form.status.id_for_label }}">{{ form.status.label }}</label>
+            {{ form.status.errors }}
+            {{ form.status }}
+        </div>
+    </div>
+    <div class="row g-3 mb-1">
+        <div class="col-12">
+            <label class="form-label" for="{{ form.description.id_for_label }}">{{ form.description.label }}</label>
+            {{ form.description.errors }}
+            {{ form.description }}
+        </div>
+    </div>
+    <div class="row g-3 mb-1">
+        <div class="col-md-4">
+            <label class="form-label" for="{{ form.start_date.id_for_label }}">Expense / start date <span class="text-muted fw-normal">(optional for monthly)</span></label>
+            {{ form.start_date.errors }}
+            {{ form.start_date }}
+        </div>
+        <div class="col-md-4">
+            <label class="form-label" for="{{ form.effective_to.id_for_label }}">Effective to <span class="text-muted fw-normal">(optional)</span></label>
+            {{ form.effective_to.errors }}
+            {{ form.effective_to }}
+        </div>
+        <div class="col-md-4">
+            <label class="form-label" for="{{ form.approved_by.id_for_label }}">{{ form.approved_by.label }}</label>
+            {{ form.approved_by.errors }}
+            {{ form.approved_by }}
+        </div>
+    </div>
+    <div class="row g-3 mb-3">
+        <div class="col-12">
+            <label class="form-label" for="{{ form.notes.id_for_label }}">{{ form.notes.label }}</label>
+            {{ form.notes.errors }}
+            {{ form.notes }}
+        </div>
+    </div>
+    {% if form.non_field_errors %}
+    <div class="alert alert-danger">{{ form.non_field_errors }}</div>
+    {% endif %}
+    <button type="submit" class="btn btn-primary">Save</button>
+    <a href="{% url 'hr:payroll_allowance_expense_list' %}" class="btn btn-light">Cancel</a>
+</form>
+</div></div>
+{% endblock %}

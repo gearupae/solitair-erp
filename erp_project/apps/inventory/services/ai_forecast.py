@@ -12,6 +12,10 @@ from django.utils import timezone
 from apps.inventory.models import Category, Item, Stock, StockMovement, Warehouse
 from apps.inventory.models_reporting import InventoryForecast
 from apps.inventory.utils import get_openai_api_key
+from apps.inventory.services.supplier_lead_time import effective_lead_time_days
+from apps.inventory.services.inventory_abc import classify_abc_for_items, abc_badge
+from apps.inventory.services.carrying_cost import row_carrying_cost
+from apps.inventory.services.demand_seasonality import detect_seasonality, apply_seasonal_forecast
 
 REFRESH_COOLDOWN_HOURS = 1
 DEAD_DAYS = 180
@@ -74,10 +78,14 @@ def _can_refresh(item_id: int) -> bool:
 def fetch_forecast_from_openai(item: Item, monthly_data: list[dict]) -> dict:
     api_key = get_openai_api_key()
     if not api_key:
-        raise OpenAINotConfigured('Configure OpenAI API key in Settings → Company')
+        raise OpenAINotConfigured('Configure OpenAI API key — set OPENAI_API_KEY in .env')
 
     import urllib.request
 
+    from apps.core.ai_knowledge import get_ai_knowledge_prompt_block
+    from apps.core.models import AiModuleKnowledge
+
+    knowledge = get_ai_knowledge_prompt_block(AiModuleKnowledge.MODULE_INVENTORY)
     prompt = (
         f'Given monthly consumption data for item "{item.name}" (ID {item.pk}): '
         f'{json.dumps(monthly_data)}. '
@@ -85,12 +93,16 @@ def fetch_forecast_from_openai(item: Item, monthly_data: list[dict]) -> dict:
         'Return ONLY valid JSON: '
         '{"item_id": <int>, "forecast_30": <number>, "forecast_60": <number>, '
         '"forecast_90": <number>, "confidence": "low|medium|high", "reasoning": "<short>"}'
+        f'{knowledge}'
     )
     body = json.dumps(
         {
             'model': 'gpt-4o-mini',
             'messages': [
-                {'role': 'system', 'content': 'You are an inventory forecasting assistant. Reply with JSON only.'},
+                {
+                    'role': 'system',
+                    'content': 'You are an inventory forecasting assistant. Reply with JSON only.',
+                },
                 {'role': 'user', 'content': prompt},
             ],
             'temperature': 0.2,
@@ -127,6 +139,10 @@ def refresh_item_forecast(item: Item, *, force: bool = False) -> InventoryForeca
             sum(Decimal(str(m['qty'])) for m in monthly) / Decimal(len(monthly))
         ).quantize(Decimal('0.01'))
 
+    no_history = not monthly or avg_monthly <= 0
+    confidence_override = None
+    reasoning_extra = ''
+
     try:
         result = fetch_forecast_from_openai(item, monthly)
     except OpenAINotConfigured:
@@ -141,6 +157,20 @@ def refresh_item_forecast(item: Item, *, force: bool = False) -> InventoryForeca
             'reasoning': f'Heuristic fallback (API error: {exc})',
         }
 
+    if no_history:
+        cat_avg = _category_avg_monthly(item.category_id)
+        if cat_avg > 0:
+            daily = cat_avg / Decimal('30')
+            result['forecast_30'] = float((daily * 30).quantize(Decimal('0.01')))
+            result['forecast_60'] = float((daily * 60).quantize(Decimal('0.01')))
+            result['forecast_90'] = float((daily * 90).quantize(Decimal('0.01')))
+            avg_monthly = cat_avg
+            confidence_override = 'low / no-history'
+            reasoning_extra = ' Category-average fallback — no item sales history.'
+
+    conf = confidence_override or str(result.get('confidence', 'medium'))[:20]
+    reasoning = str(result.get('reasoning', ''))[:2000] + reasoning_extra
+
     fc = InventoryForecast.objects.create(
         item=item,
         forecast_date=date.today(),
@@ -148,8 +178,8 @@ def refresh_item_forecast(item: Item, *, force: bool = False) -> InventoryForeca
         forecast_60=Decimal(str(result.get('forecast_60', 0))),
         forecast_90=Decimal(str(result.get('forecast_90', 0))),
         avg_monthly_consumption=avg_monthly,
-        confidence=str(result.get('confidence', 'medium'))[:20],
-        reasoning=str(result.get('reasoning', ''))[:2000],
+        confidence=conf[:20],
+        reasoning=reasoning[:2000],
         raw_response=json.dumps(result)[:8000],
         refreshed_at=timezone.now(),
     )
@@ -162,7 +192,56 @@ def _unit_cost(item: Item) -> Decimal:
     return Decimal('0')
 
 
-def _stockout_risk(days_left: int | None, lead_time: int) -> tuple[str, str]:
+def _category_avg_monthly(category_id: int | None) -> Decimal:
+    if not category_id:
+        return Decimal('0')
+    since = date.today().replace(day=1) - timedelta(days=365)
+    item_ids = list(
+        Item.objects.filter(
+            category_id=category_id,
+            is_active=True,
+            item_type='product',
+            status='active',
+        ).values_list('pk', flat=True)[:200]
+    )
+    if not item_ids:
+        return Decimal('0')
+    total = (
+        StockMovement.objects.filter(
+            item_id__in=item_ids,
+            movement_type='out',
+            movement_date__gte=since,
+        ).aggregate(t=Coalesce(Sum('quantity'), Decimal('0')))['t']
+        or Decimal('0')
+    )
+    return (total / Decimal(max(len(item_ids), 1)) / Decimal('12')).quantize(Decimal('0.01'))
+
+
+def _no_history_fallback(item: Item, category_avgs: dict[int, Decimal]) -> tuple[Decimal, Decimal, Decimal, str]:
+    """Estimate F30/F60/F90 from category average when item has no consumption history."""
+    cat_avg = category_avgs.get(item.category_id or 0, Decimal('0'))
+    if cat_avg <= 0:
+        return Decimal('0'), Decimal('0'), Decimal('0'), ''
+    lead = int(item.lead_time_days or 7)
+    daily = cat_avg / Decimal('30')
+    f30 = (daily * Decimal('30')).quantize(Decimal('0.01'))
+    f60 = (daily * Decimal('60')).quantize(Decimal('0.01'))
+    f90 = (daily * Decimal('90')).quantize(Decimal('0.01'))
+    note = f'Category-average fallback (no item history); lead {lead}d'
+    return f30, f60, f90, note
+
+
+def _stockout_risk(
+    days_left: int | None,
+    lead_time: int,
+    *,
+    current_stock: Decimal,
+    has_demand: bool,
+) -> tuple[str, str]:
+    if current_stock <= 0 and has_demand:
+        return 'High', BADGE['risk_high']
+    if current_stock <= 0:
+        return 'High', BADGE['risk_high']
     if days_left is None:
         return 'Low', BADGE['risk_low']
     if days_left < lead_time:
@@ -292,6 +371,13 @@ def build_ai_forecast_report(
         if fc.item_id not in forecast_map:
             forecast_map[fc.item_id] = fc
 
+    category_avgs: dict[int, Decimal] = {}
+    for cid in items.values_list('category_id', flat=True).distinct():
+        if cid:
+            category_avgs[cid] = _category_avg_monthly(cid)
+
+    abc_map = classify_abc_for_items(list(items))
+
     raw_rows = []
     velocities = []
 
@@ -303,30 +389,70 @@ def build_ai_forecast_report(
 
         current_stock = stock_map.get(item.pk, Decimal('0'))
         safety = Decimal(str(item.safety_stock_qty or 0))
-        lead = int(item.lead_time_days or 7)
+        lead, lead_source = effective_lead_time_days(item)
         f30 = fc.forecast_30 if fc else Decimal('0')
         f60 = fc.forecast_60 if fc else Decimal('0')
         f90 = fc.forecast_90 if fc else Decimal('0')
+        confidence = fc.confidence if fc else ''
+        season_note = ''
+
+        adc = fc.avg_monthly_consumption if fc else Decimal('0')
+        used_fallback = False
+        if (not fc or adc <= 0) and item.category_id:
+            f30, f60, f90, fb_note = _no_history_fallback(item, category_avgs)
+            if f30 > 0:
+                adc = category_avgs.get(item.category_id or 0, Decimal('0'))
+                confidence = confidence or 'low / no-history'
+                season_note = fb_note
+                used_fallback = True
+
+        if fc and adc > 0:
+            season = detect_seasonality(item.pk)
+            f30, f60, f90, adj_note = apply_seasonal_forecast(f30, f60, f90, season)
+            if adj_note:
+                season_note = adj_note
 
         daily = (adc / Decimal('30')) if adc > 0 else Decimal('0')
         if daily > 0:
             days_left = int((current_stock / daily).quantize(Decimal('1')))
         else:
-            days_left = None
+            days_left = 0 if current_stock <= 0 else None
+
+        has_demand = (
+            adc > 0
+            or f30 > 0
+            or used_fallback
+            or (fc is not None and (fc.forecast_30 or 0) > 0)
+        )
 
         last_mv = last_move.get(item.pk)
         days_since = (today - last_mv).days if last_mv else None
 
-        risk, risk_badge = _stockout_risk(days_left, lead)
+        risk, risk_badge = _stockout_risk(
+            days_left, lead, current_stock=current_stock, has_demand=has_demand,
+        )
+        abc_class = abc_map.get(item.pk, 'C')
+        if abc_class == 'A' and risk == 'Medium':
+            risk, risk_badge = 'High', BADGE['risk_high']
+
         suggested = max(Decimal('0'), (f30 + safety - current_stock)).quantize(Decimal('0.01'))
         uc = _unit_cost(item)
 
         reorder_date = ''
-        if fc and f30 > 0 and daily > 0:
+        if (fc or used_fallback) and f30 > 0 and daily > 0:
             days_cover = int(current_stock / daily)
             reorder_date = (today + timedelta(days=max(0, days_cover - lead))).isoformat()
 
         trend_key, trend_icon, trend_label = _movement_trend(item.pk)
+
+        dead_val = float((current_stock * uc).quantize(Decimal('0.01'))) if days_since is not None and days_since >= DEAD_DAYS else 0.0
+        excess = float(max(Decimal('0'), current_stock - (f90 + safety)).quantize(Decimal('0.01')))
+        over_val = float((max(Decimal('0'), current_stock - (f90 + safety)) * uc).quantize(Decimal('0.01')))
+        carrying = row_carrying_cost(over_val, dead_val)
+
+        f30_disp = float(f30) if (fc or used_fallback or f30 > 0) else None
+        f60_disp = float(f60) if (fc or used_fallback or f60 > 0) else None
+        f90_disp = float(f90) if (fc or used_fallback or f90 > 0) else None
 
         raw_rows.append(
             {
@@ -334,17 +460,23 @@ def build_ai_forecast_report(
                 'item_name': item.name,
                 'sku': item.item_code,
                 'category_id': item.category_id,
+                'abc_class': abc_class,
+                'abc_badge': abc_badge(abc_class),
                 'avg_monthly_consumption': float(adc),
-                'forecast_30': float(f30) if fc else None,
-                'forecast_60': float(f60) if fc else None,
-                'forecast_90': float(f90) if fc else None,
-                'confidence': fc.confidence if fc else '',
+                'forecast_30': f30_disp,
+                'forecast_60': f60_disp,
+                'forecast_90': f90_disp,
+                'confidence': confidence,
+                'seasonality_note': season_note,
+                'lead_time_days': lead,
+                'lead_time_source': lead_source,
                 'current_stock': float(current_stock),
                 'days_left': days_left,
                 'days_left_display': days_left if days_left is not None else '—',
                 'days_left_class': _days_left_color(days_left, lead),
-                'lead_time_days': lead,
                 'safety_stock': float(safety),
+                'carrying_display': carrying['carrying_display'],
+                'carrying_monthly_aed': carrying['carrying_monthly_aed'],
                 'stockout_risk': risk,
                 'stockout_risk_badge': risk_badge,
                 'suggested_order_qty': float(suggested),
@@ -426,6 +558,7 @@ def build_ai_forecast_report(
     columns = [
         {'key': 'item_name', 'label': 'Item'},
         {'key': 'sku', 'label': 'SKU'},
+        {'key': 'abc_class', 'label': 'ABC'},
         {'key': 'avg_monthly_consumption', 'label': 'Avg Monthly', 'format': 'number'},
         {'key': 'forecast_30', 'label': 'F30D', 'format': 'number'},
         {'key': 'forecast_60', 'label': 'F60D', 'format': 'number'},
@@ -434,10 +567,13 @@ def build_ai_forecast_report(
         {'key': 'current_stock', 'label': 'Current Stock', 'format': 'number', 'align': 'right'},
         {'key': 'days_left_display', 'label': 'Days Left'},
         {'key': 'stockout_risk', 'label': 'Stockout Risk'},
+        {'key': 'lead_time_days', 'label': 'Lead (d)'},
         {'key': 'suggested_order_qty', 'label': 'Suggested Order Qty', 'format': 'number', 'align': 'right'},
+        {'key': 'carrying_display', 'label': 'Carrying Cost'},
         {'key': 'status', 'label': 'Status'},
         {'key': 'trend_label', 'label': 'Trend'},
         {'key': 'recommended_reorder_date', 'label': 'Reorder Date'},
+        {'key': 'seasonality_note', 'label': 'Seasonality'},
     ]
 
     return {

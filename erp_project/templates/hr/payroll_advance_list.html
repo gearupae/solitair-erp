@@ -53,6 +53,7 @@
                     <th class="text-end">Amount</th>
                     <th class="text-end">Repaid</th>
                     <th class="text-end">Remaining</th>
+                    <th>Repayment</th>
                     <th>Status</th>
                     <th>Issued</th>
                     <th></th>
@@ -66,12 +67,13 @@
                     <td class="text-end">AED {{ a.amount|floatformat:2|intcomma }}</td>
                     <td class="text-end">AED {{ a.amount_repaid|floatformat:2|intcomma }}</td>
                     <td class="text-end">AED {{ a.amount_remaining|floatformat:2|intcomma }}</td>
+                    <td class="small">{{ a.get_repayment_frequency_display }}{% if a.repayment_frequency != 'one_time' %} · {{ a.repayment_period }}×{% endif %}</td>
                     <td><span class="badge bg-{% if a.status == 'active' %}warning text-dark{% elif a.status == 'fully_repaid' %}success{% else %}secondary{% endif %}">{{ a.get_status_display }}</span></td>
                     <td>{{ a.date_issued|date:"d M Y" }}</td>
                     <td><a href="{% url 'hr:payroll_advance_detail' a.pk %}" class="btn btn-sm btn-outline-secondary">View</a></td>
                 </tr>
                 {% empty %}
-                <tr><td colspan="8" class="text-muted text-center py-4">No advances match your filters.</td></tr>
+                <tr><td colspan="9" class="text-muted text-center py-4">No advances match your filters.</td></tr>
                 {% endfor %}
             </tbody>
         </table>

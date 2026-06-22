@@ -4,7 +4,7 @@ Existing Employee/Payroll models are not altered — relations use ForeignKeys h
 """
 from __future__ import annotations
 
-from datetime import time
+from datetime import date, time
 from decimal import Decimal, ROUND_HALF_UP
 
 from django.conf import settings
@@ -45,6 +45,35 @@ class EmployeeHRProfile(BaseModel):
         max_length=120,
         blank=True,
         help_text='Shown on payslip (e.g. Indian, Saudi).',
+    )
+    COMMISSION_TYPE_NONE = ''
+    COMMISSION_TYPE_PERCENTAGE = 'percentage'
+    COMMISSION_TYPE_FIXED = 'fixed'
+    COMMISSION_TYPE_CHOICES = [
+        (COMMISSION_TYPE_NONE, 'None'),
+        (COMMISSION_TYPE_PERCENTAGE, 'Percentage of sales'),
+        (COMMISSION_TYPE_FIXED, 'Fixed amount'),
+    ]
+    commission_type = models.CharField(
+        max_length=20,
+        choices=COMMISSION_TYPE_CHOICES,
+        blank=True,
+        default='',
+        help_text='How payroll commissions are calculated for this employee.',
+    )
+    commission_percentage = models.DecimalField(
+        max_digits=6,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text='Used when commission type is Percentage (e.g. 5.00 = 5% of monthly sales).',
+    )
+    commission_fixed_amount = models.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text='Used when commission type is Fixed (flat monthly commission when sales exist).',
     )
 
     class Meta:
@@ -269,6 +298,8 @@ class PayrollAllowanceLine(BaseModel):
     CODE_CLOTHING = 'CLOTHING'
     CODE_OTHER = 'OTHER'
     CODE_OVERTIME = 'OVERTIME'
+    CODE_COMMISSION = 'COMMISSION'
+    CODE_ALLOWANCE_EXPENSE = 'PAYROLL_ALLOW_EXP'
 
     payroll = models.ForeignKey('hr.Payroll', on_delete=models.CASCADE, related_name='allowance_lines')
     code = models.CharField(max_length=40)
@@ -305,6 +336,28 @@ class EmployeeAdvance(BaseModel):
         (STATUS_CANCELLED, 'Cancelled'),
     ]
 
+    FREQ_MONTHLY = 'monthly'
+    FREQ_3_MONTH = '3_month'
+    FREQ_6_MONTH = '6_month'
+    FREQ_YEARLY = 'yearly'
+    FREQ_ONE_TIME = 'one_time'
+    FREQ_OTHER = 'other'
+    REPAYMENT_FREQUENCY_CHOICES = [
+        (FREQ_MONTHLY, 'Monthly'),
+        (FREQ_3_MONTH, 'Every 3 months'),
+        (FREQ_6_MONTH, 'Every 6 months'),
+        (FREQ_YEARLY, 'Yearly'),
+        (FREQ_ONE_TIME, 'One time'),
+        (FREQ_OTHER, 'Other'),
+    ]
+    REPAYMENT_INTERVAL_BY_FREQUENCY = {
+        FREQ_MONTHLY: 1,
+        FREQ_3_MONTH: 3,
+        FREQ_6_MONTH: 6,
+        FREQ_YEARLY: 12,
+        FREQ_ONE_TIME: 0,
+    }
+
     employee = models.ForeignKey('hr.Employee', on_delete=models.CASCADE, related_name='advances')
     advance_type = models.CharField(max_length=20, choices=ADVANCE_TYPE_CHOICES, default=TYPE_SALARY_ADVANCE)
     amount = models.DecimalField(max_digits=15, decimal_places=2)
@@ -317,6 +370,19 @@ class EmployeeAdvance(BaseModel):
         related_name='approved_employee_advances',
     )
     date_issued = models.DateField()
+    repayment_frequency = models.CharField(
+        max_length=20,
+        choices=REPAYMENT_FREQUENCY_CHOICES,
+        default=FREQ_MONTHLY,
+    )
+    repayment_period = models.PositiveIntegerField(
+        default=1,
+        help_text='Number of installments (e.g. 5 monthly deductions).',
+    )
+    repayment_interval_months = models.PositiveIntegerField(
+        default=1,
+        help_text='Months between each installment (auto-set from frequency; editable for Other).',
+    )
     repayment_months = models.PositiveIntegerField(default=1)
     monthly_deduction = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     amount_repaid = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
@@ -330,13 +396,67 @@ class EmployeeAdvance(BaseModel):
     def __str__(self):
         return f'{self.employee.employee_code} {self.get_advance_type_display()} {self.amount}'
 
-    def save(self, *args, **kwargs):
-        if self.repayment_months and self.repayment_months > 0:
-            self.monthly_deduction = (self.amount / Decimal(self.repayment_months)).quantize(
-                Decimal('0.01'), rounding=ROUND_HALF_UP
-            )
+    @staticmethod
+    def _month_first(d: date) -> date:
+        return date(d.year, d.month, 1)
+
+    @staticmethod
+    def _months_between(start: date, end: date) -> int:
+        return (end.year - start.year) * 12 + (end.month - start.month)
+
+    def _sync_repayment_schedule(self) -> None:
+        freq = self.repayment_frequency or self.FREQ_MONTHLY
+        if freq == self.FREQ_ONE_TIME:
+            self.repayment_period = 1
+            self.repayment_interval_months = 0
+            self.repayment_months = 1
+            self.monthly_deduction = (self.amount or Decimal('0')).quantize(Decimal('0.01'))
+            return
+
+        period = max(1, int(self.repayment_period or 1))
+        self.repayment_period = period
+
+        if freq == self.FREQ_OTHER:
+            interval = max(1, int(self.repayment_interval_months or 1))
         else:
-            self.monthly_deduction = self.amount
+            interval = self.REPAYMENT_INTERVAL_BY_FREQUENCY.get(freq, 1)
+        self.repayment_interval_months = interval
+        self.repayment_months = (period - 1) * interval + 1
+        self.monthly_deduction = (
+            (self.amount or Decimal('0')) / Decimal(period)
+        ).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+
+    def is_due_for_payroll_month(self, payroll_month: date) -> bool:
+        if self.status != self.STATUS_ACTIVE or (self.amount_remaining or Decimal('0')) <= 0:
+            return False
+
+        start = self._month_first(self.date_issued)
+        month = self._month_first(payroll_month)
+        offset = self._months_between(start, month)
+        if offset < 0:
+            return False
+
+        paid_installments = self.repayments.count()
+        period = max(1, int(self.repayment_period or 1))
+        if paid_installments >= period:
+            return False
+
+        if self.repayment_frequency == self.FREQ_ONE_TIME:
+            return paid_installments == 0
+
+        interval = max(1, int(self.repayment_interval_months or 1))
+        expected_offset = paid_installments * interval
+        return offset == expected_offset
+
+    def installment_amount_for_payroll(self) -> Decimal:
+        rem = (self.amount_remaining or Decimal('0')).quantize(Decimal('0.01'))
+        inst = (self.monthly_deduction or Decimal('0')).quantize(Decimal('0.01'))
+        if inst <= 0:
+            return rem
+        return min(inst, rem)
+
+    def save(self, *args, **kwargs):
+        self._sync_repayment_schedule()
         if self.pk is None:
             self.amount_remaining = (self.amount - (self.amount_repaid or Decimal('0'))).quantize(Decimal('0.01'))
         super().save(*args, **kwargs)
@@ -362,6 +482,314 @@ class AdvanceRepayment(BaseModel):
 
     def __str__(self):
         return f'Repay {self.advance_id} {self.amount}'
+
+
+class EmployeeSalaryDeduction(BaseModel):
+    """Fines, penalties, and similar salary cuts — not loans or advances."""
+
+    CATEGORY_FINE = 'fine'
+    CATEGORY_PENALTY = 'penalty'
+    CATEGORY_DAMAGE = 'damage'
+    CATEGORY_OTHER = 'other'
+    CATEGORY_CHOICES = [
+        (CATEGORY_FINE, 'Fine'),
+        (CATEGORY_PENALTY, 'Penalty'),
+        (CATEGORY_DAMAGE, 'Damage / loss'),
+        (CATEGORY_OTHER, 'Other'),
+    ]
+
+    FREQ_MONTHLY = 'monthly'
+    FREQ_ONE_TIME = 'one_time'
+    FREQUENCY_CHOICES = [
+        (FREQ_MONTHLY, 'Monthly'),
+        (FREQ_ONE_TIME, 'One-time'),
+    ]
+
+    STATUS_ACTIVE = 'active'
+    STATUS_CANCELLED = 'cancelled'
+    STATUS_COMPLETED = 'completed'
+    STATUS_CHOICES = [
+        (STATUS_ACTIVE, 'Active'),
+        (STATUS_CANCELLED, 'Cancelled'),
+        (STATUS_COMPLETED, 'Completed'),
+    ]
+
+    employee = models.ForeignKey(
+        'hr.Employee',
+        on_delete=models.CASCADE,
+        related_name='salary_deductions',
+    )
+    category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default=CATEGORY_FINE)
+    amount = models.DecimalField(max_digits=15, decimal_places=2)
+    description = models.TextField(blank=True)
+    payment_frequency = models.CharField(
+        max_length=20,
+        choices=FREQUENCY_CHOICES,
+        default=FREQ_MONTHLY,
+    )
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_ACTIVE)
+    effective_from = models.DateField(null=True, blank=True)
+    effective_to = models.DateField(null=True, blank=True)
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='approved_salary_deductions',
+    )
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-created_at', '-pk']
+
+    def __str__(self):
+        return f'{self.employee.employee_code} {self.get_category_display()} {self.amount}'
+
+    @staticmethod
+    def _month_first(d: date) -> date:
+        return date(d.year, d.month, 1)
+
+    def is_applicable_for_payroll_month(self, month_first: date) -> bool:
+        if self.status != self.STATUS_ACTIVE:
+            return False
+        if self.effective_from and month_first < self._month_first(self.effective_from):
+            return False
+        if self.effective_to and month_first > self._month_first(self.effective_to):
+            return False
+        if self.payment_frequency == self.FREQ_ONE_TIME and self.applications.exists():
+            return False
+        return True
+
+
+class SalaryDeductionApplication(BaseModel):
+    """Payroll recovery against a salary deduction record."""
+
+    salary_deduction = models.ForeignKey(
+        EmployeeSalaryDeduction,
+        on_delete=models.CASCADE,
+        related_name='applications',
+    )
+    payroll = models.ForeignKey(
+        'hr.Payroll',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='salary_deduction_applications',
+    )
+    amount = models.DecimalField(max_digits=15, decimal_places=2)
+    date = models.DateField()
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-date', '-pk']
+
+    def __str__(self):
+        return f'Salary deduction {self.salary_deduction_id} {self.amount}'
+
+
+class EmployeeAllowanceExpense(BaseModel):
+    """Recurring allowances and expense reimbursements paid via payroll."""
+
+    CATEGORY_ALLOW_HOUSING = 'allow_housing'
+    CATEGORY_ALLOW_TRANSPORT = 'allow_transport'
+    CATEGORY_ALLOW_FOOD = 'allow_food'
+    CATEGORY_ALLOW_PHONE = 'allow_phone'
+    CATEGORY_ALLOW_OTHER = 'allow_other'
+    CATEGORY_EXP_TRAVEL = 'exp_travel'
+    CATEGORY_EXP_FUEL = 'exp_fuel'
+    CATEGORY_EXP_MEALS = 'exp_meals'
+    CATEGORY_EXP_ACCOMMODATION = 'exp_accommodation'
+    CATEGORY_EXP_SUPPLIES = 'exp_supplies'
+    CATEGORY_EXP_OTHER = 'exp_other'
+    CATEGORY_CHOICES = [
+        (CATEGORY_ALLOW_HOUSING, 'Allowance — Housing'),
+        (CATEGORY_ALLOW_TRANSPORT, 'Allowance — Transport'),
+        (CATEGORY_ALLOW_FOOD, 'Allowance — Food'),
+        (CATEGORY_ALLOW_PHONE, 'Allowance — Phone'),
+        (CATEGORY_ALLOW_OTHER, 'Allowance — Other'),
+        (CATEGORY_EXP_TRAVEL, 'Expense — Travel'),
+        (CATEGORY_EXP_FUEL, 'Expense — Fuel'),
+        (CATEGORY_EXP_MEALS, 'Expense — Meals'),
+        (CATEGORY_EXP_ACCOMMODATION, 'Expense — Accommodation'),
+        (CATEGORY_EXP_SUPPLIES, 'Expense — Supplies'),
+        (CATEGORY_EXP_OTHER, 'Expense — Other'),
+    ]
+    EXPENSE_CATEGORY_PREFIX = 'exp_'
+
+    FREQ_MONTHLY = 'monthly'
+    FREQ_ONE_TIME = 'one_time'
+    FREQUENCY_CHOICES = [
+        (FREQ_MONTHLY, 'Monthly'),
+        (FREQ_ONE_TIME, 'One-time'),
+    ]
+
+    STATUS_ACTIVE = 'active'
+    STATUS_CANCELLED = 'cancelled'
+    STATUS_COMPLETED = 'completed'
+    STATUS_CHOICES = [
+        (STATUS_ACTIVE, 'Active'),
+        (STATUS_CANCELLED, 'Cancelled'),
+        (STATUS_COMPLETED, 'Completed'),
+    ]
+
+    employee = models.ForeignKey(
+        'hr.Employee',
+        on_delete=models.CASCADE,
+        related_name='allowance_expenses',
+    )
+    category = models.CharField(max_length=30, choices=CATEGORY_CHOICES, default=CATEGORY_ALLOW_OTHER)
+    amount = models.DecimalField(max_digits=15, decimal_places=2)
+    description = models.TextField(blank=True)
+    payment_frequency = models.CharField(
+        max_length=20,
+        choices=FREQUENCY_CHOICES,
+        default=FREQ_MONTHLY,
+    )
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_ACTIVE)
+    start_date = models.DateField(null=True, blank=True)
+    effective_to = models.DateField(null=True, blank=True)
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='approved_allowance_expenses',
+    )
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-created_at', '-pk']
+
+    def __str__(self):
+        return f'{self.employee.employee_code} {self.get_category_display()} {self.amount}'
+
+    @property
+    def is_expense(self) -> bool:
+        return (self.category or '').startswith(self.EXPENSE_CATEGORY_PREFIX)
+
+    @staticmethod
+    def _month_first(d: date) -> date:
+        return date(d.year, d.month, 1)
+
+    @staticmethod
+    def payroll_month_for_expense(d: date) -> date:
+        """Expenses before the 15th pay in that month; on/after the 15th roll to next month."""
+        if d.day < 15:
+            return date(d.year, d.month, 1)
+        y, m = d.year, d.month
+        if m == 12:
+            return date(y + 1, 1, 1)
+        return date(y, m + 1, 1)
+
+    def first_payroll_month(self) -> date | None:
+        if not self.start_date:
+            return None
+        if self.is_expense:
+            return self.payroll_month_for_expense(self.start_date)
+        return self._month_first(self.start_date)
+
+    def is_applicable_for_payroll_month(self, payroll_month: date) -> bool:
+        if self.status != self.STATUS_ACTIVE:
+            return False
+        month = self._month_first(payroll_month)
+        if self.effective_to and month > self._month_first(self.effective_to):
+            return False
+
+        first = self.first_payroll_month()
+        if first and month < first:
+            return False
+
+        if self.payment_frequency == self.FREQ_ONE_TIME:
+            if self.applications.exists():
+                return False
+            if first:
+                return month == first
+            return True
+
+        if self.applications.filter(payroll__month=month).exists():
+            return False
+        return True
+
+
+class AllowanceExpenseApplication(BaseModel):
+    """Payroll payment against an allowance / expense record."""
+
+    allowance_expense = models.ForeignKey(
+        EmployeeAllowanceExpense,
+        on_delete=models.CASCADE,
+        related_name='applications',
+    )
+    payroll = models.ForeignKey(
+        'hr.Payroll',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='allowance_expense_applications',
+    )
+    amount = models.DecimalField(max_digits=15, decimal_places=2)
+    date = models.DateField()
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-date', '-pk']
+
+    def __str__(self):
+        return f'Allowance/expense {self.allowance_expense_id} {self.amount}'
+
+
+class EmployeeCommission(BaseModel):
+    """Monthly sales commission for payroll."""
+
+    STATUS_ACTIVE = 'active'
+    STATUS_PAID = 'paid'
+    STATUS_CANCELLED = 'cancelled'
+    STATUS_CHOICES = [
+        (STATUS_ACTIVE, 'Active'),
+        (STATUS_PAID, 'Paid via payroll'),
+        (STATUS_CANCELLED, 'Cancelled'),
+    ]
+
+    employee = models.ForeignKey(
+        'hr.Employee',
+        on_delete=models.CASCADE,
+        related_name='commissions',
+    )
+    month = models.DateField(help_text='First day of the commission month.')
+    total_sales = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    commission_amount = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='approved_employee_commissions',
+    )
+    payroll = models.ForeignKey(
+        'hr.Payroll',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='employee_commissions',
+    )
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_ACTIVE)
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-month', '-pk']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['employee', 'month'],
+                condition=models.Q(is_active=True),
+                name='hr_employeecommission_unique_active_employee_month',
+            ),
+        ]
+
+    def __str__(self):
+        return f'{self.employee_id} {self.month:%Y-%m} commission {self.commission_amount}'
+
+    @staticmethod
+    def month_first(d: date) -> date:
+        return date(d.year, d.month, 1)
 
 
 class PayrollTemplate(BaseModel):
@@ -426,6 +854,7 @@ class PayrollDeductionLine(BaseModel):
     CODE_OTHER = 'other'
     CODE_MANUAL = 'manual_misc'
     CODE_ADVANCE_REPAYMENT = 'advance_repayment'
+    CODE_SALARY_DEDUCTION = 'salary_deduction'
 
     payroll = models.ForeignKey('hr.Payroll', on_delete=models.CASCADE, related_name='deduction_lines')
     code = models.CharField(max_length=40)

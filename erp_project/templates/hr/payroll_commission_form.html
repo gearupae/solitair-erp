@@ -1,0 +1,121 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-header mb-4">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb mb-2">
+            <li class="breadcrumb-item"><a href="{% url 'hr:payroll_list' %}">Payroll</a></li>
+            <li class="breadcrumb-item"><a href="{% url 'hr:payroll_commission_list' %}">Commissions</a></li>
+            <li class="breadcrumb-item active">{{ title }}</li>
+        </ol>
+    </nav>
+    <h4 class="mb-1 fw-bold">{{ title }}</h4>
+    <p class="text-muted small mb-0">Commission is calculated from the employee profile (percentage or fixed amount) applied to total sales for the selected month. Sales include posted invoices linked to the employee as assigned salesman or estimate owner.</p>
+</div>
+
+<div class="card"><div class="card-body">
+<form method="post">{% csrf_token %}
+    <div class="row g-3 mb-1">
+        <div class="col-md-6">
+            <label class="form-label" for="{{ form.employee.id_for_label }}">{{ form.employee.label }}</label>
+            {{ form.employee.errors }}
+            {{ form.employee }}
+        </div>
+        <div class="col-md-6">
+            <label class="form-label" for="{{ form.month.id_for_label }}">{{ form.month.label }}</label>
+            {{ form.month.errors }}
+            {{ form.month }}
+        </div>
+    </div>
+    <div class="row g-3 mb-1">
+        <div class="col-md-4">
+            <label class="form-label" for="{{ form.total_sales.id_for_label }}">{{ form.total_sales.label }}</label>
+            {{ form.total_sales.errors }}
+            {{ form.total_sales }}
+        </div>
+        <div class="col-md-4">
+            <label class="form-label" for="{{ form.commission_amount.id_for_label }}">{{ form.commission_amount.label }}</label>
+            {{ form.commission_amount.errors }}
+            {{ form.commission_amount }}
+        </div>
+        <div class="col-md-4">
+            <label class="form-label" for="{{ form.approved_by.id_for_label }}">{{ form.approved_by.label }}</label>
+            {{ form.approved_by.errors }}
+            {{ form.approved_by }}
+        </div>
+    </div>
+    <p class="small text-muted mb-3" id="commissionPreviewHint">Select employee and month to load sales and commission.</p>
+    <p class="small mb-3 d-none" id="commissionProfileHint"></p>
+    <div class="row g-3 mb-3">
+        <div class="col-12">
+            <label class="form-label" for="{{ form.notes.id_for_label }}">{{ form.notes.label }}</label>
+            {{ form.notes.errors }}
+            {{ form.notes }}
+        </div>
+    </div>
+    {% if form.non_field_errors %}
+    <div class="alert alert-danger">{{ form.non_field_errors }}</div>
+    {% endif %}
+    <button type="submit" class="btn btn-primary">Save</button>
+    <a href="{% url 'hr:payroll_commission_list' %}" class="btn btn-light">Cancel</a>
+</form>
+</div></div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function(){
+    var empEl = document.getElementById('id_commission_employee');
+    var monthEl = document.getElementById('id_commission_month');
+    var salesEl = document.getElementById('id_total_sales');
+    var commEl = document.getElementById('id_commission_amount');
+    var hintEl = document.getElementById('commissionPreviewHint');
+    var profileEl = document.getElementById('commissionProfileHint');
+    var previewUrl = "{{ preview_url }}";
+    var timer = null;
+
+    function loadPreview(){
+        if(!empEl || !monthEl || !empEl.value || !monthEl.value){
+            if(hintEl) hintEl.textContent = 'Select employee and month to load sales and commission.';
+            if(profileEl) profileEl.classList.add('d-none');
+            return;
+        }
+        var url = previewUrl + '?employee=' + encodeURIComponent(empEl.value) + '&month=' + encodeURIComponent(monthEl.value);
+        fetch(url, {headers: {'Accept': 'application/json'}})
+            .then(function(r){ return r.json(); })
+            .then(function(data){
+                if(data.error){
+                    if(hintEl) hintEl.textContent = data.error;
+                    return;
+                }
+                if(salesEl) salesEl.value = data.total_sales;
+                if(commEl) commEl.value = data.commission_amount;
+                if(hintEl){
+                    hintEl.textContent = data.invoice_count + ' posted invoice(s) in this month · Total sales (ex-VAT subtotal).';
+                }
+                if(profileEl){
+                    if(data.configured){
+                        profileEl.textContent = 'Profile: ' + data.commission_type_label + ' · ' + (data.commission_rate_label || '');
+                        profileEl.classList.remove('d-none');
+                    } else {
+                        profileEl.textContent = 'Commission not configured on employee profile. Edit employee → Sales commission section.';
+                        profileEl.classList.remove('d-none', 'text-success');
+                        profileEl.classList.add('text-danger');
+                    }
+                }
+            })
+            .catch(function(){
+                if(hintEl) hintEl.textContent = 'Could not load preview.';
+            });
+    }
+
+    function schedule(){
+        if(timer) clearTimeout(timer);
+        timer = setTimeout(loadPreview, 250);
+    }
+
+    if(empEl) empEl.addEventListener('change', schedule);
+    if(monthEl) monthEl.addEventListener('change', schedule);
+    schedule();
+})();
+</script>
+{% endblock %}

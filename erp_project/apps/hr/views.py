@@ -3,6 +3,7 @@ import json
 import mimetypes
 import os
 from decimal import Decimal
+from pathlib import Path
 
 from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import render, redirect, get_object_or_404
@@ -17,7 +18,7 @@ from django.core.exceptions import ValidationError
 from datetime import date
 from apps.settings_app.models import Company
 
-from .models import Department, Designation, Employee, EmployeeAdvance, LeaveType, LeaveRequest, Payroll
+from .models import Department, Designation, Employee, EmployeeAdvance, EmployeeAttachment, LeaveType, LeaveRequest, Payroll
 from .forms import DepartmentForm, DesignationForm, EmployeeBankDetailForm, EmployeeForm, LeaveRequestForm, PayrollForm
 from apps.core.mixins import PermissionRequiredMixin, CreatePermissionMixin, UpdatePermissionMixin
 from apps.core.utils import PermissionChecker
@@ -116,6 +117,18 @@ def _sync_employee_hr_profile(employee):
         if kc:
             prof.gosi_employee_category = 'saudi' if kc.nationality == 'saudi' else 'non_saudi'
     prof.save()
+
+
+def _employee_hr_profile_form(request, employee=None, *, prefix='hrp'):
+    from apps.hr.forms_extended import EmployeeHRProfileForm
+    from apps.hr.models_extended import EmployeeHRProfile
+
+    instance = None
+    if employee and employee.pk:
+        instance, _ = EmployeeHRProfile.objects.get_or_create(employee=employee)
+    if request.method == 'POST':
+        return EmployeeHRProfileForm(request.POST, instance=instance, prefix=prefix)
+    return EmployeeHRProfileForm(instance=instance, prefix=prefix)
 
 
 class EmployeeListView(PermissionRequiredMixin, ListView):
@@ -220,6 +233,9 @@ class EmployeeCreateView(CreatePermissionMixin, CreateView):
         context['bank_form'] = kwargs.get('bank_form') or _employee_bank_form(
             self.request, employee_for_bank
         )
+        context['hr_profile_form'] = kwargs.get('hr_profile_form') or _employee_hr_profile_form(
+            self.request, employee_for_bank
+        )
         return context
 
     def post(self, request, *args, **kwargs):
@@ -259,6 +275,14 @@ class EmployeeCreateView(CreatePermissionMixin, CreateView):
                     return self.render_to_response(ctx)
                 bf.save_for_employee(employee)
                 _sync_employee_hr_profile(employee)
+                hpf = _employee_hr_profile_form(request, employee)
+                if not hpf.is_valid():
+                    transaction.set_rollback(True)
+                    ctx = self.get_context_data(form=form)
+                    ctx['hr_profile_form'] = hpf
+                    ctx['uae_form'] = UAEComplianceForm(request.POST, instance=uc, prefix='uae')
+                    return self.render_to_response(ctx)
+                hpf.save()
         except Exception:
             raise
 
@@ -322,6 +346,9 @@ class EmployeeUpdateView(UpdatePermissionMixin, UpdateView):
         context['bank_form'] = kwargs.get('bank_form') or _employee_bank_form(
             self.request, self.object
         )
+        context['hr_profile_form'] = kwargs.get('hr_profile_form') or _employee_hr_profile_form(
+            self.request, self.object
+        )
         return context
 
     def post(self, request, *args, **kwargs):
@@ -362,6 +389,14 @@ class EmployeeUpdateView(UpdatePermissionMixin, UpdateView):
                     return self.render_to_response(ctx)
                 bf.save_for_employee(employee)
                 _sync_employee_hr_profile(employee)
+                hpf = _employee_hr_profile_form(request, employee)
+                if not hpf.is_valid():
+                    transaction.set_rollback(True)
+                    ctx = self.get_context_data(form=form)
+                    ctx['hr_profile_form'] = hpf
+                    ctx['uae_form'] = UAEComplianceForm(request.POST, instance=uc, prefix='uae')
+                    return self.render_to_response(ctx)
+                hpf.save()
         except Exception:
             raise
 
@@ -380,7 +415,7 @@ class EmployeeDetailView(PermissionRequiredMixin, DetailView):
     def get_queryset(self):
         return Employee.objects.select_related(
             'company', 'department', 'designation', 'bank_detail'
-        )
+        ).prefetch_related('attachments')
 
     def get_context_data(self, **kwargs):
         from datetime import date as date_cls
@@ -429,10 +464,11 @@ class EmployeeDetailView(PermissionRequiredMixin, DetailView):
 
         from apps.inventory.utils import get_openai_api_key
         from apps.core.ai_knowledge import is_ai_analysis_auto_run
+        from apps.core.models import AiModuleKnowledge
         from apps.core.compliance_service import auto_compliance_on_detail, run_employee_compliance
 
         context['openai_configured'] = bool(get_openai_api_key())
-        context['ai_analysis_auto_run'] = is_ai_analysis_auto_run()
+        context['ai_analysis_auto_run'] = is_ai_analysis_auto_run(AiModuleKnowledge.MODULE_EMPLOYEE)
         context['employee_ai_evaluate_url'] = reverse('hr:employee_ai_evaluate', args=[self.object.pk])
         evaluation = run_employee_compliance(self.object, full_run=False)
         context['ai_compliance_auto_fetch'] = context['ai_analysis_auto_run'] and not evaluation.get('from_cache')
@@ -444,6 +480,9 @@ class EmployeeDetailView(PermissionRequiredMixin, DetailView):
             link=reverse('hr:employee_detail', args=[self.object.pk]),
         )
         context['employee_ai_evaluation'] = evaluation
+        context['employee_attachments'] = self.object.attachments.select_related('uploaded_by').order_by('-uploaded_at')
+        context['employee_attachment_upload_url'] = reverse('hr:employee_attachment_upload', args=[self.object.pk])
+        context['has_employee_attachments'] = context['employee_attachments'].exists()
 
         return context
 
@@ -474,6 +513,118 @@ def employee_ai_evaluate(request, pk):
         return JsonResponse({'ok': True, 'evaluation': result})
     except Exception as exc:
         return JsonResponse({'ok': False, 'error': str(exc)}, status=500)
+
+
+def _can_manage_employee_attachments(user, employee) -> bool:
+    return user.is_superuser or PermissionChecker.has_permission(user, 'hr', 'edit')
+
+
+def _serialize_employee_attachment(att: EmployeeAttachment) -> dict:
+    return {
+        'id': att.pk,
+        'filename': att.filename or (os.path.basename(att.file.name) if att.file else ''),
+        'label': att.label or '',
+        'uploaded_at': att.uploaded_at.isoformat() if att.uploaded_at else '',
+        'uploaded_by': att.uploaded_by.get_full_name() if att.uploaded_by_id else '',
+        'download_url': reverse('hr:employee_attachment_download', args=[att.employee_id, att.pk]),
+    }
+
+
+@login_required
+@require_POST
+def employee_attachment_upload(request, pk):
+    """Upload one or more HR documents for an employee."""
+    from apps.hr.services.employee_attachment_extract import ALLOWED_EXTENSIONS
+
+    employee = get_object_or_404(Employee, pk=pk, is_active=True)
+    if not _can_manage_employee_attachments(request.user, employee):
+        return JsonResponse({'ok': False, 'error': 'Permission denied.'}, status=403)
+
+    files = request.FILES.getlist('files')
+    if not files:
+        return JsonResponse({'ok': False, 'error': 'No files uploaded.'}, status=400)
+
+    for f in files:
+        ext = Path(f.name).suffix.lower()
+        if ext not in ALLOWED_EXTENSIONS:
+            return JsonResponse(
+                {
+                    'ok': False,
+                    'error': (
+                        f'File type not allowed: {f.name}. '
+                        'Use PDF, Excel (.xlsx, .xls), or image (.jpg, .png, .webp).'
+                    ),
+                },
+                status=400,
+            )
+
+    label = (request.POST.get('label') or '').strip()[:200]
+    created = []
+    errors = []
+    for f in files:
+        try:
+            att = EmployeeAttachment.objects.create(
+                employee=employee,
+                file=f,
+                filename=f.name,
+                label=label if len(files) == 1 else '',
+                uploaded_by=request.user,
+            )
+            created.append(att)
+        except Exception as exc:
+            errors.append(f'{f.name}: {exc}')
+
+    if not created:
+        return JsonResponse(
+            {
+                'ok': False,
+                'error': errors[0] if len(errors) == 1 else 'Upload failed for all files.',
+                'errors': errors,
+            },
+            status=400,
+        )
+
+    payload = {
+        'ok': True,
+        'attachments': [_serialize_employee_attachment(a) for a in created],
+    }
+    if errors:
+        payload['partial'] = True
+        payload['errors'] = errors
+    return JsonResponse(payload)
+
+
+@login_required
+@require_POST
+def employee_attachment_delete(request, pk, attachment_id):
+    employee = get_object_or_404(Employee, pk=pk, is_active=True)
+    if not _can_manage_employee_attachments(request.user, employee):
+        return JsonResponse({'ok': False, 'error': 'Permission denied.'}, status=403)
+    att = get_object_or_404(EmployeeAttachment, pk=attachment_id, employee=employee)
+    if att.file:
+        att.file.delete(save=False)
+    att.delete()
+    return JsonResponse({'ok': True})
+
+
+@login_required
+def employee_attachment_download(request, pk, attachment_id):
+    employee = get_object_or_404(Employee, pk=pk, is_active=True)
+    if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'hr', 'view')):
+        raise Http404('Permission denied.')
+    att = get_object_or_404(EmployeeAttachment, pk=attachment_id, employee=employee)
+    if not att.file:
+        raise Http404('No attachment file.')
+    filename = att.filename or os.path.basename(att.file.name)
+    mime, _ = mimetypes.guess_type(filename)
+    try:
+        fh = att.file.open('rb')
+    except FileNotFoundError:
+        raise Http404('Attachment file is missing on disk.') from None
+    resp = FileResponse(fh, content_type=mime or 'application/octet-stream')
+    disp = 'inline' if request.GET.get('preview') == '1' else 'attachment'
+    resp['Content-Disposition'] = f'{disp}; filename="{filename}"'
+    return resp
 
 
 @login_required
@@ -817,10 +968,17 @@ class PayrollListView(PermissionRequiredMixin, ListView):
             co = Company.objects.filter(pk=int(cid), is_active=True).first()
             if co:
                 qs = qs.filter(Q(company_id=co.pk) | Q(company__isnull=True, employee__company_id=co.pk))
-        return qs.order_by('-month', 'employee__employee_code')
+        return qs.prefetch_related('allowance_lines', 'deduction_lines').order_by('-month', 'employee__employee_code')
     
     def get_context_data(self, **kwargs):
+        from apps.hr.payroll_processing import payroll_module_breakdown, refresh_draft_payroll_computations
+
         context = super().get_context_data(**kwargs)
+        payrolls = list(context['payrolls'])
+        for payroll in payrolls:
+            refresh_draft_payroll_computations(payroll)
+            payroll.module_breakdown = payroll_module_breakdown(payroll)
+        context['payrolls'] = payrolls
         context['title'] = 'Payroll'
         queryset = self.get_queryset()
         context['total_payroll'] = queryset.aggregate(Sum('net_salary'))['net_salary__sum'] or 0
@@ -914,7 +1072,12 @@ class PayrollDetailView(PermissionRequiredMixin, DetailView):
         from apps.hr.models_extended import AttendanceSummary, GratuityRecord
 
         context = super().get_context_data(**kwargs)
-        context['title'] = f'Payroll - {self.object.employee.full_name}'
+        from apps.hr.payroll_processing import refresh_draft_payroll_computations
+
+        payroll = self.object
+        refresh_draft_payroll_computations(payroll)
+        payroll.refresh_from_db()
+        context['title'] = f'Payroll - {payroll.employee.full_name}'
         context['can_edit'] = self.request.user.is_superuser or PermissionChecker.has_permission(self.request.user, 'hr', 'edit')
 
         mf = date(self.object.month.year, self.object.month.month, 1)
@@ -1048,6 +1211,9 @@ class PayrollCreateView(CreatePermissionMixin, CreateView):
         if emp:
             ensure_payroll_allowances_from_employee_template(payroll, emp)
         refresh_payroll_gross_and_allowances(payroll)
+        from apps.hr.payroll_processing import apply_payroll_computations
+
+        apply_payroll_computations(payroll)
         messages.success(self.request, f'Payroll for {payroll.employee.full_name} created successfully.')
         return redirect(self.success_url)
 
@@ -1091,6 +1257,9 @@ class PayrollUpdateView(UpdatePermissionMixin, UpdateView):
         if emp:
             ensure_payroll_allowances_from_employee_template(payroll, emp)
         refresh_payroll_gross_and_allowances(payroll)
+        from apps.hr.payroll_processing import apply_payroll_computations
+
+        apply_payroll_computations(payroll)
         messages.success(self.request, f'Payroll for {payroll.employee.full_name} updated successfully.')
         return redirect(self.success_url)
 

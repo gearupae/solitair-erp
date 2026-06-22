@@ -97,7 +97,7 @@ def _fetch_analysis_from_openai(
 ) -> dict:
     api_key = get_openai_api_key()
     if not api_key:
-        raise OpenAINotConfigured('Configure OpenAI API key in Settings → Company')
+        raise OpenAINotConfigured('Configure OpenAI API key — set OPENAI_API_KEY in .env')
 
     import urllib.request
 
@@ -231,7 +231,7 @@ def analyze_vendor_quotes(pr: PurchaseRequest, *, force: bool = False) -> dict:
     if not get_openai_api_key():
         return {
             'ok': False,
-            'error': 'OpenAI is not configured. Add your API key in Settings → Company to analyze quote files.',
+            'error': 'OpenAI is not configured. Set OPENAI_API_KEY in your .env file to analyze quote files.',
         }
 
     django_key = _django_cache_key(pr, attachments)

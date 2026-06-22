@@ -5,10 +5,8 @@ from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_http_methods
 
 from apps.core.ai_knowledge import (
-    get_knowledge_entries,
-    is_ai_analysis_auto_run,
+    build_sections,
     module_choices,
-    save_ai_compliance_settings,
     save_knowledge_entries,
 )
 
@@ -18,7 +16,6 @@ def _page_context(*, sections, saved: bool) -> dict:
         'title': 'AI module knowledge',
         'sections': sections,
         'saved': saved,
-        'auto_run_enabled': is_ai_analysis_auto_run(),
     }
 
 
@@ -31,22 +28,24 @@ def ajas_knowledge_page(request):
             key: (request.POST.get(f'content_{key}') or '')
             for key, _label in modules
         }
-        save_knowledge_entries(entries)
-        save_ai_compliance_settings(
-            auto_run_enabled=(request.POST.get('auto_run_enabled') == '1'),
-        )
+        auto_run = {
+            key: (request.POST.get(f'auto_run_{key}') == '1')
+            for key, _label in modules
+        }
+        save_knowledge_entries(entries, auto_run=auto_run)
         messages.success(request, 'Settings saved.')
-        sections = [{'key': key, 'label': label, 'content': entries.get(key, '')} for key, label in modules]
+        sections = build_sections()
+        for section in sections:
+            section['auto_run_enabled'] = auto_run.get(section['key'], False)
+            section['content'] = entries.get(section['key'], '')
         return render(
             request,
             'core/ajas_knowledge.html',
             _page_context(sections=sections, saved=True),
         )
 
-    entries = get_knowledge_entries()
-    sections = [{'key': key, 'label': label, 'content': entries.get(key, '')} for key, label in modules]
     return render(
         request,
         'core/ajas_knowledge.html',
-        _page_context(sections=sections, saved=False),
+        _page_context(sections=build_sections(), saved=False),
     )

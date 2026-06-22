@@ -10,6 +10,9 @@ from .models import (
     Designation,
     Employee,
     EmployeeAdvance,
+    EmployeeAllowanceExpense,
+    EmployeeCommission,
+    EmployeeSalaryDeduction,
     EmployeeBankDetail,
     EmployeeHRProfile,
     GOSIRecord,
@@ -25,6 +28,8 @@ from .models import (
     PayrollEmployerContribution,
     PayrollSettings,
     PayrollTemplate,
+    SalaryDeductionApplication,
+    AllowanceExpenseApplication,
     UAECompliance,
     WPSMonthlyFile,
     WPSRecord,
@@ -80,11 +85,13 @@ class EmployeeAdvanceAdmin(admin.ModelAdmin):
         'amount',
         'amount_repaid',
         'amount_remaining',
+        'repayment_frequency',
+        'repayment_period',
         'monthly_deduction',
         'status',
         'date_issued',
     ]
-    list_filter = ['status', 'advance_type', 'date_issued']
+    list_filter = ['status', 'advance_type', 'repayment_frequency', 'date_issued']
     search_fields = ['employee__first_name', 'employee__last_name', 'employee__employee_code']
     raw_id_fields = ['employee', 'approved_by']
 
@@ -94,6 +101,52 @@ class AdvanceRepaymentAdmin(admin.ModelAdmin):
     list_display = ['advance', 'payroll', 'amount', 'date']
     list_filter = ['date']
     raw_id_fields = ['advance', 'payroll']
+
+
+@admin.register(EmployeeSalaryDeduction)
+class EmployeeSalaryDeductionAdmin(admin.ModelAdmin):
+    list_display = [
+        'employee',
+        'category',
+        'amount',
+        'payment_frequency',
+        'status',
+        'effective_from',
+        'effective_to',
+    ]
+    list_filter = ['status', 'category', 'payment_frequency']
+    search_fields = ['employee__first_name', 'employee__last_name', 'employee__employee_code', 'description']
+    raw_id_fields = ['employee', 'approved_by']
+
+
+@admin.register(SalaryDeductionApplication)
+class SalaryDeductionApplicationAdmin(admin.ModelAdmin):
+    list_display = ['salary_deduction', 'payroll', 'amount', 'date']
+    list_filter = ['date']
+    raw_id_fields = ['salary_deduction', 'payroll']
+
+
+@admin.register(EmployeeAllowanceExpense)
+class EmployeeAllowanceExpenseAdmin(admin.ModelAdmin):
+    list_display = [
+        'employee',
+        'category',
+        'amount',
+        'payment_frequency',
+        'status',
+        'start_date',
+        'effective_to',
+    ]
+    list_filter = ['status', 'category', 'payment_frequency']
+    search_fields = ['employee__first_name', 'employee__last_name', 'employee__employee_code', 'description']
+    raw_id_fields = ['employee', 'approved_by']
+
+
+@admin.register(AllowanceExpenseApplication)
+class AllowanceExpenseApplicationAdmin(admin.ModelAdmin):
+    list_display = ['allowance_expense', 'payroll', 'amount', 'date']
+    list_filter = ['date']
+    raw_id_fields = ['allowance_expense', 'payroll']
 
 
 @admin.register(Payroll)
@@ -109,7 +162,25 @@ class PayrollSettingsAdmin(admin.ModelAdmin):
 
 @admin.register(EmployeeHRProfile)
 class EmployeeHRProfileAdmin(admin.ModelAdmin):
-    list_display = ['employee', 'employment_entity', 'gosi_employee_category']
+    list_display = [
+        'employee',
+        'employment_entity',
+        'gosi_employee_category',
+        'commission_type',
+        'commission_percentage',
+        'commission_fixed_amount',
+    ]
+    list_filter = ['employment_entity', 'commission_type']
+    search_fields = ['employee__first_name', 'employee__last_name', 'employee__employee_code']
+    raw_id_fields = ['employee']
+
+
+@admin.register(EmployeeCommission)
+class EmployeeCommissionAdmin(admin.ModelAdmin):
+    list_display = ['employee', 'month', 'total_sales', 'commission_amount', 'status', 'approved_by', 'payroll']
+    list_filter = ['status', 'month']
+    search_fields = ['employee__first_name', 'employee__last_name', 'employee__employee_code']
+    raw_id_fields = ['employee', 'approved_by', 'payroll']
 
 
 @admin.register(AttendanceSettings)

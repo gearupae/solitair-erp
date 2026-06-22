@@ -48,6 +48,40 @@
 @media (max-width: 576px) {
     .summary-card .display-6 { font-size: 1.5rem; }
 }
+
+/* AI hub tabs — match app black & white theme (see static/css/style.css) */
+.ai-hub-tabs .nav-link {
+    color: #111111;
+    background: #ffffff;
+    border: 1px solid #d4d4d4;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    padding: 0.45rem 0.9rem;
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.ai-hub-tabs .nav-link:hover {
+    color: #111111;
+    background: #f5f5f5;
+    border-color: #a3a3a3;
+}
+.ai-hub-tabs .nav-link.active,
+.ai-hub-tabs .nav-link.active:hover {
+    color: #ffffff;
+    background: #111111;
+    border-color: #111111;
+    font-weight: 600;
+}
+.ai-hub-tabs .nav-link.active .badge {
+    background: #ffffff !important;
+    color: #111111 !important;
+}
+.ai-hub-tabs .nav-link:not(.active) .badge {
+    background: #f5f5f5 !important;
+    color: #111111 !important;
+    border: 1px solid #d4d4d4;
+    font-weight: 600;
+}
 </style>
 {% endblock %}
 
@@ -80,7 +114,7 @@
 
 {% if not openai_configured %}
 <div class="alert alert-warning">
-    Configure OpenAI API key in <a href="{% url 'settings:company' %}">Settings → Company</a> or set <code>OPENAI_API_KEY</code> in <code>.env</code>.
+    Set <code>OPENAI_API_KEY</code> in your <code>.env</code> file for AI forecasting.
 </div>
 {% endif %}
 
@@ -182,7 +216,35 @@
     </div>
 </form>
 
-{% csrf_token %}
+<ul class="nav ai-hub-tabs mb-3 flex-wrap gap-1" id="aiHubTabs">
+    <li class="nav-item">
+        <a class="nav-link {% if active_tab == 'forecast' %}active{% endif %}"
+           href="?{% if filter_qs %}{{ filter_qs }}&{% endif %}tab=forecast">AI Forecast</a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if active_tab == 'compliance' %}active{% endif %}"
+           href="?{% if filter_qs %}{{ filter_qs }}&{% endif %}tab=compliance">
+            Inventory Compliance
+            {% if compliance_payload and compliance_payload.summary.high_count %}
+            <span class="badge ms-1">{{ compliance_payload.summary.high_count }}</span>
+            {% endif %}
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if active_tab == 'transfers' %}active{% endif %}"
+           href="?{% if filter_qs %}{{ filter_qs }}&{% endif %}tab=transfers">Transfer Suggestions</a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if active_tab == 'lead_time' %}active{% endif %}"
+           href="?{% if filter_qs %}{{ filter_qs }}&{% endif %}tab=lead_time">Supplier Lead Time</a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if active_tab == 'chat' %}active{% endif %}"
+           href="?{% if filter_qs %}{{ filter_qs }}&{% endif %}tab=chat">Ask Inventory</a>
+    </li>
+</ul>
+
+{% if active_tab == 'forecast' %}
 
 <div id="loadingOverlay" class="d-none position-fixed top-0 start-0 w-100 h-100 bg-dark bg-opacity-25" style="z-index:1050;">
     <div class="d-flex align-items-center justify-content-center h-100">
@@ -199,18 +261,21 @@
                 <tr>
                     <th>Item</th>
                     <th>SKU</th>
+                    <th>ABC</th>
                     <th class="num">Avg Monthly</th>
                     <th class="num">F30D</th>
                     <th class="num">F60D</th>
                     <th class="num">F90D</th>
                     <th>Confidence</th>
-                    <th class="num">Current Stock</th>
+                    <th class="num">Stock</th>
                     <th class="num">Days Left</th>
-                    <th>Stockout Risk</th>
-                    <th class="num">Suggested Order</th>
+                    <th>Risk</th>
+                    <th class="num">Lead</th>
+                    <th class="num">Order Qty</th>
+                    <th>Carrying</th>
                     <th>Status</th>
                     <th>Trend</th>
-                    <th>Reorder Date</th>
+                    <th>Reorder</th>
                     <th></th>
                 </tr>
             </thead>
@@ -219,6 +284,7 @@
                 <tr data-item-id="{{ r.item_id }}">
                     <td>{{ r.item_name }}</td>
                     <td><code class="small">{{ r.sku }}</code></td>
+                    <td><span class="{{ r.abc_badge }}">{{ r.abc_class }}</span></td>
                     <td class="num avg-m">{{ r.avg_monthly_consumption|default:'—' }}</td>
                     <td class="num f30">{% if r.forecast_30 != None %}{{ r.forecast_30|floatformat:0 }}{% else %}—{% endif %}</td>
                     <td class="num f60">{% if r.forecast_60 != None %}{{ r.forecast_60|floatformat:0 }}{% else %}—{% endif %}</td>
@@ -227,7 +293,9 @@
                     <td class="num">{{ r.current_stock|floatformat:0 }}</td>
                     <td class="num {{ r.days_left_class }}">{{ r.days_left_display }}</td>
                     <td><span class="{{ r.stockout_risk_badge }}">{{ r.stockout_risk }}</span></td>
+                    <td class="num small text-muted">{{ r.lead_time_days }}{% if r.lead_time_source == 'learned' %}*{% endif %}</td>
                     <td class="num {% if r.suggested_order_bold %}order-qty-bold{% endif %}">{{ r.suggested_order_qty|floatformat:0 }}</td>
+                    <td class="small">{{ r.carrying_display|default:'—' }}</td>
                     <td>
                         {% if r.status == 'Normal' %}
                         <span class="fc-text-normal">Normal</span>
@@ -242,7 +310,7 @@
                     </td>
                 </tr>
                 {% empty %}
-                <tr><td colspan="15" class="text-center text-muted py-4">No items match your filters.</td></tr>
+                <tr><td colspan="18" class="text-center text-muted py-4">No items match your filters.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
@@ -264,7 +332,7 @@
 {% endif %}
 
 <!-- AI Action Summary -->
-<div class="card border-0 shadow-sm">
+<div class="card border-0 shadow-sm mb-4">
     <div class="card-header bg-white d-flex flex-wrap justify-content-between align-items-center gap-2 py-3">
         <div>
             <h6 class="mb-0 fw-bold"><i class="fas fa-robot text-primary me-2"></i>AI Action Summary — Top 5 This Week</h6>
@@ -289,6 +357,121 @@
         </ul>
     </div>
 </div>
+
+{% elif active_tab == 'compliance' %}
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center py-3">
+        <div>
+            <h6 class="mb-0 fw-bold"><i class="fas fa-shield-alt text-danger me-2"></i>Inventory Compliance Watchdog</h6>
+            <small class="text-muted">{{ compliance_payload.summary.flag_count }} open flag(s)
+                {% if compliance_payload.from_cache %} · cached{% endif %}
+            </small>
+        </div>
+        <button type="button" id="btnRefreshCompliance" class="btn btn-outline-danger btn-sm">
+            <i class="fas fa-sync-alt me-1"></i>Run checks
+        </button>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-sm table-hover mb-0 fc-table">
+            <thead class="table-light">
+                <tr>
+                    <th>Severity</th><th>Issue</th><th>Item</th><th>SKU</th>
+                    <th class="num">Value (AED)</th><th>Suggested fix</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in compliance_payload.rows %}
+                <tr>
+                    <td><span class="{{ r.severity_badge }}">{{ r.severity }}</span></td>
+                    <td>{{ r.issue }}</td>
+                    <td>{{ r.item_name }}</td>
+                    <td><code class="small">{{ r.sku }}</code></td>
+                    <td class="num">{{ r.value_impact|floatformat:2 }}</td>
+                    <td class="small">{{ r.suggested_fix }}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="6" class="text-center text-muted py-4">No compliance issues detected.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% elif active_tab == 'transfers' and transfer_payload %}
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white py-3">
+        <h6 class="mb-0 fw-bold"><i class="fas fa-truck-loading me-2 text-primary"></i>Transfer Suggestions</h6>
+        <small class="text-muted">{{ transfer_payload.summary.suggestion_count }} suggestion(s)</small>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-sm table-hover mb-0 fc-table">
+            <thead class="table-light">
+                <tr><th>Item</th><th>SKU</th><th>From</th><th>To</th><th class="num">Qty</th><th>Reason</th></tr>
+            </thead>
+            <tbody>
+                {% for r in transfer_payload.rows %}
+                <tr>
+                    <td>{{ r.item_name }}</td>
+                    <td><code class="small">{{ r.sku }}</code></td>
+                    <td>{{ r.from_warehouse }}</td>
+                    <td>{{ r.to_warehouse }}</td>
+                    <td class="num">{{ r.suggested_qty|floatformat:0 }}</td>
+                    <td class="small">{{ r.reason }}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="6" class="text-center text-muted py-4">No transfer opportunities found.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% elif active_tab == 'lead_time' and lead_time_payload %}
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white py-3">
+        <h6 class="mb-0 fw-bold"><i class="fas fa-clock me-2 text-primary"></i>Supplier Lead-Time Intelligence</h6>
+        <small class="text-muted">{{ lead_time_payload.summary.rising_count }} supplier(s) with rising lead time</small>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-sm table-hover mb-0 fc-table">
+            <thead class="table-light">
+                <tr><th>Supplier</th><th class="num">Avg days</th><th class="num">Recent 90d</th><th class="num">Prior 90d</th><th class="num">Receipts</th><th>Trend</th></tr>
+            </thead>
+            <tbody>
+                {% for r in lead_time_payload.rows %}
+                <tr>
+                    <td>{{ r.vendor }}</td>
+                    <td class="num">{{ r.avg_lead_days }}</td>
+                    <td class="num">{{ r.recent_avg_days }}</td>
+                    <td class="num">{% if r.prior_avg_days != None %}{{ r.prior_avg_days }}{% else %}—{% endif %}</td>
+                    <td class="num">{{ r.po_count }}</td>
+                    <td class="{{ r.trend_class }}">{{ r.trend }}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="6" class="text-center text-muted py-4">No PO receipt history yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% elif active_tab == 'chat' %}
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white py-3">
+        <h6 class="mb-0 fw-bold"><i class="fas fa-comments me-2 text-primary"></i>Ask Inventory</h6>
+        <small class="text-muted d-block">Natural language queries over stock, compliance, and forecasts.</small>
+    </div>
+    <div class="card-body">
+        <div class="input-group mb-3">
+            <input type="text" id="inventoryChatInput" class="form-control" placeholder='e.g. "items expiring in 30 days" or "dead stock value"'>
+            <button type="button" id="inventoryChatBtn" class="btn btn-primary">Ask</button>
+        </div>
+        <div id="inventoryChatResult" class="small text-muted">Try a question above.</div>
+    </div>
+</div>
+{% endif %}
+
+{% csrf_token %}
 
 <script>
 (function(){
@@ -326,7 +509,7 @@
     }
 
     const overlay = document.getElementById('loadingOverlay');
-    function showLoad(on){ overlay.classList.toggle('d-none', !on); }
+    function showLoad(on){ if (overlay) overlay.classList.toggle('d-none', !on); }
 
     async function refreshItem(id){
         const fd = new FormData();
@@ -403,6 +586,51 @@
             else alert(err.message);
         } finally { showLoad(false); }
     });
+
+    const btnCompliance = document.getElementById('btnRefreshCompliance');
+    if (btnCompliance) btnCompliance.addEventListener('click', async function(){
+        showLoad(true);
+        try {
+            const data = await postJson('{% url "inventory:ai_forecast_compliance_refresh" %}', new FormData());
+            if (!data.ok) {
+                alert(data.error || 'Compliance refresh failed');
+                return;
+            }
+            location.reload();
+        } finally { showLoad(false); }
+    });
+
+    const chatBtn = document.getElementById('inventoryChatBtn');
+    const chatInput = document.getElementById('inventoryChatInput');
+    const chatResult = document.getElementById('inventoryChatResult');
+    if (chatBtn && chatInput && chatResult) {
+        async function runChat(){
+            const q = chatInput.value.trim();
+            if (!q) return;
+            chatResult.textContent = 'Thinking…';
+            const fd = new FormData();
+            fd.append('question', q);
+            fd.append('warehouse', '{{ filter_warehouse|default:"" }}');
+            fd.append('category', '{{ filter_category|default:"" }}');
+            const data = await postJson('{% url "inventory:ai_forecast_chat" %}', fd);
+            if (!data.ok) {
+                chatResult.textContent = data.error || 'Could not answer.';
+                return;
+            }
+            let html = '<p class="mb-2"><strong>' + (data.title || 'Answer') + '</strong></p>';
+            if (data.summary) html += '<p>' + data.summary + '</p>';
+            if (data.rows && data.rows.length) {
+                html += '<ul class="mb-0 ps-3">';
+                data.rows.slice(0, 15).forEach(function(row){
+                    html += '<li>' + JSON.stringify(row) + '</li>';
+                });
+                html += '</ul>';
+            }
+            chatResult.innerHTML = html;
+        }
+        chatBtn.addEventListener('click', runChat);
+        chatInput.addEventListener('keydown', function(e){ if (e.key === 'Enter') runChat(); });
+    }
 })();
 </script>
 {% endblock %}

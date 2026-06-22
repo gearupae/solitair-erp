@@ -214,6 +214,7 @@ def ai_forecast_report(request):
     risk_f = request.GET.get('stockout_risk') or 'All'
     search = (request.GET.get('search') or '').strip()
     high_risk = request.GET.get('high_risk') == '1'
+    active_tab = (request.GET.get('tab') or 'forecast').strip().lower()
     try:
         wh_id = int(wh) if wh else None
     except (TypeError, ValueError):
@@ -233,6 +234,22 @@ def ai_forecast_report(request):
     )
     action_summary = get_action_summary(payload, force=False)
 
+    from apps.inventory.services.inventory_compliance_watchdog import load_compliance_report
+    from apps.inventory.services.supplier_lead_time import build_supplier_lead_time_report
+    from apps.inventory.services.warehouse_balancing import build_transfer_suggestions_report
+
+    compliance_payload = load_compliance_report()
+    transfer_payload = (
+        build_transfer_suggestions_report(warehouse_id=wh_id, category_id=cat_id)
+        if active_tab == 'transfers'
+        else None
+    )
+    lead_time_payload = (
+        build_supplier_lead_time_report()
+        if active_tab == 'lead_time'
+        else None
+    )
+
     qs_parts = []
     if wh_id:
         qs_parts.append(f'warehouse={wh_id}')
@@ -246,6 +263,8 @@ def ai_forecast_report(request):
         qs_parts.append(f'search={search}')
     if high_risk:
         qs_parts.append('high_risk=1')
+    if active_tab and active_tab != 'forecast':
+        qs_parts.append(f'tab={active_tab}')
     filter_qs = '&'.join(qs_parts)
 
     return _render_report(
@@ -263,8 +282,45 @@ def ai_forecast_report(request):
             'filters': payload['filters'],
             'filter_qs': filter_qs,
             'action_summary': action_summary,
+            'active_tab': active_tab,
+            'compliance_payload': compliance_payload,
+            'transfer_payload': transfer_payload,
+            'lead_time_payload': lead_time_payload,
         },
     )
+
+
+@login_required
+@require_POST
+def ai_forecast_chat(request):
+    if not _has_perm(request.user):
+        return JsonResponse({'ok': False, 'error': 'Permission denied.'}, status=403)
+    from apps.inventory.services.inventory_chat import answer_inventory_question
+
+    question = (request.POST.get('question') or '').strip()
+    wh = request.POST.get('warehouse') or None
+    cat = request.POST.get('category') or None
+    try:
+        wh_id = int(wh) if wh else None
+    except (TypeError, ValueError):
+        wh_id = None
+    try:
+        cat_id = int(cat) if cat else None
+    except (TypeError, ValueError):
+        cat_id = None
+    result = answer_inventory_question(question, warehouse_id=wh_id, category_id=cat_id)
+    return JsonResponse(result)
+
+
+@login_required
+@require_POST
+def ai_forecast_compliance_refresh(request):
+    if not _has_perm(request.user):
+        return JsonResponse({'ok': False, 'error': 'Permission denied.'}, status=403)
+    from apps.inventory.services.inventory_compliance_watchdog import load_compliance_report
+
+    payload = load_compliance_report(force_refresh=True)
+    return JsonResponse({'ok': True, 'summary': payload.get('summary', {}), 'row_count': len(payload.get('rows', []))})
 
 
 @login_required

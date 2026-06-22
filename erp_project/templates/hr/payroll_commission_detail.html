@@ -1,0 +1,42 @@
+{% extends 'base.html' %}
+{% load humanize %}
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-start flex-wrap gap-2 mb-4">
+    <div>
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-2">
+                <li class="breadcrumb-item"><a href="{% url 'hr:payroll_list' %}">Payroll</a></li>
+                <li class="breadcrumb-item"><a href="{% url 'hr:payroll_commission_list' %}">Commissions</a></li>
+                <li class="breadcrumb-item active">Detail</li>
+            </ol>
+        </nav>
+        <h4 class="mb-1 fw-bold">{{ title }}</h4>
+    </div>
+</div>
+
+<div class="row g-3">
+    <div class="col-lg-6">
+        <div class="card h-100">
+            <div class="card-header fw-semibold">Commission</div>
+            <div class="card-body">
+                <table class="table table-sm table-borderless mb-0">
+                    <tr><td class="text-muted">Employee</td><td><a href="{% url 'hr:employee_detail' commission.employee_id %}">{{ commission.employee.full_name }}</a></td></tr>
+                    <tr><td class="text-muted">Month</td><td>{{ commission.month|date:"F Y" }}</td></tr>
+                    <tr><td class="text-muted">Total sales</td><td class="fw-medium">AED {{ commission.total_sales|floatformat:2|intcomma }}</td></tr>
+                    <tr><td class="text-muted">Commission amount</td><td class="fw-bold">AED {{ commission.commission_amount|floatformat:2|intcomma }}</td></tr>
+                    <tr><td class="text-muted">Status</td><td><span class="badge bg-secondary">{{ commission.get_status_display }}</span></td></tr>
+                    {% if commission.approved_by %}
+                    <tr><td class="text-muted">Approved by</td><td>{{ commission.approved_by.get_full_name|default:commission.approved_by.username }}</td></tr>
+                    {% endif %}
+                    {% if commission.payroll_id %}
+                    <tr><td class="text-muted">Payroll</td><td><a href="{% url 'hr:payroll_detail' commission.payroll_id %}">Payroll #{{ commission.payroll_id }}</a></td></tr>
+                    {% endif %}
+                </table>
+                {% if commission.notes %}
+                <p class="small mt-3 mb-0"><strong>Notes:</strong> {{ commission.notes }}</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

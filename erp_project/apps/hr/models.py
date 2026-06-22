@@ -437,9 +437,17 @@ class Payroll(BaseModel):
         self.status = 'processed'
         self.save(update_fields=['journal_entry', 'status'])
 
-        from apps.hr.payroll_processing import finalize_advance_repayments_for_payroll
+        from apps.hr.payroll_processing import (
+            finalize_advance_repayments_for_payroll,
+            finalize_allowance_expense_applications_for_payroll,
+            finalize_commission_for_payroll,
+            finalize_salary_deduction_applications_for_payroll,
+        )
 
         finalize_advance_repayments_for_payroll(self)
+        finalize_salary_deduction_applications_for_payroll(self)
+        finalize_commission_for_payroll(self)
+        finalize_allowance_expense_applications_for_payroll(self)
         
         return journal
     
@@ -514,13 +522,51 @@ class Payroll(BaseModel):
         return journal
 
 
+class EmployeeAttachment(models.Model):
+    """HR compliance documents attached to an employee record (passport, visa, ID, etc.)."""
+
+    employee = models.ForeignKey(
+        Employee,
+        on_delete=models.CASCADE,
+        related_name='attachments',
+    )
+    file = models.FileField(upload_to='employee_attachments/%Y/%m/')
+    filename = models.CharField(max_length=255, blank=True)
+    label = models.CharField(
+        max_length=200,
+        blank=True,
+        help_text='Optional label, e.g. Passport copy, Visa page',
+    )
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+    uploaded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+    )
+
+    class Meta:
+        ordering = ['-uploaded_at']
+
+    def __str__(self):
+        return self.filename or f'Attachment #{self.pk}'
+
+    @property
+    def display_name(self) -> str:
+        return (self.label or self.filename or f'Attachment #{self.pk}').strip()
+
+
 # Extended HR models (attendance, compliance, payroll lines — separate definitions).
 from apps.hr.models_extended import (  # noqa: E402
     AdvanceRepayment,
+    AllowanceExpenseApplication,
     AttendanceRecord,
     AttendanceSettings,
     AttendanceSummary,
     EmployeeAdvance,
+    EmployeeAllowanceExpense,
+    EmployeeCommission,
+    EmployeeSalaryDeduction,
     Holiday,
     EmployeeBankDetail,
     EmployeeHRProfile,
@@ -533,6 +579,7 @@ from apps.hr.models_extended import (  # noqa: E402
     PayrollEmployerContribution,
     PayrollSettings,
     PayrollTemplate,
+    SalaryDeductionApplication,
     UAECompliance,
     WPSMonthlyFile,
     WPSRecord,

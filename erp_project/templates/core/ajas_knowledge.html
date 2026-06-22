@@ -1,60 +1,300 @@
 {% extends 'minimal_public.html' %}
-{% block title %}AI module knowledge{% endblock %}
-{% block content %}
-<div class="card shadow-sm border-0">
-    <div class="card-body p-4">
-        <h1 class="h4 fw-bold mb-1">AI module knowledge</h1>
-        <p class="text-muted small mb-4">
-            Add compliance rules, policies, and knowledge graph notes per module.
-            AI evaluate sections read this text when reviewing purchase requests, purchase orders,
-            quotations, projects, and employees.
-        </p>
+{% block container_style %}max-width: 920px;{% endblock %}
+{% block title %}AI Compliance Knowledge{% endblock %}
 
-        <form method="post">
-            {% csrf_token %}
-            <div class="card bg-light border-0 mb-4">
-                <div class="card-body py-3">
+{% block extra_css %}
+<style>
+    .ajas-hero {
+        background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 55%, #0891b2 100%);
+        border-radius: 1rem;
+        color: #fff;
+        padding: 2rem 2.25rem;
+        margin-bottom: 1.75rem;
+        box-shadow: 0 12px 40px rgba(37, 99, 235, 0.22);
+    }
+    .ajas-hero h1 {
+        font-size: 1.65rem;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        margin-bottom: 0.35rem;
+    }
+    .ajas-hero p {
+        opacity: 0.92;
+        margin-bottom: 0;
+        max-width: 42rem;
+        line-height: 1.55;
+    }
+    .ajas-hero-icon {
+        width: 3.25rem;
+        height: 3.25rem;
+        border-radius: 0.85rem;
+        background: rgba(255, 255, 255, 0.15);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.35rem;
+        flex-shrink: 0;
+    }
+    .ajas-section-card {
+        border: 1px solid #e2e8f0;
+        border-radius: 0.95rem;
+        background: #fff;
+        margin-bottom: 1.25rem;
+        overflow: hidden;
+        box-shadow: 0 2px 12px rgba(15, 23, 42, 0.04);
+        transition: box-shadow 0.2s ease, border-color 0.2s ease;
+    }
+    .ajas-section-card:hover {
+        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+        border-color: #cbd5e1;
+    }
+    .ajas-section-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 1.1rem 1.35rem;
+        border-bottom: 1px solid #f1f5f9;
+        background: linear-gradient(to bottom, #fafbfc, #fff);
+    }
+    .ajas-section-title-wrap {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.85rem;
+        min-width: 0;
+    }
+    .ajas-section-icon {
+        width: 2.5rem;
+        height: 2.5rem;
+        border-radius: 0.65rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1rem;
+        flex-shrink: 0;
+        color: #fff;
+    }
+    .ajas-section-title {
+        font-weight: 650;
+        font-size: 1.02rem;
+        color: #0f172a;
+        margin-bottom: 0.15rem;
+    }
+    .ajas-section-desc {
+        font-size: 0.78rem;
+        color: #64748b;
+        line-height: 1.45;
+        margin: 0;
+    }
+    .ajas-auto-switch {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 0.25rem;
+        flex-shrink: 0;
+    }
+    .ajas-auto-switch .form-check-input {
+        width: 2.5rem;
+        height: 1.3rem;
+        cursor: pointer;
+    }
+    .ajas-auto-switch .form-check-input:checked {
+        background-color: #2563eb;
+        border-color: #2563eb;
+    }
+    .ajas-auto-switch label {
+        font-size: 0.72rem;
+        font-weight: 600;
+        color: #475569;
+        text-align: right;
+        line-height: 1.25;
+        max-width: 9rem;
+        cursor: pointer;
+    }
+    .ajas-section-body {
+        padding: 1.1rem 1.35rem 1.25rem;
+    }
+    .ajas-section-body textarea {
+        border: 1px solid #e2e8f0;
+        border-radius: 0.65rem;
+        font-size: 0.82rem;
+        line-height: 1.55;
+        resize: vertical;
+        min-height: 9rem;
+        background: #f8fafc;
+        transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+    }
+    .ajas-section-body textarea:focus {
+        background: #fff;
+        border-color: #93c5fd;
+        box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+    }
+    .ajas-char-count {
+        font-size: 0.72rem;
+        color: #94a3b8;
+        text-align: right;
+        margin-top: 0.35rem;
+    }
+    .ajas-save-bar {
+        position: sticky;
+        bottom: 1rem;
+        z-index: 10;
+        background: rgba(255, 255, 255, 0.95);
+        backdrop-filter: blur(8px);
+        border: 1px solid #e2e8f0;
+        border-radius: 0.85rem;
+        padding: 0.85rem 1.15rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        box-shadow: 0 8px 32px rgba(15, 23, 42, 0.1);
+    }
+    .ajas-save-bar .btn-primary {
+        background: linear-gradient(135deg, #2563eb, #1d4ed8);
+        border: none;
+        padding: 0.55rem 1.35rem;
+        font-weight: 600;
+        border-radius: 0.55rem;
+    }
+    .ajas-save-bar .btn-primary:hover {
+        background: linear-gradient(135deg, #1d4ed8, #1e40af);
+    }
+    .ajas-saved-badge {
+        color: #059669;
+        font-size: 0.85rem;
+        font-weight: 600;
+    }
+    .ajas-tip {
+        background: #f0f9ff;
+        border: 1px solid #bae6fd;
+        border-radius: 0.75rem;
+        padding: 0.85rem 1rem;
+        font-size: 0.82rem;
+        color: #0369a1;
+        margin-bottom: 1.5rem;
+    }
+    @media (max-width: 576px) {
+        .ajas-section-header {
+            flex-direction: column;
+            align-items: stretch;
+        }
+        .ajas-auto-switch {
+            flex-direction: row;
+            align-items: center;
+            justify-content: space-between;
+            padding-top: 0.5rem;
+            border-top: 1px dashed #e2e8f0;
+        }
+        .ajas-auto-switch label {
+            text-align: left;
+            max-width: none;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="ajas-page">
+    <div class="ajas-hero d-flex align-items-start gap-3">
+        <div class="ajas-hero-icon">
+            <i class="fas fa-brain"></i>
+        </div>
+        <div>
+            <h1>AI Compliance Knowledge</h1>
+            <p>
+                Configure compliance rules, policies, and knowledge graph notes for each ERP module.
+                AI reviewers use this context when evaluating purchase requests, orders, quotations, projects, and employees.
+            </p>
+        </div>
+    </div>
+
+    <div class="ajas-tip">
+        <i class="fas fa-lightbulb me-2"></i>
+        <strong>Tip:</strong> Enable <em>Automate AI compliance analysis</em> per module to run checks in the background when a detail page loads.
+        Turn it off to require a manual <strong>Run compliance check</strong> click on each record.
+    </div>
+
+    <form method="post" id="ajasForm">
+        {% csrf_token %}
+
+        {% for section in sections %}
+        <div class="ajas-section-card">
+            <div class="ajas-section-header">
+                <div class="ajas-section-title-wrap">
+                    <div class="ajas-section-icon" style="background: {{ section.color }};">
+                        <i class="fas {{ section.icon }}"></i>
+                    </div>
+                    <div>
+                        <div class="ajas-section-title">{{ section.label }}</div>
+                        {% if section.description %}
+                        <p class="ajas-section-desc">{{ section.description }}</p>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="ajas-auto-switch">
                     <div class="form-check form-switch mb-0">
                         <input
                             class="form-check-input"
                             type="checkbox"
                             role="switch"
-                            name="auto_run_enabled"
+                            name="auto_run_{{ section.key }}"
                             value="1"
-                            id="auto_run_enabled"
-                            {% if auto_run_enabled %}checked{% endif %}
+                            id="auto_run_{{ section.key }}"
+                            {% if section.auto_run_enabled %}checked{% endif %}
                         >
-                        <label class="form-check-label fw-semibold" for="auto_run_enabled">
+                        <label class="form-check-label" for="auto_run_{{ section.key }}">
                             Automate AI compliance analysis
                         </label>
                     </div>
-                    <p class="text-muted small mb-0 mt-2">
-                        When on, detail pages load immediately and run compliance checks in the background.
-                        When off, users must click <strong>Run compliance check</strong> on each record.
-                    </p>
                 </div>
             </div>
-            {% for section in sections %}
-            <div class="mb-4">
-                <label class="form-label fw-semibold" for="content_{{ section.key }}">{{ section.label }}</label>
+            <div class="ajas-section-body">
                 <textarea
                     name="content_{{ section.key }}"
                     id="content_{{ section.key }}"
-                    class="form-control font-monospace small"
+                    class="form-control font-monospace"
                     rows="10"
                     placeholder="Compliance rules, required fields, approval thresholds, UAE regulations, internal policies…"
+                    data-char-counter="char_count_{{ section.key }}"
                 >{{ section.content }}</textarea>
+                <div class="ajas-char-count" id="char_count_{{ section.key }}">0 characters</div>
             </div>
-            {% endfor %}
-            <div class="d-flex gap-2 align-items-center">
+        </div>
+        {% endfor %}
+
+        <div class="ajas-save-bar">
+            <span class="text-muted small">
+                <i class="fas fa-shield-alt me-1"></i>
+                {{ sections|length }} module{{ sections|length|pluralize }} configured
+            </span>
+            <div class="d-flex align-items-center gap-3">
+                {% if saved %}
+                <span class="ajas-saved-badge"><i class="fas fa-check-circle me-1"></i>Saved successfully</span>
+                {% endif %}
                 <button type="submit" class="btn btn-primary">
                     <i class="fas fa-save me-1"></i>Save all sections
                 </button>
-                {% if saved %}
-                <span class="text-success small"><i class="fas fa-check-circle me-1"></i>Saved</span>
-                {% endif %}
             </div>
-        </form>
-    </div>
+        </div>
+    </form>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    function updateCount(textarea) {
+        var counterId = textarea.getAttribute('data-char-counter');
+        var el = document.getElementById(counterId);
+        if (!el) return;
+        var len = (textarea.value || '').length;
+        el.textContent = len.toLocaleString() + ' character' + (len === 1 ? '' : 's');
+    }
+    document.querySelectorAll('.ajas-section-body textarea').forEach(function (ta) {
+        updateCount(ta);
+        ta.addEventListener('input', function () { updateCount(ta); });
+    });
+})();
+</script>
 {% endblock %}

@@ -226,7 +226,7 @@ def _heuristic_evaluation(snapshot: dict) -> dict:
     green_count = sum(1 for f in flags if f['severity'] == 'green')
     summary = (
         f'Rule-based check: {green_count} green flag(s), {red_count} red flag(s). '
-        'Configure OpenAI in Settings for deeper AI review.'
+        'Set OPENAI_API_KEY in .env for deeper AI review.'
     )
     return {
         'flags': flags,

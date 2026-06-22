@@ -23,8 +23,13 @@
                     <tr><td class="text-muted">Total</td><td class="fw-medium">AED {{ advance.amount|floatformat:2|intcomma }}</td></tr>
                     <tr><td class="text-muted">Repaid</td><td>AED {{ advance.amount_repaid|floatformat:2|intcomma }}</td></tr>
                     <tr><td class="text-muted">Remaining</td><td class="fw-bold text-danger">AED {{ advance.amount_remaining|floatformat:2|intcomma }}</td></tr>
-                    <tr><td class="text-muted">Monthly deduction</td><td>AED {{ advance.monthly_deduction|floatformat:2|intcomma }}</td></tr>
-                    <tr><td class="text-muted">Repayment months</td><td>{{ advance.repayment_months }}</td></tr>
+                    <tr><td class="text-muted">Repayment frequency</td><td>{{ advance.get_repayment_frequency_display }}</td></tr>
+                    <tr><td class="text-muted">Repayment period</td><td>{{ advance.repayment_period }} installment(s)</td></tr>
+                    {% if advance.repayment_frequency == 'other' %}
+                    <tr><td class="text-muted">Interval</td><td>Every {{ advance.repayment_interval_months }} month(s)</td></tr>
+                    {% endif %}
+                    <tr><td class="text-muted">Installment amount</td><td>AED {{ advance.monthly_deduction|floatformat:2|intcomma }}</td></tr>
+                    <tr><td class="text-muted">Schedule span</td><td>~{{ advance.repayment_months }} month(s)</td></tr>
                     <tr><td class="text-muted">Issued</td><td>{{ advance.date_issued|date:"d M Y" }}</td></tr>
                     <tr><td class="text-muted">Status</td><td><span class="badge bg-secondary">{{ advance.get_status_display }}</span></td></tr>
                     {% if advance.approved_by %}

@@ -90,6 +90,7 @@ class AiModuleKnowledge(models.Model):
     MODULE_ESTIMATE = 'estimate'
     MODULE_PROJECT = 'project'
     MODULE_EMPLOYEE = 'employee'
+    MODULE_INVENTORY = 'inventory'
 
     MODULE_CHOICES = [
         (MODULE_PURCHASE_REQUEST, 'Purchase request'),
@@ -97,12 +98,17 @@ class AiModuleKnowledge(models.Model):
         (MODULE_ESTIMATE, 'Quotation / estimate'),
         (MODULE_PROJECT, 'Project'),
         (MODULE_EMPLOYEE, 'Employee'),
+        (MODULE_INVENTORY, 'Inventory'),
     ]
 
     module = models.CharField(max_length=40, choices=MODULE_CHOICES, unique=True)
     content = models.TextField(
         blank=True,
         help_text='Rules, compliance notes, and knowledge graph text for AI reviewers.',
+    )
+    auto_run_enabled = models.BooleanField(
+        default=True,
+        help_text='When enabled, compliance AI runs automatically on detail pages for this module.',
     )
     updated_at = models.DateTimeField(auto_now=True)
 

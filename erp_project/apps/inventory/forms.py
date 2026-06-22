@@ -102,7 +102,7 @@ class ItemForm(forms.ModelForm):
             'maximum_selling_price', 'maximum_selling_price_type',
             'unit', 'minimum_stock', 'tax_code',
             'condition_status', 'condition_notes', 'track_by_serial',
-            'storage_location_master', 'barcode',
+            'warehouse', 'storage_location_master', 'barcode',
             'brand', 'serial_batch_number', 'purchase_date', 'warranty_expiry',
         ]
         widgets = {
@@ -136,7 +136,7 @@ class ItemForm(forms.ModelForm):
         self._user = kwargs.pop('user', None)
         super().__init__(*args, **kwargs)
         for field_name, field in self.fields.items():
-            if field_name in ['category', 'item_type', 'status', 'tax_code', 'condition_status', 'storage_location_master', 'item_groups']:
+            if field_name in ['category', 'item_type', 'status', 'tax_code', 'condition_status', 'warehouse', 'storage_location_master', 'item_groups']:
                 if field_name == 'item_groups':
                     # Select2 multi-select — initialized in item_form.html extra_js (not generic .select2)
                     field.widget.attrs['class'] = 'form-select item-groups-multiselect'
@@ -161,10 +161,14 @@ class ItemForm(forms.ModelForm):
         self.fields['category'].queryset = Category.objects.filter(is_active=True).order_by('name')
         self.fields['item_groups'].queryset = ItemGroup.objects.all().order_by('name')
         self.fields['item_groups'].required = False
-        self.fields['storage_location_master'].queryset = StorageLocation.objects.filter(is_active=True)
+        self.fields['warehouse'].queryset = Warehouse.objects.filter(is_active=True, status='active').order_by('name')
+        self.fields['warehouse'].required = False
+        self.fields['warehouse'].label = 'Warehouse'
+        self.fields['warehouse'].empty_label = '— Select warehouse —'
+        self.fields['storage_location_master'].queryset = StorageLocation.objects.filter(is_active=True).order_by('name')
         self.fields['storage_location_master'].required = False
-        self.fields['storage_location_master'].label = 'Storage Location'
-        self.fields['storage_location_master'].empty_label = '— Select location —'
+        self.fields['storage_location_master'].label = 'Rack / shelf location'
+        self.fields['storage_location_master'].empty_label = '— Select rack location —'
         self.fields['barcode'].required = False
         self.fields['brand'].required = False
         self.fields['serial_batch_number'].required = False

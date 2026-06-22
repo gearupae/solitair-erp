@@ -156,6 +156,7 @@ class Command(BaseCommand):
             pos = self._seed_open_purchase_orders(items, admin, today)
             transfers = self._seed_in_transit_transfers(items, wh, admin, today)
             forecasts = self._seed_ai_forecasts(items, today)
+            demo_tune = self._tune_ai_demo_scenarios(items, wh, users, admin, today)
             fifo_layers = rebuild_fifo_layers()
 
         self.stdout.write(self.style.SUCCESS("Inventory report seed complete"))
@@ -165,6 +166,7 @@ class Command(BaseCommand):
         self.stdout.write(f"  Open PO lines: {pos}")
         self.stdout.write(f"  In-transit transfers: {transfers}")
         self.stdout.write(f"  AI forecast rows: {forecasts}")
+        self.stdout.write(f"  AI demo tuning: {demo_tune}")
         self.stdout.write(f"  FIFO layers: {fifo_layers}")
         self.stdout.write(
             self.style.NOTICE(
@@ -410,6 +412,57 @@ class Command(BaseCommand):
             po.calculate_totals()
             created += 1
         return created
+
+    def _tune_ai_demo_scenarios(self, items, wh, users, admin, today) -> int:
+        """Tune SEED items for stockout-risk and no-history fallback demos."""
+        tuned = 0
+        ear_plugs = Item.objects.filter(item_code='SEED-021').first()
+        if ear_plugs:
+            ear_plugs.minimum_stock = Decimal('20')
+            ear_plugs.lead_time_days = 14
+            ear_plugs.safety_stock_qty = Decimal('5')
+            ear_plugs.save(update_fields=['minimum_stock', 'lead_time_days', 'safety_stock_qty'])
+            Stock.objects.filter(item=ear_plugs, warehouse=wh).update(quantity=Decimal('0'))
+            if not StockMovement.objects.filter(item=ear_plugs, reference__startswith='SEED-DEMO-ISS').exists():
+                self._apply_movement(
+                    item=ear_plugs,
+                    wh=wh,
+                    users=users,
+                    d=today - timedelta(days=30),
+                    mt='out',
+                    qty=Decimal('15'),
+                    src='issue',
+                    ref='SEED-DEMO-ISS-EAR',
+                    actor_idx=0,
+                )
+            tuned += 1
+
+        for code in ('SEED-019', 'SEED-020', 'SEED-022'):
+            item = Item.objects.filter(item_code=code).first()
+            if not item:
+                continue
+            if StockMovement.objects.filter(item=item, movement_type='out').exists():
+                continue
+            cat_siblings = Item.objects.filter(
+                category_id=item.category_id,
+                item_code__startswith=SEED_ITEM_PREFIX,
+            ).exclude(pk=item.pk)[:3]
+            for sib in cat_siblings:
+                if StockMovement.objects.filter(item=sib, movement_type='out').exists():
+                    self._apply_movement(
+                        item=item,
+                        wh=wh,
+                        users=users,
+                        d=today - timedelta(days=45),
+                        mt='out',
+                        qty=Decimal('2'),
+                        src='issue',
+                        ref=f'SEED-DEMO-CAT-{item.item_code}',
+                        actor_idx=1,
+                    )
+                    tuned += 1
+                    break
+        return tuned
 
     def _seed_in_transit_transfers(self, items, wh, admin, today) -> int:
         from apps.settings_app.models import Company
