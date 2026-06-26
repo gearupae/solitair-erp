@@ -9,14 +9,13 @@ from pathlib import Path
 
 from datetime import timedelta
 
-from django.conf import settings
 from django.core.cache import cache
 from django.db import close_old_connections
 from django.utils import timezone
 
 from apps.inventory.utils import get_openai_api_key
 from apps.purchase.models import PurchaseRequest, PurchaseRequestAttachment
-from apps.purchase.services.file_extract import extract_file_text_from_path
+from apps.purchase.services.quote_file_read import prepare_quote_file_for_ai
 from apps.purchase.services.purchase_price_history import build_pr_purchase_price_history
 
 logger = logging.getLogger(__name__)
@@ -25,10 +24,11 @@ MAX_EXTRACT_CHARS = 7_500
 MAX_QUOTES_JSON_CHARS = 18_000
 MAX_HISTORY_JSON_CHARS = 6_000
 CACHE_HOURS = 24
-PIPELINE_VERSION = 'ocr-extract-compare-v2'
+PIPELINE_VERSION = 'gpt-mini-read-v3'
 CACHE_PREFIX = 'pr_vendor_quote_ai:'
 RUNNING_PREFIX = 'pr_vendor_quote_ai:running:'
 PHASE_PREFIX = 'pr_vendor_quote_ai:phase:'
+RESULT_PREFIX = 'pr_vendor_quote_ai:result:'
 
 
 class OpenAINotConfigured(Exception):
@@ -58,13 +58,18 @@ def _read_attachment_text(att: PurchaseRequestAttachment) -> str:
         return cached
     if not att.file:
         return ''
-    filename = att.filename or att.file.name
-    return extract_file_text_from_path(att.file.path, filename)
+    prepared = prepare_quote_file_for_ai(att.file.path, att.filename or att.file.name)
+    return prepared.get('text') or ''
 
 
 def cache_attachment_extracted_text(att: PurchaseRequestAttachment) -> str:
-    """Extract and persist text on the attachment row (call after upload)."""
-    text = _read_attachment_text(att)
+    """Persist native quote text on the attachment row (call after upload)."""
+    if not att.file:
+        return ''
+    prepared = prepare_quote_file_for_ai(att.file.path, att.filename or att.file.name)
+    text = (prepared.get('text') or '').strip()
+    if not text and prepared.get('images'):
+        text = '[Scanned PDF — AI will read page images during analysis]'
     if not text:
         return ''
     store = text[:MAX_EXTRACT_CHARS * 2]
@@ -81,21 +86,29 @@ def extract_attachment_text(att: PurchaseRequestAttachment) -> str:
     return text
 
 
-def _extract_attachments_parallel(attachments: list[PurchaseRequestAttachment]) -> list[dict]:
-    extracted: list[dict | None] = [None] * len(attachments)
+def _prepare_quote_files(attachments: list[PurchaseRequestAttachment]) -> list[dict]:
+    prepared: list[dict | None] = [None] * len(attachments)
 
     def _one(idx: int, att: PurchaseRequestAttachment) -> tuple[int, dict]:
-        text = extract_attachment_text(att)
+        if not att.file:
+            return idx, {
+                'attachment_id': att.pk,
+                'filename': _attachment_file_label(att),
+                'text': '',
+                'images': [],
+                'has_content': False,
+                'note': 'File missing on server.',
+            }
+        row = prepare_quote_file_for_ai(att.file.path, att.filename or att.file.name)
         note = ''
-        if not text:
-            note = 'No text extracted from file.'
-        elif text.startswith('[') and text.endswith(']'):
-            note = text
-            text = ''
+        if not row.get('has_content'):
+            note = 'Could not read this file — check format (PDF or Excel).'
         return idx, {
             'attachment_id': att.pk,
-            'filename': _attachment_file_label(att),
-            'text': text[:MAX_EXTRACT_CHARS],
+            'filename': row.get('filename') or _attachment_file_label(att),
+            'text': (row.get('text') or '')[:MAX_EXTRACT_CHARS],
+            'images': row.get('images') or [],
+            'has_content': bool(row.get('has_content')),
             'note': note,
         }
 
@@ -104,9 +117,9 @@ def _extract_attachments_parallel(attachments: list[PurchaseRequestAttachment]) 
         futures = [pool.submit(_one, i, att) for i, att in enumerate(attachments)]
         for fut in as_completed(futures):
             idx, row = fut.result()
-            extracted[idx] = row
+            prepared[idx] = row
 
-    return [row for row in extracted if row is not None]
+    return [row for row in prepared if row is not None]
 
 
 def _analysis_cache_key(pr: PurchaseRequest, attachments: list[PurchaseRequestAttachment]) -> str:
@@ -127,6 +140,10 @@ def _running_cache_key(pr_pk: int, analysis_key: str) -> str:
 
 def _phase_cache_key(pr_pk: int) -> str:
     return f'{PHASE_PREFIX}{pr_pk}'
+
+
+def _result_cache_key(pr_pk: int) -> str:
+    return f'{RESULT_PREFIX}{pr_pk}'
 
 
 def _set_phase(pr_pk: int, message: str) -> None:
@@ -224,7 +241,7 @@ def invalidate_pr_quote_analysis(pr: PurchaseRequest) -> None:
 def _fetch_analysis_from_openai(
     pr: PurchaseRequest,
     attachments: list[PurchaseRequestAttachment],
-    extracted: list[dict],
+    file_rows: list[dict],
     price_history: list[dict],
 ) -> dict:
     from apps.inventory.utils import is_ai_available
@@ -248,12 +265,10 @@ def _fetch_analysis_from_openai(
         for item in pr.items.all()
     ]
 
-    readable = [row for row in extracted if row.get('text')]
-    _set_phase(pr.pk, 'Running OCR / reading quote files…')
-    _set_phase(pr.pk, 'Extracting prices & terms (fast model)…')
+    _set_phase(pr.pk, 'Running analysis — reading quote files with AI…')
     structured_quotes = extract_quotes_parallel(
         attachments,
-        readable,
+        file_rows,
         set_phase=_set_phase,
         pr_pk=pr.pk,
     )
@@ -264,7 +279,7 @@ def _fetch_analysis_from_openai(
     knowledge = get_ai_knowledge_prompt_block(AiModuleKnowledge.MODULE_PURCHASE_REQUEST)
     company = _company_context()
 
-    _set_phase(pr.pk, 'Comparing vendors & compliance (reasoning model)…')
+    _set_phase(pr.pk, 'Comparing vendors & checking compliance…')
     data = compare_structured_quotes(
         pr_number=pr.pr_number,
         company=company,
@@ -297,9 +312,18 @@ def get_cached_pr_quote_analysis(pr: PurchaseRequest) -> dict | None:
 
 
 def get_vendor_quote_analysis_status(pr: PurchaseRequest) -> dict:
+    pr.refresh_from_db(
+        fields=['vendor_quote_analysis', 'vendor_quote_analysis_at', 'vendor_quote_analysis_key'],
+    )
     attachments = list(pr.attachments.order_by('id'))
     if not attachments:
         return {'ok': False, 'status': 'idle', 'error': 'No quote files attached.'}
+
+    job = cache.get(_result_cache_key(pr.pk))
+    if job:
+        if job.get('ok'):
+            return {**job, 'status': 'complete'}
+        return {**job, 'status': 'error'}
 
     persisted = _load_persisted_analysis(pr, attachments)
     if persisted:
@@ -345,17 +369,17 @@ def analyze_vendor_quotes(pr: PurchaseRequest, *, force: bool = False) -> dict:
             cached['ok'] = True
             return cached
 
-    _set_phase(pr.pk, 'Reading attached quote files (OCR if scanned)…')
-    extracted = _extract_attachments_parallel(attachments)
-    readable_count = sum(1 for e in extracted if e.get('text'))
+    _set_phase(pr.pk, 'Reading attached quote files…')
+    file_rows = _prepare_quote_files(attachments)
+    readable_count = sum(1 for e in file_rows if e.get('has_content'))
 
     if readable_count == 0:
-        notes = [e.get('note') for e in extracted if e.get('note')]
+        notes = [e.get('note') for e in file_rows if e.get('note')]
         return {
             'ok': False,
             'error': (
-                'Could not read text from any attached file. '
-                'Use searchable PDF or Excel (.xlsx). '
+                'Could not prepare any attached file for AI analysis. '
+                'Use PDF or Excel (.xlsx). '
                 + (' '.join(notes[:3]) if notes else '')
             ),
         }
@@ -363,7 +387,7 @@ def analyze_vendor_quotes(pr: PurchaseRequest, *, force: bool = False) -> dict:
     price_history = build_pr_purchase_price_history(pr, limit_per_line=4)
 
     try:
-        result = _fetch_analysis_from_openai(pr, attachments, extracted, price_history)
+        result = _fetch_analysis_from_openai(pr, attachments, file_rows, price_history)
         result['ok'] = True
         _persist_analysis(pr, attachments, result)
         cache.set(
@@ -373,30 +397,39 @@ def analyze_vendor_quotes(pr: PurchaseRequest, *, force: bool = False) -> dict:
         )
         result['from_cache'] = False
         cache.delete(_phase_cache_key(pr.pk))
+        cache.set(_result_cache_key(pr.pk), result, timeout=int(timedelta(hours=CACHE_HOURS).total_seconds()))
         return result
     except OpenAINotConfigured as exc:
-        return {'ok': False, 'error': str(exc)}
+        err = {'ok': False, 'error': str(exc)}
+        cache.set(_result_cache_key(pr.pk), err, timeout=600)
+        return err
     except Exception as exc:
         logger.exception('vendor quote AI failed for PR %s', pr.pk)
-        return {
+        err = {
             'ok': False,
             'error': f'AI analysis failed: {exc}',
         }
+        cache.set(_result_cache_key(pr.pk), err, timeout=600)
+        return err
 
 
 def _run_analysis_worker(pr_pk: int, force: bool) -> None:
     close_old_connections()
+    result: dict = {'ok': False, 'error': 'Analysis did not complete.'}
     try:
         pr = PurchaseRequest.objects.get(pk=pr_pk, is_active=True)
-        analyze_vendor_quotes(pr, force=force)
-    except Exception:
+        result = analyze_vendor_quotes(pr, force=force)
+    except Exception as exc:
         logger.exception('Background vendor quote analysis failed for PR %s', pr_pk)
+        result = {'ok': False, 'error': str(exc)}
     finally:
+        cache.set(_result_cache_key(pr_pk), result, timeout=int(timedelta(hours=CACHE_HOURS).total_seconds()))
         try:
             pr = PurchaseRequest.objects.get(pk=pr_pk, is_active=True)
             attachments = list(pr.attachments.order_by('id'))
             analysis_key = _analysis_cache_key(pr, attachments)
             cache.delete(_running_cache_key(pr.pk, analysis_key))
+            cache.delete(_phase_cache_key(pr_pk))
         except Exception:
             pass
         close_old_connections()
@@ -434,6 +467,7 @@ def start_vendor_quote_analysis_async(pr: PurchaseRequest, *, force: bool = Fals
         }
 
     cache.set(running_key, True, timeout=600)
+    cache.delete(_result_cache_key(pr.pk))
     _set_phase(pr.pk, 'Starting quote analysis…')
     thread = threading.Thread(
         target=_run_analysis_worker,

@@ -1,6 +1,29 @@
 """Fixed JSON schemas and cacheable instruction blocks for vendor quote AI pipeline."""
 
-# Stage 1 — cheap model fills this from OCR/plain text only.
+# GPT mini reads quote text and/or attached page images.
+QUOTE_EXTRACT_INSTRUCTIONS = """You are a procurement data extractor reading vendor quotation documents.
+You may receive plain text and/or page images from a PDF or Excel export.
+Extract ONLY facts present in the document. Do not guess missing numbers — use null.
+Default currency AED unless the document states otherwise.
+Fill every schema field; use empty string or empty array when not found.
+line_items: one row per product/service with description, qty, unit, unit_price, line_total.
+risk_clauses: penalties, liability caps, exclusions, late fees, cancellation terms.
+favorable_terms: payment flexibility, warranty, delivery guarantees."""
+
+QUOTE_COMPARE_INSTRUCTIONS = """You are a senior procurement analyst comparing vendor quotations for a UAE company.
+You receive structured quote JSON per vendor (already read from attached files).
+Tasks:
+1) Pick lowest grand_total vendor (lowest_total_vendor / lowest_total_amount).
+2) Build vendor_totals[] with is_lowest on the cheapest.
+3) Align line_items across vendors into item_comparisons[]; mark is_lowest on cheapest unit/line price.
+4) price_history_comparisons[]: compare quoted unit prices vs historical averages (trend: higher|lower|inline|unknown).
+5) compliance_review: overall_risk low|medium|high; issues[] with severity low|medium|high; merge risk_clauses from extractions.
+6) recommended_vendor + recommended_reason (price, terms, delivery, risk — be specific).
+7) summary (2-3 sentences), recommendations[] (2-4 bullets), warnings[] for gaps or conflicts.
+Use AED unless quotes specify another currency. Be concise."""
+
+PROMPT_CACHE_KEY_EXTRACT = 'gearup-vendor-quote-extract-v2'
+PROMPT_CACHE_KEY_COMPARE = 'gearup-vendor-quote-compare-v2'
 QUOTE_EXTRACTION_SCHEMA = {
     'type': 'object',
     'properties': {
@@ -36,7 +59,7 @@ QUOTE_EXTRACTION_SCHEMA = {
     'additionalProperties': False,
 }
 
-# Stage 2 — reasoning model compares pre-structured quotes (no raw PDF text).
+# GPT mini compares structured quotes from attached files.
 QUOTE_COMPARISON_SCHEMA = {
     'type': 'object',
     'properties': {
@@ -157,27 +180,3 @@ QUOTE_COMPARISON_SCHEMA = {
     ],
     'additionalProperties': False,
 }
-
-# Stable prefix for OpenAI prompt caching (same shape every comparison run).
-QUOTE_EXTRACT_INSTRUCTIONS = """You are a procurement data extractor. Input is plain text from a vendor quotation (already OCR'd).
-Extract ONLY facts present in the text. Do not guess missing numbers — use null.
-Default currency AED unless the document states otherwise.
-Fill every schema field; use empty string or empty array when not found.
-line_items: one row per product/service with description, qty, unit, unit_price, line_total.
-risk_clauses: penalties, liability caps, exclusions, late fees, cancellation terms.
-favorable_terms: payment flexibility, warranty, delivery guarantees."""
-
-QUOTE_COMPARE_INSTRUCTIONS = """You are a senior procurement analyst comparing vendor quotations for a UAE company.
-You receive PRE-EXTRACTED structured quote JSON per vendor — do not re-parse documents.
-Tasks:
-1) Pick lowest grand_total vendor (lowest_total_vendor / lowest_total_amount).
-2) Build vendor_totals[] with is_lowest on the cheapest.
-3) Align line_items across vendors into item_comparisons[]; mark is_lowest on cheapest unit/line price.
-4) price_history_comparisons[]: compare quoted unit prices vs historical averages (trend: higher|lower|inline|unknown).
-5) compliance_review: overall_risk low|medium|high; issues[] with severity low|medium|high; merge risk_clauses from extractions.
-6) recommended_vendor + recommended_reason (price, terms, delivery, risk — be specific).
-7) summary (2-3 sentences), recommendations[] (2-4 bullets), warnings[] for gaps or conflicts.
-Use AED unless quotes specify another currency. Be concise."""
-
-PROMPT_CACHE_KEY_EXTRACT = 'gearup-vendor-quote-extract-v1'
-PROMPT_CACHE_KEY_COMPARE = 'gearup-vendor-quote-compare-v1'

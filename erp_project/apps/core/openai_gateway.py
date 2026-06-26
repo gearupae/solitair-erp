@@ -249,6 +249,57 @@ def call_openai_json(
     return parse_openai_json(content)
 
 
+def call_openai_json_with_images(
+    *,
+    system: str,
+    user_text: str,
+    images_base64: list[str] | None = None,
+    temperature: float = 0.2,
+    feature: str = 'openai_json_vision',
+    model: str = '',
+    reasoning_effort: str = '',
+    json_schema: dict | None = None,
+    json_schema_name: str = 'response',
+    json_schema_strict: bool = False,
+    prompt_cache_key: str = '',
+) -> dict | list:
+    """Responses API call with optional inline PNG images (GPT reads PDF scans)."""
+    model = resolve_openai_model(model)
+    effort = resolve_reasoning_effort(reasoning_effort)
+
+    text_format: dict
+    if json_schema:
+        text_format = {
+            'type': 'json_schema',
+            'name': json_schema_name,
+            'schema': json_schema,
+            'strict': json_schema_strict,
+        }
+    else:
+        text_format = {'type': 'json_object'}
+
+    content: list[dict] = [{'type': 'input_text', 'text': user_text}]
+    for b64 in images_base64 or []:
+        if not b64:
+            continue
+        url = b64 if b64.startswith('data:') else f'data:image/png;base64,{b64}'
+        content.append({'type': 'input_image', 'image_url': url})
+
+    body = {
+        'model': model,
+        'reasoning': {'effort': effort},
+        'instructions': system,
+        'input': [{'role': 'user', 'content': content}],
+        'text': {'format': text_format},
+    }
+    if prompt_cache_key:
+        body['prompt_cache_key'] = prompt_cache_key
+
+    payload = call_openai_responses_raw(body, feature=feature)
+    content_out = _responses_output_text(payload)
+    return parse_openai_json(content_out)
+
+
 def tokens_for_amount(amount: Decimal, currency: str = 'AED') -> int:
     rate = int(getattr(settings, 'AI_TOKENS_PER_CURRENCY_UNIT', 50000))
     cur = (currency or 'AED').upper()
