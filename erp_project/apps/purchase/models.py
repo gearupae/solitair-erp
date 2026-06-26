@@ -197,6 +197,11 @@ class PurchaseRequestAttachment(models.Model):
         null=True,
         blank=True
     )
+    extracted_text = models.TextField(
+        blank=True,
+        default='',
+        help_text='Cached plain text from PDF/Excel for faster AI quote analysis.',
+    )
     
     class Meta:
         ordering = ['-uploaded_at']

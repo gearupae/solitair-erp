@@ -408,6 +408,9 @@ class PurchaseRequestDetailView(PermissionRequiredMixin, DetailView):
         context['pr_vendor_analyze_url'] = reverse(
             'purchase:pr_vendor_quote_analyze', args=[self.object.pk]
         )
+        context['pr_vendor_analyze_status_url'] = reverse(
+            'purchase:pr_vendor_quote_analyze_status', args=[self.object.pk]
+        )
         context['has_quote_attachments'] = self.object.attachments.exists()
         context['show_vendor_quote_ai'] = True
         context['pr_pdf_url'] = reverse('purchase:pr_pdf', args=[self.object.pk])
@@ -518,6 +521,14 @@ def pr_vendor_attachment_upload(request, pk):
             },
             status=400,
         )
+    from apps.purchase.services.vendor_quote_ai import cache_attachment_extracted_text, invalidate_pr_quote_analysis
+
+    invalidate_pr_quote_analysis(pr)
+    for att in created:
+        try:
+            cache_attachment_extracted_text(att)
+        except Exception:
+            pass
     payload = {
         'ok': True,
         'attachments': [_serialize_pr_vendor_attachment(a) for a in created],
@@ -525,9 +536,6 @@ def pr_vendor_attachment_upload(request, pk):
     if errors:
         payload['partial'] = True
         payload['errors'] = errors
-    from apps.purchase.services.vendor_quote_ai import invalidate_pr_quote_analysis
-
-    invalidate_pr_quote_analysis(pr)
     return JsonResponse(payload)
 
 
@@ -582,21 +590,49 @@ def _user_can_view_pr(user, pr) -> bool:
 @login_required
 @require_POST
 def pr_vendor_quote_analyze(request, pk):
-    """AI comparison of attached vendor quotation PDFs / Excel files."""
+    """Start AI comparison of attached vendor quotation PDFs / Excel files (background)."""
     pr = get_object_or_404(PurchaseRequest, pk=pk, is_active=True)
     if not _user_can_view_pr(request.user, pr):
         return JsonResponse({'ok': False, 'error': 'Permission denied.'}, status=403)
 
     force = (request.POST.get('force') or '').lower() in ('1', 'true', 'yes')
-    from apps.purchase.services.vendor_quote_ai import analyze_vendor_quotes
+    sync = (request.POST.get('sync') or '').lower() in ('1', 'true', 'yes')
+    from apps.purchase.services.vendor_quote_ai import (
+        analyze_vendor_quotes,
+        start_vendor_quote_analysis_async,
+    )
 
-    result = analyze_vendor_quotes(pr, force=force)
-    if result.get('ok'):
+    if sync:
+        result = analyze_vendor_quotes(pr, force=force)
+    else:
+        result = start_vendor_quote_analysis_async(pr, force=force)
+
+    if result.get('ok') and result.get('status') == 'complete':
         from apps.core.compliance_service import auto_pr_compliance_on_detail
 
         auto_pr_compliance_on_detail(request.user, pr, result)
+
+    if result.get('status') == 'running':
+        return JsonResponse(result, status=202)
     status = 200 if result.get('ok') else 400
     return JsonResponse(result, status=status)
+
+
+@login_required
+def pr_vendor_quote_analyze_status(request, pk):
+    """Poll vendor quote AI analysis progress / result."""
+    pr = get_object_or_404(PurchaseRequest, pk=pk, is_active=True)
+    if not _user_can_view_pr(request.user, pr):
+        return JsonResponse({'ok': False, 'error': 'Permission denied.'}, status=403)
+
+    from apps.purchase.services.vendor_quote_ai import get_vendor_quote_analysis_status
+
+    result = get_vendor_quote_analysis_status(pr)
+    if result.get('status') == 'complete' and result.get('ok'):
+        from apps.core.compliance_service import auto_pr_compliance_on_detail
+
+        auto_pr_compliance_on_detail(request.user, pr, result)
+    return JsonResponse(result)
 
 
 @login_required

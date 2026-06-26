@@ -3,11 +3,16 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from datetime import timedelta
 
+from django.conf import settings
 from django.core.cache import cache
+from django.db import close_old_connections
 from django.utils import timezone
 
 from apps.inventory.utils import get_openai_api_key
@@ -15,11 +20,15 @@ from apps.purchase.models import PurchaseRequest, PurchaseRequestAttachment
 from apps.purchase.services.file_extract import extract_file_text_from_path
 from apps.purchase.services.purchase_price_history import build_pr_purchase_price_history
 
-MAX_EXTRACT_CHARS = 10_000
-MAX_QUOTES_JSON_CHARS = 22_000
-MAX_HISTORY_JSON_CHARS = 8_000
+logger = logging.getLogger(__name__)
+
+MAX_EXTRACT_CHARS = 7_500
+MAX_QUOTES_JSON_CHARS = 18_000
+MAX_HISTORY_JSON_CHARS = 6_000
 CACHE_HOURS = 24
 CACHE_PREFIX = 'pr_vendor_quote_ai:'
+RUNNING_PREFIX = 'pr_vendor_quote_ai:running:'
+PHASE_PREFIX = 'pr_vendor_quote_ai:phase:'
 
 
 class OpenAINotConfigured(Exception):
@@ -30,6 +39,13 @@ class NoExtractableQuoteText(Exception):
     pass
 
 
+def _vendor_quote_model() -> str:
+    from apps.core.openai_gateway import resolve_openai_model
+
+    override = getattr(settings, 'OPENAI_VENDOR_QUOTE_MODEL', '') or ''
+    return resolve_openai_model(override)
+
+
 def _attachment_file_label(att: PurchaseRequestAttachment) -> str:
     name = (att.filename or '').strip()
     if not name and att.file:
@@ -37,11 +53,60 @@ def _attachment_file_label(att: PurchaseRequestAttachment) -> str:
     return name or f'Attachment #{att.pk}'
 
 
-def extract_attachment_text(att: PurchaseRequestAttachment) -> str:
+def _read_attachment_text(att: PurchaseRequestAttachment) -> str:
+    cached = (getattr(att, 'extracted_text', None) or '').strip()
+    if cached and not cached.startswith('['):
+        return cached
     if not att.file:
         return ''
     filename = att.filename or att.file.name
     return extract_file_text_from_path(att.file.path, filename)
+
+
+def cache_attachment_extracted_text(att: PurchaseRequestAttachment) -> str:
+    """Extract and persist text on the attachment row (call after upload)."""
+    text = _read_attachment_text(att)
+    if not text:
+        return ''
+    store = text[:MAX_EXTRACT_CHARS * 2]
+    if store != (att.extracted_text or ''):
+        PurchaseRequestAttachment.objects.filter(pk=att.pk).update(extracted_text=store)
+        att.extracted_text = store
+    return store
+
+
+def extract_attachment_text(att: PurchaseRequestAttachment) -> str:
+    text = _read_attachment_text(att)
+    if text and not text.startswith('[') and not (att.extracted_text or '').strip():
+        cache_attachment_extracted_text(att)
+    return text
+
+
+def _extract_attachments_parallel(attachments: list[PurchaseRequestAttachment]) -> list[dict]:
+    extracted: list[dict | None] = [None] * len(attachments)
+
+    def _one(idx: int, att: PurchaseRequestAttachment) -> tuple[int, dict]:
+        text = extract_attachment_text(att)
+        note = ''
+        if not text:
+            note = 'No text extracted from file.'
+        elif text.startswith('[') and text.endswith(']'):
+            note = text
+            text = ''
+        return idx, {
+            'attachment_id': att.pk,
+            'text': text[:MAX_EXTRACT_CHARS],
+            'note': note,
+        }
+
+    workers = min(4, max(1, len(attachments)))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = [pool.submit(_one, i, att) for i, att in enumerate(attachments)]
+        for fut in as_completed(futures):
+            idx, row = fut.result()
+            extracted[idx] = row
+
+    return [row for row in extracted if row is not None]
 
 
 def _analysis_cache_key(pr: PurchaseRequest, attachments: list[PurchaseRequestAttachment]) -> str:
@@ -54,6 +119,18 @@ def _analysis_cache_key(pr: PurchaseRequest, attachments: list[PurchaseRequestAt
 
 def _django_cache_key(pr: PurchaseRequest, attachments: list[PurchaseRequestAttachment]) -> str:
     return f'{CACHE_PREFIX}{_analysis_cache_key(pr, attachments)}'
+
+
+def _running_cache_key(pr_pk: int, analysis_key: str) -> str:
+    return f'{RUNNING_PREFIX}{pr_pk}:{analysis_key}'
+
+
+def _phase_cache_key(pr_pk: int) -> str:
+    return f'{PHASE_PREFIX}{pr_pk}'
+
+
+def _set_phase(pr_pk: int, message: str) -> None:
+    cache.set(_phase_cache_key(pr_pk), message, timeout=600)
 
 
 def _company_context() -> dict:
@@ -71,13 +148,6 @@ def _company_context() -> dict:
     return {'company_name': 'Our company', 'country': 'United Arab Emirates'}
 
 
-def _parse_json_content(content: str) -> dict:
-    content = (content or '').strip()
-    if content.startswith('```'):
-        content = content.split('\n', 1)[-1].rsplit('```', 1)[0].strip()
-    return json.loads(content)
-
-
 def _normalize_ai_response(data: dict, pr_items: list, price_history: list) -> dict:
     data.setdefault('currency', 'AED')
     data.setdefault('recommended_vendor', data.get('lowest_total_vendor') or '')
@@ -93,6 +163,7 @@ def _normalize_ai_response(data: dict, pr_items: list, price_history: list) -> d
     data['purchase_price_history'] = price_history
     data['from_cache'] = False
     data['generated_at'] = timezone.now().isoformat()
+    data['model'] = _vendor_quote_model()
     return data
 
 
@@ -119,7 +190,7 @@ def _persist_analysis(
     result: dict,
 ) -> None:
     key = _analysis_cache_key(pr, attachments)
-    store = {k: v for k, v in result.items() if k not in ('ok', 'from_cache')}
+    store = {k: v for k, v in result.items() if k not in ('ok', 'from_cache', 'status', 'message')}
     now = timezone.now()
     PurchaseRequest.objects.filter(pk=pr.pk).update(
         vendor_quote_analysis=store,
@@ -143,6 +214,7 @@ def invalidate_pr_quote_analysis(pr: PurchaseRequest) -> None:
     pr.vendor_quote_analysis = None
     pr.vendor_quote_analysis_at = None
     pr.vendor_quote_analysis_key = ''
+    cache.delete(_phase_cache_key(pr.pk))
 
 
 def _fetch_analysis_from_openai(
@@ -165,7 +237,6 @@ def _fetch_analysis_from_openai(
             'quantity': float(item.quantity),
             'unit': item.get_unit_display(),
             'estimated_unit_price': float(item.estimated_price),
-            'estimated_line_total': float(item.total),
         }
         for item in pr.items.all()
     ]
@@ -175,8 +246,8 @@ def _fetch_analysis_from_openai(
         quotes_payload.append({
             'attachment_id': att.pk,
             'filename': _attachment_file_label(att),
-            'extracted_text': (ext.get('text') or '')[:MAX_EXTRACT_CHARS],
-            'extraction_note': ext.get('note') or '',
+            'text': (ext.get('text') or '')[:MAX_EXTRACT_CHARS],
+            'note': ext.get('note') or '',
         })
 
     company = _company_context()
@@ -197,63 +268,28 @@ def _fetch_analysis_from_openai(
     user_payload = {
         'pr_number': pr.pr_number,
         'company': company,
-        'currency_default': 'AED',
         'pr_line_items': pr_items,
         'historical_purchase_prices': json.loads(history_json) if history_json else [],
         'vendor_quote_files': json.loads(quotes_json) if quotes_json else [],
-        'module_knowledge': knowledge,
-        'tasks': [
-            'From each file, identify vendor name, line items, unit/line prices, and grand total.',
-            'State lowest overall quote (lowest_total_vendor / lowest_total_amount).',
-            'Match line items across ALL quotes; for each product show every vendor price; mark is_lowest on cheapest.',
-            'price_history_comparisons: compare quoted prices vs historical averages from past_purchases.',
-            'compliance_review: flag unfavorable payment terms, delivery, warranty, penalties, liability.',
-            'Recommend single vendor (recommended_vendor + recommended_reason).',
-            'Executive summary + 2–4 recommendations + warnings for unreadable/missing data.',
-        ],
-        'response_schema': {
-            'recommended_vendor': '',
-            'recommended_reason': '',
-            'lowest_total_vendor': '',
-            'lowest_total_amount': None,
-            'currency': 'AED',
-            'vendor_totals': [{'vendor': '', 'total': None, 'attachment_id': None, 'source': 'file', 'is_lowest': False}],
-            'item_comparisons': [{
-                'item_description': '',
-                'quantity': None,
-                'unit': '',
-                'vendor_prices': [{'vendor': '', 'unit_price': None, 'line_total': None, 'is_lowest': False}],
-                'lowest_vendor': '',
-            }],
-            'price_history_comparisons': [{
-                'item_description': '',
-                'quoted_vendors': [{'vendor': '', 'unit_price': None}],
-                'historical_avg': None,
-                'historical_low': None,
-                'historical_high': None,
-                'trend': 'higher|lower|inline|unknown',
-                'comment': '',
-            }],
-            'compliance_review': {
-                'overall_risk': 'low|medium|high',
-                'issues': [{'vendor': '', 'severity': '', 'topic': '', 'detail': ''}],
-                'favorable_terms': [''],
-            },
-            'summary': '',
-            'recommendations': [],
-            'warnings': [],
-        },
+        'module_knowledge': knowledge[:2000] if knowledge else '',
     }
 
     system = (
-        'Procurement quote analyst. Extract data ONLY from provided vendor_quote_files text. '
-        'Reply with JSON matching response_schema keys. Use AED unless documents specify otherwise.'
+        'Procurement quote analyst. Extract numbers ONLY from vendor_quote_files text. '
+        'Return JSON with keys: recommended_vendor, recommended_reason, lowest_total_vendor, '
+        'lowest_total_amount, currency, vendor_totals[], item_comparisons[], '
+        'price_history_comparisons[], compliance_review{overall_risk,issues[],favorable_terms[]}, '
+        'summary, recommendations[], warnings[]. Use AED unless documents say otherwise. '
+        'Mark is_lowest on cheapest vendor prices. Keep compliance issues concise.'
     )
+    _set_phase(pr.pk, 'Analyzing quotes with AI…')
     data = call_openai_json(
         system=system,
         user_payload=user_payload,
-        temperature=0.2,
+        temperature=0.1,
         feature='vendor_quote_ai',
+        model=_vendor_quote_model(),
+        reasoning_effort='none',
     )
     if not isinstance(data, dict):
         raise ValueError('AI returned non-object JSON')
@@ -276,6 +312,26 @@ def get_cached_pr_quote_analysis(pr: PurchaseRequest) -> dict | None:
         cached['ok'] = True
         return cached
     return None
+
+
+def get_vendor_quote_analysis_status(pr: PurchaseRequest) -> dict:
+    attachments = list(pr.attachments.order_by('id'))
+    if not attachments:
+        return {'ok': False, 'status': 'idle', 'error': 'No quote files attached.'}
+
+    persisted = _load_persisted_analysis(pr, attachments)
+    if persisted:
+        return {**persisted, 'status': 'complete'}
+
+    analysis_key = _analysis_cache_key(pr, attachments)
+    if cache.get(_running_cache_key(pr.pk, analysis_key)):
+        return {
+            'ok': True,
+            'status': 'running',
+            'message': cache.get(_phase_cache_key(pr.pk)) or 'Analysis in progress…',
+        }
+
+    return {'ok': True, 'status': 'idle'}
 
 
 def analyze_vendor_quotes(pr: PurchaseRequest, *, force: bool = False) -> dict:
@@ -307,19 +363,9 @@ def analyze_vendor_quotes(pr: PurchaseRequest, *, force: bool = False) -> dict:
             cached['ok'] = True
             return cached
 
-    extracted = []
-    readable_count = 0
-    for att in attachments:
-        text = extract_attachment_text(att)
-        note = ''
-        if not text:
-            note = 'No text extracted from file.'
-        elif text.startswith('[') and text.endswith(']'):
-            note = text
-            text = ''
-        else:
-            readable_count += 1
-        extracted.append({'attachment_id': att.pk, 'text': text[:MAX_EXTRACT_CHARS], 'note': note})
+    _set_phase(pr.pk, 'Reading attached quote files…')
+    extracted = _extract_attachments_parallel(attachments)
+    readable_count = sum(1 for e in extracted if e.get('text'))
 
     if readable_count == 0:
         notes = [e.get('note') for e in extracted if e.get('note')]
@@ -332,7 +378,7 @@ def analyze_vendor_quotes(pr: PurchaseRequest, *, force: bool = False) -> dict:
             ),
         }
 
-    price_history = build_pr_purchase_price_history(pr, limit_per_line=5)
+    price_history = build_pr_purchase_price_history(pr, limit_per_line=4)
 
     try:
         result = _fetch_analysis_from_openai(pr, attachments, extracted, price_history)
@@ -340,15 +386,82 @@ def analyze_vendor_quotes(pr: PurchaseRequest, *, force: bool = False) -> dict:
         _persist_analysis(pr, attachments, result)
         cache.set(
             django_key,
-            {k: v for k, v in result.items() if k not in ('ok', 'from_cache')},
+            {k: v for k, v in result.items() if k not in ('ok', 'from_cache', 'status', 'message')},
             timeout=int(timedelta(hours=CACHE_HOURS).total_seconds()),
         )
         result['from_cache'] = False
+        cache.delete(_phase_cache_key(pr.pk))
         return result
     except OpenAINotConfigured as exc:
         return {'ok': False, 'error': str(exc)}
     except Exception as exc:
+        logger.exception('vendor quote AI failed for PR %s', pr.pk)
         return {
             'ok': False,
             'error': f'AI analysis failed: {exc}',
         }
+
+
+def _run_analysis_worker(pr_pk: int, force: bool) -> None:
+    close_old_connections()
+    try:
+        pr = PurchaseRequest.objects.get(pk=pr_pk, is_active=True)
+        analyze_vendor_quotes(pr, force=force)
+    except Exception:
+        logger.exception('Background vendor quote analysis failed for PR %s', pr_pk)
+    finally:
+        try:
+            pr = PurchaseRequest.objects.get(pk=pr_pk, is_active=True)
+            attachments = list(pr.attachments.order_by('id'))
+            analysis_key = _analysis_cache_key(pr, attachments)
+            cache.delete(_running_cache_key(pr.pk, analysis_key))
+        except Exception:
+            pass
+        close_old_connections()
+
+
+def start_vendor_quote_analysis_async(pr: PurchaseRequest, *, force: bool = False) -> dict:
+    """Start analysis in a background thread; return immediately."""
+    attachments = list(pr.attachments.order_by('id'))
+    if not attachments:
+        return {
+            'ok': False,
+            'status': 'error',
+            'error': 'Upload at least one vendor quote file (PDF or Excel) before running analysis.',
+        }
+
+    if not get_openai_api_key():
+        return {
+            'ok': False,
+            'status': 'error',
+            'error': 'OpenAI is not configured. Set OPENAI_API_KEY in your .env file to analyze quote files.',
+        }
+
+    if not force:
+        persisted = _load_persisted_analysis(pr, attachments)
+        if persisted:
+            return {**persisted, 'status': 'complete'}
+
+    analysis_key = _analysis_cache_key(pr, attachments)
+    running_key = _running_cache_key(pr.pk, analysis_key)
+    if cache.get(running_key):
+        return {
+            'ok': True,
+            'status': 'running',
+            'message': cache.get(_phase_cache_key(pr.pk)) or 'Analysis already in progress…',
+        }
+
+    cache.set(running_key, True, timeout=600)
+    _set_phase(pr.pk, 'Starting quote analysis…')
+    thread = threading.Thread(
+        target=_run_analysis_worker,
+        args=(pr.pk, force),
+        daemon=True,
+        name=f'pr-vendor-quote-ai-{pr.pk}',
+    )
+    thread.start()
+    return {
+        'ok': True,
+        'status': 'running',
+        'message': 'Reading attached quote files…',
+    }

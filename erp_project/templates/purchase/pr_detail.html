@@ -235,7 +235,7 @@
         {% else %}
         <div id="vendor-quote-ai-loading" class="text-muted small py-2"{% if pr_quote_auto_fetch %} style="display:block;"{% else %} style="display:none;"{% endif %}>
             <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
-            Reading quote files, comparing prices, and checking compliance…
+            <span id="vendor-quote-ai-loading-text">Reading quote files, comparing prices, and checking compliance…</span>
         </div>
         <div id="vendor-quote-ai-error" class="alert alert-danger py-2 small mb-2" style="display:none;"></div>
         <div id="vendor-quote-ai-results"{% if vendor_quote_analysis %} style="display:block;"{% else %} style="display:none;"{% endif %}>
@@ -297,7 +297,7 @@
         </div>
         <p class="text-muted small mb-0" id="vendor-quote-ai-placeholder"{% if vendor_quote_analysis %} style="display:none;"{% endif %}>
             {% if ai_analysis_auto_run %}
-            Quote analysis runs in the background when vendor files are attached.
+            Analysis runs in the background (GPT-5.5). Results stay on this page — refresh anytime to see progress.
             {% else %}
             Click <strong>Run quote analysis</strong> to compare attached vendor quote files.
             {% endif %}
@@ -344,6 +344,8 @@
 (function() {
     const CSRF = document.querySelector('[name=csrfmiddlewaretoken]')?.value || '';
     const ANALYZE_URL = "{{ pr_vendor_analyze_url|escapejs }}";
+    const STATUS_URL = "{{ pr_vendor_analyze_status_url|escapejs }}";
+    let pollTimer = null;
 
     function fmtMoney(val, currency) {
         if (val == null || val === '') return '—';
@@ -357,7 +359,7 @@
         const errorEl = document.getElementById('vendor-quote-ai-error');
         const results = document.getElementById('vendor-quote-ai-results');
         const placeholder = document.getElementById('vendor-quote-ai-placeholder');
-        loading.style.display = 'none';
+        setLoading(false);
         errorEl.style.display = 'none';
 
         if (!data.ok) {
@@ -580,11 +582,55 @@
             .replace(/"/g, '&quot;');
     }
 
-    function runAnalysis(force) {
+    function setLoading(active, message) {
         const loading = document.getElementById('vendor-quote-ai-loading');
+        const loadingText = document.getElementById('vendor-quote-ai-loading-text');
+        if (loading) loading.style.display = active ? 'block' : 'none';
+        if (loadingText && message) loadingText.textContent = message;
+    }
+
+    function stopPolling() {
+        if (pollTimer) {
+            clearInterval(pollTimer);
+            pollTimer = null;
+        }
+    }
+
+    function pollAnalysisStatus() {
+        fetch(STATUS_URL, { headers: { 'Accept': 'application/json' } })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status === 'running') {
+                    setLoading(true, data.message || 'Analysis in progress…');
+                    return;
+                }
+                stopPolling();
+                const btn = document.getElementById('btn-analyze-quotes');
+                if (btn) btn.disabled = false;
+                if (data.status === 'complete' && data.ok) {
+                    renderAnalysis(data);
+                    return;
+                }
+                if (data.status === 'idle') {
+                    setLoading(false);
+                    return;
+                }
+                renderAnalysis({ ok: false, error: data.error || 'Analysis failed.' });
+            })
+            .catch(() => {
+                stopPolling();
+                setLoading(false);
+                const btn = document.getElementById('btn-analyze-quotes');
+                if (btn) btn.disabled = false;
+                renderAnalysis({ ok: false, error: 'Network error while checking analysis status.' });
+            });
+    }
+
+    function runAnalysis(force) {
         const errorEl = document.getElementById('vendor-quote-ai-error');
         const btn = document.getElementById('btn-analyze-quotes');
-        loading.style.display = 'block';
+        stopPolling();
+        setLoading(true, force ? 'Re-running quote analysis…' : 'Starting quote analysis…');
         errorEl.style.display = 'none';
         if (btn) btn.disabled = true;
 
@@ -596,18 +642,29 @@
             headers: { 'X-CSRFToken': CSRF },
             body: fd,
         })
-            .then(r => r.json().then(data => ({ ok: r.ok, data })))
-            .then(({ ok, data }) => {
-                if (!ok && !data.ok) {
+            .then(r => r.json().then(data => ({ httpStatus: r.status, data })))
+            .then(({ httpStatus, data }) => {
+                if (data.status === 'complete' && data.ok) {
+                    renderAnalysis(data);
+                    if (btn) btn.disabled = false;
+                    return;
+                }
+                if (httpStatus === 202 || data.status === 'running') {
+                    setLoading(true, data.message || 'Analysis in progress…');
+                    pollTimer = setInterval(pollAnalysisStatus, 2000);
+                    pollAnalysisStatus();
+                    return;
+                }
+                if (!data.ok) {
                     renderAnalysis({ ok: false, error: data.error || 'Analysis failed.' });
+                    if (btn) btn.disabled = false;
                     return;
                 }
                 renderAnalysis(data);
+                if (btn) btn.disabled = false;
             })
             .catch(() => {
-                renderAnalysis({ ok: false, error: 'Network error while analyzing quotes.' });
-            })
-            .finally(() => {
+                renderAnalysis({ ok: false, error: 'Network error while starting analysis.' });
                 if (btn) btn.disabled = false;
             });
     }
@@ -625,8 +682,28 @@
     } catch (e) {
         {% if pr_quote_auto_fetch %}runAnalysis(false);{% endif %}
     }
-    {% elif pr_quote_auto_fetch %}
-    runAnalysis(false);
+    {% else %}
+    fetch(STATUS_URL, { headers: { 'Accept': 'application/json' } })
+        .then(r => r.json())
+        .then(data => {
+            if (data.status === 'running') {
+                setLoading(true, data.message || 'Analysis in progress…');
+                const btn = document.getElementById('btn-analyze-quotes');
+                if (btn) btn.disabled = true;
+                pollTimer = setInterval(pollAnalysisStatus, 2000);
+                return;
+            }
+            if (data.status === 'complete' && data.ok) {
+                renderAnalysis(data);
+                return;
+            }
+            {% if pr_quote_auto_fetch %}
+            runAnalysis(false);
+            {% endif %}
+        })
+        .catch(() => {
+            {% if pr_quote_auto_fetch %}runAnalysis(false);{% endif %}
+        });
     {% endif %}
 })();
 </script>

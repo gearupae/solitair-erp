@@ -24,6 +24,9 @@ NAV_HIDDEN_MODULES = frozenset(
 
 # OpenAI (inventory AI forecasting) — env takes precedence over DB-stored key
 OPENAI_API_KEY = config('OPENAI_API_KEY', default='')
+OPENAI_MODEL = config('OPENAI_MODEL', default='gpt-5.5')
+OPENAI_REASONING_EFFORT = config('OPENAI_REASONING_EFFORT', default='none')
+OPENAI_VENDOR_QUOTE_MODEL = config('OPENAI_VENDOR_QUOTE_MODEL', default='')
 
 # Stripe — AI credit recharge (keys in .env only, never commit live keys)
 STRIPE_SECRET_KEY = config('STRIPE_SECRET_KEY', default='')

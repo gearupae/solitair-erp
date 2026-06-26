@@ -3,8 +3,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-MAX_PAGES = 25
-MAX_EXCEL_ROWS = 600
+MAX_PAGES = 12
+MAX_EXCEL_ROWS = 200
 
 
 def extract_file_text_from_path(path: str, filename: str = '') -> str:

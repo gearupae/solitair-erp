@@ -42,6 +42,11 @@ urlpatterns = [
         views.pr_vendor_quote_analyze,
         name='pr_vendor_quote_analyze',
     ),
+    path(
+        'requests/<int:pk>/vendor-quotes/analyze/status/',
+        views.pr_vendor_quote_analyze_status,
+        name='pr_vendor_quote_analyze_status',
+    ),
     
     # Purchase Orders
     path('orders/', views.PurchaseOrderListView.as_view(), name='po_list'),

@@ -6,11 +6,14 @@ import urllib.error
 import urllib.request
 from decimal import Decimal
 
+from django.conf import settings
 from django.db import transaction
 from django.db.models import F
 
-OPENAI_MODEL = 'gpt-4o-mini'
+OPENAI_MODEL = getattr(settings, 'OPENAI_MODEL', 'gpt-5.5')
 OPENAI_CHAT_URL = 'https://api.openai.com/v1/chat/completions'
+OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses'
+OPENAI_REQUEST_TIMEOUT = 180
 
 
 class OpenAINotConfigured(Exception):
@@ -19,6 +22,16 @@ class OpenAINotConfigured(Exception):
 
 class AiQuotaExceeded(Exception):
     """Raised when the company AI token allowance is exhausted."""
+
+
+def resolve_openai_model(override: str = '') -> str:
+    model = (override or '').strip() or OPENAI_MODEL
+    return model or 'gpt-5.5'
+
+
+def resolve_reasoning_effort(override: str = '') -> str:
+    effort = (override or '').strip() or getattr(settings, 'OPENAI_REASONING_EFFORT', 'none')
+    return effort or 'none'
 
 
 def parse_openai_json(content: str) -> dict | list:
@@ -94,15 +107,14 @@ def consume_ai_tokens(
     )
 
 
-def call_openai_raw(body: dict, *, feature: str = 'openai') -> dict:
-    """POST to OpenAI chat completions; enforce quota and record usage."""
+def _openai_request(url: str, body: dict) -> dict:
     from apps.inventory.utils import get_openai_api_key
 
     ensure_ai_available()
     api_key = get_openai_api_key()
     payload_bytes = json.dumps(body).encode('utf-8')
     req = urllib.request.Request(
-        OPENAI_CHAT_URL,
+        url,
         data=payload_bytes,
         headers={
             'Authorization': f'Bearer {api_key}',
@@ -111,23 +123,61 @@ def call_openai_raw(body: dict, *, feature: str = 'openai') -> dict:
         method='POST',
     )
     try:
-        with urllib.request.urlopen(req, timeout=120) as resp:
-            payload = json.loads(resp.read().decode('utf-8'))
+        with urllib.request.urlopen(req, timeout=OPENAI_REQUEST_TIMEOUT) as resp:
+            return json.loads(resp.read().decode('utf-8'))
     except urllib.error.HTTPError as exc:
         err_body = exc.read().decode('utf-8', errors='replace')[:500]
         raise RuntimeError(f'OpenAI API error ({exc.code}): {err_body}') from exc
 
+
+def _record_usage(payload: dict, *, feature: str, model: str) -> None:
     usage = payload.get('usage') or {}
     total = int(usage.get('total_tokens') or 0)
+    if total <= 0:
+        input_tokens = int(usage.get('input_tokens') or usage.get('prompt_tokens') or 0)
+        output_tokens = int(usage.get('output_tokens') or usage.get('completion_tokens') or 0)
+        total = input_tokens + output_tokens
     if total <= 0:
         total = 1
     consume_ai_tokens(
         total,
         feature=feature,
-        model=body.get('model') or OPENAI_MODEL,
-        prompt_tokens=int(usage.get('prompt_tokens') or 0),
-        completion_tokens=int(usage.get('completion_tokens') or 0),
+        model=model,
+        prompt_tokens=int(usage.get('prompt_tokens') or usage.get('input_tokens') or 0),
+        completion_tokens=int(usage.get('completion_tokens') or usage.get('output_tokens') or 0),
     )
+
+
+def _responses_output_text(payload: dict) -> str:
+    if payload.get('output_text'):
+        return str(payload['output_text'])
+    chunks: list[str] = []
+    for item in payload.get('output') or []:
+        if item.get('type') != 'message':
+            continue
+        for part in item.get('content') or []:
+            if part.get('type') in ('output_text', 'text'):
+                chunks.append(part.get('text') or '')
+    return ''.join(chunks).strip()
+
+
+def _uses_responses_api(model: str) -> bool:
+    name = (model or '').lower()
+    return name.startswith('gpt-5') or name.startswith('o')
+
+
+def call_openai_raw(body: dict, *, feature: str = 'openai') -> dict:
+    """POST to OpenAI chat completions; enforce quota and record usage."""
+    model = body.get('model') or OPENAI_MODEL
+    payload = _openai_request(OPENAI_CHAT_URL, body)
+    _record_usage(payload, feature=feature, model=model)
+    return payload
+
+
+def call_openai_responses_raw(body: dict, *, feature: str = 'openai_responses') -> dict:
+    model = body.get('model') or OPENAI_MODEL
+    payload = _openai_request(OPENAI_RESPONSES_URL, body)
+    _record_usage(payload, feature=feature, model=model)
     return payload
 
 
@@ -137,25 +187,40 @@ def call_openai_json(
     user_payload: dict | list,
     temperature: float = 0.2,
     feature: str = 'openai_json',
-    model: str = OPENAI_MODEL,
+    model: str = '',
+    reasoning_effort: str = '',
 ) -> dict | list:
-    body = {
-        'model': model,
-        'messages': [
-            {'role': 'system', 'content': system},
-            {'role': 'user', 'content': json.dumps(user_payload, default=str)},
-        ],
-        'temperature': temperature,
-        'response_format': {'type': 'json_object'},
-    }
-    payload = call_openai_raw(body, feature=feature)
-    content = payload['choices'][0]['message']['content']
+    model = resolve_openai_model(model)
+    effort = resolve_reasoning_effort(reasoning_effort)
+    user_text = json.dumps(user_payload, default=str, ensure_ascii=False)
+
+    if _uses_responses_api(model):
+        body = {
+            'model': model,
+            'reasoning': {'effort': effort},
+            'instructions': system,
+            'input': user_text,
+            'text': {'format': {'type': 'json_object'}},
+        }
+        payload = call_openai_responses_raw(body, feature=feature)
+        content = _responses_output_text(payload)
+    else:
+        body = {
+            'model': model,
+            'messages': [
+                {'role': 'system', 'content': system},
+                {'role': 'user', 'content': user_text},
+            ],
+            'temperature': temperature,
+            'response_format': {'type': 'json_object'},
+        }
+        payload = call_openai_raw(body, feature=feature)
+        content = payload['choices'][0]['message']['content']
+
     return parse_openai_json(content)
 
 
 def tokens_for_amount(amount: Decimal, currency: str = 'AED') -> int:
-    from django.conf import settings
-
     rate = int(getattr(settings, 'AI_TOKENS_PER_CURRENCY_UNIT', 50000))
     cur = (currency or 'AED').upper()
     multiplier = Decimal('1')
