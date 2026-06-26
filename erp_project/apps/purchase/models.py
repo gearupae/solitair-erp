@@ -202,6 +202,11 @@ class PurchaseRequestAttachment(models.Model):
         default='',
         help_text='Cached plain text from PDF/Excel for faster AI quote analysis.',
     )
+    structured_quote_json = models.JSONField(
+        null=True,
+        blank=True,
+        help_text='Stage-1 AI extraction (schema fill) cached per attachment text.',
+    )
     
     class Meta:
         ordering = ['-uploaded_at']

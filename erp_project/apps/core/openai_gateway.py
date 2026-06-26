@@ -189,10 +189,25 @@ def call_openai_json(
     feature: str = 'openai_json',
     model: str = '',
     reasoning_effort: str = '',
+    json_schema: dict | None = None,
+    json_schema_name: str = 'response',
+    json_schema_strict: bool = False,
+    prompt_cache_key: str = '',
 ) -> dict | list:
     model = resolve_openai_model(model)
     effort = resolve_reasoning_effort(reasoning_effort)
     user_text = json.dumps(user_payload, default=str, ensure_ascii=False)
+
+    text_format: dict
+    if json_schema:
+        text_format = {
+            'type': 'json_schema',
+            'name': json_schema_name,
+            'schema': json_schema,
+            'strict': json_schema_strict,
+        }
+    else:
+        text_format = {'type': 'json_object'}
 
     if _uses_responses_api(model):
         body = {
@@ -200,8 +215,10 @@ def call_openai_json(
             'reasoning': {'effort': effort},
             'instructions': system,
             'input': user_text,
-            'text': {'format': {'type': 'json_object'}},
+            'text': {'format': text_format},
         }
+        if prompt_cache_key:
+            body['prompt_cache_key'] = prompt_cache_key
         payload = call_openai_responses_raw(body, feature=feature)
         content = _responses_output_text(payload)
     else:
@@ -212,8 +229,20 @@ def call_openai_json(
                 {'role': 'user', 'content': user_text},
             ],
             'temperature': temperature,
-            'response_format': {'type': 'json_object'},
         }
+        if json_schema:
+            body['response_format'] = {
+                'type': 'json_schema',
+                'json_schema': {
+                    'name': json_schema_name,
+                    'schema': json_schema,
+                    'strict': json_schema_strict,
+                },
+            }
+        else:
+            body['response_format'] = {'type': 'json_object'}
+        if prompt_cache_key:
+            body['prompt_cache_key'] = prompt_cache_key
         payload = call_openai_raw(body, feature=feature)
         content = payload['choices'][0]['message']['content']
 

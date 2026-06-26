@@ -297,7 +297,7 @@
         </div>
         <p class="text-muted small mb-0" id="vendor-quote-ai-placeholder"{% if vendor_quote_analysis %} style="display:none;"{% endif %}>
             {% if ai_analysis_auto_run %}
-            Analysis runs in the background (GPT-5.5). Results stay on this page — refresh anytime to see progress.
+            Analysis pipeline: OCR → fast extract → GPT-5.5 compare. Runs in background; results stay on this page.
             {% else %}
             Click <strong>Run quote analysis</strong> to compare attached vendor quote files.
             {% endif %}

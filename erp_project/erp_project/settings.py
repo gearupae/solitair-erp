@@ -27,6 +27,8 @@ OPENAI_API_KEY = config('OPENAI_API_KEY', default='')
 OPENAI_MODEL = config('OPENAI_MODEL', default='gpt-5.5')
 OPENAI_REASONING_EFFORT = config('OPENAI_REASONING_EFFORT', default='none')
 OPENAI_VENDOR_QUOTE_MODEL = config('OPENAI_VENDOR_QUOTE_MODEL', default='')
+OPENAI_VENDOR_QUOTE_EXTRACT_MODEL = config('OPENAI_VENDOR_QUOTE_EXTRACT_MODEL', default='gpt-4o-mini')
+OPENAI_VENDOR_QUOTE_REASON_MODEL = config('OPENAI_VENDOR_QUOTE_REASON_MODEL', default='gpt-5.5')
 
 # Stripe — AI credit recharge (keys in .env only, never commit live keys)
 STRIPE_SECRET_KEY = config('STRIPE_SECRET_KEY', default='')

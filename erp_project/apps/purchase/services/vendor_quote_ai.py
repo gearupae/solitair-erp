@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -26,6 +25,7 @@ MAX_EXTRACT_CHARS = 7_500
 MAX_QUOTES_JSON_CHARS = 18_000
 MAX_HISTORY_JSON_CHARS = 6_000
 CACHE_HOURS = 24
+PIPELINE_VERSION = 'ocr-extract-compare-v2'
 CACHE_PREFIX = 'pr_vendor_quote_ai:'
 RUNNING_PREFIX = 'pr_vendor_quote_ai:running:'
 PHASE_PREFIX = 'pr_vendor_quote_ai:phase:'
@@ -39,11 +39,10 @@ class NoExtractableQuoteText(Exception):
     pass
 
 
-def _vendor_quote_model() -> str:
-    from apps.core.openai_gateway import resolve_openai_model
+def _reason_model_label() -> str:
+    from apps.purchase.services.quote_pipeline import _reason_model
 
-    override = getattr(settings, 'OPENAI_VENDOR_QUOTE_MODEL', '') or ''
-    return resolve_openai_model(override)
+    return _reason_model()
 
 
 def _attachment_file_label(att: PurchaseRequestAttachment) -> str:
@@ -95,6 +94,7 @@ def _extract_attachments_parallel(attachments: list[PurchaseRequestAttachment]) 
             text = ''
         return idx, {
             'attachment_id': att.pk,
+            'filename': _attachment_file_label(att),
             'text': text[:MAX_EXTRACT_CHARS],
             'note': note,
         }
@@ -110,7 +110,7 @@ def _extract_attachments_parallel(attachments: list[PurchaseRequestAttachment]) 
 
 
 def _analysis_cache_key(pr: PurchaseRequest, attachments: list[PurchaseRequestAttachment]) -> str:
-    parts = [str(pr.pk), str(pr.updated_at or '')]
+    parts = [PIPELINE_VERSION, str(pr.pk), str(pr.updated_at or '')]
     for att in attachments:
         parts.extend([str(att.pk), str(att.uploaded_at or ''), att.filename or ''])
     raw = '|'.join(parts)
@@ -163,7 +163,7 @@ def _normalize_ai_response(data: dict, pr_items: list, price_history: list) -> d
     data['purchase_price_history'] = price_history
     data['from_cache'] = False
     data['generated_at'] = timezone.now().isoformat()
-    data['model'] = _vendor_quote_model()
+    data['model'] = _reason_model_label()
     return data
 
 
@@ -204,7 +204,11 @@ def _persist_analysis(
 
 def invalidate_pr_quote_analysis(pr: PurchaseRequest) -> None:
     """Clear stored analysis when vendor quote files change."""
+    PurchaseRequestAttachment.objects.filter(purchase_request=pr).update(
+        structured_quote_json=None,
+    )
     if not pr.vendor_quote_analysis and not pr.vendor_quote_analysis_key:
+        cache.delete(_phase_cache_key(pr.pk))
         return
     PurchaseRequest.objects.filter(pk=pr.pk).update(
         vendor_quote_analysis=None,
@@ -223,8 +227,11 @@ def _fetch_analysis_from_openai(
     extracted: list[dict],
     price_history: list[dict],
 ) -> dict:
-    from apps.core.openai_gateway import call_openai_json
     from apps.inventory.utils import is_ai_available
+    from apps.purchase.services.quote_pipeline import (
+        compare_structured_quotes,
+        extract_quotes_parallel,
+    )
 
     if not is_ai_available():
         raise OpenAINotConfigured(
@@ -241,55 +248,30 @@ def _fetch_analysis_from_openai(
         for item in pr.items.all()
     ]
 
-    quotes_payload = []
-    for att, ext in zip(attachments, extracted):
-        quotes_payload.append({
-            'attachment_id': att.pk,
-            'filename': _attachment_file_label(att),
-            'text': (ext.get('text') or '')[:MAX_EXTRACT_CHARS],
-            'note': ext.get('note') or '',
-        })
-
-    company = _company_context()
+    readable = [row for row in extracted if row.get('text')]
+    _set_phase(pr.pk, 'Running OCR / reading quote files…')
+    _set_phase(pr.pk, 'Extracting prices & terms (fast model)…')
+    structured_quotes = extract_quotes_parallel(
+        attachments,
+        readable,
+        set_phase=_set_phase,
+        pr_pk=pr.pk,
+    )
 
     from apps.core.ai_knowledge import get_ai_knowledge_prompt_block
     from apps.core.models import AiModuleKnowledge
 
     knowledge = get_ai_knowledge_prompt_block(AiModuleKnowledge.MODULE_PURCHASE_REQUEST)
+    company = _company_context()
 
-    history_json = json.dumps(price_history, ensure_ascii=False)
-    if len(history_json) > MAX_HISTORY_JSON_CHARS:
-        history_json = history_json[:MAX_HISTORY_JSON_CHARS]
-
-    quotes_json = json.dumps(quotes_payload, ensure_ascii=False)
-    if len(quotes_json) > MAX_QUOTES_JSON_CHARS:
-        quotes_json = quotes_json[:MAX_QUOTES_JSON_CHARS]
-
-    user_payload = {
-        'pr_number': pr.pr_number,
-        'company': company,
-        'pr_line_items': pr_items,
-        'historical_purchase_prices': json.loads(history_json) if history_json else [],
-        'vendor_quote_files': json.loads(quotes_json) if quotes_json else [],
-        'module_knowledge': knowledge[:2000] if knowledge else '',
-    }
-
-    system = (
-        'Procurement quote analyst. Extract numbers ONLY from vendor_quote_files text. '
-        'Return JSON with keys: recommended_vendor, recommended_reason, lowest_total_vendor, '
-        'lowest_total_amount, currency, vendor_totals[], item_comparisons[], '
-        'price_history_comparisons[], compliance_review{overall_risk,issues[],favorable_terms[]}, '
-        'summary, recommendations[], warnings[]. Use AED unless documents say otherwise. '
-        'Mark is_lowest on cheapest vendor prices. Keep compliance issues concise.'
-    )
-    _set_phase(pr.pk, 'Analyzing quotes with AI…')
-    data = call_openai_json(
-        system=system,
-        user_payload=user_payload,
-        temperature=0.1,
-        feature='vendor_quote_ai',
-        model=_vendor_quote_model(),
-        reasoning_effort='none',
+    _set_phase(pr.pk, 'Comparing vendors & compliance (reasoning model)…')
+    data = compare_structured_quotes(
+        pr_number=pr.pr_number,
+        company=company,
+        pr_line_items=pr_items,
+        price_history=price_history,
+        structured_quotes=structured_quotes,
+        module_knowledge=knowledge,
     )
     if not isinstance(data, dict):
         raise ValueError('AI returned non-object JSON')
@@ -363,7 +345,7 @@ def analyze_vendor_quotes(pr: PurchaseRequest, *, force: bool = False) -> dict:
             cached['ok'] = True
             return cached
 
-    _set_phase(pr.pk, 'Reading attached quote files…')
+    _set_phase(pr.pk, 'Reading attached quote files (OCR if scanned)…')
     extracted = _extract_attachments_parallel(attachments)
     readable_count = sum(1 for e in extracted if e.get('text'))
 

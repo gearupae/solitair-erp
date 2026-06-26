@@ -1,7 +1,9 @@
-"""Extract plain text from uploaded PDF / Excel files."""
+"""Extract plain text from uploaded PDF / Excel files (OCR fallback for scans)."""
 from __future__ import annotations
 
 from pathlib import Path
+
+from apps.purchase.services.quote_ocr import enrich_pdf_text
 
 MAX_PAGES = 12
 MAX_EXCEL_ROWS = 200
@@ -18,7 +20,9 @@ def extract_file_text_from_path(path: str, filename: str = '') -> str:
             parts = []
             for page in reader.pages[:MAX_PAGES]:
                 parts.append(page.extract_text() or '')
-            return '\n'.join(parts).strip()
+            native = '\n'.join(parts).strip()
+            text, _method = enrich_pdf_text(path, native, max_pages=MAX_PAGES)
+            return text
         except Exception as exc:
             return f'[PDF could not be read: {exc}]'
 

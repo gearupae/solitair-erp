@@ -83,6 +83,9 @@ if [[ "\${WITH_DB}" == true && -f "\${APP}/erp_project/db.sqlite3" ]]; then
 fi
 
 chown -R www-data:www-data "\${APP}"
+if ! command -v tesseract >/dev/null 2>&1; then
+  apt-get update -qq && apt-get install -y -qq tesseract-ocr tesseract-ocr-eng || echo "WARN: tesseract install failed"
+fi
 cd "\${APP}"
 source venv/bin/activate
 pip install -q -r requirements.txt || echo "WARN: pip install failed; continuing with existing venv"
