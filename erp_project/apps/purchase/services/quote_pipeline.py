@@ -202,7 +202,7 @@ def extract_quotes_parallel(
 
     workers = min(4, max(1, len(rows)))
     if set_phase and pr_pk is not None:
-        set_phase(pr_pk, f'Running analysis — reading {len(rows)} quote file(s)…')
+        set_phase(pr_pk, f'Running analysis — Gearup AI reading {len(rows)} quote file(s)…')
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = [pool.submit(_one, row) for row in rows]

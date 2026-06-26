@@ -24,7 +24,8 @@ MAX_EXTRACT_CHARS = 7_500
 MAX_QUOTES_JSON_CHARS = 18_000
 MAX_HISTORY_JSON_CHARS = 6_000
 CACHE_HOURS = 24
-PIPELINE_VERSION = 'gpt-mini-read-v3'
+PIPELINE_VERSION = 'gearup-ai-read-v4'
+RUNNING_STALE_MINUTES = 15
 CACHE_PREFIX = 'pr_vendor_quote_ai:'
 RUNNING_PREFIX = 'pr_vendor_quote_ai:running:'
 PHASE_PREFIX = 'pr_vendor_quote_ai:phase:'
@@ -148,6 +149,51 @@ def _result_cache_key(pr_pk: int) -> str:
 
 def _set_phase(pr_pk: int, message: str) -> None:
     cache.set(_phase_cache_key(pr_pk), message, timeout=600)
+    PurchaseRequest.objects.filter(pk=pr_pk).update(vendor_quote_analysis_phase=message)
+
+
+def _mark_analysis_running(pr: PurchaseRequest, analysis_key: str, phase: str) -> None:
+    now = timezone.now()
+    PurchaseRequest.objects.filter(pk=pr.pk).update(
+        vendor_quote_analysis_running_at=now,
+        vendor_quote_analysis_phase=phase,
+        vendor_quote_analysis_run_key=analysis_key,
+    )
+    pr.vendor_quote_analysis_running_at = now
+    pr.vendor_quote_analysis_phase = phase
+    pr.vendor_quote_analysis_run_key = analysis_key
+    cache.set(_phase_cache_key(pr.pk), phase, timeout=600)
+
+
+def _clear_analysis_running(pr_pk: int) -> None:
+    cache.delete(_phase_cache_key(pr_pk))
+    PurchaseRequest.objects.filter(pk=pr_pk).update(
+        vendor_quote_analysis_running_at=None,
+        vendor_quote_analysis_phase='',
+        vendor_quote_analysis_run_key='',
+    )
+
+
+def _is_analysis_running(pr: PurchaseRequest, analysis_key: str) -> bool:
+    started = pr.vendor_quote_analysis_running_at
+    if not started or pr.vendor_quote_analysis_run_key != analysis_key:
+        return False
+    age = timezone.now() - started
+    if age > timedelta(minutes=RUNNING_STALE_MINUTES):
+        _clear_analysis_running(pr.pk)
+        return False
+    return True
+
+
+def _running_status_payload(pr: PurchaseRequest) -> dict:
+    started = pr.vendor_quote_analysis_running_at
+    elapsed = int((timezone.now() - started).total_seconds()) if started else 0
+    return {
+        'ok': True,
+        'status': 'running',
+        'message': pr.vendor_quote_analysis_phase or 'Analysis in progress…',
+        'elapsed_seconds': max(0, elapsed),
+    }
 
 
 def _company_context() -> dict:
@@ -165,7 +211,13 @@ def _company_context() -> dict:
     return {'company_name': 'Our company', 'country': 'United Arab Emirates'}
 
 
-def _normalize_ai_response(data: dict, pr_items: list, price_history: list) -> dict:
+def _normalize_ai_response(
+    data: dict,
+    pr_items: list,
+    price_history: list,
+    *,
+    processing_seconds: float | None = None,
+) -> dict:
     data.setdefault('currency', 'AED')
     data.setdefault('recommended_vendor', data.get('lowest_total_vendor') or '')
     data.setdefault('recommended_reason', '')
@@ -180,7 +232,9 @@ def _normalize_ai_response(data: dict, pr_items: list, price_history: list) -> d
     data['purchase_price_history'] = price_history
     data['from_cache'] = False
     data['generated_at'] = timezone.now().isoformat()
-    data['model'] = _reason_model_label()
+    data['model'] = 'Gearup AI'
+    if processing_seconds is not None:
+        data['processing_seconds'] = round(processing_seconds, 1)
     return data
 
 
@@ -198,6 +252,8 @@ def _load_persisted_analysis(
     result['ok'] = True
     if pr.vendor_quote_analysis_at and not result.get('generated_at'):
         result['generated_at'] = pr.vendor_quote_analysis_at.isoformat()
+    if not result.get('model'):
+        result['model'] = 'Gearup AI'
     return result
 
 
@@ -205,18 +261,29 @@ def _persist_analysis(
     pr: PurchaseRequest,
     attachments: list[PurchaseRequestAttachment],
     result: dict,
+    *,
+    processing_seconds: float | None = None,
 ) -> None:
     key = _analysis_cache_key(pr, attachments)
     store = {k: v for k, v in result.items() if k not in ('ok', 'from_cache', 'status', 'message')}
+    if processing_seconds is not None:
+        store['processing_seconds'] = round(processing_seconds, 1)
+    store.setdefault('model', 'Gearup AI')
     now = timezone.now()
     PurchaseRequest.objects.filter(pk=pr.pk).update(
         vendor_quote_analysis=store,
         vendor_quote_analysis_at=now,
         vendor_quote_analysis_key=key,
+        vendor_quote_analysis_running_at=None,
+        vendor_quote_analysis_phase='',
+        vendor_quote_analysis_run_key='',
     )
     pr.vendor_quote_analysis = store
     pr.vendor_quote_analysis_at = now
     pr.vendor_quote_analysis_key = key
+    pr.vendor_quote_analysis_running_at = None
+    pr.vendor_quote_analysis_phase = ''
+    pr.vendor_quote_analysis_run_key = ''
 
 
 def invalidate_pr_quote_analysis(pr: PurchaseRequest) -> None:
@@ -226,15 +293,22 @@ def invalidate_pr_quote_analysis(pr: PurchaseRequest) -> None:
     )
     if not pr.vendor_quote_analysis and not pr.vendor_quote_analysis_key:
         cache.delete(_phase_cache_key(pr.pk))
+        _clear_analysis_running(pr.pk)
         return
     PurchaseRequest.objects.filter(pk=pr.pk).update(
         vendor_quote_analysis=None,
         vendor_quote_analysis_at=None,
         vendor_quote_analysis_key='',
+        vendor_quote_analysis_running_at=None,
+        vendor_quote_analysis_phase='',
+        vendor_quote_analysis_run_key='',
     )
     pr.vendor_quote_analysis = None
     pr.vendor_quote_analysis_at = None
     pr.vendor_quote_analysis_key = ''
+    pr.vendor_quote_analysis_running_at = None
+    pr.vendor_quote_analysis_phase = ''
+    pr.vendor_quote_analysis_run_key = ''
     cache.delete(_phase_cache_key(pr.pk))
 
 
@@ -243,6 +317,8 @@ def _fetch_analysis_from_openai(
     attachments: list[PurchaseRequestAttachment],
     file_rows: list[dict],
     price_history: list[dict],
+    *,
+    started_at=None,
 ) -> dict:
     from apps.inventory.utils import is_ai_available
     from apps.purchase.services.quote_pipeline import (
@@ -265,7 +341,7 @@ def _fetch_analysis_from_openai(
         for item in pr.items.all()
     ]
 
-    _set_phase(pr.pk, 'Running analysis — reading quote files with AI…')
+    _set_phase(pr.pk, 'Running analysis — Gearup AI is reading quote files…')
     structured_quotes = extract_quotes_parallel(
         attachments,
         file_rows,
@@ -290,7 +366,15 @@ def _fetch_analysis_from_openai(
     )
     if not isinstance(data, dict):
         raise ValueError('AI returned non-object JSON')
-    return _normalize_ai_response(data, pr_items, price_history)
+    processing_seconds = None
+    if started_at is not None:
+        processing_seconds = (timezone.now() - started_at).total_seconds()
+    return _normalize_ai_response(
+        data,
+        pr_items,
+        price_history,
+        processing_seconds=processing_seconds,
+    )
 
 
 def get_cached_pr_quote_analysis(pr: PurchaseRequest) -> dict | None:
@@ -313,11 +397,23 @@ def get_cached_pr_quote_analysis(pr: PurchaseRequest) -> dict | None:
 
 def get_vendor_quote_analysis_status(pr: PurchaseRequest) -> dict:
     pr.refresh_from_db(
-        fields=['vendor_quote_analysis', 'vendor_quote_analysis_at', 'vendor_quote_analysis_key'],
+        fields=[
+            'vendor_quote_analysis',
+            'vendor_quote_analysis_at',
+            'vendor_quote_analysis_key',
+            'vendor_quote_analysis_running_at',
+            'vendor_quote_analysis_phase',
+            'vendor_quote_analysis_run_key',
+        ],
     )
     attachments = list(pr.attachments.order_by('id'))
     if not attachments:
         return {'ok': False, 'status': 'idle', 'error': 'No quote files attached.'}
+
+    analysis_key = _analysis_cache_key(pr, attachments)
+
+    if _is_analysis_running(pr, analysis_key):
+        return _running_status_payload(pr)
 
     job = cache.get(_result_cache_key(pr.pk))
     if job:
@@ -329,13 +425,8 @@ def get_vendor_quote_analysis_status(pr: PurchaseRequest) -> dict:
     if persisted:
         return {**persisted, 'status': 'complete'}
 
-    analysis_key = _analysis_cache_key(pr, attachments)
     if cache.get(_running_cache_key(pr.pk, analysis_key)):
-        return {
-            'ok': True,
-            'status': 'running',
-            'message': cache.get(_phase_cache_key(pr.pk)) or 'Analysis in progress…',
-        }
+        return _running_status_payload(pr)
 
     return {'ok': True, 'status': 'idle'}
 
@@ -374,6 +465,7 @@ def analyze_vendor_quotes(pr: PurchaseRequest, *, force: bool = False) -> dict:
     readable_count = sum(1 for e in file_rows if e.get('has_content'))
 
     if readable_count == 0:
+        _clear_analysis_running(pr.pk)
         notes = [e.get('note') for e in file_rows if e.get('note')]
         return {
             'ok': False,
@@ -385,11 +477,27 @@ def analyze_vendor_quotes(pr: PurchaseRequest, *, force: bool = False) -> dict:
         }
 
     price_history = build_pr_purchase_price_history(pr, limit_per_line=4)
+    analysis_key = _analysis_cache_key(pr, attachments)
+    started_at = pr.vendor_quote_analysis_running_at
+    if not started_at:
+        started_at = timezone.now()
+        _mark_analysis_running(pr, analysis_key, 'Reading attached quote files…')
 
     try:
-        result = _fetch_analysis_from_openai(pr, attachments, file_rows, price_history)
+        result = _fetch_analysis_from_openai(
+            pr,
+            attachments,
+            file_rows,
+            price_history,
+            started_at=started_at,
+        )
         result['ok'] = True
-        _persist_analysis(pr, attachments, result)
+        _persist_analysis(
+            pr,
+            attachments,
+            result,
+            processing_seconds=result.get('processing_seconds'),
+        )
         cache.set(
             django_key,
             {k: v for k, v in result.items() if k not in ('ok', 'from_cache', 'status', 'message')},
@@ -400,11 +508,13 @@ def analyze_vendor_quotes(pr: PurchaseRequest, *, force: bool = False) -> dict:
         cache.set(_result_cache_key(pr.pk), result, timeout=int(timedelta(hours=CACHE_HOURS).total_seconds()))
         return result
     except OpenAINotConfigured as exc:
+        _clear_analysis_running(pr.pk)
         err = {'ok': False, 'error': str(exc)}
         cache.set(_result_cache_key(pr.pk), err, timeout=600)
         return err
     except Exception as exc:
         logger.exception('vendor quote AI failed for PR %s', pr.pk)
+        _clear_analysis_running(pr.pk)
         err = {
             'ok': False,
             'error': f'AI analysis failed: {exc}',
@@ -425,11 +535,12 @@ def _run_analysis_worker(pr_pk: int, force: bool) -> None:
     finally:
         cache.set(_result_cache_key(pr_pk), result, timeout=int(timedelta(hours=CACHE_HOURS).total_seconds()))
         try:
+            if not result.get('ok'):
+                _clear_analysis_running(pr_pk)
             pr = PurchaseRequest.objects.get(pk=pr_pk, is_active=True)
             attachments = list(pr.attachments.order_by('id'))
             analysis_key = _analysis_cache_key(pr, attachments)
             cache.delete(_running_cache_key(pr.pk, analysis_key))
-            cache.delete(_phase_cache_key(pr_pk))
         except Exception:
             pass
         close_old_connections()
@@ -458,17 +569,20 @@ def start_vendor_quote_analysis_async(pr: PurchaseRequest, *, force: bool = Fals
             return {**persisted, 'status': 'complete'}
 
     analysis_key = _analysis_cache_key(pr, attachments)
-    running_key = _running_cache_key(pr.pk, analysis_key)
-    if cache.get(running_key):
-        return {
-            'ok': True,
-            'status': 'running',
-            'message': cache.get(_phase_cache_key(pr.pk)) or 'Analysis already in progress…',
-        }
+    pr.refresh_from_db(
+        fields=[
+            'vendor_quote_analysis_running_at',
+            'vendor_quote_analysis_phase',
+            'vendor_quote_analysis_run_key',
+        ],
+    )
+    if _is_analysis_running(pr, analysis_key):
+        return _running_status_payload(pr)
 
+    running_key = _running_cache_key(pr.pk, analysis_key)
     cache.set(running_key, True, timeout=600)
     cache.delete(_result_cache_key(pr.pk))
-    _set_phase(pr.pk, 'Starting quote analysis…')
+    _mark_analysis_running(pr, analysis_key, 'Reading attached quote files…')
     thread = threading.Thread(
         target=_run_analysis_worker,
         args=(pr.pk, force),
@@ -476,8 +590,4 @@ def start_vendor_quote_analysis_async(pr: PurchaseRequest, *, force: bool = Fals
         name=f'pr-vendor-quote-ai-{pr.pk}',
     )
     thread.start()
-    return {
-        'ok': True,
-        'status': 'running',
-        'message': 'Reading attached quote files…',
-    }
+    return _running_status_payload(pr)

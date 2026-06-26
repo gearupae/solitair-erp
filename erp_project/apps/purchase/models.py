@@ -114,6 +114,23 @@ class PurchaseRequest(BaseModel):
         default='',
         help_text='Hash of PR + attachments; invalidates stored analysis when quotes change.',
     )
+    vendor_quote_analysis_running_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text='When background quote AI started (shared across workers).',
+    )
+    vendor_quote_analysis_phase = models.CharField(
+        max_length=255,
+        blank=True,
+        default='',
+        help_text='Current background quote AI step label for the UI.',
+    )
+    vendor_quote_analysis_run_key = models.CharField(
+        max_length=64,
+        blank=True,
+        default='',
+        help_text='Analysis key in flight; avoids showing stale results during re-run.',
+    )
     
     class Meta:
         ordering = ['-created_at']

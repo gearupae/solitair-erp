@@ -222,7 +222,7 @@
     <div class="card-body">
         {% if openai_configured %}
         <p class="text-muted small mb-3">
-            GPT reads attached PDF/Excel quotes (including scanned PDFs) and compares totals, line items,
+            Gearup AI reads attached PDF/Excel quotes (including scanned PDFs) and compares totals, line items,
             past purchase prices, and unfavorable terms &amp; conditions.
         </p>
         {% else %}
@@ -236,6 +236,7 @@
         <div id="vendor-quote-ai-loading" class="text-muted small py-2"{% if pr_quote_auto_fetch %} style="display:block;"{% else %} style="display:none;"{% endif %}>
             <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
             <span id="vendor-quote-ai-loading-text">Starting quote analysis…</span>
+            <span class="text-muted" id="vendor-quote-ai-elapsed"></span>
         </div>
         <div id="vendor-quote-ai-error" class="alert alert-danger py-2 small mb-2" style="display:none;"></div>
         <div id="vendor-quote-ai-results"{% if vendor_quote_analysis %} style="display:block;"{% else %} style="display:none;"{% endif %}>
@@ -343,7 +344,31 @@
     const STATUS_URL = "{{ pr_vendor_analyze_status_url|escapejs }}";
     let pollTimer = null;
     let pollIdleRetries = 0;
-    let wasPolling = false;
+    let analysisStartMs = null;
+
+    function fmtDuration(seconds) {
+        const s = Math.max(0, Math.floor(Number(seconds) || 0));
+        if (s < 60) return s + 's';
+        const m = Math.floor(s / 60);
+        const rem = s % 60;
+        return m + 'm ' + rem + 's';
+    }
+
+    function currentElapsedSeconds(serverElapsed) {
+        if (serverElapsed != null && !Number.isNaN(Number(serverElapsed))) {
+            return Math.max(0, Math.floor(Number(serverElapsed)));
+        }
+        if (analysisStartMs) {
+            return Math.max(0, Math.floor((Date.now() - analysisStartMs) / 1000));
+        }
+        return 0;
+    }
+
+    function formatLoadingMessage(message, serverElapsed) {
+        const base = message || 'Analysis in progress…';
+        const elapsed = currentElapsedSeconds(serverElapsed);
+        return base + ' (' + fmtDuration(elapsed) + ')';
+    }
 
     function fmtMoney(val, currency) {
         if (val == null || val === '') return '—';
@@ -563,13 +588,20 @@
         });
 
         const metaEl = document.getElementById('vendor-quote-ai-meta');
+        const metaParts = [];
         if (data.generated_at) {
-            let meta = 'Generated ' + data.generated_at.slice(0, 19).replace('T', ' ');
-            if (data.from_cache) meta += ' (cached)';
-            metaEl.textContent = meta;
-        } else {
-            metaEl.textContent = '';
+            metaParts.push('Generated ' + data.generated_at.slice(0, 19).replace('T', ' '));
         }
+        if (data.processing_seconds != null) {
+            metaParts.push('Processed in ' + fmtDuration(data.processing_seconds));
+        }
+        if (data.model) {
+            metaParts.push(data.model);
+        }
+        if (data.from_cache) {
+            metaParts.push('cached');
+        }
+        metaEl.textContent = metaParts.join(' · ');
     }
 
     function escapeHtml(str) {
@@ -580,11 +612,23 @@
             .replace(/"/g, '&quot;');
     }
 
-    function setLoading(active, message) {
+    function setLoading(active, message, serverElapsed) {
         const loading = document.getElementById('vendor-quote-ai-loading');
         const loadingText = document.getElementById('vendor-quote-ai-loading-text');
+        const elapsedEl = document.getElementById('vendor-quote-ai-elapsed');
         if (loading) loading.style.display = active ? 'block' : 'none';
-        if (loadingText && message) loadingText.textContent = message;
+        if (active && !analysisStartMs) {
+            analysisStartMs = Date.now();
+        }
+        if (!active) {
+            analysisStartMs = null;
+        }
+        if (loadingText && message) {
+            loadingText.textContent = formatLoadingMessage(message, serverElapsed);
+        }
+        if (elapsedEl) {
+            elapsedEl.textContent = '';
+        }
     }
 
     function stopPolling() {
@@ -596,12 +640,14 @@
 
     function finishAnalysisUi(data) {
         stopPolling();
+        analysisStartMs = null;
         const btn = document.getElementById('btn-analyze-quotes');
         if (btn) {
             btn.disabled = false;
             btn.innerHTML = '<i class="fas fa-play me-1"></i>Re-run analysis';
         }
-        if (data && data.ok) {
+        if (data && data.ok !== false && (data.status === 'complete' || data.recommended_vendor !== undefined || data.summary)) {
+            if (data.ok !== true) data.ok = true;
             renderAnalysis(data);
         } else {
             renderAnalysis({ ok: false, error: (data && data.error) || 'Analysis failed.' });
@@ -609,16 +655,15 @@
     }
 
     function pollAnalysisStatus() {
-        wasPolling = true;
-        fetch(STATUS_URL, { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' })
+        fetch(STATUS_URL, { headers: { 'Accept': 'application/json' }, credentials: 'same-origin', cache: 'no-store' })
             .then(r => r.json())
             .then(data => {
                 if (data.status === 'running') {
                     pollIdleRetries = 0;
-                    setLoading(true, data.message || 'Analysis in progress…');
+                    setLoading(true, data.message || 'Analysis in progress…', data.elapsed_seconds);
                     return;
                 }
-                if (data.status === 'complete' && data.ok) {
+                if (data.status === 'complete') {
                     finishAnalysisUi(data);
                     return;
                 }
@@ -627,7 +672,7 @@
                     return;
                 }
                 if (data.status === 'idle') {
-                    if (pollIdleRetries < 8) {
+                    if (pollIdleRetries < 12) {
                         pollIdleRetries += 1;
                         return;
                     }
@@ -641,7 +686,7 @@
                 finishAnalysisUi({ ok: false, error: data.error || 'Unexpected analysis response.' });
             })
             .catch(() => {
-                if (pollIdleRetries < 3) {
+                if (pollIdleRetries < 5) {
                     pollIdleRetries += 1;
                     return;
                 }
@@ -651,12 +696,16 @@
 
     function runAnalysis(force) {
         const errorEl = document.getElementById('vendor-quote-ai-error');
+        const resultsEl = document.getElementById('vendor-quote-ai-results');
+        const placeholderEl = document.getElementById('vendor-quote-ai-placeholder');
         const btn = document.getElementById('btn-analyze-quotes');
         stopPolling();
         pollIdleRetries = 0;
-        wasPolling = false;
+        analysisStartMs = Date.now();
         setLoading(true, force ? 'Re-running quote analysis…' : 'Starting quote analysis…');
         errorEl.style.display = 'none';
+        if (resultsEl) resultsEl.style.display = 'none';
+        if (placeholderEl) placeholderEl.style.display = 'none';
         if (btn) btn.disabled = true;
 
         const fd = new FormData();
@@ -670,13 +719,13 @@
         })
             .then(r => r.json().then(data => ({ httpStatus: r.status, data })))
             .then(({ httpStatus, data }) => {
-                if (data.status === 'complete' && data.ok) {
+                if (data.status === 'complete') {
                     finishAnalysisUi(data);
                     return;
                 }
                 if (httpStatus === 202 || data.status === 'running') {
-                    setLoading(true, data.message || 'Analysis in progress…');
-                    pollTimer = setInterval(pollAnalysisStatus, 1500);
+                    setLoading(true, data.message || 'Analysis in progress…', data.elapsed_seconds);
+                    pollTimer = setInterval(pollAnalysisStatus, 1000);
                     pollAnalysisStatus();
                     return;
                 }
@@ -704,30 +753,33 @@
     } catch (e) {
         {% if pr_quote_auto_fetch %}runAnalysis(false);{% endif %}
     }
-    {% else %}
-    fetch(STATUS_URL, { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' })
+    {% endif %}
+    fetch(STATUS_URL, { headers: { 'Accept': 'application/json' }, credentials: 'same-origin', cache: 'no-store' })
         .then(r => r.json())
         .then(data => {
             if (data.status === 'running') {
-                setLoading(true, data.message || 'Analysis in progress…');
+                setLoading(true, data.message || 'Analysis in progress…', data.elapsed_seconds);
                 const btn = document.getElementById('btn-analyze-quotes');
                 if (btn) btn.disabled = true;
-                pollTimer = setInterval(pollAnalysisStatus, 1500);
+                const resultsEl = document.getElementById('vendor-quote-ai-results');
+                if (resultsEl) resultsEl.style.display = 'none';
+                pollTimer = setInterval(pollAnalysisStatus, 1000);
                 pollAnalysisStatus();
                 return;
             }
-            if (data.status === 'complete' && data.ok) {
+            if (data.status === 'complete') {
                 finishAnalysisUi(data);
                 return;
             }
             {% if pr_quote_auto_fetch %}
-            runAnalysis(false);
+            if (data.status === 'idle') {
+                runAnalysis(false);
+            }
             {% endif %}
         })
         .catch(() => {
             {% if pr_quote_auto_fetch %}runAnalysis(false);{% endif %}
         });
-    {% endif %}
 })();
 </script>
 {% endif %}
