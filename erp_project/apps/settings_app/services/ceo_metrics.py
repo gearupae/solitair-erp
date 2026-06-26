@@ -477,6 +477,12 @@ def build_ceo_metrics() -> dict:
 
     rule_alerts = _rule_based_alerts(today, metrics)
 
+    from apps.reports.services.ai_finance.utils import payment_cash_flow_monthly
+
+    cash_hist = payment_cash_flow_monthly(6)
+    cash_hist_labels = [h['month'] for h in cash_hist]
+    cash_hist_values = [h['closing_balance'] for h in cash_hist]
+
     return {
         'metrics': metrics,
         'money_cards': [
@@ -550,6 +556,11 @@ def build_ceo_metrics() -> dict:
                 ],
             },
             'pipeline_funnel': funnel,
+            'cash_forecast': {
+                'labels': cash_hist_labels,
+                'values': cash_hist_values,
+                'is_historical': True,
+            },
         },
         'pipeline': pipeline,
         'rule_alerts': rule_alerts,

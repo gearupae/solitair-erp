@@ -42,7 +42,9 @@ urlpatterns = [
         name='sub_group_expense_types',
     ),
     path('ceo/', views_ceo.CeoDashboardView.as_view(), name='ceo_dashboard'),
-    path('ceo/ask/', views_ceo.ceo_ask_business, name='ceo_ask'),
+    path('ceo/api/briefing/', views_ceo.ceo_api_briefing, name='ceo_api_briefing'),
+    path('ceo/api/alerts/', views_ceo.ceo_api_alerts, name='ceo_api_alerts'),
+    path('ceo/api/cash-forecast/', views_ceo.ceo_api_cash_forecast, name='ceo_api_cash_forecast'),
 ]
 
 

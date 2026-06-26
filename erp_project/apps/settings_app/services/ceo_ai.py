@@ -1,7 +1,6 @@
 """Gearup AI features for the CEO dashboard."""
 from __future__ import annotations
 
-import json
 import logging
 from datetime import timedelta
 
@@ -179,54 +178,3 @@ Merge with existing alerts; do not duplicate. Keep total alerts under 10."""
 
     cache.set(cache_key, result, timeout=int(timedelta(hours=CACHE_HOURS).total_seconds()))
     return result
-
-
-def answer_business_question(question: str) -> dict:
-    """Text-to-SQL + plain-English answer."""
-    question = (question or '').strip()
-    if not question:
-        return {'ok': False, 'error': 'Enter a question.'}
-
-    if not _ai_available():
-        return {'ok': False, 'error': 'Gearup AI is not configured. Set OPENAI_API_KEY in .env.'}
-
-    from apps.settings_app.services.ceo_text_to_sql import run_ceo_query
-
-    query_result = run_ceo_query(question)
-    if not query_result.get('ok'):
-        return query_result
-
-    from apps.core.openai_gateway import call_openai_json
-
-    system = """You are Gearup AI executive analyst. The CEO asked a business question.
-You received SQL query results from the ERP database. Answer in 2–4 short sentences.
-Be specific with numbers. If data is empty, say so and suggest what to check.
-Plain English only. No markdown."""
-
-    try:
-        data = call_openai_json(
-            system=system,
-            user_payload={
-                'question': question,
-                'sql': query_result.get('sql', ''),
-                'columns': query_result.get('columns', []),
-                'rows': query_result.get('rows', [])[:25],
-                'row_count': query_result.get('row_count', 0),
-            },
-            temperature=0,
-            feature='ceo_ask_business',
-            model=_ceo_model(),
-            reasoning_effort='low',
-        )
-        answer = (data.get('answer') or data.get('summary') or '').strip()
-        if not answer:
-            answer = json.dumps(data, default=str)[:2000]
-        return {
-            'ok': True,
-            'answer': answer,
-            'sql': query_result.get('sql', ''),
-            'row_count': query_result.get('row_count', 0),
-        }
-    except Exception as exc:
-        logger.warning('CEO ask business failed: %s', exc)
-        return {'ok': False, 'error': f'Could not generate answer: {exc}'}

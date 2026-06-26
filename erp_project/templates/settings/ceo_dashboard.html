@@ -3,7 +3,7 @@
 
 {% block extra_css %}
 <style>
-.ceo-page { max-width: 1400px; margin: 0 auto; }
+.ceo-page { width: 100%; max-width: none; margin: 0; }
 .ceo-brief {
     background: linear-gradient(135deg, #f8fafc 0%, #eef3fa 100%);
     border-left: 4px solid #1e3a5f;
@@ -12,6 +12,7 @@
     line-height: 1.7;
     font-size: 1.02rem;
     color: #1e293b;
+    min-height: 3.5rem;
 }
 .ceo-kpi {
     border: none;
@@ -67,14 +68,9 @@
 .ceo-alert--high { border-left-color: #dc2626; background: #fef2f2; }
 .ceo-alert--medium { border-left-color: #d97706; background: #fffbeb; }
 .ceo-alert--low { border-left-color: #16a34a; background: #f0fdf4; }
-.ceo-ask-box {
-    border: 1px solid #e2e8f0;
-    border-radius: 0.75rem;
-    padding: 1.25rem;
-    background: #fff;
-}
 .ceo-table { font-size: .875rem; }
 .ceo-table th { font-weight: 600; color: #64748b; font-size: .72rem; text-transform: uppercase; }
+.ceo-ai-loading { color: #64748b; font-size: .875rem; }
 </style>
 {% endblock %}
 
@@ -86,24 +82,19 @@
             <p class="text-muted small mb-0">Executive decision view · live ERP data</p>
         </div>
         <div class="d-flex gap-2">
-            <a href="?refresh=1" class="btn btn-outline-secondary btn-sm">
-                <i class="fas fa-sync-alt me-1"></i>Refresh
-            </a>
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="ceo-refresh-ai">
+                <i class="fas fa-sync-alt me-1"></i>Refresh AI
+            </button>
         </div>
     </div>
 
-    <!-- Section 1: AI Daily Briefing -->
+    <!-- Section 1: AI Daily Briefing (loads after page open) -->
     <section class="mb-4">
         <p class="ceo-section-title mb-2"><i class="fas fa-robot me-1"></i>Gearup AI · Daily briefing</p>
-        <div class="ceo-brief">
-            {% if briefing %}
-            {{ briefing }}
-            {% elif openai_configured %}
-            <span class="text-muted">Generating briefing…</span>
-            {% else %}
-            <span class="text-muted">Configure OpenAI to enable AI briefing. Key metrics below are live.</span>
-            {% endif %}
-            {% if briefing_cached %}<span class="badge bg-secondary-subtle text-secondary ms-2 small">Today</span>{% endif %}
+        <div class="ceo-brief" id="ceo-briefing">
+            <span class="ceo-ai-loading" id="ceo-briefing-loading">
+                <span class="spinner-border spinner-border-sm me-1"></span>Loading Gearup AI briefing…
+            </span>
         </div>
     </section>
 
@@ -168,6 +159,9 @@
                 <div class="card ceo-chart-card">
                     <div class="card-body">
                         <h6 class="fw-semibold mb-3">Cash forecast · next 3 months</h6>
+                        <p class="ceo-ai-loading small mb-2" id="ceo-cash-loading">
+                            <span class="spinner-border spinner-border-sm me-1"></span>Loading AI forecast…
+                        </p>
                         <div class="ceo-chart-wrap"><canvas id="chart-cash"></canvas></div>
                     </div>
                 </div>
@@ -254,42 +248,24 @@
         </div>
     </section>
 
-    <!-- Section 5: Risk & Alerts -->
-    <section class="mb-4">
-        <p class="ceo-section-title"><i class="fas fa-exclamation-triangle me-1"></i>Risk &amp; alerts</p>
-        {% for alert in alerts %}
-        <div class="ceo-alert ceo-alert--{{ alert.severity|default:'medium' }}">
-            <div class="fw-semibold small">{{ alert.title }}</div>
-            <div class="small text-muted">{{ alert.detail }}</div>
-            <div class="small mt-1"><strong>Action:</strong> {{ alert.action }}</div>
-        </div>
-        {% empty %}
-        <p class="text-muted small">No critical alerts right now.</p>
-        {% endfor %}
-    </section>
-
-    <!-- Section 6: Ask the Business -->
+    <!-- Section 5: Risk & Alerts (rule-based first, AI enhances after load) -->
     <section class="mb-5">
-        <p class="ceo-section-title"><i class="fas fa-comment-dots me-1"></i>Ask the business</p>
-        <div class="ceo-ask-box">
-            <p class="text-muted small mb-2">Ask in plain English — e.g. “Why is profit down this month?” or “Who owes us the most?”</p>
-            <form id="ceo-ask-form" class="row g-2 align-items-start">
-                {% csrf_token %}
-                <div class="col-12 col-md-9">
-                    <input type="text" class="form-control" id="ceo-ask-input" name="question"
-                           placeholder="Type your question…" autocomplete="off" {% if not openai_configured %}disabled{% endif %}>
-                </div>
-                <div class="col-12 col-md-3">
-                    <button type="submit" class="btn btn-primary w-100" id="ceo-ask-btn" {% if not openai_configured %}disabled{% endif %}>
-                        <i class="fas fa-paper-plane me-1"></i>Ask Gearup AI
-                    </button>
-                </div>
-            </form>
-            <div id="ceo-ask-loading" class="text-muted small mt-2" style="display:none;">
-                <span class="spinner-border spinner-border-sm me-1"></span>Analysing ERP data…
+        <p class="ceo-section-title">
+            <i class="fas fa-exclamation-triangle me-1"></i>Risk &amp; alerts
+            <span class="ceo-ai-loading fw-normal ms-2" id="ceo-alerts-ai-status" style="display:none;">
+                <span class="spinner-border spinner-border-sm me-1"></span>Gearup AI reviewing…
+            </span>
+        </p>
+        <div id="ceo-alerts-container">
+            {% for alert in rule_alerts %}
+            <div class="ceo-alert ceo-alert--{{ alert.severity|default:'medium' }}">
+                <div class="fw-semibold small">{{ alert.title }}</div>
+                <div class="small text-muted">{{ alert.detail }}</div>
+                <div class="small mt-1"><strong>Action:</strong> {{ alert.action }}</div>
             </div>
-            <div id="ceo-ask-answer" class="mt-3 small" style="display:none;"></div>
-            <div id="ceo-ask-error" class="alert alert-danger py-2 small mt-2" style="display:none;"></div>
+            {% empty %}
+            <p class="text-muted small ceo-alerts-empty">No critical alerts right now.</p>
+            {% endfor %}
         </div>
     </section>
 </div>
@@ -301,9 +277,111 @@
 (function() {
     const charts = {{ charts_json|safe }};
     const currency = '{{ currency|escapejs }}';
+    const openaiConfigured = {{ openai_configured|yesno:"true,false" }};
+    const BRIEFING_URL = '{{ briefing_url|escapejs }}';
+    const ALERTS_URL = '{{ alerts_url|escapejs }}';
+    const CASH_URL = '{{ cash_forecast_url|escapejs }}';
 
     Chart.defaults.font.family = "'Inter', system-ui, sans-serif";
     Chart.defaults.color = '#64748b';
+
+    let cashChart = null;
+
+    function fmtMoney(v) {
+        return currency + ' ' + Number(v).toLocaleString();
+    }
+
+    function escapeHtml(s) {
+        return String(s)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    function renderAlerts(alerts) {
+        const container = document.getElementById('ceo-alerts-container');
+        if (!container) return;
+        if (!alerts || !alerts.length) {
+            container.innerHTML = '<p class="text-muted small">No critical alerts right now.</p>';
+            return;
+        }
+        container.innerHTML = alerts.map(a => {
+            const sev = escapeHtml(a.severity || 'medium');
+            return '<div class="ceo-alert ceo-alert--' + sev + '">'
+                + '<div class="fw-semibold small">' + escapeHtml(a.title || '') + '</div>'
+                + '<div class="small text-muted">' + escapeHtml(a.detail || '') + '</div>'
+                + '<div class="small mt-1"><strong>Action:</strong> ' + escapeHtml(a.action || '') + '</div>'
+                + '</div>';
+        }).join('');
+    }
+
+    function loadBriefing(force) {
+        const el = document.getElementById('ceo-briefing');
+        const loading = document.getElementById('ceo-briefing-loading');
+        if (!el || !openaiConfigured) {
+            if (el) el.innerHTML = '<span class="text-muted">Configure OpenAI to enable AI briefing. Metrics below are live.</span>';
+            return;
+        }
+        if (loading) loading.style.display = 'inline';
+        const url = BRIEFING_URL + (force ? '?force=1' : '');
+        fetch(url, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+            .then(r => r.json())
+            .then(data => {
+                if (data.ok && data.text) {
+                    let html = escapeHtml(data.text);
+                    if (data.from_cache) html += ' <span class="badge bg-secondary-subtle text-secondary ms-1 small">Today</span>';
+                    el.innerHTML = html;
+                } else {
+                    el.innerHTML = '<span class="text-muted">Briefing unavailable.</span>';
+                }
+            })
+            .catch(() => {
+                el.innerHTML = '<span class="text-muted">Could not load briefing.</span>';
+            });
+    }
+
+    function loadAlerts(force) {
+        const status = document.getElementById('ceo-alerts-ai-status');
+        if (!openaiConfigured) return;
+        if (status) status.style.display = 'inline';
+        const url = ALERTS_URL + (force ? '?force=1' : '');
+        fetch(url, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+            .then(r => r.json())
+            .then(data => {
+                if (status) status.style.display = 'none';
+                if (data.ok && data.alerts) renderAlerts(data.alerts);
+            })
+            .catch(() => { if (status) status.style.display = 'none'; });
+    }
+
+    function loadCashForecast(force) {
+        const loading = document.getElementById('ceo-cash-loading');
+        if (!openaiConfigured) {
+            if (loading) loading.style.display = 'none';
+            return;
+        }
+        const url = CASH_URL + (force ? '?force=1' : '');
+        fetch(url, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+            .then(r => r.json())
+            .then(data => {
+                if (loading) loading.style.display = 'none';
+                if (!data.ok || !data.labels || !data.labels.length) return;
+                if (cashChart) {
+                    cashChart.data.labels = data.labels;
+                    cashChart.data.datasets[0].data = data.values;
+                    cashChart.data.datasets[0].label = 'Cash balance (AI forecast)';
+                    cashChart.update();
+                }
+            })
+            .catch(() => { if (loading) loading.style.display = 'none'; });
+    }
+
+    function loadAllAi(force) {
+        loadBriefing(force);
+        loadAlerts(force);
+        loadCashForecast(force);
+    }
 
     if (document.getElementById('chart-revenue') && charts.revenue_trend) {
         new Chart(document.getElementById('chart-revenue'), {
@@ -311,35 +389,14 @@
             data: {
                 labels: charts.revenue_trend.labels,
                 datasets: [
-                    {
-                        label: 'Actual',
-                        data: charts.revenue_trend.actual,
-                        borderColor: '#1e3a5f',
-                        backgroundColor: 'rgba(30,58,95,.08)',
-                        fill: true,
-                        tension: 0.3,
-                    },
-                    {
-                        label: 'Target',
-                        data: charts.revenue_trend.target,
-                        borderColor: '#94a3b8',
-                        borderDash: [5, 5],
-                        fill: false,
-                        tension: 0.3,
-                    },
+                    { label: 'Actual', data: charts.revenue_trend.actual, borderColor: '#1e3a5f', backgroundColor: 'rgba(30,58,95,.08)', fill: true, tension: 0.3 },
+                    { label: 'Target', data: charts.revenue_trend.target, borderColor: '#94a3b8', borderDash: [5, 5], fill: false, tension: 0.3 },
                 ],
             },
             options: {
-                responsive: true,
-                maintainAspectRatio: false,
+                responsive: true, maintainAspectRatio: false,
                 plugins: { legend: { position: 'bottom' } },
-                scales: {
-                    y: {
-                        ticks: {
-                            callback: v => currency + ' ' + Number(v).toLocaleString(),
-                        },
-                    },
-                },
+                scales: { y: { ticks: { callback: v => fmtMoney(v) } } },
             },
         });
     }
@@ -349,23 +406,12 @@
             type: 'bar',
             data: {
                 labels: charts.ar_aging.labels,
-                datasets: [{
-                    label: 'Outstanding',
-                    data: charts.ar_aging.values,
-                    backgroundColor: ['#059669', '#d97706', '#ea580c', '#dc2626'],
-                }],
+                datasets: [{ label: 'Outstanding', data: charts.ar_aging.values, backgroundColor: ['#059669', '#d97706', '#ea580c', '#dc2626'] }],
             },
             options: {
-                responsive: true,
-                maintainAspectRatio: false,
+                responsive: true, maintainAspectRatio: false,
                 plugins: { legend: { display: false } },
-                scales: {
-                    y: {
-                        ticks: {
-                            callback: v => currency + ' ' + Number(v).toLocaleString(),
-                        },
-                    },
-                },
+                scales: { y: { ticks: { callback: v => fmtMoney(v) } } },
             },
         });
     }
@@ -375,27 +421,19 @@
             type: 'bar',
             data: {
                 labels: charts.pipeline_funnel.labels,
-                datasets: [{
-                    data: charts.pipeline_funnel.values,
-                    backgroundColor: ['#6366f1', '#8b5cf6', '#059669'],
-                }],
+                datasets: [{ data: charts.pipeline_funnel.values, backgroundColor: ['#6366f1', '#8b5cf6', '#059669'] }],
             },
-            options: {
-                indexAxis: 'y',
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: { legend: { display: false } },
-            },
+            options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } },
         });
     }
 
     if (document.getElementById('chart-cash') && charts.cash_forecast) {
-        new Chart(document.getElementById('chart-cash'), {
+        cashChart = new Chart(document.getElementById('chart-cash'), {
             type: 'line',
             data: {
                 labels: charts.cash_forecast.labels,
                 datasets: [{
-                    label: 'Cash balance (forecast)',
+                    label: charts.cash_forecast.is_historical ? 'Cash (recent actual)' : 'Cash balance (forecast)',
                     data: charts.cash_forecast.values,
                     borderColor: '#0d9488',
                     backgroundColor: 'rgba(13,148,136,.1)',
@@ -404,74 +442,20 @@
                 }],
             },
             options: {
-                responsive: true,
-                maintainAspectRatio: false,
+                responsive: true, maintainAspectRatio: false,
                 plugins: { legend: { position: 'bottom' } },
-                scales: {
-                    y: {
-                        ticks: {
-                            callback: v => currency + ' ' + Number(v).toLocaleString(),
-                        },
-                    },
-                },
+                scales: { y: { ticks: { callback: v => fmtMoney(v) } } },
             },
         });
     }
 
-    const askForm = document.getElementById('ceo-ask-form');
-    if (askForm) {
-        const CSRF = document.querySelector('[name=csrfmiddlewaretoken]')?.value || '';
-        askForm.addEventListener('submit', function(e) {
-            e.preventDefault();
-            const input = document.getElementById('ceo-ask-input');
-            const loading = document.getElementById('ceo-ask-loading');
-            const answerEl = document.getElementById('ceo-ask-answer');
-            const errorEl = document.getElementById('ceo-ask-error');
-            const btn = document.getElementById('ceo-ask-btn');
-            const q = (input.value || '').trim();
-            if (!q) return;
+    document.getElementById('ceo-refresh-ai')?.addEventListener('click', () => loadAllAi(true));
 
-            loading.style.display = 'block';
-            answerEl.style.display = 'none';
-            errorEl.style.display = 'none';
-            btn.disabled = true;
-
-            const fd = new FormData();
-            fd.append('question', q);
-
-            fetch('{{ ask_url|escapejs }}', {
-                method: 'POST',
-                headers: { 'X-CSRFToken': CSRF },
-                body: fd,
-                credentials: 'same-origin',
-            })
-                .then(r => r.json().then(data => ({ ok: r.ok, data })))
-                .then(({ ok, data }) => {
-                    loading.style.display = 'none';
-                    btn.disabled = false;
-                    if (ok && data.ok) {
-                        answerEl.innerHTML = '<div class="ceo-brief p-3">' + escapeHtml(data.answer) + '</div>';
-                        answerEl.style.display = 'block';
-                    } else {
-                        errorEl.textContent = data.error || 'Could not answer.';
-                        errorEl.style.display = 'block';
-                    }
-                })
-                .catch(() => {
-                    loading.style.display = 'none';
-                    btn.disabled = false;
-                    errorEl.textContent = 'Network error.';
-                    errorEl.style.display = 'block';
-                });
-        });
-    }
-
-    function escapeHtml(s) {
-        return String(s)
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;');
+    // Defer AI until after first paint
+    if (window.requestIdleCallback) {
+        requestIdleCallback(() => loadAllAi(false));
+    } else {
+        setTimeout(() => loadAllAi(false), 100);
     }
 })();
 </script>
