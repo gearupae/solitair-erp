@@ -782,6 +782,13 @@
                             </a>
                         </li>
                         <li><hr class="dropdown-divider"></li>
+                        {% if can_access_ceo_dashboard %}
+                        <li>
+                            <a class="dropdown-item" href="{% url 'settings:ceo_dashboard' %}">
+                                <i class="fas fa-chart-line me-2"></i>CEO
+                            </a>
+                        </li>
+                        {% endif %}
                         <li>
                             <a class="dropdown-item" href="{% url 'settings:audit_log' %}">
                                 <i class="fas fa-history me-2"></i>Audit Log

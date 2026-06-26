@@ -33,11 +33,14 @@ def global_context(request):
             user=request.user, is_read=False
         ).count()
         context['crm_sales_rep_only'] = crm_show_my_leads_label(request.user)
+        from apps.settings_app.ceo_access import user_can_access_ceo_dashboard
+        context['can_access_ceo_dashboard'] = user_can_access_ceo_dashboard(request.user)
     else:
         context['header_notifications'] = []
         context['unread_notification_count'] = 0
         context['header_linked_employee'] = None
         context['crm_sales_rep_only'] = False
+        context['can_access_ceo_dashboard'] = False
 
     return context
 

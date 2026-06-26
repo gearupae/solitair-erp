@@ -3,6 +3,7 @@ Settings app URL configuration.
 """
 from django.urls import path
 from . import views
+from . import views_ceo
 
 app_name = 'settings'
 
@@ -40,6 +41,8 @@ urlpatterns = [
         views.SubGroupExpenseTypeSettingsView.as_view(),
         name='sub_group_expense_types',
     ),
+    path('ceo/', views_ceo.CeoDashboardView.as_view(), name='ceo_dashboard'),
+    path('ceo/ask/', views_ceo.ceo_ask_business, name='ceo_ask'),
 ]
 
 
