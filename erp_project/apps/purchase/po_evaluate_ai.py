@@ -9,7 +9,7 @@ from decimal import Decimal
 from django.core.cache import cache
 from django.utils import timezone
 
-from apps.inventory.utils import get_openai_api_key
+from apps.inventory.utils import get_openai_api_key, is_ai_available
 
 CACHE_HOURS = 24
 CACHE_PREFIX = 'po_ai_eval:'
@@ -308,17 +308,17 @@ def _parse_json_content(content: str) -> dict:
 
 
 def _fetch_evaluation_from_openai(snapshot: dict) -> dict:
-    api_key = get_openai_api_key()
-    if not api_key:
-        result = _heuristic_evaluation(snapshot)
-        result['warnings'] = ['OpenAI not configured — showing rule-based checks only.']
-        return result
-
-    import urllib.error
-    import urllib.request
-
     from apps.core.ai_knowledge import get_ai_knowledge_prompt_block
     from apps.core.models import AiModuleKnowledge
+    from apps.core.openai_gateway import AiQuotaExceeded, call_openai_raw
+
+    if not is_ai_available():
+        result = _heuristic_evaluation(snapshot)
+        if not get_openai_api_key():
+            result['warnings'] = ['OpenAI not configured — showing rule-based checks only.']
+        else:
+            result['warnings'] = ['AI token limit reached — recharge in Settings → Company.']
+        return result
 
     knowledge = get_ai_knowledge_prompt_block(AiModuleKnowledge.MODULE_PURCHASE_ORDER)
     system = (
@@ -333,27 +333,16 @@ def _fetch_evaluation_from_openai(snapshot: dict) -> dict:
         f'{knowledge}'
     )
     user_payload = json.dumps(snapshot, default=str)[:14000]
-    body = json.dumps({
+    body = {
         'model': 'gpt-4o-mini',
         'messages': [
             {'role': 'system', 'content': system},
             {'role': 'user', 'content': f'Purchase order snapshot:\n{user_payload}'},
         ],
         'temperature': 0.2,
-    }).encode('utf-8')
-
-    req = urllib.request.Request(
-        'https://api.openai.com/v1/chat/completions',
-        data=body,
-        headers={
-            'Authorization': f'Bearer {api_key}',
-            'Content-Type': 'application/json',
-        },
-        method='POST',
-    )
+    }
     try:
-        with urllib.request.urlopen(req, timeout=90) as resp:
-            payload = json.loads(resp.read().decode('utf-8'))
+        payload = call_openai_raw(body, feature='po_evaluate')
         content = payload['choices'][0]['message']['content']
         data = _parse_json_content(content)
         flags = _normalize_flags(data.get('flags'))
@@ -366,7 +355,11 @@ def _fetch_evaluation_from_openai(snapshot: dict) -> dict:
             'openai_used': True,
             'generated_at': timezone.now().isoformat(),
         }
-    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, KeyError, ValueError):
+    except AiQuotaExceeded:
+        result = _heuristic_evaluation(snapshot)
+        result['warnings'] = ['AI token limit reached — recharge in Settings → Company.']
+        return result
+    except (TimeoutError, json.JSONDecodeError, KeyError, ValueError, RuntimeError):
         result = _heuristic_evaluation(snapshot)
         result['warnings'] = ['AI request failed — showing rule-based checks only.']
         return result

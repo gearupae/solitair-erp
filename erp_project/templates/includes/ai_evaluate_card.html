@@ -25,8 +25,9 @@
         </p>
         {% if not openai_configured %}
         <div class="alert alert-warning py-2 small mb-3">
-            OpenAI is not configured — rule-based checks only.
-            Set <code>OPENAI_API_KEY</code> in your <code>.env</code> file for full AI review.
+            AI is unavailable — rule-based checks only.
+            Ensure <code>OPENAI_API_KEY</code> is set in <code>.env</code> and AI credits are recharged under
+            <a href="{% url 'settings:company' %}">Settings → Company</a>.
         </div>
         {% endif %}
         <div id="{{ prefix }}ComplianceSummary" class="small mb-3{% if not ai_evaluation %} d-none{% endif %}">

@@ -12,7 +12,7 @@ from django.db.models import Max, Q, Sum
 from django.urls import reverse
 from django.utils import timezone
 
-from apps.inventory.utils import get_openai_api_key
+from apps.inventory.utils import get_openai_api_key, is_ai_available
 from apps.projects.models import Project, ProjectExpense
 from apps.sales.models import Estimate, EstimateItem, Invoice
 
@@ -120,43 +120,19 @@ def _parse_openai_json(content: str) -> dict | list:
 
 
 def _call_openai(*, system: str, user_payload: dict | list, temperature: float = 0.25) -> dict | list:
-    api_key = get_openai_api_key()
-    if not api_key:
-        raise OpenAINotConfigured('Configure OpenAI API key — set OPENAI_API_KEY in .env')
+    from apps.core.openai_gateway import call_openai_json
 
-    import urllib.error
-    import urllib.request
-
-    body = json.dumps(
-        {
-            'model': OPENAI_MODEL,
-            'messages': [
-                {'role': 'system', 'content': system},
-                {'role': 'user', 'content': json.dumps(user_payload, default=str)},
-            ],
-            'temperature': temperature,
-            'response_format': {'type': 'json_object'},
-        }
-    ).encode('utf-8')
-
-    req = urllib.request.Request(
-        'https://api.openai.com/v1/chat/completions',
-        data=body,
-        headers={
-            'Authorization': f'Bearer {api_key}',
-            'Content-Type': 'application/json',
-        },
-        method='POST',
-    )
     try:
-        with urllib.request.urlopen(req, timeout=120) as resp:
-            payload = json.loads(resp.read().decode('utf-8'))
-    except urllib.error.HTTPError as exc:
-        err_body = exc.read().decode('utf-8', errors='replace')[:500]
-        raise RuntimeError(f'OpenAI API error ({exc.code}): {err_body}') from exc
-
-    content = payload['choices'][0]['message']['content']
-    return _parse_openai_json(content)
+        return call_openai_json(
+            system=system,
+            user_payload=user_payload,
+            temperature=temperature,
+            feature='sales_forecasting',
+        )
+    except Exception as exc:
+        if exc.__class__.__name__ == 'OpenAINotConfigured':
+            raise OpenAINotConfigured('Configure OpenAI API key — set OPENAI_API_KEY in .env') from exc
+        raise
 
 
 def _classify_line_category(item: EstimateItem) -> str:
@@ -1072,6 +1048,6 @@ def build_sales_forecast_report_context(
         'salesperson_choices': filter_choice_salespeople(all_for_choices),
         'job_type_choices': [{'id': '', 'label': 'All job types'}] + filter_choice_job_types(all_for_choices),
         'estimate_count': len(estimates),
-        'openai_configured': bool(get_openai_api_key()),
+        'openai_configured': is_ai_available(),
         **analysis,
     }

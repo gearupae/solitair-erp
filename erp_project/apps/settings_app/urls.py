@@ -21,6 +21,10 @@ urlpatterns = [
     
     # Company Settings
     path('company/', views.CompanySettingsView.as_view(), name='company'),
+    path('stripe/ai-checkout/', views.stripe_ai_checkout, name='stripe_ai_checkout'),
+    path('stripe/ai-intent/', views.stripe_ai_payment_intent, name='stripe_ai_payment_intent'),
+    path('stripe/ai-confirm/', views.stripe_ai_confirm_payment, name='stripe_ai_confirm_payment'),
+    path('stripe/webhook/', views.stripe_webhook, name='stripe_webhook'),
     path('companies/', views.CompanyListView.as_view(), name='company_list'),
     path('companies/create/', views.CompanyCreateView.as_view(), name='company_create'),
     path('companies/<int:pk>/edit/', views.CompanyUpdateView.as_view(), name='company_edit'),

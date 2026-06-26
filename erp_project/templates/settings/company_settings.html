@@ -223,6 +223,165 @@
     </div>
 </div>
 
+<div class="card border-0 shadow-sm mb-4" id="ai-credits-card">
+    <div class="card-header bg-white border-bottom py-3">
+        <h5 class="mb-0 fw-semibold">
+            <i class="fas fa-bolt me-2 text-primary"></i>AI credits
+        </h5>
+    </div>
+    <div class="card-body p-4">
+        <p class="text-muted small mb-4">
+            Recharge AI usage for forecasting, compliance checks, and document analysis.
+            Token limits are enforced inside this ERP — when credits run out, AI features stop even though the platform OpenAI key is configured in <code>.env</code>.
+        </p>
+
+        <div class="row g-4 mb-4">
+            <div class="col-lg-5">
+                <div class="border rounded-3 p-4 h-100 bg-light">
+                    <h6 class="fw-semibold mb-3">Token usage</h6>
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="small text-muted">Used / limit</span>
+                        <span class="fw-semibold">{{ ai_wallet.tokens_used|floatformat:0 }} / {{ ai_wallet.token_limit|floatformat:0 }}</span>
+                    </div>
+                    <div class="progress mb-3" style="height: 12px;">
+                        <div class="progress-bar {% if ai_wallet.usage_percent >= 90 %}bg-danger{% elif ai_wallet.usage_percent >= 70 %}bg-warning{% else %}bg-success{% endif %}" role="progressbar" style="width: {% if ai_wallet.token_limit %}{{ ai_wallet.usage_percent }}%{% else %}0%{% endif %};"></div>
+                    </div>
+                    <ul class="list-unstyled small mb-0">
+                        <li class="mb-2">
+                            <i class="fas fa-coins me-2 text-muted"></i>
+                            {% if ai_wallet.tokens_remaining %}
+                            <span class="text-success fw-medium">{{ ai_wallet.tokens_remaining|floatformat:0 }} tokens remaining</span>
+                            {% else %}
+                            <span class="text-danger fw-medium">No tokens remaining</span>
+                            {% endif %}
+                        </li>
+                        <li>
+                            <i class="fas fa-robot me-2 text-muted"></i>
+                            {% if ai_available %}
+                            <span class="text-success">AI features active</span>
+                            {% elif ai_wallet.token_limit %}
+                            <span class="text-danger">AI blocked — quota exhausted</span>
+                            {% else %}
+                            <span class="text-warning">Recharge required to enable AI</span>
+                            {% endif %}
+                        </li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="col-lg-7">
+                {% if stripe_configured %}
+                <div class="border rounded-3 p-4 h-100">
+                    <h6 class="fw-semibold mb-3">Recharge</h6>
+
+                    <ul class="nav nav-pills mb-3" id="aiPayTabs" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active" id="card-tab" data-bs-toggle="pill" data-bs-target="#card-pay-pane" type="button" role="tab">
+                                <i class="fas fa-credit-card me-1"></i>Pay with card
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="hosted-tab" data-bs-toggle="pill" data-bs-target="#hosted-pay-pane" type="button" role="tab">
+                                <i class="fab fa-stripe me-1"></i>Stripe checkout
+                            </button>
+                        </li>
+                    </ul>
+
+                    <div class="tab-content">
+                        <div class="tab-pane fade show active" id="card-pay-pane" role="tabpanel">
+                            <label class="form-label">Amount ({{ object.currency|default:"AED" }})</label>
+                            <div class="input-group mb-2">
+                                <span class="input-group-text">{{ object.currency|default:"AED" }}</span>
+                                <input type="number" class="form-control" id="stripe-card-amount" min="{{ ai_recharge_min }}" step="0.01" placeholder="{{ ai_recharge_min }}">
+                            </div>
+                            <p class="small text-muted mb-3">
+                                ≈ <span id="stripe-card-token-preview">0</span> tokens
+                                ({{ ai_tokens_per_unit|floatformat:0 }} per 1 {{ object.currency|default:"AED" }})
+                            </p>
+                            <button type="button" class="btn btn-outline-primary btn-sm mb-3" id="stripe-load-card-form">
+                                <i class="fas fa-lock me-1"></i>Load secure card form
+                            </button>
+                            <div id="stripe-payment-element-wrap" class="d-none">
+                                <div id="stripe-payment-element" class="mb-3 p-3 border rounded bg-white"></div>
+                                <button type="button" class="btn btn-primary w-100" id="stripe-card-pay-btn">
+                                    <i class="fas fa-check me-1"></i>Pay now
+                                </button>
+                            </div>
+                            <div class="alert alert-danger alert-permanent d-none py-2 small mb-0" id="stripe-card-error"></div>
+                        </div>
+
+                        <div class="tab-pane fade" id="hosted-pay-pane" role="tabpanel">
+                            <label class="form-label">Amount ({{ object.currency|default:"AED" }})</label>
+                            <div class="input-group mb-3">
+                                <span class="input-group-text">{{ object.currency|default:"AED" }}</span>
+                                <input type="number" class="form-control" id="stripe-hosted-amount" min="{{ ai_recharge_min }}" step="0.01" placeholder="{{ ai_recharge_min }}">
+                                <button type="button" class="btn btn-primary" id="stripe-hosted-pay-btn">
+                                    Continue to Stripe
+                                </button>
+                            </div>
+                            <p class="small text-muted mb-0">Opens Stripe’s hosted payment page in a new tab.</p>
+                            <div class="alert alert-danger alert-permanent d-none py-2 small mt-2 mb-0" id="stripe-hosted-error"></div>
+                        </div>
+                    </div>
+                </div>
+                {% else %}
+                <div class="alert alert-warning mb-0">
+                    Stripe is not configured. Add <code>STRIPE_SECRET_KEY</code>, <code>STRIPE_PUBLISHABLE_KEY</code>, and <code>STRIPE_AI_PRODUCT_ID</code> to <code>.env</code>.
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        {% if ai_credit_purchases %}
+        <h6 class="fw-semibold mb-2">Recent recharges</h6>
+        <div class="table-responsive mb-4">
+            <table class="table table-sm table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Date</th>
+                        <th>Amount</th>
+                        <th class="text-end">Tokens added</th>
+                        <th>By</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for p in ai_credit_purchases %}
+                    <tr>
+                        <td>{{ p.completed_at|date:"d M Y H:i" }}</td>
+                        <td>{{ p.amount }} {{ p.currency }}</td>
+                        <td class="text-end">{{ p.tokens_granted|floatformat:0 }}</td>
+                        <td>{{ p.created_by.username|default:"—" }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+
+        {% if ai_usage_logs %}
+        <details>
+            <summary class="fw-semibold small text-muted mb-2">Recent AI token usage</summary>
+            <div class="table-responsive">
+                <table class="table table-sm mb-0">
+                    <thead class="table-light">
+                        <tr><th>When</th><th>Feature</th><th class="text-end">Tokens</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for log in ai_usage_logs %}
+                        <tr>
+                            <td class="small">{{ log.created_at|date:"d M Y H:i" }}</td>
+                            <td class="small">{{ log.feature|default:"—" }}</td>
+                            <td class="text-end small">{{ log.tokens }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </details>
+        {% endif %}
+    </div>
+</div>
+
 <div class="card border-0 shadow-sm" id="estimate-templates">
     <div class="card-body p-4">
         <h5 class="fw-semibold mb-1">
@@ -409,6 +568,9 @@
 {% endblock %}
 
 {% block extra_js %}
+{% if stripe_configured %}
+<script src="https://js.stripe.com/v3/"></script>
+{% endif %}
 <script>
 const clientNoteTemplates = {{ client_note_templates_json|safe }};
 const termsTemplates = {{ terms_templates_json|safe }};
@@ -584,5 +746,177 @@ document.addEventListener('DOMContentLoaded', function() {
         urlParam: 'po_terms',
     });
 });
+
+(function () {
+    const rate = {{ ai_tokens_per_unit|default:50000 }};
+    const currency = '{{ object.currency|default:"AED"|escapejs }}';
+    const publishableKey = '{{ stripe_publishable_key|escapejs }}';
+    const returnUrl = window.location.origin + '{% url "settings:company" %}?stripe=success';
+
+    function csrftoken() {
+        const m = document.cookie.match(/csrftoken=([^;]+)/);
+        return m ? decodeURIComponent(m[1]) : '';
+    }
+
+    function showError(el, msg) {
+        if (!el) return;
+        el.textContent = msg;
+        el.classList.remove('d-none');
+    }
+    function hideError(el) {
+        if (el) el.classList.add('d-none');
+    }
+
+    function updatePreview(inputEl, previewEl) {
+        if (!previewEl || !inputEl) return;
+        const amt = parseFloat(inputEl.value || '0');
+        previewEl.textContent = Math.max(0, Math.floor(amt * rate)).toLocaleString();
+    }
+
+    const cardAmountEl = document.getElementById('stripe-card-amount');
+    const cardPreviewEl = document.getElementById('stripe-card-token-preview');
+    const hostedAmountEl = document.getElementById('stripe-hosted-amount');
+    const cardErrEl = document.getElementById('stripe-card-error');
+    const hostedErrEl = document.getElementById('stripe-hosted-error');
+    const loadFormBtn = document.getElementById('stripe-load-card-form');
+    const payWrap = document.getElementById('stripe-payment-element-wrap');
+    const payBtn = document.getElementById('stripe-card-pay-btn');
+    const hostedPayBtn = document.getElementById('stripe-hosted-pay-btn');
+
+    cardAmountEl?.addEventListener('input', () => updatePreview(cardAmountEl, cardPreviewEl));
+    updatePreview(cardAmountEl, cardPreviewEl);
+
+    let stripe = null;
+    let elements = null;
+    let clientSecret = null;
+
+    if (publishableKey && window.Stripe) {
+        stripe = Stripe(publishableKey);
+    }
+
+    loadFormBtn?.addEventListener('click', async function () {
+        hideError(cardErrEl);
+        const amount = cardAmountEl?.value?.trim() || '';
+        if (!amount) {
+            showError(cardErrEl, 'Enter a recharge amount.');
+            return;
+        }
+        if (!stripe) {
+            showError(cardErrEl, 'Stripe is not loaded.');
+            return;
+        }
+        loadFormBtn.disabled = true;
+        loadFormBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Loading…';
+        try {
+            const res = await fetch('{% url "settings:stripe_ai_payment_intent" %}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'X-CSRFToken': csrftoken(),
+                },
+                body: new URLSearchParams({ amount }),
+            });
+            const data = await res.json();
+            if (!data.ok || !data.client_secret) {
+                throw new Error(data.error || 'Could not load payment form.');
+            }
+            clientSecret = data.client_secret;
+            elements = stripe.elements({ clientSecret });
+            const paymentElement = elements.create('payment');
+            const mountEl = document.getElementById('stripe-payment-element');
+            mountEl.innerHTML = '';
+            paymentElement.mount('#stripe-payment-element');
+            payWrap?.classList.remove('d-none');
+            loadFormBtn.classList.add('d-none');
+        } catch (e) {
+            showError(cardErrEl, e.message || 'Failed to load card form.');
+            loadFormBtn.disabled = false;
+            loadFormBtn.innerHTML = '<i class="fas fa-lock me-1"></i>Load secure card form';
+        }
+    });
+
+    payBtn?.addEventListener('click', async function () {
+        hideError(cardErrEl);
+        if (!stripe || !elements || !clientSecret) {
+            showError(cardErrEl, 'Load the card form first.');
+            return;
+        }
+        payBtn.disabled = true;
+        payBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Processing…';
+        try {
+            const { error, paymentIntent } = await stripe.confirmPayment({
+                elements,
+                confirmParams: { return_url: returnUrl },
+                redirect: 'if_required',
+            });
+            if (error) {
+                throw new Error(error.message || 'Payment failed.');
+            }
+            const piId = paymentIntent?.id;
+            if (!piId) {
+                throw new Error('Payment could not be confirmed.');
+            }
+            const res = await fetch('{% url "settings:stripe_ai_confirm_payment" %}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'X-CSRFToken': csrftoken(),
+                },
+                body: new URLSearchParams({ payment_intent_id: piId }),
+            });
+            const data = await res.json();
+            if (!data.ok) {
+                throw new Error(data.error || 'Could not apply credits.');
+            }
+            window.location.href = '{% url "settings:company" %}?stripe=success&payment_intent=' + encodeURIComponent(piId);
+        } catch (e) {
+            showError(cardErrEl, e.message || 'Payment failed.');
+            payBtn.disabled = false;
+            payBtn.innerHTML = '<i class="fas fa-check me-1"></i>Pay now';
+        }
+    });
+
+    hostedPayBtn?.addEventListener('click', async function () {
+        hideError(hostedErrEl);
+        const amount = hostedAmountEl?.value?.trim() || '';
+        if (!amount) {
+            showError(hostedErrEl, 'Enter a recharge amount.');
+            return;
+        }
+        hostedPayBtn.disabled = true;
+        try {
+            const res = await fetch('{% url "settings:stripe_ai_checkout" %}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'X-CSRFToken': csrftoken(),
+                },
+                body: new URLSearchParams({ amount }),
+            });
+            const data = await res.json();
+            if (!data.ok || !data.checkout_url) {
+                throw new Error(data.error || 'Could not start checkout.');
+            }
+            window.location.href = data.checkout_url;
+        } catch (e) {
+            showError(hostedErrEl, e.message || 'Checkout failed.');
+            hostedPayBtn.disabled = false;
+        }
+    });
+
+    const urlPi = new URLSearchParams(window.location.search).get('payment_intent');
+    if (urlPi && window.location.search.includes('redirect_status=succeeded')) {
+        fetch('{% url "settings:stripe_ai_confirm_payment" %}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-CSRFToken': csrftoken(),
+            },
+            body: new URLSearchParams({ payment_intent_id: urlPi }),
+        }).then(() => {
+            window.history.replaceState({}, '', '{% url "settings:company" %}#ai-credits-card');
+        });
+    }
+})();
 </script>
 {% endblock %}

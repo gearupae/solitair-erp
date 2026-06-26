@@ -402,9 +402,9 @@ class PurchaseRequestDetailView(PermissionRequiredMixin, DetailView):
             'purchase:pr_vendor_attachment_update',
             args=[self.object.pk, _ph],
         ).replace(str(_ph), '__ATT_ID__')
-        from apps.inventory.utils import get_openai_api_key
+        from apps.inventory.utils import get_openai_api_key, is_ai_available
 
-        context['openai_configured'] = bool(get_openai_api_key())
+        context['openai_configured'] = is_ai_available()
         context['pr_vendor_analyze_url'] = reverse(
             'purchase:pr_vendor_quote_analyze', args=[self.object.pk]
         )
@@ -525,6 +525,9 @@ def pr_vendor_attachment_upload(request, pk):
     if errors:
         payload['partial'] = True
         payload['errors'] = errors
+    from apps.purchase.services.vendor_quote_ai import invalidate_pr_quote_analysis
+
+    invalidate_pr_quote_analysis(pr)
     return JsonResponse(payload)
 
 
@@ -1048,12 +1051,12 @@ class PurchaseOrderDetailView(PermissionRequiredMixin, DetailView):
             and self.object.status != 'cancelled'
             and self.object.items.exists()
         )
-        from apps.inventory.utils import get_openai_api_key
+        from apps.inventory.utils import get_openai_api_key, is_ai_available
         from apps.core.ai_knowledge import is_ai_analysis_auto_run
         from apps.core.models import AiModuleKnowledge
         from apps.core.compliance_service import auto_compliance_on_detail, run_po_compliance
 
-        context['openai_configured'] = bool(get_openai_api_key())
+        context['openai_configured'] = is_ai_available()
         context['ai_analysis_auto_run'] = is_ai_analysis_auto_run(AiModuleKnowledge.MODULE_PURCHASE_ORDER)
         context['po_ai_evaluate_url'] = reverse('purchase:po_ai_evaluate', args=[self.object.pk])
         evaluation = run_po_compliance(self.object, full_run=False)

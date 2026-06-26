@@ -314,6 +314,14 @@ class CompanySettings(models.Model):
         blank=True,
         help_text='Encrypted OpenAI API key for inventory AI forecasting.',
     )
+    ai_token_limit = models.BigIntegerField(
+        default=0,
+        help_text='Total AI tokens purchased / allocated for this company.',
+    )
+    ai_tokens_used = models.BigIntegerField(
+        default=0,
+        help_text='AI tokens consumed across all ERP AI features.',
+    )
 
     class Meta:
         verbose_name = 'Company Settings'
@@ -344,6 +352,58 @@ class CompanySettings(models.Model):
         from apps.inventory.utils import mask_secret
 
         return mask_secret(self.get_openai_api_key_decrypted())
+
+    @property
+    def ai_tokens_remaining(self) -> int:
+        return max(0, int(self.ai_token_limit or 0) - int(self.ai_tokens_used or 0))
+
+
+class AiCreditPurchase(models.Model):
+    STATUS_PENDING = 'pending'
+    STATUS_COMPLETED = 'completed'
+    STATUS_CANCELLED = 'cancelled'
+    STATUS_CHOICES = [
+        (STATUS_PENDING, 'Pending'),
+        (STATUS_COMPLETED, 'Completed'),
+        (STATUS_CANCELLED, 'Cancelled'),
+    ]
+
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    currency = models.CharField(max_length=3, default='AED')
+    tokens_granted = models.BigIntegerField(default=0)
+    stripe_checkout_session_id = models.CharField(max_length=255, unique=True, null=True, blank=True)
+    stripe_payment_intent_id = models.CharField(max_length=255, blank=True, db_index=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='ai_credit_purchases',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.amount} {self.currency} → {self.tokens_granted} tokens ({self.status})'
+
+
+class AiTokenUsageLog(models.Model):
+    tokens = models.PositiveIntegerField()
+    prompt_tokens = models.PositiveIntegerField(default=0)
+    completion_tokens = models.PositiveIntegerField(default=0)
+    model = models.CharField(max_length=80, blank=True)
+    feature = models.CharField(max_length=120, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.tokens} tokens ({self.feature})'
 
 
 class ItemSubGroupExpenseType(models.Model):

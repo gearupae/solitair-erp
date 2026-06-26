@@ -28,6 +28,9 @@ python-dateutil==2.9.0
 # Encryption (OpenAI key storage)
 cryptography==44.0.0
 
+# Payments (AI credit recharge)
+stripe==11.4.0
+
 # Development
 django-debug-toolbar==4.4.6
 

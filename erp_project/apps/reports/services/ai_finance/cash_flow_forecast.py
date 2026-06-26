@@ -101,7 +101,7 @@ def _empty_context(historical, forecast_months):
 
 
 def _assemble_context(historical, result, forecast_months):
-    from apps.inventory.utils import get_openai_api_key
+    from apps.inventory.utils import get_openai_api_key, is_ai_available
 
     forecast = result.get('forecast') or []
     table_rows = []
@@ -144,6 +144,6 @@ def _assemble_context(historical, result, forecast_months):
         'forecast_months': forecast_months,
         'has_data': True,
         'from_cache': result.get('from_cache', False),
-        'openai_configured': bool(get_openai_api_key()),
+        'openai_configured': is_ai_available(),
         'disclaimer': 'AI-generated estimate — not financial advice.',
     }

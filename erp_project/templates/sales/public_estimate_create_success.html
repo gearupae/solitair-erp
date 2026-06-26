@@ -1,0 +1,18 @@
+{% extends 'minimal_public.html' %}
+
+{% block title %}Estimate submitted{% endblock %}
+
+{% block content %}
+<div class="text-center py-4">
+    <div class="mb-3">
+        <span class="d-inline-flex align-items-center justify-content-center rounded-circle bg-success bg-opacity-10 text-success" style="width: 4rem; height: 4rem;">
+            <i class="fas fa-check fa-lg"></i>
+        </span>
+    </div>
+    <h4 class="fw-bold mb-2">Thank you</h4>
+    <p class="text-muted mb-0">
+        Your estimate{% if estimate_number %} <strong>{{ estimate_number }}</strong>{% endif %}
+        has been submitted and is awaiting review by our team.
+    </p>
+</div>
+{% endblock %}

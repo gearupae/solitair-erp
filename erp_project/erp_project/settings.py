@@ -25,6 +25,15 @@ NAV_HIDDEN_MODULES = frozenset(
 # OpenAI (inventory AI forecasting) — env takes precedence over DB-stored key
 OPENAI_API_KEY = config('OPENAI_API_KEY', default='')
 
+# Stripe — AI credit recharge (keys in .env only, never commit live keys)
+STRIPE_SECRET_KEY = config('STRIPE_SECRET_KEY', default='')
+STRIPE_PUBLISHABLE_KEY = config('STRIPE_PUBLISHABLE_KEY', default='')
+STRIPE_WEBHOOK_SECRET = config('STRIPE_WEBHOOK_SECRET', default='')
+STRIPE_AI_PRODUCT_ID = config('STRIPE_AI_PRODUCT_ID', default='')
+AI_TOKENS_PER_CURRENCY_UNIT = config('AI_TOKENS_PER_CURRENCY_UNIT', default=50000, cast=int)
+AI_RECHARGE_MIN_AMOUNT = config('AI_RECHARGE_MIN_AMOUNT', default='5')
+AI_USD_TO_AED = config('AI_USD_TO_AED', default='3.67')
+
 ALLOWED_HOSTS = config(
     'ALLOWED_HOSTS',
     default='localhost,127.0.0.1,89.167.54.227,gear.telldb.com',

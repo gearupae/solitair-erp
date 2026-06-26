@@ -13,6 +13,11 @@ urlpatterns = [
     path('estimates/', views.EstimateListView.as_view(), name='estimate_list'),
     path('estimates/items/sample.csv', views.estimate_items_sample_csv, name='estimate_items_sample_csv'),
     path('estimates/create/', views.EstimateCreateView.as_view(), name='estimate_create'),
+    path(
+        'estimates/public/create/<uuid:token>/',
+        views.PublicEstimateCreateView.as_view(),
+        name='public_estimate_create',
+    ),
     path('estimates/<int:pk>/', views.EstimateDetailView.as_view(), name='estimate_detail'),
     path('estimates/<int:pk>/edit/', views.EstimateUpdateView.as_view(), name='estimate_edit'),
     path('estimates/<int:pk>/approve-edit/', views.estimate_approve_edit, name='estimate_approve_edit'),

@@ -1,4 +1,6 @@
-{% extends 'base.html' %}
+{% extends base_template|default:"base.html" %}
+
+{% block container_style %}{% if is_public_create %}max-width: 1200px;{% else %}max-width: 640px;{% endif %}{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -245,13 +247,18 @@
 
 {% block content %}
 <div class="page-header">
+    {% if not is_public_create %}
     <nav aria-label="breadcrumb">
         <ol class="breadcrumb mb-2">
             <li class="breadcrumb-item"><a href="{% url 'sales:estimate_list' %}">Estimates</a></li>
             <li class="breadcrumb-item active">{{ title }}</li>
         </ol>
     </nav>
+    {% endif %}
     <h4 class="mb-0 fw-bold">{{ title }}</h4>
+    {% if is_public_create %}
+    <p class="text-muted mb-0 mt-2 small">Fill in the details below. Your estimate will be sent to our team for review.</p>
+    {% endif %}
 </div>
 
 {% if form.errors and form.errors.items %}
@@ -286,13 +293,15 @@
                     {{ form.customer }}
                     {% if form.customer.errors %}<div class="text-danger small">{{ form.customer.errors|join:", " }}</div>{% endif %}
                 </div>
+                {% if not is_public_create %}
                 <div class="col-md-4">
                     <label class="form-label">Assigned to</label>
                     {{ form.assigned_to }}
                     {% if form.assigned_to.errors %}<div class="text-danger small">{{ form.assigned_to.errors|join:", " }}</div>{% endif %}
                 </div>
+                {% endif %}
                 <div class="col-md-4">
-                    <label class="form-label">Prepared by</label>
+                    <label class="form-label">Prepared by{% if is_public_create %} <span class="text-danger">*</span>{% endif %}</label>
                     {{ form.prepared_by }}
                 </div>
                 <div class="col-md-4">
@@ -357,6 +366,7 @@
         </div>
     </div>
 
+    {% if not is_public_create %}
     <div class="card mb-4">
         <div class="card-header">
             <h6 class="mb-0 fw-semibold"><i class="fas fa-lock me-2 text-secondary"></i>Internal notes</h6>
@@ -367,6 +377,7 @@
             {% if form.notes.errors %}<div class="text-danger small mt-2">{{ form.notes.errors|join:", " }}</div>{% endif %}
         </div>
     </div>
+    {% endif %}
     
     <div id="estimateExpensesCard" class="card mb-4 d-none">
         <div class="card-header bg-transparent py-3">
@@ -383,12 +394,14 @@
         <div id="lineItemsCardHeader" class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
             <h6 class="mb-0 fw-semibold"><i class="fas fa-list me-2"></i>Line items</h6>
             <div class="d-flex flex-wrap align-items-center gap-2">
+                {% if not is_public_create %}
                 <a href="{{ estimate_items_sample_csv_url }}" class="btn btn-sm btn-outline-secondary" title="Estimate line items template">
                     <i class="fas fa-download me-1"></i>Download CSV
                 </a>
                 <a href="{{ inventory_items_export_csv_url }}" class="btn btn-sm btn-outline-secondary" title="Export active inventory as CSV">
                     <i class="fas fa-file-export me-1"></i>Export inventory
                 </a>
+                {% endif %}
                 <label class="btn btn-sm btn-outline-secondary mb-0 text-truncate" title="Attach CSV (optional)">
                     <i class="fas fa-folder-open me-1"></i><span id="itemsCsvLabel">Choose file</span>
                     <input type="file" name="items_csv" id="itemsCsvInput" class="d-none" accept=".csv,text/csv,application/vnd.ms-excel">
@@ -507,7 +520,7 @@
                 <select id="clientNoteTemplateSelect" class="form-select">
                     <option value="">— Select template —</option>
                 </select>
-                <small class="text-muted">Choose a template from <a href="{% url 'settings:company' %}">Company Settings</a>, or type your own text below.</small>
+                <small class="text-muted">Choose a template{% if not is_public_create %} from <a href="{% url 'settings:company' %}">Company Settings</a>{% endif %}, or type your own text below.</small>
             </div>
             {{ form.client_note }}
         </div>
@@ -542,7 +555,7 @@
                 {% elif company_default_authorized_signature_url %}
                 <div class="mt-2">
                     <img src="{{ company_default_authorized_signature_url }}" alt="" class="img-thumbnail" style="max-height:80px">
-                    <div class="small text-muted mt-1">Default from <a href="{% url 'settings:company' %}">Company Settings</a> — applied when you save unless you upload a different file.</div>
+                    <div class="small text-muted mt-1">{% if is_public_create %}Company default{% else %}Default from <a href="{% url 'settings:company' %}">Company Settings</a>{% endif %} — applied when you save unless you upload a different file.</div>
                 </div>
                 {% endif %}
             </div>
@@ -554,7 +567,7 @@
                 {% elif company_default_customer_signature_url %}
                 <div class="mt-2">
                     <img src="{{ company_default_customer_signature_url }}" alt="" class="img-thumbnail" style="max-height:80px">
-                    <div class="small text-muted mt-1">Default from <a href="{% url 'settings:company' %}">Company Settings</a> — applied when you save unless you upload a different file.</div>
+                    <div class="small text-muted mt-1">{% if is_public_create %}Company default{% else %}Default from <a href="{% url 'settings:company' %}">Company Settings</a>{% endif %} — applied when you save unless you upload a different file.</div>
                 </div>
                 {% endif %}
             </div>
@@ -563,9 +576,11 @@
     
     <div class="d-flex gap-2">
         <button type="submit" class="btn btn-primary">
-            <i class="fas fa-save me-2"></i>Save Estimate
+            <i class="fas fa-save me-2"></i>{% if is_public_create %}Submit for review{% else %}Save Estimate{% endif %}
         </button>
+        {% if not is_public_create %}
         <a href="{% url 'sales:estimate_list' %}" class="btn btn-light">Cancel</a>
+        {% endif %}
     </div>
 </form>
 

@@ -111,7 +111,7 @@ def _normalize_aging(aging: dict) -> dict:
 
 
 def _empty():
-    from apps.inventory.utils import get_openai_api_key
+    from apps.inventory.utils import get_openai_api_key, is_ai_available
     return {
         'table_rows': [],
         'aging_summary': {},
@@ -119,13 +119,13 @@ def _empty():
         'alerts': [],
         'has_data': False,
         'from_cache': False,
-        'openai_configured': bool(get_openai_api_key()),
+        'openai_configured': is_ai_available(),
         'disclaimer': 'AI-generated estimate — not financial advice.',
     }
 
 
 def _assemble(open_rows, result):
-    from apps.inventory.utils import get_openai_api_key
+    from apps.inventory.utils import get_openai_api_key, is_ai_available
 
     forecasts = result.get('invoice_forecasts') or {}
     if isinstance(forecasts, list):
@@ -157,6 +157,6 @@ def _assemble(open_rows, result):
         'open_total': round(sum(r['amount'] for r in open_rows), 2),
         'has_data': bool(open_rows),
         'from_cache': result.get('from_cache', False),
-        'openai_configured': bool(get_openai_api_key()),
+        'openai_configured': is_ai_available(),
         'disclaimer': 'AI-generated estimate — not financial advice.',
     }

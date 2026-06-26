@@ -96,15 +96,16 @@ def extract_bill_from_uploaded_file(uploaded: UploadedFile) -> dict:
             tmp.flush()
             text = extract_file_text_from_path(tmp.name, filename)
 
-    api_key = get_openai_api_key()
-    if not api_key:
+    from apps.core.openai_gateway import call_openai_raw
+    from apps.inventory.utils import get_openai_api_key, is_ai_available
+
+    if not is_ai_available():
         data = _heuristic_extract(filename, text)
         data['ok'] = True
         data['filename'] = filename
         return data
 
     import base64
-    import urllib.request
 
     user_parts = [
         {
@@ -142,37 +143,24 @@ def extract_bill_from_uploaded_file(uploaded: UploadedFile) -> dict:
     elif text:
         user_parts.append({'type': 'text', 'text': text[:MAX_EXTRACT_CHARS]})
 
-    body = json.dumps(
-        {
-            'model': 'gpt-4o-mini',
-            'messages': [
-                {
-                    'role': 'system',
-                    'content': (
-                        'You extract structured data from expense receipts and tax invoices. '
-                        'Reply with JSON only. Amounts are numbers without currency symbols. '
-                        'Use AED unless another currency is explicit.'
-                    ),
-                },
-                {'role': 'user', 'content': user_parts},
-            ],
-            'temperature': 0.1,
-        }
-    ).encode('utf-8')
-
-    req = urllib.request.Request(
-        'https://api.openai.com/v1/chat/completions',
-        data=body,
-        headers={
-            'Authorization': f'Bearer {api_key}',
-            'Content-Type': 'application/json',
-        },
-        method='POST',
-    )
+    body = {
+        'model': 'gpt-4o-mini',
+        'messages': [
+            {
+                'role': 'system',
+                'content': (
+                    'You extract structured data from expense receipts and tax invoices. '
+                    'Reply with JSON only. Amounts are numbers without currency symbols. '
+                    'Use AED unless another currency is explicit.'
+                ),
+            },
+            {'role': 'user', 'content': user_parts},
+        ],
+        'temperature': 0.1,
+    }
 
     try:
-        with urllib.request.urlopen(req, timeout=90) as resp:
-            payload = json.loads(resp.read().decode('utf-8'))
+        payload = call_openai_raw(body, feature='expense_bill_ai')
         content = payload['choices'][0]['message']['content']
         data = _parse_json_content(content)
     except Exception as exc:

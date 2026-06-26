@@ -1144,7 +1144,7 @@ class ProjectDetailView(PermissionRequiredMixin, DetailView):
             .prefetch_related('items__item')
             .order_by('-created_at')
         )
-        from apps.inventory.utils import get_openai_api_key
+        from apps.inventory.utils import get_openai_api_key, is_ai_available
         from apps.core.ai_knowledge import is_ai_analysis_auto_run
         from apps.core.models import AiModuleKnowledge
         from apps.core.compliance_service import (
@@ -1153,7 +1153,7 @@ class ProjectDetailView(PermissionRequiredMixin, DetailView):
             _project_expense_context,
         )
 
-        context['openai_configured'] = bool(get_openai_api_key())
+        context['openai_configured'] = is_ai_available()
         context['ai_analysis_auto_run'] = is_ai_analysis_auto_run(AiModuleKnowledge.MODULE_PROJECT)
         context['project_ai_evaluate_url'] = reverse('projects:project_ai_evaluate', args=[self.object.pk])
         recorded, budget_pct_used = _project_expense_context(self.object)

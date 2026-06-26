@@ -42,6 +42,19 @@ def openai_key_status() -> str:
     return 'none'
 
 
+def is_ai_available() -> bool:
+    """OpenAI key configured and company token quota not exhausted."""
+    from apps.core.openai_gateway import has_ai_quota
+
+    return bool(get_openai_api_key()) and has_ai_quota()
+
+
+def get_ai_wallet_summary() -> dict:
+    from apps.core.openai_gateway import get_wallet
+
+    return get_wallet()
+
+
 def mask_secret(value: str, visible: int = 4) -> str:
     if not value:
         return ''

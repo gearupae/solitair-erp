@@ -11,6 +11,7 @@ from django.db import models
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from decimal import Decimal
+import uuid
 from apps.core.models import BaseModel
 from apps.core.utils import generate_number
 from apps.crm.models import Customer
@@ -216,6 +217,10 @@ class Estimate(BaseModel):
         blank=True,
         protocol='both',
         help_text='IP when the estimate was created; excluded from public link view counts.',
+    )
+    submitted_via_public_link = models.BooleanField(
+        default=False,
+        help_text='Created through the hourly public estimate submission link.',
     )
 
     # Calculated fields
@@ -485,6 +490,22 @@ class EstimatePublicView(models.Model):
 
     def __str__(self):
         return f'{self.estimate_id} @ {self.viewed_at:%Y-%m-%d %H:%M}'
+
+
+class EstimatePublicCreateLink(models.Model):
+    """Single-use hourly token for public estimate creation (no login)."""
+
+    token = models.UUIDField(unique=True, default=uuid.uuid4, editable=False)
+    expires_at = models.DateTimeField(db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Public estimate create link'
+        verbose_name_plural = 'Public estimate create links'
+
+    def __str__(self):
+        return f'Public create link (expires {self.expires_at:%Y-%m-%d %H:%M})'
 
 
 class EstimateRevisionSnapshot(models.Model):

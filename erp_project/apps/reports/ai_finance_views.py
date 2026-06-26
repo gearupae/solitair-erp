@@ -88,13 +88,13 @@ class AiFinanceIndexView(LoginRequiredMixin, View):
     def get(self, request):
         if not ai_finance_permission(request.user):
             raise PermissionDenied
-        from apps.inventory.utils import get_openai_api_key
+        from apps.inventory.utils import get_openai_api_key, is_ai_available
         return render(
             request,
             'reports/ai_finance/index.html',
             {
                 'title': 'AI Finance',
-                'openai_configured': bool(get_openai_api_key()),
+                'openai_configured': is_ai_available(),
                 'disclaimer': 'AI-generated estimate — not financial advice.',
                 **_nav_context(''),
             },

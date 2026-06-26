@@ -31,6 +31,13 @@ from .forms import UserForm, RoleForm, CompanySettingsForm, CompanyForm
 from apps.core.mixins import PermissionRequiredMixin
 from apps.hr.models import Employee
 
+from apps.settings_app.stripe_views import (
+    stripe_ai_checkout,
+    stripe_ai_confirm_payment,
+    stripe_ai_payment_intent,
+    stripe_webhook,
+)
+
 
 class UserListView(PermissionRequiredMixin, ListView):
     """List all users."""
@@ -317,6 +324,69 @@ class CompanySettingsView(PermissionRequiredMixin, UpdateView):
             ],
             cls=DjangoJSONEncoder,
         )
+
+        from django.conf import settings as django_settings
+
+        from apps.inventory.utils import get_ai_wallet_summary, is_ai_available
+        from apps.settings_app.models import AiCreditPurchase, AiTokenUsageLog
+        from apps.settings_app.stripe_ai_credits import stripe_configured
+
+        wallet = get_ai_wallet_summary()
+        context['ai_wallet'] = wallet
+        context['ai_available'] = is_ai_available()
+        context['stripe_configured'] = stripe_configured()
+        context['stripe_publishable_key'] = getattr(django_settings, 'STRIPE_PUBLISHABLE_KEY', '')
+        context['ai_tokens_per_unit'] = getattr(django_settings, 'AI_TOKENS_PER_CURRENCY_UNIT', 50000)
+        context['ai_recharge_min'] = getattr(django_settings, 'AI_RECHARGE_MIN_AMOUNT', '5')
+        context['ai_credit_purchases'] = AiCreditPurchase.objects.filter(
+            status=AiCreditPurchase.STATUS_COMPLETED,
+        ).select_related('created_by')[:10]
+        context['ai_usage_logs'] = AiTokenUsageLog.objects.all()[:15]
+
+        if self.request.GET.get('stripe') == 'cancel':
+            from django.contrib import messages
+
+            messages.info(self.request, 'Stripe payment cancelled — no credits were added.')
+        elif self.request.GET.get('stripe') == 'success':
+            from apps.settings_app.stripe_views import _can_manage_settings
+
+            session_id = (self.request.GET.get('session_id') or '').strip()
+            payment_intent_id = (self.request.GET.get('payment_intent') or '').strip()
+            if session_id and _can_manage_settings(self.request.user):
+                from apps.settings_app.stripe_ai_credits import verify_and_complete_checkout_session
+
+                try:
+                    purchase = verify_and_complete_checkout_session(session_id)
+                    if purchase:
+                        from django.contrib import messages
+
+                        messages.success(
+                            self.request,
+                            f'AI credits added: {purchase.tokens_granted:,} tokens '
+                            f'({purchase.amount} {purchase.currency}).',
+                        )
+                except Exception as exc:
+                    from django.contrib import messages
+
+                    messages.error(self.request, f'Could not verify payment: {exc}')
+            elif payment_intent_id and _can_manage_settings(self.request.user):
+                from apps.settings_app.stripe_ai_credits import verify_and_complete_payment_intent
+
+                try:
+                    purchase = verify_and_complete_payment_intent(payment_intent_id)
+                    if purchase:
+                        from django.contrib import messages
+
+                        messages.success(
+                            self.request,
+                            f'AI credits added: {purchase.tokens_granted:,} tokens '
+                            f'({purchase.amount} {purchase.currency}).',
+                        )
+                except Exception as exc:
+                    from django.contrib import messages
+
+                    messages.error(self.request, f'Could not verify payment: {exc}')
+
         return context
 
     def post(self, request, *args, **kwargs):

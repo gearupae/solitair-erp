@@ -85,20 +85,20 @@ def _heuristic(transactions: list) -> list:
 
 
 def _empty():
-    from apps.inventory.utils import get_openai_api_key
+    from apps.inventory.utils import get_openai_api_key, is_ai_available
     return {
         'table_rows': [],
         'summary': 'Not enough recent transaction data for anomaly detection.',
         'has_data': False,
         'from_cache': False,
-        'openai_configured': bool(get_openai_api_key()),
+        'openai_configured': is_ai_available(),
         'disclaimer': 'AI-generated estimate — not financial advice.',
         'transaction_count': 0,
     }
 
 
 def _assemble(transactions, result):
-    from apps.inventory.utils import get_openai_api_key
+    from apps.inventory.utils import get_openai_api_key, is_ai_available
 
     rows = []
     for a in result.get('anomalies') or []:
@@ -120,7 +120,7 @@ def _assemble(transactions, result):
         'summary': result.get('summary', ''),
         'has_data': bool(transactions),
         'from_cache': result.get('from_cache', False),
-        'openai_configured': bool(get_openai_api_key()),
+        'openai_configured': is_ai_available(),
         'disclaimer': 'AI-generated estimate — not financial advice.',
         'transaction_count': len(transactions),
     }

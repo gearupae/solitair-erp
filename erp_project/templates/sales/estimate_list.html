@@ -210,6 +210,12 @@
             <a href="{% url 'sales:estimate_list' %}{{ estimate_list_url_list }}" class="btn btn-sm {% if view_mode != 'kanban' %}btn-primary{% else %}btn-outline-primary{% endif %}"><i class="fas fa-list me-1"></i>List</a>
             <a href="{% url 'sales:estimate_list' %}{{ estimate_list_url_kanban }}" class="btn btn-sm {% if view_mode == 'kanban' %}btn-primary{% else %}btn-outline-primary{% endif %}"><i class="fas fa-columns me-1"></i>Kanban</a>
         </div>
+        {% if can_create and public_estimate_create_url %}
+        <input type="hidden" id="publicEstimateCreateUrl" value="{{ public_estimate_create_url }}">
+        <button type="button" class="btn btn-sm btn-outline-secondary" id="copyPublicEstimateCreateUrl" title="Copy public estimate link (valid 1 hour)">
+            <i class="fas fa-link me-1"></i>Copy public URL
+        </button>
+        {% endif %}
         {% if can_create %}
         <a href="{% url 'sales:estimate_create' %}" class="btn btn-primary btn-sm">
             <i class="fas fa-plus me-1"></i>Create Estimate
@@ -499,6 +505,9 @@
                             <a href="{% url 'sales:estimate_detail' estimate.pk %}" class="fw-medium text-decoration-none">
                                 {{ estimate.display_estimate_number }}
                             </a>
+                            {% if estimate.submitted_via_public_link %}
+                            <span class="badge bg-info bg-opacity-10 text-info ms-1" title="Submitted via public link">Public</span>
+                            {% endif %}
                         </td>
                         <td class="col-customer"><span class="text-truncate" title="{{ estimate.customer.display_name }}">{{ estimate.customer.display_name }}</span></td>
                         <td class="col-qw">{{ estimate.customer_qw_count|default:0 }}</td>
@@ -741,6 +750,22 @@
     if (rejectModalEl) {
         rejectModalEl.addEventListener('hidden.bs.modal', function () {
             pendingSelect = null;
+        });
+    }
+
+    var copyBtn = document.getElementById('copyPublicEstimateCreateUrl');
+    var urlInput = document.getElementById('publicEstimateCreateUrl');
+    if (copyBtn && urlInput) {
+        copyBtn.addEventListener('click', function () {
+            navigator.clipboard.writeText(urlInput.value).then(function () {
+                var original = copyBtn.innerHTML;
+                copyBtn.innerHTML = '<i class="fas fa-check me-1"></i>Copied!';
+                copyBtn.classList.replace('btn-outline-secondary', 'btn-success');
+                setTimeout(function () {
+                    copyBtn.innerHTML = original;
+                    copyBtn.classList.replace('btn-success', 'btn-outline-secondary');
+                }, 2000);
+            });
         });
     }
 })();

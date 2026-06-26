@@ -85,7 +85,7 @@ def notify_approver_estimate_sent(estimate, *, requested_by):
 
     ref = _estimate_ref(estimate)
     link = _estimate_link(estimate)
-    submitter = _user_display(requested_by)
+    submitter = _user_display(requested_by) if requested_by else 'Public estimate link'
     title = f'Estimate approval required — {ref}'
     message = (
         f'{submitter} sent estimate {ref} for your approval. '

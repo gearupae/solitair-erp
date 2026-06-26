@@ -65,7 +65,7 @@ def _growth_pct(values: list[float]) -> float:
 
 
 def _empty(historical, forecast_months):
-    from apps.inventory.utils import get_openai_api_key
+    from apps.inventory.utils import get_openai_api_key, is_ai_available
     return {
         'historical': historical,
         'forecast_rows': [],
@@ -77,13 +77,13 @@ def _empty(historical, forecast_months):
         'forecast_months': forecast_months,
         'has_data': False,
         'from_cache': False,
-        'openai_configured': bool(get_openai_api_key()),
+        'openai_configured': is_ai_available(),
         'disclaimer': 'AI-generated estimate — not financial advice.',
     }
 
 
 def _assemble(historical, result, forecast_months):
-    from apps.inventory.utils import get_openai_api_key
+    from apps.inventory.utils import get_openai_api_key, is_ai_available
 
     forecast = result.get('forecast') or []
     table_rows = []
@@ -120,6 +120,6 @@ def _assemble(historical, result, forecast_months):
         'forecast_months': forecast_months,
         'has_data': True,
         'from_cache': result.get('from_cache', False),
-        'openai_configured': bool(get_openai_api_key()),
+        'openai_configured': is_ai_available(),
         'disclaimer': 'AI-generated estimate — not financial advice.',
     }

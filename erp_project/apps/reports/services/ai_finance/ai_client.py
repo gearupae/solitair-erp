@@ -17,51 +17,33 @@ class OpenAINotConfigured(Exception):
     pass
 
 
+class AiQuotaExceeded(Exception):
+    pass
+
+
 def parse_openai_json(content: str) -> dict | list:
-    content = (content or '').strip()
-    if content.startswith('```'):
-        content = content.split('\n', 1)[-1].rsplit('```', 1)[0].strip()
-    return json.loads(content)
+    from apps.core.openai_gateway import parse_openai_json as _parse
+
+    return _parse(content)
 
 
 def call_openai_json(*, system: str, user_payload: dict | list, temperature: float = 0.2) -> dict | list:
-    api_key = get_openai_api_key()
-    if not api_key:
-        raise OpenAINotConfigured('Configure OpenAI API key — set OPENAI_API_KEY in .env')
+    from apps.core.openai_gateway import AiQuotaExceeded as GatewayQuotaExceeded
+    from apps.core.openai_gateway import OpenAINotConfigured as GatewayNotConfigured
+    from apps.core.openai_gateway import call_openai_json as gateway_call
 
-    import urllib.error
-    import urllib.request
-
-    body = json.dumps(
-        {
-            'model': OPENAI_MODEL,
-            'messages': [
-                {'role': 'system', 'content': system},
-                {'role': 'user', 'content': json.dumps(user_payload, default=str)},
-            ],
-            'temperature': temperature,
-            'response_format': {'type': 'json_object'},
-        }
-    ).encode('utf-8')
-
-    req = urllib.request.Request(
-        'https://api.openai.com/v1/chat/completions',
-        data=body,
-        headers={
-            'Authorization': f'Bearer {api_key}',
-            'Content-Type': 'application/json',
-        },
-        method='POST',
-    )
     try:
-        with urllib.request.urlopen(req, timeout=120) as resp:
-            payload = json.loads(resp.read().decode('utf-8'))
-    except urllib.error.HTTPError as exc:
-        err_body = exc.read().decode('utf-8', errors='replace')[:500]
-        raise RuntimeError(f'OpenAI API error ({exc.code}): {err_body}') from exc
-
-    content = payload['choices'][0]['message']['content']
-    return parse_openai_json(content)
+        return gateway_call(
+            system=system,
+            user_payload=user_payload,
+            temperature=temperature,
+            feature='ai_finance',
+            model=OPENAI_MODEL,
+        )
+    except GatewayNotConfigured as exc:
+        raise OpenAINotConfigured(str(exc)) from exc
+    except GatewayQuotaExceeded as exc:
+        raise AiQuotaExceeded(str(exc)) from exc
 
 
 def cache_key(prefix: str, payload: dict) -> str:

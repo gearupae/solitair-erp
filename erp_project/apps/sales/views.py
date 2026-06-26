@@ -466,6 +466,10 @@ class EstimateListView(PermissionRequiredMixin, ListView):
                 or PermissionChecker.has_permission(self.request.user, 'sales', 'create')
             )
         )
+        if context['can_create']:
+            from .estimate_public_create_link import public_create_link_context
+
+            context.update(public_create_link_context(self.request))
         context['can_edit'] = (
             not is_portal
             and (
@@ -602,6 +606,10 @@ class EstimateCreateView(CreatePermissionMixin, CreateView):
 
     def get_form(self, form_class=None):
         return _scope_estimate_form_fields(super().get_form(form_class), self.request.user)
+
+    def _finalize_new_estimate(self, estimate, *, via_csv=False):
+        """Hook for subclasses (e.g. public create) after items are saved."""
+        return None
     
     def get_context_data(self, **kwargs):
         from apps.finance.models import TaxCode
@@ -653,6 +661,8 @@ class EstimateCreateView(CreatePermissionMixin, CreateView):
                     self.object.save(update_fields=['quotation_creator_ip'])
                 apply_company_default_estimate_signatures(self.object, request.FILES)
                 bulk_create_estimate_items(self.object, rows, replace_existing=False)
+                self.object.calculate_totals()
+                self._finalize_new_estimate(self.object, via_csv=True)
                 from .estimate_audit import log_estimate_created
 
                 log_estimate_created(request.user, self.object, request=request)
@@ -690,6 +700,7 @@ class EstimateCreateView(CreatePermissionMixin, CreateView):
         items_formset.instance = self.object
         items_formset.save()
         self.object.calculate_totals()
+        self._finalize_new_estimate(self.object, via_csv=False)
         from .estimate_audit import log_estimate_created
 
         log_estimate_created(self.request.user, self.object, request=self.request)
@@ -709,6 +720,126 @@ class EstimateCreateView(CreatePermissionMixin, CreateView):
         return self.render_to_response(
             self.get_context_data(form=form, items_formset=items_formset)
         )
+
+
+class PublicEstimateCreateView(EstimateCreateView):
+    """Submit an estimate via hourly public link (no login)."""
+
+    def dispatch(self, request, *args, **kwargs):
+        from django.http import Http404
+        from .estimate_public_create_link import validate_public_create_token
+
+        if not validate_public_create_token(kwargs.get('token')):
+            raise Http404('This link is invalid or has expired.')
+        return CreateView.dispatch(self, request, *args, **kwargs)
+
+    def get_initial(self):
+        from apps.settings_app.models import EstimateTextTemplate
+
+        initial = CreateView.get_initial(self)
+        initial['date'] = date.today()
+        client_note = EstimateTextTemplate.get_default_body(EstimateTextTemplate.CLIENT_NOTE)
+        if client_note:
+            initial['client_note'] = client_note
+        terms = EstimateTextTemplate.get_default_body(EstimateTextTemplate.TERMS)
+        if terms:
+            initial['terms_and_conditions'] = terms
+        return initial
+
+    def get_form(self, form_class=None):
+        form = super(EstimateCreateView, self).get_form(form_class)
+        form.fields['customer'].queryset = Customer.objects.filter(is_active=True).order_by('name')
+        form.fields['prepared_by'].required = True
+        return form
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['is_public_create'] = True
+        context['base_template'] = 'sales/public_estimate_base.html'
+        context['title'] = 'Submit Estimate'
+        context.pop('estimate_items_sample_csv_url', None)
+        context.pop('inventory_items_export_csv_url', None)
+        return context
+
+    def _finalize_new_estimate(self, estimate, *, via_csv=False):
+        from apps.core.utils import get_client_ip
+
+        creator_ip = get_client_ip(self.request)
+        update_fields = ['status', 'submitted_via_public_link']
+        estimate.status = 'sent'
+        estimate.submitted_via_public_link = True
+        if creator_ip:
+            estimate.quotation_creator_ip = creator_ip
+            update_fields.append('quotation_creator_ip')
+        estimate.save(update_fields=update_fields)
+        from .estimate_approval_notifications import notify_approver_estimate_sent
+
+        notify_approver_estimate_sent(estimate, requested_by=None)
+
+    def form_valid(self, form, items_formset):
+        self.object = form.save()
+        from apps.core.utils import get_client_ip
+
+        creator_ip = get_client_ip(self.request)
+        if creator_ip:
+            self.object.quotation_creator_ip = creator_ip
+            self.object.save(update_fields=['quotation_creator_ip'])
+        apply_company_default_estimate_signatures(self.object, self.request.FILES)
+        items_formset.instance = self.object
+        items_formset.save()
+        self.object.calculate_totals()
+        self._finalize_new_estimate(self.object, via_csv=False)
+        from .estimate_audit import log_estimate_created
+
+        log_estimate_created(None, self.object, request=self.request)
+        return render(
+            self.request,
+            'sales/public_estimate_create_success.html',
+            {'estimate_number': self.object.estimate_number},
+        )
+
+    def post(self, request, *args, **kwargs):
+        self.object = None
+        csv_file = request.FILES.get('items_csv')
+        if csv_file and getattr(csv_file, 'size', 0) > 0:
+            from .estimate_csv import bulk_create_estimate_items, parse_estimate_items_csv
+
+            form = self.get_form()
+            if form.is_valid():
+                try:
+                    rows = parse_estimate_items_csv(csv_file)
+                except ValueError as e:
+                    messages.error(request, str(e))
+                    items_formset = EstimateItemFormSet(request.POST, request.FILES, prefix='items')
+                    return self.form_invalid(form, items_formset)
+                self.object = form.save()
+                from apps.core.utils import get_client_ip
+
+                creator_ip = get_client_ip(request)
+                if creator_ip:
+                    self.object.quotation_creator_ip = creator_ip
+                    self.object.save(update_fields=['quotation_creator_ip'])
+                apply_company_default_estimate_signatures(self.object, request.FILES)
+                bulk_create_estimate_items(self.object, rows, replace_existing=False)
+                self.object.calculate_totals()
+                self._finalize_new_estimate(self.object, via_csv=True)
+                from .estimate_audit import log_estimate_created
+
+                log_estimate_created(None, self.object, request=request)
+                return render(
+                    request,
+                    'sales/public_estimate_create_success.html',
+                    {'estimate_number': self.object.estimate_number},
+                )
+            items_formset = EstimateItemFormSet(request.POST, request.FILES, prefix='items')
+            return self.form_invalid(form, items_formset)
+
+        form = self.get_form()
+        items_formset = EstimateItemFormSet(request.POST, request.FILES, prefix='items')
+
+        if form.is_valid() and items_formset.is_valid():
+            return self.form_valid(form, items_formset)
+        return self.form_invalid(form, items_formset)
 
 
 class EstimateUpdateView(UpdatePermissionMixin, UpdateView):
@@ -1051,12 +1182,12 @@ class EstimateDetailView(PermissionRequiredMixin, DetailView):
 
         context['estimate_retention_form'] = EstimateProjectRetentionForm(estimate=self.object)
         context['retention_percent_label'] = retention_percent_label(self.object.retention_percent)
-        from apps.inventory.utils import get_openai_api_key
+        from apps.inventory.utils import get_openai_api_key, is_ai_available
         from apps.core.ai_knowledge import is_ai_analysis_auto_run
         from apps.core.models import AiModuleKnowledge
         from apps.core.compliance_service import auto_compliance_on_detail, run_estimate_compliance
 
-        context['openai_configured'] = bool(get_openai_api_key())
+        context['openai_configured'] = is_ai_available()
         context['ai_analysis_auto_run'] = is_ai_analysis_auto_run(AiModuleKnowledge.MODULE_ESTIMATE)
         context['estimate_ai_evaluate_url'] = reverse('sales:estimate_ai_evaluate', args=[self.object.pk])
         evaluation = run_estimate_compliance(self.object, full_run=False)

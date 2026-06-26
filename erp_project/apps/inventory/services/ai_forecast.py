@@ -11,7 +11,7 @@ from django.utils import timezone
 
 from apps.inventory.models import Category, Item, Stock, StockMovement, Warehouse
 from apps.inventory.models_reporting import InventoryForecast
-from apps.inventory.utils import get_openai_api_key
+from apps.inventory.utils import get_openai_api_key, is_ai_available
 from apps.inventory.services.supplier_lead_time import effective_lead_time_days
 from apps.inventory.services.inventory_abc import classify_abc_for_items, abc_badge
 from apps.inventory.services.carrying_cost import row_carrying_cost
@@ -76,14 +76,9 @@ def _can_refresh(item_id: int) -> bool:
 
 
 def fetch_forecast_from_openai(item: Item, monthly_data: list[dict]) -> dict:
-    api_key = get_openai_api_key()
-    if not api_key:
-        raise OpenAINotConfigured('Configure OpenAI API key — set OPENAI_API_KEY in .env')
-
-    import urllib.request
-
     from apps.core.ai_knowledge import get_ai_knowledge_prompt_block
     from apps.core.models import AiModuleKnowledge
+    from apps.core.openai_gateway import call_openai_raw, parse_openai_json
 
     knowledge = get_ai_knowledge_prompt_block(AiModuleKnowledge.MODULE_INVENTORY)
     prompt = (
@@ -95,36 +90,20 @@ def fetch_forecast_from_openai(item: Item, monthly_data: list[dict]) -> dict:
         '"forecast_90": <number>, "confidence": "low|medium|high", "reasoning": "<short>"}'
         f'{knowledge}'
     )
-    body = json.dumps(
-        {
-            'model': 'gpt-4o-mini',
-            'messages': [
-                {
-                    'role': 'system',
-                    'content': 'You are an inventory forecasting assistant. Reply with JSON only.',
-                },
-                {'role': 'user', 'content': prompt},
-            ],
-            'temperature': 0.2,
-        }
-    ).encode('utf-8')
-
-    req = urllib.request.Request(
-        'https://api.openai.com/v1/chat/completions',
-        data=body,
-        headers={
-            'Authorization': f'Bearer {api_key}',
-            'Content-Type': 'application/json',
-        },
-        method='POST',
-    )
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        payload = json.loads(resp.read().decode('utf-8'))
+    body = {
+        'model': 'gpt-4o-mini',
+        'messages': [
+            {
+                'role': 'system',
+                'content': 'You are an inventory forecasting assistant. Reply with JSON only.',
+            },
+            {'role': 'user', 'content': prompt},
+        ],
+        'temperature': 0.2,
+    }
+    payload = call_openai_raw(body, feature='inventory_forecast')
     content = payload['choices'][0]['message']['content']
-    content = content.strip()
-    if content.startswith('```'):
-        content = content.split('\n', 1)[-1].rsplit('```', 1)[0].strip()
-    return json.loads(content)
+    return parse_openai_json(content)
 
 
 def refresh_item_forecast(item: Item, *, force: bool = False) -> InventoryForecast:
@@ -335,7 +314,7 @@ def build_ai_forecast_report(
 ) -> dict:
     from apps.inventory.reports._common import active_product_items
 
-    key_configured = bool(get_openai_api_key())
+    key_configured = is_ai_available()
     today = date.today()
     items = active_product_items().select_related('category')
     if category_id:

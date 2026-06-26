@@ -101,6 +101,19 @@ class PurchaseRequest(BaseModel):
     
     # Rejection/return comments from approver
     rejection_reason = models.TextField(blank=True)
+
+    vendor_quote_analysis = models.JSONField(
+        null=True,
+        blank=True,
+        help_text='Persisted AI vendor quote comparison (survives cache restarts).',
+    )
+    vendor_quote_analysis_at = models.DateTimeField(null=True, blank=True)
+    vendor_quote_analysis_key = models.CharField(
+        max_length=64,
+        blank=True,
+        default='',
+        help_text='Hash of PR + attachments; invalidates stored analysis when quotes change.',
+    )
     
     class Meta:
         ordering = ['-created_at']

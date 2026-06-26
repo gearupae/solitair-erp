@@ -462,12 +462,12 @@ class EmployeeDetailView(PermissionRequiredMixin, DetailView):
         else:
             context['gratuity_national_message'] = ''
 
-        from apps.inventory.utils import get_openai_api_key
+        from apps.inventory.utils import get_openai_api_key, is_ai_available
         from apps.core.ai_knowledge import is_ai_analysis_auto_run
         from apps.core.models import AiModuleKnowledge
         from apps.core.compliance_service import auto_compliance_on_detail, run_employee_compliance
 
-        context['openai_configured'] = bool(get_openai_api_key())
+        context['openai_configured'] = is_ai_available()
         context['ai_analysis_auto_run'] = is_ai_analysis_auto_run(AiModuleKnowledge.MODULE_EMPLOYEE)
         context['employee_ai_evaluate_url'] = reverse('hr:employee_ai_evaluate', args=[self.object.pk])
         evaluation = run_employee_compliance(self.object, full_run=False)

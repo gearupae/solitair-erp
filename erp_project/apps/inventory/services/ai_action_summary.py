@@ -19,11 +19,11 @@ def _cache_key(report_snapshot: dict) -> str:
 
 
 def _fetch_bullets_from_openai(snapshot: dict) -> list[str]:
-    api_key = get_openai_api_key()
-    if not api_key:
-        return _heuristic_bullets(snapshot)
+    from apps.core.openai_gateway import call_openai_raw, parse_openai_json
+    from apps.inventory.utils import is_ai_available
 
-    import urllib.request
+    if not is_ai_available():
+        return _heuristic_bullets(snapshot)
 
     prompt = (
         'You are an inventory planner. Based on this forecast report snapshot, '
@@ -32,36 +32,21 @@ def _fetch_bullets_from_openai(snapshot: dict) -> list[str]:
         'Return ONLY valid JSON: {"bullets": ["• action one", "• action two", ...]}\n\n'
         f'Snapshot:\n{json.dumps(snapshot, default=str)[:12000]}'
     )
-    body = json.dumps(
-        {
-            'model': 'gpt-4o-mini',
-            'messages': [
-                {
-                    'role': 'system',
-                    'content': 'Inventory action assistant. Reply with JSON only, exactly 5 bullets.',
-                },
-                {'role': 'user', 'content': prompt},
-            ],
-            'temperature': 0.3,
-        }
-    ).encode('utf-8')
-
-    req = urllib.request.Request(
-        'https://api.openai.com/v1/chat/completions',
-        data=body,
-        headers={
-            'Authorization': f'Bearer {api_key}',
-            'Content-Type': 'application/json',
-        },
-        method='POST',
-    )
+    body = {
+        'model': 'gpt-4o-mini',
+        'messages': [
+            {
+                'role': 'system',
+                'content': 'Inventory action assistant. Reply with JSON only, exactly 5 bullets.',
+            },
+            {'role': 'user', 'content': prompt},
+        ],
+        'temperature': 0.3,
+    }
     try:
-        with urllib.request.urlopen(req, timeout=90) as resp:
-            payload = json.loads(resp.read().decode('utf-8'))
-        content = payload['choices'][0]['message']['content'].strip()
-        if content.startswith('```'):
-            content = content.split('\n', 1)[-1].rsplit('```', 1)[0].strip()
-        data = json.loads(content)
+        payload = call_openai_raw(body, feature='ai_action_summary')
+        content = payload['choices'][0]['message']['content']
+        data = parse_openai_json(content)
         bullets = data.get('bullets') or []
         cleaned = []
         for b in bullets[:5]:

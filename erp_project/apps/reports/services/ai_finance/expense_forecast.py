@@ -69,7 +69,7 @@ def _heuristic_by_category(cat_data, month_keys, forecast_months):
 
 
 def _empty(month_keys, cat_data, forecast_months):
-    from apps.inventory.utils import get_openai_api_key
+    from apps.inventory.utils import get_openai_api_key, is_ai_available
     return {
         'month_keys': month_keys,
         'categories': list(cat_data.keys()),
@@ -81,13 +81,13 @@ def _empty(month_keys, cat_data, forecast_months):
         'forecast_months': forecast_months,
         'has_data': False,
         'from_cache': False,
-        'openai_configured': bool(get_openai_api_key()),
+        'openai_configured': is_ai_available(),
         'disclaimer': 'AI-generated estimate — not financial advice.',
     }
 
 
 def _assemble(month_keys, cat_data, result, forecast_months):
-    from apps.inventory.utils import get_openai_api_key
+    from apps.inventory.utils import get_openai_api_key, is_ai_available
 
     forecast_by_cat = result.get('forecast_by_category') or []
     table_rows = []
@@ -127,6 +127,6 @@ def _assemble(month_keys, cat_data, result, forecast_months):
         'forecast_months': forecast_months,
         'has_data': True,
         'from_cache': result.get('from_cache', False),
-        'openai_configured': bool(get_openai_api_key()),
+        'openai_configured': is_ai_available(),
         'disclaimer': 'AI-generated estimate — not financial advice.',
     }

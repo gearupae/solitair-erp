@@ -15,7 +15,7 @@ from django.utils import timezone
 
 from apps.hr.models_extended import AttendanceRecord
 from apps.inventory.models import ConsumableRequest
-from apps.inventory.utils import get_openai_api_key
+from apps.inventory.utils import get_openai_api_key, is_ai_available
 from apps.projects.models import (
     Project,
     ProjectExpense,
@@ -121,12 +121,7 @@ def _urllib_ssl_context():
 
 
 def _call_openai(*, system: str, user_payload: dict | list, temperature: float = 0.25, call_label: str = 'openai') -> dict | list:
-    api_key = get_openai_api_key()
-    if not api_key:
-        raise OpenAINotConfigured('OpenAI API key not configured — set OPENAI_API_KEY in .env')
-
-    import urllib.error
-    import urllib.request
+    from apps.core.openai_gateway import call_openai_json
 
     payload_preview = json.dumps(user_payload, default=str)
     logger.info(
@@ -135,42 +130,20 @@ def _call_openai(*, system: str, user_payload: dict | list, temperature: float =
         OPENAI_MODEL,
         len(payload_preview),
     )
-
-    body = json.dumps(
-        {
-            'model': OPENAI_MODEL,
-            'messages': [
-                {'role': 'system', 'content': system},
-                {'role': 'user', 'content': payload_preview},
-            ],
-            'temperature': temperature,
-            'response_format': {'type': 'json_object'},
-        }
-    ).encode('utf-8')
-
-    req = urllib.request.Request(
-        'https://api.openai.com/v1/chat/completions',
-        data=body,
-        headers={
-            'Authorization': f'Bearer {api_key}',
-            'Content-Type': 'application/json',
-        },
-        method='POST',
-    )
     try:
-        with urllib.request.urlopen(req, timeout=120, context=_urllib_ssl_context()) as resp:
-            payload = json.loads(resp.read().decode('utf-8'))
-    except urllib.error.HTTPError as exc:
-        err_body = exc.read().decode('utf-8', errors='replace')[:500]
-        logger.exception('project_forecasting %s HTTP error %s: %s', call_label, exc.code, err_body)
-        raise RuntimeError(f'OpenAI API error ({exc.code}): {err_body}') from exc
-    except Exception:
+        result = call_openai_json(
+            system=system,
+            user_payload=user_payload,
+            temperature=temperature,
+            feature=f'project_forecasting:{call_label}',
+        )
+    except Exception as exc:
+        if exc.__class__.__name__ == 'OpenAINotConfigured':
+            raise OpenAINotConfigured('OpenAI API key not configured — set OPENAI_API_KEY in .env') from exc
         logger.exception('project_forecasting %s request failed', call_label)
         raise
-
-    content = payload['choices'][0]['message']['content']
-    logger.info('project_forecasting %s: success response_bytes=%d', call_label, len(content or ''))
-    return _parse_openai_json(content)
+    logger.info('project_forecasting %s: success', call_label)
+    return result
 
 
 def _is_fully_closed(project: Project) -> bool:
@@ -1313,6 +1286,6 @@ def build_forecast_report_context(
         'manager_choices': filter_choice_managers(all_for_choices),
         'customer_choices': filter_choice_customers(all_for_choices),
         'project_count': len(projects),
-        'openai_configured': bool(get_openai_api_key()),
+        'openai_configured': is_ai_available(),
         **analysis,
     }
