@@ -17,7 +17,7 @@ DEBUG = config('DEBUG', default=True, cast=bool)
 
 # Main menu modules to hide temporarily (permission module codes).
 # Override in .env, e.g. NAV_HIDDEN_MODULES=property or leave empty to show all.
-_nav_hidden_raw = config('NAV_HIDDEN_MODULES', default='')
+_nav_hidden_raw = config('NAV_HIDDEN_MODULES', default='property')
 NAV_HIDDEN_MODULES = frozenset(
     code.strip() for code in _nav_hidden_raw.split(',') if code.strip()
 )
