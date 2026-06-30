@@ -1,0 +1,264 @@
+{% extends 'minimal_public.html' %}
+{% block title %}Inspection checklist{% endblock %}
+{% block content %}
+<div class="card shadow-sm border-0">
+    <div class="card-body p-4">
+        <h1 class="h4 fw-bold mb-1">Inspection checklist</h1>
+        <p class="text-muted small mb-4">No login required. Choose an inspection to view its checklist, mark items, and upload photos or files.</p>
+
+        <form method="get" class="mb-4" id="publicInspectionForm">
+            <label for="id_inspection" class="form-label">Inspection <span class="text-danger">*</span></label>
+            <select name="inspection" id="id_inspection" class="form-select" required>
+                <option value="">— Select inspection —</option>
+                {% for insp in inspections %}
+                <option value="{{ insp.pk }}" {% if selected_inspection_id == insp.pk %}selected{% endif %}>{{ insp.inspection_number }} — {{ insp.name }} ({{ insp.get_link_type_display }}: {{ insp.target_label }})</option>
+                {% endfor %}
+            </select>
+        </form>
+
+        {% if inspection %}
+        {% csrf_token %}
+        <div class="border rounded p-3 mb-4 bg-light">
+            <div class="small text-muted text-uppercase fw-semibold mb-1">Selected inspection</div>
+            <div class="fw-bold fs-5">{{ inspection.name }}</div>
+            <div class="text-muted d-flex flex-wrap align-items-center gap-2 mt-1">
+                <span>{{ inspection.inspection_number }}</span>
+                <span>·</span>
+                {% include 'projects/partials/inspection_link_type_badge.html' with inspection=inspection %}
+                <span>·</span>
+                <span>{{ inspection.target_label }}</span>
+            </div>
+            <div class="text-muted small mt-1">{{ inspection.inspection_date|date:"d M Y" }}</div>
+        </div>
+
+        <h2 class="h6 fw-semibold mb-2">Checklist items</h2>
+        <p class="small text-muted mb-3">Tap the circle to mark an item complete. Completed items show in <span class="text-success fw-semibold">green</span> with strikethrough.</p>
+
+        <div class="checklist-panel mb-4" id="publicChecklistItems">
+            {% for item in checklist_items %}
+            {% include 'projects/partials/checklist_item_row.html' with item=item show_delete=False toggle_class='public-checklist-toggle' %}
+            {% empty %}
+            <div class="checklist-empty">No checklist items for this inspection yet.</div>
+            {% endfor %}
+        </div>
+
+        <h2 class="h6 fw-semibold mb-2">Upload photos or files</h2>
+        <form method="post" enctype="multipart/form-data" id="publicChecklistUploadForm" action="?inspection={{ inspection.pk }}">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="upload">
+            <input type="hidden" name="inspection" value="{{ inspection.pk }}">
+            <div class="mb-3">
+                <label for="id_checklist_item" class="form-label small">Link to item <span class="text-muted">(optional)</span></label>
+                <select name="checklist_item_id" id="id_checklist_item" class="form-select form-select-sm">
+                    <option value="">— General upload —</option>
+                    {% for item in checklist_items %}
+                    <option value="{{ item.pk }}">{{ item.item_date|date:"d/m/Y" }} — {{ item.text|truncatechars:50 }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="mb-3">
+                <label for="id_note" class="form-label small">Note <span class="text-muted">(optional)</span></label>
+                <textarea name="note" id="id_note" class="form-control form-control-sm" rows="2" maxlength="500"></textarea>
+            </div>
+
+            <input type="file" id="inputChecklistFiles" class="d-none" multiple accept="image/*,application/pdf,.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv,.zip">
+
+            <div class="d-grid gap-2 mb-3">
+                <button type="button" class="btn btn-primary btn-sm" id="btnChecklistCamera">
+                    <i class="fas fa-camera me-2"></i>Take photo
+                </button>
+                <button type="button" class="btn btn-outline-primary btn-sm" id="btnChecklistPickFiles">
+                    <i class="fas fa-paperclip me-2"></i>Choose files
+                </button>
+            </div>
+
+            <p class="small text-muted mb-2"><strong>Selected (<span id="checklistFileCount">0</span>)</strong></p>
+            <ul class="list-group list-group-flush border rounded small mb-3" id="checklistFileList" style="max-height: 180px; overflow-y: auto;">
+                <li class="list-group-item text-muted py-3 text-center" id="checklistFileListEmpty">No files yet.</li>
+            </ul>
+
+            <button type="submit" class="btn btn-success w-100" id="checklistUploadSubmit">
+                <i class="fas fa-cloud-upload-alt me-2"></i>Upload
+            </button>
+        </form>
+
+        {% if checklist_uploads %}
+        <h2 class="h6 fw-semibold mt-4 mb-2">Uploaded files</h2>
+        <div class="row g-2">
+            {% for u in checklist_uploads %}
+            <div class="col-6 col-md-4">
+                <div class="border rounded p-2 h-100 small">
+                    {% if u.is_probably_image %}
+                    <a href="{{ u.file.url }}" target="_blank" rel="noopener" class="d-block mb-1">
+                        <img src="{{ u.file.url }}" alt="" class="img-fluid rounded" style="max-height: 100px; width: 100%; object-fit: cover;">
+                    </a>
+                    {% else %}
+                    <div class="text-center py-2 bg-light rounded mb-1"><i class="fas fa-file"></i></div>
+                    {% endif %}
+                    <a href="{{ u.file.url }}" target="_blank" rel="noopener" class="text-break d-block">{{ u.original_filename|default:u.file.name }}</a>
+                    <div class="text-muted">{{ u.created_at|date:"d/m/Y H:i" }}</div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {% elif selected_inspection_id %}
+        <div class="alert alert-warning">Inspection not found or no longer active. Choose another from the list.</div>
+        {% else %}
+        <div class="alert alert-info mb-0">Select an inspection above to view and update its checklist.</div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+{% block extra_css %}
+<style>
+{% include 'projects/partials/checklist_styles.html' %}
+</style>
+{% endblock %}
+{% block extra_js %}
+<script>
+(function () {
+    var inspectionSelect = document.getElementById('id_inspection');
+    if (inspectionSelect) {
+        inspectionSelect.addEventListener('change', function () {
+            if (this.value) {
+                window.location.href = '?inspection=' + encodeURIComponent(this.value);
+            }
+        });
+    }
+
+    var inspectionId = '{{ inspection.pk|default:"" }}';
+    var csrfInput = document.querySelector('[name=csrfmiddlewaretoken]');
+    var csrfToken = csrfInput ? csrfInput.value : '';
+
+    document.querySelectorAll('.public-checklist-toggle').forEach(function (el) {
+        el.addEventListener('click', function () {
+            if (!inspectionId) return;
+            var itemId = el.getAttribute('data-item-id');
+            var row = el.closest('.checklist-item-row');
+            var body = new FormData();
+            body.append('action', 'toggle');
+            body.append('inspection', inspectionId);
+            body.append('item_id', itemId);
+            if (csrfToken) body.append('csrfmiddlewaretoken', csrfToken);
+
+            fetch(window.location.pathname + '?inspection=' + inspectionId, {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': csrfToken,
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                body: body,
+                credentials: 'same-origin',
+            })
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    if (!data.ok || !row) return;
+                    row.classList.toggle('is-done', data.is_flagged_red);
+                    el.setAttribute(
+                        'aria-label',
+                        data.is_flagged_red ? 'Mark incomplete' : 'Mark complete'
+                    );
+                });
+        });
+    });
+
+    var form = document.getElementById('publicChecklistUploadForm');
+    if (!form) return;
+
+    var dt = new DataTransfer();
+    var posting = false;
+    var submitBtn = document.getElementById('checklistUploadSubmit');
+
+    function renderList() {
+        var ul = document.getElementById('checklistFileList');
+        var empty = document.getElementById('checklistFileListEmpty');
+        if (!ul || !empty) return;
+        ul.querySelectorAll('li.file-item').forEach(function (n) { n.remove(); });
+        document.getElementById('checklistFileCount').textContent = dt.files.length;
+        if (dt.files.length === 0) {
+            empty.style.display = '';
+            return;
+        }
+        empty.style.display = 'none';
+        for (var i = 0; i < dt.files.length; i++) {
+            (function (file, index) {
+                var li = document.createElement('li');
+                li.className = 'list-group-item file-item d-flex justify-content-between align-items-center py-2';
+                li.innerHTML = '<span class="text-truncate me-2">' + file.name + '</span>' +
+                    '<button type="button" class="btn btn-sm btn-outline-danger btn-remove">Remove</button>';
+                li.querySelector('.btn-remove').addEventListener('click', function () {
+                    var next = new DataTransfer();
+                    for (var j = 0; j < dt.files.length; j++) {
+                        if (j !== index) next.items.add(dt.files[j]);
+                    }
+                    dt = next;
+                    renderList();
+                });
+                ul.appendChild(li);
+            })(dt.files[i], i);
+        }
+    }
+
+    function addFiles(fileList) {
+        for (var i = 0; i < fileList.length; i++) {
+            dt.items.add(fileList[i]);
+        }
+        renderList();
+    }
+
+    var captureInput = document.createElement('input');
+    captureInput.type = 'file';
+    captureInput.accept = 'image/*';
+    captureInput.capture = 'environment';
+    captureInput.style.display = 'none';
+    document.body.appendChild(captureInput);
+    captureInput.addEventListener('change', function () {
+        if (captureInput.files && captureInput.files.length) {
+            addFiles(captureInput.files);
+            captureInput.value = '';
+        }
+    });
+
+    var btnCam = document.getElementById('btnChecklistCamera');
+    var btnPick = document.getElementById('btnChecklistPickFiles');
+    var inputFiles = document.getElementById('inputChecklistFiles');
+    if (btnCam) btnCam.addEventListener('click', function () { captureInput.click(); });
+    if (btnPick && inputFiles) btnPick.addEventListener('click', function () { inputFiles.click(); });
+    if (inputFiles) {
+        inputFiles.addEventListener('change', function () {
+            if (this.files && this.files.length) addFiles(this.files);
+            this.value = '';
+        });
+    }
+
+    form.addEventListener('submit', function (e) {
+        e.preventDefault();
+        if (posting) return;
+        if (dt.files.length === 0) {
+            alert('Please add at least one file or photo.');
+            return;
+        }
+        var fd = new FormData(form);
+        for (var k = 0; k < dt.files.length; k++) {
+            fd.append('files', dt.files[k], dt.files[k].name);
+        }
+        posting = true;
+        submitBtn.disabled = true;
+        fetch(form.getAttribute('action') || window.location.pathname + window.location.search, {
+            method: 'POST',
+            body: fd,
+            credentials: 'same-origin',
+            redirect: 'follow',
+        }).then(function (resp) {
+            window.location.href = resp.url || (window.location.pathname + '?inspection=' + inspectionId);
+        }).catch(function () {
+            alert('Upload failed.');
+            posting = false;
+            submitBtn.disabled = false;
+        });
+    });
+})();
+</script>
+{% endblock %}

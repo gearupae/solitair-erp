@@ -1,0 +1,205 @@
+{% extends 'base.html' %}
+{% block extra_css %}
+<style>
+.kpi-score { font-weight: 700; font-size: 1.05rem; }
+.kpi-score--high { color: #198754; }
+.kpi-score--mid { color: #d97706; }
+.kpi-score--low { color: #dc3545; }
+.kpi-remark-pos { color: #198754; font-weight: 600; }
+.kpi-remark-neg { color: #dc3545; font-weight: 600; }
+.kpi-ai-cell { font-size: .82rem; color: #334155; min-width: 220px; max-width: 320px; line-height: 1.45; }
+.kpi-track-card { border: none; box-shadow: 0 1px 3px rgba(15,23,42,.08); }
+.kpi-overall-row--top { background: rgba(25, 135, 84, 0.06); }
+.kpi-th-hint { font-weight: 400; color: #94a3b8; font-size: .68rem; display: block; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+    <div>
+        <h4 class="mb-1 fw-bold">{{ title }}</h4>
+        <p class="text-muted mb-0">Staff performance by track · score % includes HR plus/negative points</p>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
+        <a href="{% url 'hr:dashboard' %}" class="btn btn-outline-secondary btn-sm"><i class="fas fa-arrow-left me-1"></i>HR Dashboard</a>
+        <button type="button" class="btn btn-outline-primary btn-sm" id="kpi-refresh-ai"><i class="fas fa-sync-alt me-1"></i>Refresh AI</button>
+    </div>
+</div>
+
+<div class="alert alert-light border small mb-4">
+    <strong>How scoring works:</strong>
+    Each section uses <strong>done ÷ total × 100</strong> (e.g. 40/50 tasks = 80%, 9/10 projects = 90%, 40/100 leads = 40%).
+    HR overview plus/negative points are added to the done count, then converted to %.
+    <strong>Overall %</strong> = (all done + HR points once) ÷ all assigned × 100.
+</div>
+
+<!-- Overall leaderboard -->
+<div class="card kpi-track-card mb-4">
+    <div class="card-header bg-white">
+        <h6 class="mb-0 fw-semibold"><i class="fas fa-trophy me-2 text-warning"></i>Overall top performers</h6>
+        <p class="small text-muted mb-0 mt-1">Ranked by overall score % only</p>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0 align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>#</th>
+                        <th>Staff</th>
+                        <th>Department</th>
+                        <th class="text-end">Project<span class="kpi-th-hint">score %</span></th>
+                        <th class="text-end">Sales<span class="kpi-th-hint">score %</span></th>
+                        <th class="text-end">Purchase<span class="kpi-th-hint">score %</span></th>
+                        <th class="text-end">HR +/-<span class="kpi-th-hint">overview</span></th>
+                        <th class="text-end">Overall %<span class="kpi-th-hint">incl. HR</span></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in overall %}
+                    <tr class="{% if forloop.counter <= 3 %}kpi-overall-row--top{% endif %}">
+                        <td class="text-muted">{{ forloop.counter }}</td>
+                        <td><a href="{% url 'hr:employee_detail' row.employee_id %}">{{ row.employee_name }}</a><br><span class="small text-muted">{{ row.employee_code }}</span></td>
+                        <td>{{ row.department_name }}</td>
+                        <td class="text-end">{% if row.track_pcts.project is not None %}{{ row.track_pcts.project }}%{% else %}—{% endif %}</td>
+                        <td class="text-end">{% if row.track_pcts.sales is not None %}{{ row.track_pcts.sales }}%{% else %}—{% endif %}</td>
+                        <td class="text-end">{% if row.track_pcts.purchase is not None %}{{ row.track_pcts.purchase }}%{% else %}—{% endif %}</td>
+                        <td class="text-end {% if row.remark_points > 0 %}kpi-remark-pos{% elif row.remark_points < 0 %}kpi-remark-neg{% endif %}">
+                            {% if row.remark_points > 0 %}+{% endif %}{{ row.remark_points }}
+                        </td>
+                        <td class="text-end">
+                            <span class="kpi-score fw-bold {% if row.overall_pct >= 75 %}kpi-score--high{% elif row.overall_pct >= 40 %}kpi-score--mid{% else %}kpi-score--low{% endif %}">
+                                {{ row.overall_pct }}%
+                            </span>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="8" class="text-center text-muted py-4">No KPI data yet. Run <code>python manage.py seed_kpi_demo</code>.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+{% for track_key, track in tracks.items %}
+<div class="card kpi-track-card mb-4" data-kpi-track="{{ track_key }}">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div>
+            <h6 class="mb-0 fw-semibold">
+                {% if track_key == 'project' %}<i class="fas fa-project-diagram me-2 text-primary"></i>
+                {% elif track_key == 'sales' %}<i class="fas fa-chart-line me-2 text-success"></i>
+                {% else %}<i class="fas fa-shopping-cart me-2 text-info"></i>{% endif %}
+                {{ track.label }}
+            </h6>
+            <p class="small text-muted mb-0 mt-1">
+                {% if track_key == 'project' %}Tasks &amp; managed projects · delayed items flagged in AI review
+                {% elif track_key == 'sales' %}Leads won · quotes approved · quotations won
+                {% else %}Converted PRs · received POs{% endif %}
+            </p>
+        </div>
+        <span class="badge bg-light text-dark">{{ track.rows|length }} staff</span>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0 align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>Staff</th>
+                        <th>Dept</th>
+                        <th>Breakdown</th>
+                        <th class="text-end">Done<span class="kpi-th-hint">completed</span></th>
+                        <th class="text-end">Total<span class="kpi-th-hint">assigned</span></th>
+                        <th class="text-end">Open<span class="kpi-th-hint">in progress</span></th>
+                        <th class="text-end">HR +/-<span class="kpi-th-hint">overview</span></th>
+                        <th class="text-end">Score %<span class="kpi-th-hint">(done+HR)÷total</span></th>
+                        <th>Gearup AI review</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in track.rows %}
+                    <tr data-employee-id="{{ row.employee_id }}">
+                        <td>
+                            <a href="{% url 'hr:employee_detail' row.employee_id %}">{{ row.employee_name }}</a>
+                            <div class="small text-muted">{{ row.employee_code }}</div>
+                        </td>
+                        <td class="small">{{ row.department_name }}</td>
+                        <td class="small text-muted">{{ row.breakdown }}</td>
+                        <td class="text-end">{{ row.completed }}</td>
+                        <td class="text-end">{{ row.total }}</td>
+                        <td class="text-end">{{ row.in_progress }}</td>
+                        <td class="text-end {% if row.remark_points > 0 %}kpi-remark-pos{% elif row.remark_points < 0 %}kpi-remark-neg{% endif %}">
+                            {% if row.remark_points > 0 %}+{% endif %}{{ row.remark_points }}
+                        </td>
+                        <td class="text-end">
+                            {% if row.total %}
+                            <span class="kpi-score {% if row.score_pct >= 75 %}kpi-score--high{% elif row.score_pct >= 40 %}kpi-score--mid{% else %}kpi-score--low{% endif %}" title="({{ row.completed }} + {{ row.remark_points }}) / {{ row.total }} × 100">
+                                {{ row.score_pct }}%
+                            </span>
+                            <div class="kpi-th-hint">{{ row.work_pct }}% work only</div>
+                            {% else %}
+                            <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                        <td class="kpi-ai-cell" id="kpi-ai-{{ track_key }}-{{ row.employee_id }}">
+                            <span class="text-muted kpi-ai-loading"><span class="spinner-border spinner-border-sm"></span></span>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="9" class="text-center text-muted py-4">No staff in this track. Run <code>python manage.py seed_kpi_demo</code>.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endfor %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    const KPI_AI_URL = '{{ kpi_ai_url|escapejs }}';
+    const openaiConfigured = {{ openai_configured|yesno:"true,false" }};
+
+    function loadTrackAi(track, force) {
+        document.querySelectorAll('[id^="kpi-ai-' + track + '-"]').forEach(function (el) {
+            if (!openaiConfigured) {
+                el.textContent = 'Configure OpenAI for AI reviews.';
+                return;
+            }
+        });
+        if (!openaiConfigured) return;
+
+        const url = KPI_AI_URL + '?track=' + encodeURIComponent(track) + (force ? '&force=1' : '');
+        fetch(url, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (!data.ok || !data.summaries) return;
+                Object.keys(data.summaries).forEach(function (eid) {
+                    var cell = document.getElementById('kpi-ai-' + track + '-' + eid);
+                    if (cell) cell.textContent = data.summaries[eid];
+                });
+                document.querySelectorAll('[id^="kpi-ai-' + track + '-"]').forEach(function (cell) {
+                    if (cell.querySelector('.kpi-ai-loading')) cell.textContent = '—';
+                });
+            })
+            .catch(function () {
+                document.querySelectorAll('[id^="kpi-ai-' + track + '-"]').forEach(function (el) {
+                    el.textContent = 'Review unavailable';
+                });
+            });
+    }
+
+    function loadAllAi(force) {
+        ['project', 'sales', 'purchase'].forEach(function (t) { loadTrackAi(t, force); });
+    }
+
+    document.getElementById('kpi-refresh-ai')?.addEventListener('click', function () { loadAllAi(true); });
+
+    if (window.requestIdleCallback) {
+        requestIdleCallback(function () { loadAllAi(false); });
+    } else {
+        setTimeout(function () { loadAllAi(false); }, 150);
+    }
+})();
+</script>
+{% endblock %}

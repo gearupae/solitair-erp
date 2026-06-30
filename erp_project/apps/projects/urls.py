@@ -1,5 +1,5 @@
 from django.urls import path
-from . import views
+from . import views, inspection_views
 
 app_name = 'projects'
 
@@ -9,6 +9,13 @@ urlpatterns = [
     path('checklist/', views.public_project_checklist, name='public_checklist'),
     path('checklist/p/<uuid:token>/', views.public_project_checklist_token_redirect, name='public_checklist_token'),
     path('checklist/<uuid:token>/', views.public_project_checklist_token_redirect, name='public_checklist_token_legacy'),
+    path('inspection/public/', inspection_views.public_inspection, name='public_inspection'),
+    path('inspection/public/p/<uuid:token>/', inspection_views.public_inspection_token_redirect, name='public_inspection_token'),
+    path('inspection/', inspection_views.InspectionListView.as_view(), name='inspection_list'),
+    path('inspection/<int:pk>/', inspection_views.InspectionDetailView.as_view(), name='inspection_detail'),
+    path('inspection/<int:pk>/checklist/toggle/', inspection_views.inspection_checklist_toggle, name='inspection_checklist_toggle'),
+    path('inspection/<int:pk>/checklist/add/', inspection_views.inspection_checklist_add, name='inspection_checklist_add'),
+    path('inspection/<int:pk>/checklist/delete/', inspection_views.inspection_checklist_delete, name='inspection_checklist_delete'),
     # Projects
     path('', views.ProjectListView.as_view(), name='project_list'),
     path('create/', views.ProjectCreateView.as_view(), name='project_create'),

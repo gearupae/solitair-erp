@@ -1,0 +1,205 @@
+{% extends 'base.html' %}
+
+{% block extra_css %}
+<style>
+.ops-form .select2-container--bootstrap-5 .select2-selection--multiple {
+    min-height: 38px;
+    border-color: #dee2e6;
+}
+.ops-form .select2-container--bootstrap-5.select2-container--focus .select2-selection {
+    border-color: #86b7fe;
+    box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.15);
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h4 class="mb-0 fw-bold">{{ title }}</h4>
+    <a href="{% url 'operations:schedule_list' %}" class="btn btn-sm btn-outline-secondary">Back</a>
+</div>
+
+<div class="card ops-form">
+    <div class="card-body p-4">
+        <form method="post" novalidate id="dutyScheduleForm">
+            {% csrf_token %}
+            {% if form.non_field_errors %}
+            <div class="alert alert-danger py-2">{{ form.non_field_errors }}</div>
+            {% endif %}
+
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label">Date</label>
+                    {{ form.duty_date }}
+                    {% if form.duty_date.errors %}<div class="text-danger small mt-1">{{ form.duty_date.errors }}</div>{% endif %}
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Start time</label>
+                    {{ form.start_time }}
+                    {% if form.start_time.errors %}<div class="text-danger small mt-1">{{ form.start_time.errors }}</div>{% endif %}
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">End time <span class="text-muted fw-normal">(optional)</span></label>
+                    {{ form.end_time }}
+                    {% if form.end_time.errors %}<div class="text-danger small mt-1">{{ form.end_time.errors }}</div>{% endif %}
+                </div>
+
+                {% if is_create %}
+                <div class="col-12">
+                    <label class="form-label">Staff</label>
+                    {{ form.employees }}
+                    <div id="availabilityWarnings" class="small text-muted mt-1"></div>
+                    {% if form.employees.errors %}<div class="text-danger small mt-1">{{ form.employees.errors }}</div>{% endif %}
+                </div>
+                {% else %}
+                <div class="col-md-6">
+                    <label class="form-label">Staff</label>
+                    {{ form.employee }}
+                    {% if form.employee.errors %}<div class="text-danger small mt-1">{{ form.employee.errors }}</div>{% endif %}
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Status</label>
+                    {{ form.status }}
+                </div>
+                {% endif %}
+
+                <div class="col-12">
+                    <label class="form-label d-block mb-2">Assign to</label>
+                    <div class="d-flex gap-3">
+                        {% for radio in form.link_type %}
+                        <div class="form-check form-check-inline mb-0">
+                            {{ radio.tag }}
+                            <label class="form-check-label" for="{{ radio.id_for_label }}">{{ radio.choice_label }}</label>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <div class="col-12 ops-link-field" data-link-type="project">
+                    <label class="form-label">Project</label>
+                    {{ form.project }}
+                    {% if form.project.errors %}<div class="text-danger small mt-1">{{ form.project.errors }}</div>{% endif %}
+                </div>
+                <div class="col-12 ops-link-field" data-link-type="amc">
+                    <label class="form-label">AMC</label>
+                    {{ form.amc_contract }}
+                    {% if form.amc_contract.errors %}<div class="text-danger small mt-1">{{ form.amc_contract.errors }}</div>{% endif %}
+                </div>
+
+                <div class="col-12">
+                    <label class="form-label">Location <span class="text-muted fw-normal">(optional)</span></label>
+                    {{ form.location }}
+                    {% if form.location.errors %}<div class="text-danger small mt-1">{{ form.location.errors }}</div>{% endif %}
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Contact person <span class="text-muted fw-normal">(optional)</span></label>
+                    {{ form.contact_person_name }}
+                    {% if form.contact_person_name.errors %}<div class="text-danger small mt-1">{{ form.contact_person_name.errors }}</div>{% endif %}
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Contact phone <span class="text-muted fw-normal">(optional)</span></label>
+                    {{ form.contact_person_phone }}
+                    {% if form.contact_person_phone.errors %}<div class="text-danger small mt-1">{{ form.contact_person_phone.errors }}</div>{% endif %}
+                </div>
+
+                <div class="col-12">
+                    <label class="form-label">Notes <span class="text-muted fw-normal">(optional)</span></label>
+                    {{ form.notes }}
+                </div>
+            </div>
+
+            <div class="mt-4 pt-3 border-top">
+                <button type="submit" class="btn btn-primary btn-sm px-4">{% if is_create %}Assign{% else %}Save{% endif %}</button>
+                <a href="{% url 'operations:schedule_list' %}" class="btn btn-link btn-sm text-secondary">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+$(function () {
+    function toggleLinkFields() {
+        var selected = document.querySelector('input[name="link_type"]:checked');
+        var val = selected ? selected.value : 'project';
+        document.querySelectorAll('.ops-link-field').forEach(function (el) {
+            el.style.display = el.getAttribute('data-link-type') === val ? '' : 'none';
+        });
+    }
+    document.querySelectorAll('input[name="link_type"]').forEach(function (r) {
+        r.addEventListener('change', toggleLinkFields);
+    });
+    toggleLinkFields();
+
+    var dateInput = document.querySelector('input[name="duty_date"]');
+    var employeesSelect = document.querySelector('select[name="employees"]');
+    var warningsEl = document.getElementById('availabilityWarnings');
+    var excludePk = {% if not is_create and object %}{{ object.pk }}{% else %}null{% endif %};
+    var unavailableMap = {};
+
+    function initStaffSelect() {
+        if (!employeesSelect || !$.fn.select2) return;
+        var $el = $(employeesSelect);
+        if ($el.data('select2')) $el.select2('destroy');
+        $el.select2({
+            theme: 'bootstrap-5',
+            width: '100%',
+            placeholder: 'Choose staff…',
+            closeOnSelect: false,
+            allowClear: true,
+            minimumResultsForSearch: 0,
+            templateResult: function (data) {
+                if (!data.id) return data.text;
+                if (unavailableMap[String(data.id)]) {
+                    return $('<span class="text-muted">' + data.text + ' (busy)</span>');
+                }
+                return data.text;
+            },
+        });
+    }
+
+    function markUnavailable(unavailable) {
+        unavailableMap = {};
+        unavailable.forEach(function (row) { unavailableMap[String(row.employee_id)] = row; });
+        if (!employeesSelect) return;
+
+        Array.from(employeesSelect.options).forEach(function (opt) {
+            if (!opt.value) return;
+            var conflict = unavailableMap[opt.value];
+            opt.disabled = !!conflict;
+            if (conflict && opt.selected) opt.selected = false;
+        });
+
+        if (warningsEl) {
+            warningsEl.textContent = unavailable.length
+                ? unavailable.length + ' staff already scheduled on this date.'
+                : '';
+        }
+
+        var kept = Array.from(employeesSelect.selectedOptions).map(function (o) { return o.value; });
+        initStaffSelect();
+        $(employeesSelect).val(kept).trigger('change');
+    }
+
+    function checkAvailability() {
+        if (!dateInput || !dateInput.value) {
+            markUnavailable([]);
+            return;
+        }
+        var url = '{% url "operations:availability_check" %}?duty_date=' + encodeURIComponent(dateInput.value);
+        if (excludePk) url += '&exclude_pk=' + excludePk;
+        fetch(url, { credentials: 'same-origin' })
+            .then(function (r) { return r.json(); })
+            .then(function (data) { markUnavailable(data.unavailable || []); })
+            .catch(function () {});
+    }
+
+    initStaffSelect();
+    if (dateInput) {
+        dateInput.addEventListener('change', checkAvailability);
+        checkAvailability();
+    }
+});
+</script>
+{% endblock %}

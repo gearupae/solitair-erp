@@ -1,5 +1,7 @@
 from django import template
 
+from apps.crm.utils import kanban_stage_inline_class
+
 register = template.Library()
 
 
@@ -10,3 +12,9 @@ def file_basename(file_field):
         return ''
     name = getattr(file_field, 'name', None) or str(file_field)
     return name.rsplit('/', 1)[-1] if name else ''
+
+
+@register.filter
+def pipeline_stage_class(stage):
+    """Colored CSS class for a CRM pipeline stage (or unassigned when empty)."""
+    return kanban_stage_inline_class(stage)

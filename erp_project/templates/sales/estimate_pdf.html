@@ -909,7 +909,9 @@
                     {% if estimate.show_brand_name_on_pdf %}<th style="width:88px;">Brand</th>{% endif %}
                     <th class="text-center" style="width:48px;">Qty</th>
                     <th class="text-right" style="width:72px;">Rate</th>
-                    <th class="text-right" style="width:72px;">Line</th>
+                    {% if estimate.show_installation_cost_on_pdf %}<th class="text-right" style="width:72px;">Installation</th>{% endif %}
+                    <th class="text-right" style="width:72px;">Net</th>
+                    <th class="text-right" style="width:72px;">Total</th>
                 </tr>
             </thead>
             <tbody>
@@ -928,6 +930,8 @@
                     {% if estimate.show_brand_name_on_pdf %}<td></td>{% endif %}
                     <td class="text-center">1.00</td>
                     <td class="text-right">{{ proforma_invoice.line_subtotal|floatformat:2 }}</td>
+                    {% if estimate.show_installation_cost_on_pdf %}<td></td>{% endif %}
+                    <td class="text-right">{{ proforma_invoice.line_subtotal|floatformat:2 }}</td>
                     <td class="text-right">{{ proforma_invoice.total_amount|floatformat:2 }}</td>
                 </tr>
                 {% else %}
@@ -938,37 +942,47 @@
                     <td class="item-description"><strong>{{ group.name }}</strong></td>
                     {% if estimate.show_brand_name_on_pdf %}<td></td>{% endif %}
                     <td class="text-center">1.00</td>
+                    <td class="text-right"></td>
+                    {% if estimate.show_installation_cost_on_pdf %}<td></td>{% endif %}
                     <td class="text-right">{{ group.line_subtotal|floatformat:2 }}</td>
                     <td class="text-right">{{ group.line_total|floatformat:2 }}</td>
                 </tr>
                 {% else %}
                 {% if group.name %}
                 <tr class="group-row">
-                    <td colspan="{% if estimate.show_brand_name_on_pdf %}6{% else %}5{% endif %}">{{ group.name }}</td>
+                    <td colspan="{{ pdf_pricing_cols }}">{{ group.name }}</td>
                 </tr>
                 {% endif %}
                 {% for row in group.items %}
                 <tr>
                     <td class="item-number">{{ row.index }}</td>
-                    <td class="item-description">{{ row.item.description }}{% if row.item.inventory_item %} <span style="color:#737373;">({{ row.item.inventory_item.item_code }})</span>{% endif %}</td>
+                    <td class="item-description">{{ row.item.description }}{% if row.item.inventory_item %} <span style="color:#737373;">({{ row.item.inventory_item.item_code }})</span>{% endif %}
+                        {% if estimate.show_rates_on_pdf %}
+                        <div style="margin-top:3px;font-size:9px;color:#737373;font-weight:normal;">{{ row.item.line_calc_summary }}</div>
+                        {% endif %}
+                    </td>
                     {% if estimate.show_brand_name_on_pdf %}
-                    <td class="item-brand">{% if row.item.inventory_item and row.item.inventory_item.brand %}{{ row.item.inventory_item.brand }}{% endif %}</td>
+                    <td class="item-brand">{{ row.item.display_brand }}</td>
                     {% endif %}
                     <td class="text-center">{{ row.item.quantity|floatformat:2 }}</td>
-                    <td class="text-right">{{ row.item.rate|floatformat:2 }}</td>
-                    <td class="text-right">{{ row.item.total|add:row.item.vat_amount|floatformat:2 }}</td>
+                    <td class="text-right">{{ row.item.effective_rate|floatformat:2 }}</td>
+                    {% if estimate.show_installation_cost_on_pdf %}
+                    <td class="text-right">{% if row.item.installation_cost %}{{ row.item.installation_cost|floatformat:2 }}{% endif %}</td>
+                    {% endif %}
+                    <td class="text-right">{{ row.item.line_net_excl_vat|floatformat:2 }}</td>
+                    <td class="text-right">{{ row.item.line_total_incl_vat|floatformat:2 }}</td>
                 </tr>
                 {% endfor %}
                 {% if group.name and estimate.show_group_totals_on_pdf %}
                 <tr class="group-total-row">
-                    <td colspan="{% if estimate.show_brand_name_on_pdf %}5{% else %}4{% endif %}" class="text-right">Subtotal:</td>
+                    <td colspan="{{ pdf_pricing_subtotal_label_cols }}" class="text-right">Subtotal:</td>
                     <td class="text-right">AED {{ group.line_total|floatformat:2 }}</td>
                 </tr>
                 {% endif %}
                 {% endif %}
                 {% empty %}
                 <tr>
-                    <td colspan="{% if estimate.show_brand_name_on_pdf %}6{% else %}5{% endif %}" style="text-align:center;padding:20px;color:#737373;">No items</td>
+                    <td colspan="{{ pdf_pricing_cols }}" style="text-align:center;padding:20px;color:#737373;">No items</td>
                 </tr>
                 {% endfor %}
                 {% endif %}
@@ -982,6 +996,7 @@
                     <th>Description</th>
                     {% if estimate.show_brand_name_on_pdf %}<th style="width:88px;">Brand</th>{% endif %}
                     <th class="text-center" style="width:56px;">Qty</th>
+                    {% if estimate.show_installation_cost_on_pdf %}<th class="text-right" style="width:72px;">Installation</th>{% endif %}
                 </tr>
             </thead>
             <tbody>
@@ -996,6 +1011,7 @@
                     </td>
                     {% if estimate.show_brand_name_on_pdf %}<td></td>{% endif %}
                     <td class="text-center">1.00</td>
+                    {% if estimate.show_installation_cost_on_pdf %}<td></td>{% endif %}
                 </tr>
                 {% else %}
                 {% for group in pdf_item_groups %}
@@ -1005,32 +1021,40 @@
                     <td class="item-description"><strong>{{ group.name }}</strong> <span style="color:#525252;">— AED {{ group.line_total|floatformat:2 }}</span></td>
                     {% if estimate.show_brand_name_on_pdf %}<td></td>{% endif %}
                     <td class="text-center">1.00</td>
+                    {% if estimate.show_installation_cost_on_pdf %}<td></td>{% endif %}
                 </tr>
                 {% else %}
                 {% if group.name %}
                 <tr class="group-row">
-                    <td colspan="{% if estimate.show_brand_name_on_pdf %}4{% else %}3{% endif %}">{{ group.name }}</td>
+                    <td colspan="{{ pdf_compact_cols }}">{{ group.name }}</td>
                 </tr>
                 {% endif %}
                 {% for row in group.items %}
                 <tr>
                     <td class="item-number">{{ row.index }}</td>
-                    <td class="item-description">{{ row.item.description }}{% if row.item.inventory_item %} <span style="color:#737373;">({{ row.item.inventory_item.item_code }})</span>{% endif %}</td>
+                    <td class="item-description">{{ row.item.description }}{% if row.item.inventory_item %} <span style="color:#737373;">({{ row.item.inventory_item.item_code }})</span>{% endif %}
+                        {% if estimate.show_rates_on_pdf %}
+                        <div style="margin-top:3px;font-size:9px;color:#737373;font-weight:normal;">{{ row.item.line_calc_summary }}</div>
+                        {% endif %}
+                    </td>
                     {% if estimate.show_brand_name_on_pdf %}
-                    <td class="item-brand">{% if row.item.inventory_item and row.item.inventory_item.brand %}{{ row.item.inventory_item.brand }}{% endif %}</td>
+                    <td class="item-brand">{{ row.item.display_brand }}</td>
                     {% endif %}
                     <td class="text-center">{{ row.item.quantity|floatformat:2 }}</td>
+                    {% if estimate.show_installation_cost_on_pdf %}
+                    <td class="text-right">{% if row.item.installation_cost %}{{ row.item.installation_cost|floatformat:2 }}{% endif %}</td>
+                    {% endif %}
                 </tr>
                 {% endfor %}
                 {% if group.name and estimate.show_group_totals_on_pdf %}
                 <tr class="group-total-row">
-                    <td colspan="{% if estimate.show_brand_name_on_pdf %}4{% else %}3{% endif %}" class="text-right">Subtotal: AED {{ group.line_total|floatformat:2 }}</td>
+                    <td colspan="{{ pdf_compact_cols }}" class="text-right">Subtotal: AED {{ group.line_total|floatformat:2 }}</td>
                 </tr>
                 {% endif %}
                 {% endif %}
                 {% empty %}
                 <tr>
-                    <td colspan="{% if estimate.show_brand_name_on_pdf %}4{% else %}3{% endif %}" style="text-align:center;padding:20px;color:#737373;">No items</td>
+                    <td colspan="{{ pdf_compact_cols }}" style="text-align:center;padding:20px;color:#737373;">No items</td>
                 </tr>
                 {% endfor %}
                 {% endif %}
@@ -1109,7 +1133,7 @@
 
         {% if estimate.client_note %}
         <div class="notes-section">
-            <div class="notes-title">Client note</div>
+            <div class="notes-title">Payment terms</div>
             <div class="notes-content">{{ estimate.client_note|linebreaks }}</div>
         </div>
         {% endif %}

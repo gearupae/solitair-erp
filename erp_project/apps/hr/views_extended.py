@@ -384,6 +384,44 @@ class ComplianceDashboardView(PermissionRequiredMixin, TemplateView):
         return ctx
 
 
+class HRKPIDashboardView(PermissionRequiredMixin, TemplateView):
+    template_name = 'hr/kpi_dashboard.html'
+    module_name = 'hr'
+    permission_type = 'view'
+
+    def get_context_data(self, **kwargs):
+        from apps.hr.services.kpi_scoring import build_kpi_dashboard
+        from apps.inventory.utils import is_ai_available
+
+        ctx = super().get_context_data(**kwargs)
+        ctx['title'] = 'HR KPI Dashboard'
+        data = build_kpi_dashboard()
+        ctx['tracks'] = data['tracks']
+        ctx['overall'] = data['overall']
+        ctx['openai_configured'] = is_ai_available()
+        ctx['kpi_ai_url'] = reverse('hr:kpi_api_ai')
+        return ctx
+
+
+@login_required
+def kpi_api_ai(request):
+    """AJAX: AI one-line summaries for a KPI track."""
+    if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'hr', 'view')):
+        return JsonResponse({'ok': False, 'error': 'Permission denied.'}, status=403)
+
+    track = (request.GET.get('track') or '').strip()
+    if track not in ('project', 'sales', 'purchase'):
+        return JsonResponse({'ok': False, 'error': 'Invalid track.'}, status=400)
+
+    from apps.hr.services.kpi_ai import generate_track_summaries
+    from apps.hr.services.kpi_scoring import build_track_rows
+
+    force = (request.GET.get('force') or '').lower() in ('1', 'true', 'yes')
+    rows = build_track_rows(track)
+    result = generate_track_summaries(track, rows, force=force)
+    return JsonResponse({'ok': True, **result})
+
+
 def _optional_positive_int(val, default: int, *, min_val: int | None = None, max_val: int | None = None) -> int:
     """Parse GET param; empty string or missing uses default (GET may send month=&year=2024)."""
     if val is None:

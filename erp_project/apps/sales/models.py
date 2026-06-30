@@ -103,6 +103,20 @@ class Estimate(BaseModel):
         related_name='assigned_estimates',
     )
     prepared_by = models.CharField(max_length=200, blank=True, help_text='Name shown on estimate document')
+    estimation_reference_number = models.CharField(
+        max_length=100,
+        blank=True,
+        default='',
+        verbose_name='Estimation reference number',
+    )
+    sales_engineer = models.ForeignKey(
+        'hr.Employee',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='sales_engineer_estimates',
+        verbose_name='Sales engineer',
+    )
     project = models.ForeignKey(
         'projects.Project',
         on_delete=models.SET_NULL,
@@ -204,6 +218,10 @@ class Estimate(BaseModel):
     show_brand_name_on_pdf = models.BooleanField(
         default=False,
         help_text='If on, PDF shows the inventory item brand name on each line.',
+    )
+    show_installation_cost_on_pdf = models.BooleanField(
+        default=False,
+        help_text='If on, PDF shows per-unit installation cost on each line.',
     )
     public_share_token = models.UUIDField(
         unique=True,
@@ -635,12 +653,25 @@ class EstimateItem(models.Model):
         blank=True,
         related_name='estimate_lines',
     )
+    brand = models.CharField(max_length=120, blank=True, default='')
     description = models.CharField(max_length=500)
     quantity = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('1.00'))
     unit_price = models.DecimalField(
         max_digits=15,
         decimal_places=2,
-        help_text='Base price per unit (before profit).',
+        help_text='Unit cost per unit (before profit).',
+    )
+    installation_cost = models.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        help_text='Unit installation cost per unit (not included in line net; consolidated in expenses).',
+    )
+    selling_cost = models.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        help_text='Unit selling price entered by user; profit is derived from unit cost.',
     )
     PROFIT_TYPE_CHOICES = [
         ('none', 'None'),
@@ -652,11 +683,11 @@ class EstimateItem(models.Model):
         max_digits=15,
         decimal_places=2,
         default=Decimal('0.00'),
-        help_text='Per unit: % markup on base, or AED added to base (not total for the whole line).',
+        help_text='Auto-calculated from selling cost vs unit cost (% or AED/u).',
     )
     rate = models.DecimalField(
         max_digits=15, decimal_places=2, default=Decimal('0.00'),
-        help_text='Selling price per unit after profit: Base + profit (AED) or Base × (1 + profit%).',
+        help_text='Legacy mirror of selling cost (per unit).',
     )
     
     # Tax Code - source of truth for VAT (SAP/Oracle Standard)
@@ -684,44 +715,135 @@ class EstimateItem(models.Model):
         return f"{self.description} - {self.quantity}"
 
     @property
+    def display_brand(self):
+        """Brand shown on estimate PDF/detail: line override, else linked inventory item."""
+        if self.brand:
+            return self.brand
+        if self.inventory_item_id and self.inventory_item.brand:
+            return self.inventory_item.brand
+        return ''
+
+    @property
     def effective_quantity(self):
         mult = self.group_qty_multiplier if self.group_qty_multiplier else Decimal('1')
         return (self.quantity * mult).quantize(Decimal('0.01'))
 
-    def compute_rate(self):
-        """
-        Unit selling price after profit (per unit).
-        - none: rate = base
-        - percent: rate = base × (1 + profit% / 100)  e.g. base 10 + 100% → 20
-        - amount: rate = base + profit (AED per unit)  e.g. base 10 + 100 AED → 110
-        """
-        base = self.unit_price or Decimal('0')
-        pv = self.profit_value or Decimal('0')
+    @property
+    def net_cost(self) -> Decimal:
+        """Qty × unit cost."""
+        return self.base_line_subtotal
+
+    @property
+    def net_installation_cost(self) -> Decimal:
+        """Qty × unit installation cost (expense bucket, not in line net)."""
+        return self.installation_line_subtotal
+
+    @property
+    def line_pre_profit_subtotal(self) -> Decimal:
+        """Unit cost subtotal only (installation excluded from line pricing)."""
+        return self.base_line_subtotal
+
+    @property
+    def base_line_subtotal(self) -> Decimal:
+        qty = self.quantity or Decimal('0')
+        return (qty * (self.unit_price or Decimal('0'))).quantize(Decimal('0.01'))
+
+    @property
+    def installation_line_subtotal(self) -> Decimal:
+        qty = self.quantity or Decimal('0')
+        return (qty * (self.installation_cost or Decimal('0'))).quantize(Decimal('0.01'))
+
+    @property
+    def effective_selling_unit(self) -> Decimal:
+        """Per-unit selling price used for line net."""
+        if self.selling_cost and self.selling_cost > 0:
+            return self.selling_cost
+        return self.unit_price or Decimal('0.00')
+
+    def apply_profit_from_selling_cost(self):
+        """Derive profit_value from unit cost and selling cost."""
+        unit = self.unit_price or Decimal('0')
+        selling = self.effective_selling_unit
+        if selling <= 0 and unit > 0:
+            selling = unit
+            self.selling_cost = unit
+        diff = (selling - unit).quantize(Decimal('0.01'))
         if self.profit_type == 'percent':
-            return (base * (Decimal('1') + pv / Decimal('100'))).quantize(Decimal('0.01'))
-        if self.profit_type == 'amount':
-            return (base + pv).quantize(Decimal('0.01'))
-        return base.quantize(Decimal('0.01'))
+            if unit > 0:
+                self.profit_value = (diff / unit * Decimal('100')).quantize(Decimal('0.01'))
+            else:
+                self.profit_value = Decimal('0.00')
+        elif self.profit_type == 'amount':
+            self.profit_value = diff
+        else:
+            self.profit_value = Decimal('0.00')
+            if self.profit_type == 'none' and unit > 0:
+                self.selling_cost = unit
+
+    @property
+    def line_profit_amount(self) -> Decimal:
+        qty = self.quantity or Decimal('0')
+        unit = self.unit_price or Decimal('0')
+        selling = self.effective_selling_unit
+        return (qty * (selling - unit)).quantize(Decimal('0.01'))
+
+    @property
+    def line_net_excl_vat(self) -> Decimal:
+        """Net line amount before VAT: qty × selling cost (installation excluded)."""
+        qty = self.quantity or Decimal('0')
+        return (qty * self.effective_selling_unit).quantize(Decimal('0.01'))
+
+    def compute_rate(self):
+        """Per-unit selling price (same as selling cost)."""
+        return self.effective_selling_unit
+
+    @property
+    def effective_rate(self):
+        """Always-computed unit rate for display (PDF/detail); matches compute_rate()."""
+        return self.compute_rate()
+
+    def _apply_vat_to_line_gross(self, gross: Decimal):
+        """Split line gross into (total excl. VAT, vat_amount)."""
+        if self.is_vat_inclusive and self.vat_rate > 0:
+            divisor = Decimal('1') + (self.vat_rate / Decimal('100'))
+            total = (gross / divisor).quantize(Decimal('0.01'))
+            vat_amount = (gross - total).quantize(Decimal('0.01'))
+            return total, vat_amount
+        total = gross
+        vat_amount = (total * (self.vat_rate / Decimal('100'))).quantize(Decimal('0.01'))
+        return total, vat_amount
+
+    @property
+    def line_total_incl_vat(self) -> Decimal:
+        total, vat_amount = self._apply_vat_to_line_gross(self.line_net_excl_vat)
+        return (total + vat_amount).quantize(Decimal('0.01'))
+
+    @property
+    def line_calc_summary(self) -> str:
+        """Human-readable breakdown for detail / PDF."""
+        parts = [f'Unit cost {self.base_line_subtotal:.2f}']
+        if self.net_installation_cost:
+            parts.append(f'Install {self.net_installation_cost:.2f} (expense)')
+        if self.line_profit_amount:
+            if self.profit_type == 'percent':
+                parts.append(f'Profit {self.profit_value:.2f}% (+{self.line_profit_amount:.2f})')
+            else:
+                parts.append(f'Profit {self.profit_value:.2f}/u (+{self.line_profit_amount:.2f})')
+        parts.append(f'Net {self.line_net_excl_vat:.2f}')
+        return ' · '.join(parts)
     
     def save(self, *args, **kwargs):
-        self.rate = self.compute_rate()
         # Derive VAT rate from Tax Code (No Tax Code = 0%)
         if self.tax_code:
             self.vat_rate = self.tax_code.rate
         else:
             self.vat_rate = Decimal('0.00')
-        
-        gross = self.quantity * self.rate
-        
-        if self.is_vat_inclusive and self.vat_rate > 0:
-            # VAT-inclusive: Back-calculate net amount and VAT
-            divisor = 1 + (self.vat_rate / 100)
-            self.total = (gross / divisor).quantize(Decimal('0.01'))
-            self.vat_amount = (gross - self.total).quantize(Decimal('0.01'))
-        else:
-            # VAT-exclusive: Standard calculation
-            self.total = gross
-            self.vat_amount = (self.total * (self.vat_rate / 100)).quantize(Decimal('0.01'))
+
+        if not self.selling_cost and self.unit_price:
+            self.selling_cost = self.unit_price
+        self.apply_profit_from_selling_cost()
+        self.rate = self.effective_selling_unit
+        self.total, self.vat_amount = self._apply_vat_to_line_gross(self.line_net_excl_vat)
         
         super().save(*args, **kwargs)
 

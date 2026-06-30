@@ -4,7 +4,7 @@ CRM Views - Customer/Lead Management
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
-from django.views.generic import ListView, CreateView, UpdateView, DeleteView, DetailView
+from django.views.generic import ListView, CreateView, UpdateView, DeleteView, DetailView, TemplateView
 from django.urls import reverse_lazy
 from django.http import JsonResponse, HttpResponseNotAllowed
 from django.urls import reverse
@@ -107,7 +107,16 @@ def apply_customer_list_filters(queryset, params, *, apply_type=True):
         queryset = queryset.filter(customer_type=customer_type)
 
     status = params.get('status')
-    if status:
+    stage = (params.get('stage') or '').strip()
+    if stage:
+        if stage == 'unassigned':
+            queryset = queryset.filter(lead_kanban_stage__isnull=True)
+        else:
+            try:
+                queryset = queryset.filter(lead_kanban_stage_id=int(stage))
+            except (TypeError, ValueError):
+                pass
+    elif status:
         queryset = queryset.filter(status=status)
 
     salesman = (params.get('salesman') or '').strip()
@@ -172,6 +181,7 @@ class CRMRecordListView(PermissionRequiredMixin, ListView):
         context['form'] = CustomerForm(
             projects_queryset=get_crm_project_queryset(self.request.user),
             user=user,
+            for_lead=is_leads,
         )
         context['salesman_choices'] = get_sales_employee_queryset()
         context['salesman_choice_options'] = [
@@ -208,6 +218,7 @@ class CRMRecordListView(PermissionRequiredMixin, ListView):
         context['crm_customer_type_choices'] = Customer.CUSTOMER_TYPE_CHOICES
         context['crm_status_choices'] = Customer.STATUS_CHOICES
         context['crm_filter_date_range'] = customer_date_range_display(self.request.GET)
+        context['dashboard_url_name'] = getattr(self, 'dashboard_url_name', '')
 
         if is_leads:
             board_stages = list(
@@ -280,6 +291,7 @@ class CRMRecordListView(PermissionRequiredMixin, ListView):
             request.FILES,
             projects_queryset=get_crm_project_queryset(request.user),
             user=request.user,
+            for_lead=(self.crm_list_kind == 'lead'),
         )
         if form.is_valid():
             record = form.save(commit=False)
@@ -309,6 +321,35 @@ class CustomerListView(CRMRecordListView):
 class LeadListView(CRMRecordListView):
     """Leads only — pipeline board and convert to customer."""
     crm_list_kind = 'lead'
+    dashboard_url_name = 'crm:lead_dashboard'
+
+
+class LeadDashboardView(PermissionRequiredMixin, TemplateView):
+    """CRM leads pipeline analytics."""
+    template_name = 'crm/lead_dashboard.html'
+    module_name = 'crm'
+    permission_type = 'view'
+
+    def get_context_data(self, **kwargs):
+        from .lead_dashboard import build_lead_dashboard_context, resolve_date_range
+
+        ctx = super().get_context_data(**kwargs)
+        req = self.request.GET
+        date_from, date_to, all_time = resolve_date_range(
+            req.get('date_from'),
+            req.get('date_to'),
+        )
+        ctx.update(
+            build_lead_dashboard_context(
+                user=self.request.user,
+                date_from=date_from,
+                date_to=date_to,
+                all_time=all_time,
+            )
+        )
+        ctx['title'] = 'Leads Dashboard'
+        ctx['dashboard_url_name'] = 'crm:lead_dashboard'
+        return ctx
 
 
 @login_required
@@ -423,6 +464,9 @@ def crm_kanban_move(request):
         pk,
         {'lead_kanban_stage': stage.slug},
     )
+    from apps.crm.dashboard_notifications import notify_site_visit_on_kanban_move
+
+    notify_site_visit_on_kanban_move(lead=cust, stage=stage, actor=request.user)
     return JsonResponse({'ok': True})
 
 
@@ -551,8 +595,41 @@ def customer_inline_update(request, pk):
             log_action(request.user, 'update', 'Customer', customer.id, {'status': val})
             updated = True
 
+    if 'lead_kanban_stage' in request.POST and customer.customer_type == 'lead':
+        raw = request.POST['lead_kanban_stage'].strip()
+        if raw == '':
+            new_stage = None
+        else:
+            try:
+                new_stage = CrmLeadKanbanStage.objects.filter(
+                    pk=int(raw),
+                    is_active=True,
+                    converts_to_customer=False,
+                ).first()
+            except (TypeError, ValueError):
+                new_stage = None
+        if new_stage or raw == '':
+            if customer.lead_kanban_stage_id != (new_stage.pk if new_stage else None):
+                customer.lead_kanban_stage = new_stage
+                customer.save(update_fields=['lead_kanban_stage'])
+                log_action(
+                    request.user,
+                    'update',
+                    'Customer',
+                    customer.id,
+                    {'lead_kanban_stage': new_stage.slug if new_stage else 'unassigned'},
+                )
+                if new_stage:
+                    from apps.crm.dashboard_notifications import notify_site_visit_on_kanban_move
+
+                    notify_site_visit_on_kanban_move(
+                        lead=customer, stage=new_stage, actor=request.user,
+                    )
+                updated = True
+
     if updated:
-        messages.success(request, f'Customer {customer.name} updated.')
+        label = 'Lead' if customer.customer_type == 'lead' else 'Customer'
+        messages.success(request, f'{label} {customer.name or customer.company} updated.')
 
     if next_url and next_url.startswith('/') and not next_url.startswith('//'):
         return redirect(next_url)
@@ -695,6 +772,7 @@ class CustomerUpdateView(UpdatePermissionMixin, UpdateView):
         kwargs = super().get_form_kwargs()
         kwargs['projects_queryset'] = get_crm_project_queryset(self.request.user)
         kwargs['user'] = self.request.user
+        kwargs['for_lead'] = self.object.customer_type == 'lead'
         return kwargs
     
     def get_context_data(self, **kwargs):

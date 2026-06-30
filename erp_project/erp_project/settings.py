@@ -29,7 +29,7 @@ OPENAI_REASONING_EFFORT = config('OPENAI_REASONING_EFFORT', default='none')
 OPENAI_VENDOR_QUOTE_MODEL = config('OPENAI_VENDOR_QUOTE_MODEL', default='')
 OPENAI_VENDOR_QUOTE_EXTRACT_MODEL = config('OPENAI_VENDOR_QUOTE_EXTRACT_MODEL', default='gpt-5.4-mini')
 OPENAI_VENDOR_QUOTE_REASON_MODEL = config('OPENAI_VENDOR_QUOTE_REASON_MODEL', default='gpt-5.4-mini')
-OPENAI_CEO_MODEL = config('OPENAI_CEO_MODEL', default='gpt-5.4-mini')
+OPENAI_CEO_MODEL = config('OPENAI_CEO_MODEL', default='gpt-5.5-mini')
 
 # Stripe — AI credit recharge (keys in .env only, never commit live keys)
 STRIPE_SECRET_KEY = config('STRIPE_SECRET_KEY', default='')
@@ -97,6 +97,8 @@ INSTALLED_APPS = [
     'apps.fleet',
     'apps.advances',
     'apps.reports',
+    'apps.support',
+    'apps.operations',
 ]
 
 MIDDLEWARE = [
@@ -217,6 +219,7 @@ MESSAGE_TAGS = {
 # JOURNAL uses entry date year for fiscal integrity (DOC-2024-0001 for 2024 entries)
 NUMBER_SERIES = {
     'CUSTOMER': {'prefix': 'CUST', 'padding': 4},
+    'LEAD': {'prefix': 'LEAD', 'padding': 4},
     'VENDOR': {'prefix': 'VEND', 'padding': 4},
     'ESTIMATE': {'prefix': 'QUO', 'padding': 4},
     'INVOICE': {'prefix': 'INV', 'padding': 4},
@@ -228,6 +231,7 @@ NUMBER_SERIES = {
     'EMPLOYEE': {'prefix': 'EMP', 'padding': 4},
     'PROJECT': {'prefix': 'PROJ', 'padding': 4},
     'CONTRACT': {'prefix': 'CNT', 'padding': 4},
+    'SUPPORT_TICKET': {'prefix': 'TKT', 'padding': 4},
     'JOURNAL': {'prefix': 'DOC', 'padding': 4},
     'ITEM': {'prefix': 'ITEM', 'padding': 4},
     'CUSTOMER_ADVANCE': {'prefix': 'CADV', 'padding': 4},

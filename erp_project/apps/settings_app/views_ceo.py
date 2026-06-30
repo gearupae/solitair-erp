@@ -43,13 +43,26 @@ class CeoDashboardView(CeoAccessMixin, TemplateView):
             'rule_alerts': data['rule_alerts'],
             'money_cards': data['money_cards'],
             'pipeline': data['pipeline'],
+            'yesterday_deltas': data['yesterday_deltas'],
             'currency': data['metrics'].get('currency', 'AED'),
             'charts_json': json.dumps(data['charts']),
             'briefing_url': reverse('settings:ceo_api_briefing'),
             'alerts_url': reverse('settings:ceo_api_alerts'),
             'cash_forecast_url': reverse('settings:ceo_api_cash_forecast'),
+            'predictive_cash_url': reverse('settings:ceo_api_predictive_cash'),
+            'collections_url': reverse('settings:ceo_api_collections'),
+            'yesterday_url': reverse('settings:ceo_api_yesterday'),
+            'operations_url': reverse('settings:ceo_api_operations'),
+            'projects_overview': data['projects_overview'],
+            'hr_overview': data['hr_overview'],
         })
         return context
+
+
+def _metrics_payload():
+    from apps.settings_app.services.ceo_metrics import build_ceo_metrics
+
+    return build_ceo_metrics()
 
 
 @login_required
@@ -58,9 +71,8 @@ def ceo_api_briefing(request):
         return JsonResponse({'ok': False, 'error': 'Permission denied.'}, status=403)
 
     from apps.settings_app.services.ceo_ai import generate_daily_briefing
-    from apps.settings_app.services.ceo_metrics import build_ceo_metrics
 
-    data = build_ceo_metrics()
+    data = _metrics_payload()
     result = generate_daily_briefing(data['metrics_snapshot'], force=_ceo_force(request))
     return JsonResponse({
         'ok': True,
@@ -76,9 +88,8 @@ def ceo_api_alerts(request):
         return JsonResponse({'ok': False, 'error': 'Permission denied.'}, status=403)
 
     from apps.settings_app.services.ceo_ai import generate_risk_alerts
-    from apps.settings_app.services.ceo_metrics import build_ceo_metrics
 
-    data = build_ceo_metrics()
+    data = _metrics_payload()
     result = generate_risk_alerts(
         data['metrics_snapshot'],
         data['rule_alerts'],
@@ -110,3 +121,61 @@ def ceo_api_cash_forecast(request):
         'summary': ctx.get('summary', ''),
         'from_cache': ctx.get('from_cache', False),
     })
+
+
+@login_required
+def ceo_api_predictive_cash(request):
+    if not user_can_access_ceo_dashboard(request.user):
+        return JsonResponse({'ok': False, 'error': 'Permission denied.'}, status=403)
+
+    from apps.settings_app.services.ceo_ai import generate_predictive_cash_alert
+
+    data = _metrics_payload()
+    result = generate_predictive_cash_alert(data['metrics_snapshot'], force=_ceo_force(request))
+    return JsonResponse({'ok': True, **result})
+
+
+@login_required
+def ceo_api_collections(request):
+    if not user_can_access_ceo_dashboard(request.user):
+        return JsonResponse({'ok': False, 'error': 'Permission denied.'}, status=403)
+
+    from apps.settings_app.services.ceo_ai import generate_ranked_collections
+
+    data = _metrics_payload()
+    candidates = data['metrics_snapshot'].get('collection_candidates') or []
+    result = generate_ranked_collections(
+        data['metrics_snapshot'],
+        candidates,
+        force=_ceo_force(request),
+    )
+    return JsonResponse({'ok': True, **result})
+
+
+@login_required
+def ceo_api_yesterday(request):
+    if not user_can_access_ceo_dashboard(request.user):
+        return JsonResponse({'ok': False, 'error': 'Permission denied.'}, status=403)
+
+    data = _metrics_payload()
+    return JsonResponse({
+        'ok': True,
+        'deltas': data.get('yesterday_deltas') or [],
+        'as_of': data['metrics'].get('as_of'),
+    })
+
+
+@login_required
+def ceo_api_operations(request):
+    if not user_can_access_ceo_dashboard(request.user):
+        return JsonResponse({'ok': False, 'error': 'Permission denied.'}, status=403)
+
+    from apps.settings_app.services.ceo_ai import generate_operations_summaries
+
+    data = _metrics_payload()
+    result = generate_operations_summaries(
+        data['projects_overview'],
+        data['hr_overview'],
+        force=_ceo_force(request),
+    )
+    return JsonResponse({'ok': True, **result})

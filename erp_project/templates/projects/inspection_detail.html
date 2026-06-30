@@ -1,0 +1,275 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ inspection.inspection_number }} — Inspection{% endblock %}
+
+{% block extra_css %}
+<style>
+{% include 'projects/partials/checklist_styles.html' %}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <div>
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-1">
+                <li class="breadcrumb-item"><a href="{% url 'projects:inspection_list' %}">Inspections</a></li>
+                <li class="breadcrumb-item active">{{ inspection.inspection_number }}</li>
+            </ol>
+        </nav>
+        <h4 class="mb-1 fw-bold">{{ inspection.name }}</h4>
+        <p class="text-muted mb-0 small d-flex flex-wrap align-items-center gap-2">
+            <span>{{ inspection.inspection_number }}</span>
+            <span>·</span>
+            {% include 'projects/partials/inspection_link_type_badge.html' with inspection=inspection %}
+            <span>·</span>
+            <span>{{ inspection.target_label }}</span>
+        </p>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+        <a href="{% url 'projects:inspection_list' %}" class="btn btn-outline-secondary btn-sm">Back to list</a>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-transparent">
+                <h6 class="fw-semibold mb-0"><i class="fas fa-info-circle me-2 text-primary"></i>Inspection details</h6>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="text-muted small">Linked to</label>
+                        <p class="mb-0 fw-medium">{{ inspection.target_label }}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="text-muted small">Type</label>
+                        <p class="mb-0">{% include 'projects/partials/inspection_link_type_badge.html' with inspection=inspection %}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="text-muted small">Inspection date</label>
+                        <p class="mb-0">{{ inspection.inspection_date|date:"d M Y" }}</p>
+                    </div>
+                    {% if inspection.link_type == 'project' and inspection.project %}
+                    <div class="col-md-6">
+                        <label class="text-muted small">Project</label>
+                        <p class="mb-0">
+                            <a href="{% url 'projects:project_detail' inspection.project.pk %}" class="text-decoration-none">{{ inspection.project.project_code }} — {{ inspection.project.name }}</a>
+                        </p>
+                    </div>
+                    {% elif inspection.link_type == 'amc' and inspection.amc_contract %}
+                    <div class="col-md-6">
+                        <label class="text-muted small">AMC contract</label>
+                        <p class="mb-0">
+                            <a href="{% url 'contracts:contract_detail' inspection.amc_contract.pk %}" class="text-decoration-none">{{ inspection.amc_contract.contract_number }} — {{ inspection.amc_contract.name }}</a>
+                        </p>
+                    </div>
+                    {% endif %}
+                    {% if inspection.notes %}
+                    <div class="col-12">
+                        <label class="text-muted small">Notes</label>
+                        <p class="mb-0">{{ inspection.notes|linebreaksbr }}</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="card border-0 shadow-sm mb-4" id="inspectionChecklistCard">
+            <div class="card-header bg-transparent py-3 d-flex flex-wrap justify-content-between align-items-center gap-2">
+                <h6 class="mb-0 fw-semibold"><i class="fas fa-clipboard-check me-2 text-primary"></i>Checklist</h6>
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="btnCopyChecklistLink" data-url="{{ checklist_public_url }}">
+                    <i class="fas fa-copy me-1"></i>Copy public link
+                </button>
+            </div>
+            <div class="card-body pt-0">
+                {% if can_edit %}
+                <form id="checklistAddForm" class="row g-2 align-items-end mb-3" autocomplete="off">
+                    {% csrf_token %}
+                    <div class="col-md-8">
+                        <label class="form-label small mb-1">Item</label>
+                        <input type="text" name="checklist_text" id="checklistAddText" class="form-control form-control-sm" maxlength="500" placeholder="Enter checklist note…" required>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small mb-1">Date</label>
+                        <input type="date" name="checklist_date" id="checklistAddDate" class="form-control form-control-sm" value="{{ today|date:'Y-m-d' }}">
+                    </div>
+                    <div class="col-md-1">
+                        <label class="form-label small mb-1 d-none d-md-block">&nbsp;</label>
+                        <button type="submit" class="btn btn-primary btn-sm w-100" title="Add"><i class="fas fa-plus"></i></button>
+                    </div>
+                </form>
+                {% endif %}
+
+                <div class="checklist-panel mb-3">
+                    <div id="checklistItemsList">
+                        {% for item in checklist_items %}
+                        {% include 'projects/partials/checklist_item_row.html' with item=item show_delete=can_edit toggle_class='checklist-toggle' %}
+                        {% empty %}
+                        <div class="checklist-empty" id="checklistEmptyState">No checklist items yet.{% if can_edit %} Add one above.{% endif %}</div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                {% if checklist_uploads %}
+                <h6 class="small text-muted text-uppercase fw-semibold mb-2">Attachments</h6>
+                <div class="row g-3">
+                    {% for u in checklist_uploads %}
+                    <div class="col-md-4 col-sm-6">
+                        <div class="border rounded p-2 h-100">
+                            {% if u.is_probably_image %}
+                            <a href="{{ u.file.url }}" target="_blank" rel="noopener" class="d-block mb-2">
+                                <img src="{{ u.file.url }}" alt="" class="img-fluid rounded" style="max-height: 120px; width: 100%; object-fit: cover;">
+                            </a>
+                            {% else %}
+                            <div class="text-center py-3 mb-2 bg-light rounded">
+                                <i class="fas fa-file fa-2x text-secondary"></i>
+                            </div>
+                            {% endif %}
+                            <div class="small">
+                                <a href="{{ u.file.url }}" target="_blank" rel="noopener" class="fw-medium text-break d-block">{{ u.original_filename|default:u.file.name }}</a>
+                                {% if u.checklist_item %}<div class="text-muted mt-1">Re: {{ u.checklist_item.text|truncatechars:40 }}</div>{% endif %}
+                                {% if u.note %}<div class="text-muted mt-1">{{ u.note }}</div>{% endif %}
+                                <div class="text-muted mt-1">{{ u.created_at|date:"d/m/Y H:i" }}</div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-transparent">
+                <h6 class="fw-semibold mb-0"><i class="fas fa-history me-2 text-primary"></i>Audit</h6>
+            </div>
+            <div class="card-body small">
+                <div class="mb-2">
+                    <span class="text-muted">Created</span><br>
+                    {{ inspection.created_at|date:"d M Y, H:i" }}
+                    {% if inspection.created_by %}<span class="text-muted">by {{ inspection.created_by.get_full_name|default:inspection.created_by.username }}</span>{% endif %}
+                </div>
+                <div>
+                    <span class="text-muted">Updated</span><br>
+                    {{ inspection.updated_at|date:"d M Y, H:i" }}
+                    {% if inspection.updated_by %}<span class="text-muted">by {{ inspection.updated_by.get_full_name|default:inspection.updated_by.username }}</span>{% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    var copyBtn = document.getElementById('btnCopyChecklistLink');
+    if (copyBtn) {
+        copyBtn.addEventListener('click', function () {
+            var url = copyBtn.getAttribute('data-url') || '';
+            if (!url) return;
+            function done() {
+                var orig = copyBtn.innerHTML;
+                copyBtn.innerHTML = '<i class="fas fa-check me-1"></i>Copied!';
+                setTimeout(function () { copyBtn.innerHTML = orig; }, 2000);
+            }
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(url).then(done).catch(function () {
+                    window.prompt('Copy this link:', url);
+                });
+            } else {
+                window.prompt('Copy this link:', url);
+            }
+        });
+    }
+
+    var toggleUrl = "{% url 'projects:inspection_checklist_toggle' inspection.pk %}";
+    var addUrl = "{% url 'projects:inspection_checklist_add' inspection.pk %}";
+    var deleteUrl = "{% url 'projects:inspection_checklist_delete' inspection.pk %}";
+    var csrfInput = document.querySelector('#checklistAddForm [name=csrfmiddlewaretoken]') || document.querySelector('[name=csrfmiddlewaretoken]');
+    var csrfToken = csrfInput ? csrfInput.value : '';
+
+    function bindChecklistRow(row) {
+        if (!row) return;
+        var toggleBtn = row.querySelector('.checklist-toggle');
+        if (toggleBtn && !toggleBtn.dataset.bound) {
+            toggleBtn.dataset.bound = '1';
+            toggleBtn.addEventListener('click', function () {
+                var itemId = toggleBtn.getAttribute('data-item-id');
+                var body = new FormData();
+                body.append('item_id', itemId);
+                fetch(toggleUrl, {
+                    method: 'POST',
+                    headers: { 'X-CSRFToken': csrfToken, 'X-Requested-With': 'XMLHttpRequest' },
+                    body: body,
+                    credentials: 'same-origin',
+                })
+                    .then(function (r) { return r.json(); })
+                    .then(function (data) {
+                        if (!data.ok) return;
+                        row.classList.toggle('is-done', data.is_flagged_red);
+                        toggleBtn.setAttribute('aria-label', data.is_flagged_red ? 'Mark incomplete' : 'Mark complete');
+                    });
+            });
+        }
+        var deleteBtn = row.querySelector('.checklist-delete');
+        if (deleteBtn && !deleteBtn.dataset.bound) {
+            deleteBtn.dataset.bound = '1';
+            deleteBtn.addEventListener('click', function () {
+                if (!confirm('Remove this checklist item?')) return;
+                var itemId = deleteBtn.getAttribute('data-item-id');
+                var body = new FormData();
+                body.append('item_id', itemId);
+                fetch(deleteUrl, {
+                    method: 'POST',
+                    headers: { 'X-CSRFToken': csrfToken, 'X-Requested-With': 'XMLHttpRequest' },
+                    body: body,
+                    credentials: 'same-origin',
+                })
+                    .then(function (r) { return r.json(); })
+                    .then(function (data) {
+                        if (data.ok) row.remove();
+                    });
+            });
+        }
+    }
+
+    document.querySelectorAll('#checklistItemsList .checklist-item-row').forEach(bindChecklistRow);
+
+    var addForm = document.getElementById('checklistAddForm');
+    if (addForm) {
+        addForm.addEventListener('submit', function (e) {
+            e.preventDefault();
+            var body = new FormData(addForm);
+            fetch(addUrl, {
+                method: 'POST',
+                headers: { 'X-CSRFToken': csrfToken, 'X-Requested-With': 'XMLHttpRequest' },
+                body: body,
+                credentials: 'same-origin',
+            })
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    if (!data.ok) {
+                        alert(data.error || 'Could not add item.');
+                        return;
+                    }
+                    var list = document.getElementById('checklistItemsList');
+                    var empty = document.getElementById('checklistEmptyState');
+                    if (empty) empty.remove();
+                    var wrap = document.createElement('div');
+                    wrap.innerHTML = data.html;
+                    var row = wrap.firstElementChild;
+                    list.insertBefore(row, list.firstChild);
+                    bindChecklistRow(row);
+                    addForm.reset();
+                    document.getElementById('checklistAddDate').value = '{{ today|date:"Y-m-d" }}';
+                });
+        });
+    }
+})();
+</script>
+{% endblock %}

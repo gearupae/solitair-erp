@@ -1,5 +1,16 @@
 from django.contrib import admin
-from .models import Project, Task, ProjectGatepass, ProjectPublicUpload, ProjectItemLine, ProjectChecklistItem, ProjectChecklistUpload
+from .models import (
+    Project,
+    Task,
+    ProjectGatepass,
+    ProjectPublicUpload,
+    ProjectItemLine,
+    ProjectChecklistItem,
+    ProjectChecklistUpload,
+    Inspection,
+    InspectionChecklistItem,
+    InspectionChecklistUpload,
+)
 
 
 class ProjectItemLineInline(admin.TabularInline):
@@ -57,5 +68,29 @@ class ProjectChecklistUploadAdmin(admin.ModelAdmin):
     list_filter = ['is_active', 'created_at']
     search_fields = ['original_filename', 'project__project_code']
     raw_id_fields = ['project', 'checklist_item']
+
+
+@admin.register(Inspection)
+class InspectionAdmin(admin.ModelAdmin):
+    list_display = ['inspection_number', 'name', 'link_type', 'project', 'amc_contract', 'inspection_date', 'is_active']
+    list_filter = ['link_type', 'inspection_date', 'is_active']
+    search_fields = ['inspection_number', 'name', 'project__project_code', 'amc_contract__contract_number']
+    raw_id_fields = ['project', 'amc_contract']
+
+
+@admin.register(InspectionChecklistItem)
+class InspectionChecklistItemAdmin(admin.ModelAdmin):
+    list_display = ['inspection', 'text', 'item_date', 'is_flagged_red', 'is_active']
+    list_filter = ['is_flagged_red', 'is_active']
+    search_fields = ['text', 'inspection__inspection_number']
+    raw_id_fields = ['inspection']
+
+
+@admin.register(InspectionChecklistUpload)
+class InspectionChecklistUploadAdmin(admin.ModelAdmin):
+    list_display = ['inspection', 'original_filename', 'checklist_item', 'created_at', 'is_active']
+    list_filter = ['is_active', 'created_at']
+    search_fields = ['original_filename', 'inspection__inspection_number']
+    raw_id_fields = ['inspection', 'checklist_item']
 
 

@@ -556,6 +556,47 @@ class EmployeeAttachment(models.Model):
         return (self.label or self.filename or f'Attachment #{self.pk}').strip()
 
 
+class EmployeeRemark(models.Model):
+    """HR notes about an employee — plus (+1) or negative (-1) points."""
+
+    REMARK_TYPE_CHOICES = [
+        ('plus', 'Plus point'),
+        ('negative', 'Negative point'),
+    ]
+
+    employee = models.ForeignKey(
+        Employee,
+        on_delete=models.CASCADE,
+        related_name='remarks',
+    )
+    body = models.TextField()
+    remark_type = models.CharField(max_length=20, choices=REMARK_TYPE_CHOICES, default='plus')
+    created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='employee_remarks_added',
+    )
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        preview = (self.body or '')[:60]
+        return f'{self.employee.employee_code}: {preview}'
+
+    @property
+    def point_value(self) -> int:
+        return -1 if self.remark_type == 'negative' else 1
+
+    @classmethod
+    def score_for_employee(cls, employee_id: int) -> int:
+        plus = cls.objects.filter(employee_id=employee_id, remark_type='plus').count()
+        minus = cls.objects.filter(employee_id=employee_id, remark_type='negative').count()
+        return plus - minus
+
 # Extended HR models (attendance, compliance, payroll lines — separate definitions).
 from apps.hr.models_extended import (  # noqa: E402
     AdvanceRepayment,

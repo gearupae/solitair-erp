@@ -13,9 +13,9 @@
                 </div>
                 <div class="modal-body">
                     <p class="text-muted small mb-3">
-                        Quotation <strong id="proformaEstimateLabel">—</strong>
+                        {{ proforma_ref_label|default:"Quotation" }} <strong id="proformaEstimateLabel">—</strong>
                         · Subtotal (excl. VAT): <strong id="proformaEstSubtotal">AED 0.00</strong>
-                        · Quotation total (incl. VAT): <strong id="proformaEstTotal">AED 0.00</strong>
+                        · {{ proforma_ref_label|default:"Quotation" }} total (incl. VAT): <strong id="proformaEstTotal">AED 0.00</strong>
                         · VAT rate: <strong id="proformaEstVatRate">0%</strong>
                         · Available to bill: <strong id="proformaRemainingTotal">AED 0.00</strong>
                     </p>
@@ -38,7 +38,7 @@
                             </div>
                         </div>
                         <div class="col-md-6" id="proformaValuePercentWrap">
-                            <label class="form-label" for="proformaValuePercent">Percentage of quotation subtotal <span class="text-danger">*</span></label>
+                            <label class="form-label" for="proformaValuePercent">{{ proforma_percent_label|default:"Percentage of quotation subtotal" }} <span class="text-danger">*</span></label>
                             <div class="input-group">
                                 <input type="number" class="form-control proforma-value-input" id="proformaValuePercent" min="0.01" max="100" step="0.01" placeholder="e.g. 30">
                                 <span class="input-group-text">%</span>

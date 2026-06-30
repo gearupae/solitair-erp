@@ -1,0 +1,109 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+    <div>
+        <h4 class="mb-1 fw-bold">{{ title }}</h4>
+        <p class="text-muted mb-0">{% if object %}Edit support ticket{% else %}Open a new support ticket{% endif %}</p>
+    </div>
+    <a href="{% url 'support:ticket_list' %}" class="btn btn-light btn-sm">Back to Support</a>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <form method="post" novalidate>
+            {% csrf_token %}
+            {% if form.non_field_errors %}
+            <div class="alert alert-danger">{{ form.non_field_errors }}</div>
+            {% endif %}
+
+            <div class="row g-3">
+                <div class="col-md-8">
+                    <label class="form-label">Subject <span class="text-danger">*</span></label>
+                    {{ form.subject }}
+                    {% if form.subject.errors %}<div class="text-danger small">{{ form.subject.errors }}</div>{% endif %}
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Opened date <span class="text-danger">*</span></label>
+                    {{ form.opened_date }}
+                    {% if form.opened_date.errors %}<div class="text-danger small">{{ form.opened_date.errors }}</div>{% endif %}
+                </div>
+
+                <div class="col-12">
+                    <label class="form-label d-block mb-2">Link ticket to</label>
+                    <div class="d-flex flex-wrap gap-3 mb-2">
+                        {% for radio in form.link_type %}
+                        <div class="form-check">
+                            {{ radio.tag }}
+                            <label class="form-check-label" for="{{ radio.id_for_label }}">{{ radio.choice_label }}</label>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <div class="col-md-4 support-link-field" data-link-type="customer">
+                    <label class="form-label">Customer</label>
+                    {{ form.customer }}
+                    {% if form.customer.errors %}<div class="text-danger small">{{ form.customer.errors }}</div>{% endif %}
+                </div>
+                <div class="col-md-4 support-link-field" data-link-type="project">
+                    <label class="form-label">Project</label>
+                    {{ form.project }}
+                    {% if form.project.errors %}<div class="text-danger small">{{ form.project.errors }}</div>{% endif %}
+                </div>
+                <div class="col-md-4 support-link-field" data-link-type="amc">
+                    <label class="form-label">AMC contract</label>
+                    {{ form.amc_contract }}
+                    {% if form.amc_contract.errors %}<div class="text-danger small">{{ form.amc_contract.errors }}</div>{% endif %}
+                </div>
+
+                <div class="col-md-4">
+                    <label class="form-label">Priority</label>
+                    {{ form.priority }}
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Assigned to</label>
+                    {{ form.assigned_to }}
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Pipeline stage</label>
+                    {{ form.kanban_stage }}
+                </div>
+
+                <div class="col-12">
+                    <label class="form-label">Description</label>
+                    {{ form.description }}
+                    <div class="form-text">Describe the issue in detail.</div>
+                    {% if form.description.errors %}<div class="text-danger small">{{ form.description.errors }}</div>{% endif %}
+                </div>
+            </div>
+
+            <div class="mt-4 pt-3 border-top">
+                <button type="submit" class="btn btn-primary"><i class="fas fa-save me-2"></i>Save Ticket</button>
+                <a href="{% url 'support:ticket_list' %}" class="btn btn-light">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    function syncLinkFields() {
+        var selected = document.querySelector('input[name="link_type"]:checked');
+        var linkType = selected ? selected.value : 'customer';
+        document.querySelectorAll('.support-link-field').forEach(function (el) {
+            var show = el.getAttribute('data-link-type') === linkType;
+            el.style.display = show ? '' : 'none';
+        });
+    }
+    document.addEventListener('DOMContentLoaded', function () {
+        document.querySelectorAll('input[name="link_type"]').forEach(function (r) {
+            r.addEventListener('change', syncLinkFields);
+        });
+        syncLinkFields();
+    });
+})();
+</script>
+{% endblock %}

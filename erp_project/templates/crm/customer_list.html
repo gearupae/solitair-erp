@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load crm_extras %}
 
 {% block extra_css %}
 <style>
@@ -44,6 +45,31 @@
 .crm-inline-select.crm-inline-status-active { background-color: #dcfce7; color: #166534; }
 .crm-inline-select.crm-inline-status-inactive { background-color: #fee2e2; color: #991b1b; }
 .crm-inline-select.crm-inline-status-prospect { background-color: #fef3c7; color: #b45309; }
+/* Pipeline stage colors (aligned with former Active / Prospect / Inactive palette) */
+.crm-inline-select.crm-pipeline-stage-hot,
+.crm-inline-select.crm-pipeline-stage-lost,
+.badge.crm-pipeline-stage-hot,
+.badge.crm-pipeline-stage-lost { background-color: #fee2e2; color: #991b1b; }
+.crm-inline-select.crm-pipeline-stage-warm,
+.badge.crm-pipeline-stage-warm { background-color: #fef3c7; color: #b45309; }
+.crm-inline-select.crm-pipeline-stage-active,
+.badge.crm-pipeline-stage-active { background-color: #dcfce7; color: #166534; }
+.crm-inline-select.crm-pipeline-stage-cold,
+.badge.crm-pipeline-stage-cold { background-color: #dbeafe; color: #1e40af; }
+.crm-inline-select.crm-pipeline-stage-unassigned,
+.badge.crm-pipeline-stage-unassigned { background-color: #f3f4f6; color: #374151; }
+.crm-inline-select.crm-pipeline-stage-theme-0,
+.badge.crm-pipeline-stage-theme-0 { background-color: #dbeafe; color: #1e40af; }
+.crm-inline-select.crm-pipeline-stage-theme-1,
+.badge.crm-pipeline-stage-theme-1 { background-color: #fef3c7; color: #b45309; }
+.crm-inline-select.crm-pipeline-stage-theme-2,
+.badge.crm-pipeline-stage-theme-2 { background-color: #fce7f3; color: #be185d; }
+.crm-inline-select.crm-pipeline-stage-theme-3,
+.badge.crm-pipeline-stage-theme-3 { background-color: #ccfbf1; color: #0f766e; }
+.crm-inline-select.crm-pipeline-stage-theme-4,
+.badge.crm-pipeline-stage-theme-4 { background-color: #e0e7ff; color: #4338ca; }
+.crm-inline-select.crm-pipeline-stage-theme-5,
+.badge.crm-pipeline-stage-theme-5 { background-color: #ffedd5; color: #c2410c; }
 .crm-customer-table th {
     white-space: nowrap;
 }
@@ -236,6 +262,9 @@
             <a href="#crmTabList" class="btn btn-sm btn-primary active" id="crm-tab-list" data-bs-toggle="tab" role="tab" aria-controls="crmTabList" aria-selected="true">
                 <i class="fas fa-list me-1"></i>List
             </a>
+            {% if dashboard_url_name %}
+            <a href="{% url dashboard_url_name %}" class="btn btn-sm btn-outline-secondary"><i class="fas fa-chart-pie me-1"></i>Dashboard</a>
+            {% endif %}
         </div>
         {% endif %}
         {% if can_create %}
@@ -300,12 +329,22 @@
                 <input type="text" name="phone" class="form-control" placeholder="+971 XX XXX XXXX" required>
             </div>
             <div class="col-md-3">
+                {% if crm_list_kind == 'lead' %}
+                <label class="form-label">Pipeline stage</label>
+                <select name="lead_kanban_stage" class="form-select">
+                    <option value="">— Unassigned —</option>
+                    {% for s in crm_kanban_stages %}
+                    <option value="{{ s.pk }}"{% if forloop.first %} selected{% endif %}>{{ s.name }}</option>
+                    {% endfor %}
+                </select>
+                {% else %}
                 <label class="form-label">Status</label>
                 <select name="status" class="form-select">
                     <option value="active">Active</option>
                     <option value="prospect">Prospect</option>
                     <option value="inactive">Inactive</option>
                 </select>
+                {% endif %}
             </div>
             <div class="col-12">
                 <label class="form-label">Address</label>
@@ -550,6 +589,16 @@
             </div>
             {% if not crm_sales_rep_only %}
             <div class="crm-filter-field crm-filter-status">
+                {% if crm_list_kind == 'lead' %}
+                <label class="form-label small text-muted">Pipeline</label>
+                <select name="stage" class="form-select">
+                    <option value="">All stages</option>
+                    <option value="unassigned" {% if request.GET.stage == 'unassigned' %}selected{% endif %}>Unassigned</option>
+                    {% for s in crm_kanban_stages %}
+                    <option value="{{ s.pk }}" {% if request.GET.stage == s.pk|stringformat:'s' %}selected{% endif %}>{{ s.name }}</option>
+                    {% endfor %}
+                </select>
+                {% else %}
                 <label class="form-label small text-muted">Status</label>
                 <select name="status" class="form-select">
                     <option value="">All Status</option>
@@ -557,6 +606,7 @@
                     <option value="prospect" {% if request.GET.status == 'prospect' %}selected{% endif %}>Prospect</option>
                     <option value="inactive" {% if request.GET.status == 'inactive' %}selected{% endif %}>Inactive</option>
                 </select>
+                {% endif %}
             </div>
             <div class="crm-filter-field crm-filter-salesman">
                 <label class="form-label small text-muted">Salesman</label>
@@ -601,7 +651,7 @@
                         <th>Phone</th>
                         {% if crm_show_type_column %}<th>Type</th>{% endif %}
                         {% if show_assign_salesman %}<th>Salesman</th>{% endif %}
-                        <th>Status</th>
+                        <th>{% if crm_list_kind == 'lead' %}Pipeline{% else %}Status{% endif %}</th>
                         <th class="text-center col-actions">Actions</th>
                     </tr>
                 </thead>
@@ -671,7 +721,26 @@
                         </td>
                         {% endif %}
                         <td>
+                            {% if crm_list_kind == 'lead' %}
                             {% if can_edit %}
+                            <form method="post" action="{% url 'crm:customer_inline_update' customer.pk %}" class="crm-inline-field-form">
+                                {% csrf_token %}
+                                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                                <select name="lead_kanban_stage" class="form-select form-select-sm crm-inline-select {{ customer.lead_kanban_stage|pipeline_stage_class }}" aria-label="Pipeline stage" onchange="this.form.submit()">
+                                    <option value="" {% if not customer.lead_kanban_stage_id %}selected{% endif %}>Unassigned</option>
+                                    {% for s in crm_kanban_stages %}
+                                    <option value="{{ s.pk }}" {% if customer.lead_kanban_stage_id == s.pk %}selected{% endif %}>{{ s.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </form>
+                            {% else %}
+                            {% if customer.lead_kanban_stage %}
+                                <span class="badge fw-normal {{ customer.lead_kanban_stage|pipeline_stage_class }}">{{ customer.lead_kanban_stage.name }}</span>
+                            {% else %}
+                                <span class="badge fw-normal crm-pipeline-stage-unassigned">Unassigned</span>
+                            {% endif %}
+                            {% endif %}
+                            {% elif can_edit %}
                             <form method="post" action="{% url 'crm:customer_inline_update' customer.pk %}" class="crm-inline-field-form">
                                 {% csrf_token %}
                                 <input type="hidden" name="next" value="{{ request.get_full_path }}">

@@ -11,6 +11,9 @@ app_name = 'sales'
 urlpatterns = [
     # Estimates (formerly quotations)
     path('estimates/', views.EstimateListView.as_view(), name='estimate_list'),
+    path('estimates/dashboard/', views.EstimateDashboardView.as_view(), name='estimate_dashboard'),
+    path('quotations/', views.QuotationListView.as_view(), name='quotation_list'),
+    path('quotations/dashboard/', views.QuotationDashboardView.as_view(), name='quotation_dashboard'),
     path('estimates/items/sample.csv', views.estimate_items_sample_csv, name='estimate_items_sample_csv'),
     path('estimates/create/', views.EstimateCreateView.as_view(), name='estimate_create'),
     path(
@@ -28,6 +31,7 @@ urlpatterns = [
     path('estimates/<int:pk>/convert-project/', views.estimate_convert_to_project, name='estimate_convert_project'),
     path('estimates/<int:pk>/status/<str:status>/', views.estimate_update_status, name='estimate_status'),
     path('estimates/<int:pk>/set-status/', views.estimate_set_status, name='estimate_set_status'),
+    path('estimates/<int:pk>/convert-quotation/', views.estimate_convert_to_quotation, name='estimate_convert_to_quotation'),
     path('estimates/<int:pk>/pdf/download/', views.estimate_pdf_download, name='estimate_pdf_download'),
     path('estimates/<int:pk>/pdf/', views.estimate_pdf, name='estimate_pdf'),
     path(
@@ -68,10 +72,9 @@ urlpatterns = [
     path('sales-orders/', views.SalesOrderListView.as_view(), name='sales_order_list'),
     path('sales-orders/<int:pk>/', views.SalesOrderDetailView.as_view(), name='sales_order_detail'),
 
-    # Legacy /quotations/ URLs → estimates (permanent redirect)
-    path('quotations/', RedirectView.as_view(pattern_name='sales:estimate_list', permanent=True)),
+    # Legacy /quotations/ detail URLs (same detail view, quotation workspace)
     path('quotations/create/', RedirectView.as_view(pattern_name='sales:estimate_create', permanent=True)),
-    path('quotations/<int:pk>/', RedirectView.as_view(pattern_name='sales:estimate_detail', permanent=True)),
+    path('quotations/<int:pk>/', views.EstimateDetailView.as_view(), name='quotation_detail'),
     path('quotations/<int:pk>/edit/', RedirectView.as_view(pattern_name='sales:estimate_edit', permanent=True)),
     path('quotations/<int:pk>/delete/', RedirectView.as_view(pattern_name='sales:estimate_delete', permanent=True)),
     path('quotations/<int:pk>/convert/', RedirectView.as_view(pattern_name='sales:estimate_convert', permanent=True)),

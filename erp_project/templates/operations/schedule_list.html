@@ -1,0 +1,190 @@
+{% extends 'base.html' %}
+
+{% block extra_css %}
+<style>
+.ops-status-scheduled { color: #059669; font-weight: 600; }
+.ops-status-paused { color: #d97706; font-weight: 600; }
+.ops-status-cancelled { color: #64748b; }
+.ops-schedule-table .col-actions .btn-action {
+    width: 30px;
+    height: 30px;
+    font-size: 0.85rem;
+}
+.ops-schedule-table .col-actions form {
+    margin: 0;
+    display: inline-flex;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+    <div>
+        <h4 class="mb-1 fw-bold">{{ title }}</h4>
+        <p class="text-muted mb-0">Schedule staff to projects and AMC contracts — one person per day</p>
+    </div>
+    <div class="d-flex gap-2 flex-wrap align-items-center">
+        <a href="{% url 'operations:schedule_calendar' %}" class="btn btn-outline-primary">
+            <i class="fas fa-calendar-alt me-1"></i>Calendar
+        </a>
+        {% if can_create %}
+        <a href="{% url 'operations:schedule_create' %}" class="btn btn-primary">
+            <i class="fas fa-plus me-2"></i>Schedule Duty
+        </a>
+        {% endif %}
+        <button type="button" class="btn btn-outline-secondary" id="copyPublicLink" data-url="{{ public_schedule_url }}">
+            <i class="fas fa-link me-1"></i>Public link
+        </button>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-body py-3">
+        <form method="get" class="row g-2 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label small text-muted mb-0">Search</label>
+                <input type="text" name="search" class="form-control form-control-sm" value="{{ filter_search }}" placeholder="Staff, project, AMC…">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small text-muted mb-0">Staff</label>
+                <select name="employee" class="form-select form-select-sm">
+                    <option value="">All</option>
+                    {% for emp in filter_employees %}
+                    <option value="{{ emp.pk }}" {% if filter_employee == emp.pk|stringformat:"s" %}selected{% endif %}>{{ emp.full_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small text-muted mb-0">Status</label>
+                <select name="status" class="form-select form-select-sm">
+                    <option value="">All</option>
+                    <option value="scheduled" {% if filter_status == 'scheduled' %}selected{% endif %}>Scheduled</option>
+                    <option value="paused" {% if filter_status == 'paused' %}selected{% endif %}>Paused</option>
+                    <option value="cancelled" {% if filter_status == 'cancelled' %}selected{% endif %}>Cancelled</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small text-muted mb-0">Link type</label>
+                <select name="link_type" class="form-select form-select-sm">
+                    <option value="">All</option>
+                    <option value="project" {% if filter_link_type == 'project' %}selected{% endif %}>Project</option>
+                    <option value="amc" {% if filter_link_type == 'amc' %}selected{% endif %}>AMC</option>
+                </select>
+            </div>
+            <div class="col-md-1">
+                <label class="form-label small text-muted mb-0">From</label>
+                <input type="date" name="date_from" class="form-control form-control-sm" value="{{ filter_date_from }}">
+            </div>
+            <div class="col-md-1">
+                <label class="form-label small text-muted mb-0">To</label>
+                <input type="date" name="date_to" class="form-control form-control-sm" value="{{ filter_date_to }}">
+            </div>
+            <div class="col-md-1">
+                <button type="submit" class="btn btn-primary btn-sm w-100">Filter</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="table-responsive">
+        <table class="table table-hover table-sm ops-schedule-table mb-0">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Time</th>
+                    <th>Staff</th>
+                    <th>Project / AMC</th>
+                    <th>Location</th>
+                    <th>Contact</th>
+                    <th>Status</th>
+                    <th class="text-center col-actions">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for s in schedules %}
+                <tr>
+                    <td>{{ s.duty_date|date:"d M Y" }}</td>
+                    <td>{{ s.time_display }}</td>
+                    <td>{{ s.employee.full_name }}</td>
+                    <td>
+                        <span class="badge bg-light text-dark border me-1">{{ s.get_link_type_display }}</span>
+                        {{ s.target_label }}
+                    </td>
+                    <td>{{ s.location|default:"—" }}</td>
+                    <td>
+                        {% if s.contact_person_name or s.contact_person_phone %}
+                        {{ s.contact_person_name|default:"—" }}
+                        {% if s.contact_person_phone %}<br><span class="text-muted small">{{ s.contact_person_phone }}</span>{% endif %}
+                        {% else %}—{% endif %}
+                    </td>
+                    <td><span class="ops-status-{{ s.status }}">{{ s.get_status_display }}</span></td>
+                    <td class="text-center col-actions">
+                        <div class="table-actions-inner">
+                            {% if can_edit %}
+                            <a href="{% url 'operations:schedule_edit' s.pk %}" class="btn btn-action btn-outline-primary" title="Edit">
+                                <i class="fas fa-edit"></i>
+                            </a>
+                            {% if s.status == 'scheduled' %}
+                            <form method="post" action="{% url 'operations:schedule_pause' s.pk %}">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-action btn-outline-warning" title="Pause">
+                                    <i class="fas fa-pause"></i>
+                                </button>
+                            </form>
+                            {% elif s.status == 'paused' %}
+                            <form method="post" action="{% url 'operations:schedule_resume' s.pk %}">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-action btn-outline-success" title="Resume">
+                                    <i class="fas fa-play"></i>
+                                </button>
+                            </form>
+                            {% endif %}
+                            {% endif %}
+                            {% if can_delete %}
+                            <form method="post" action="{% url 'operations:schedule_delete' s.pk %}" onsubmit="return confirm('Remove this duty assignment?');">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-action btn-outline-danger" title="Remove">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </form>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="8" class="text-center text-muted py-4">No duty schedules found.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% if is_paginated %}
+    <div class="card-footer bg-white d-flex justify-content-between align-items-center">
+        <span class="small text-muted">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+        <div class="btn-group btn-group-sm">
+            {% if page_obj.has_previous %}
+            <a class="btn btn-outline-secondary" href="?page={{ page_obj.previous_page_number }}&search={{ filter_search }}&employee={{ filter_employee }}&status={{ filter_status }}&link_type={{ filter_link_type }}&date_from={{ filter_date_from }}&date_to={{ filter_date_to }}">Prev</a>
+            {% endif %}
+            {% if page_obj.has_next %}
+            <a class="btn btn-outline-secondary" href="?page={{ page_obj.next_page_number }}&search={{ filter_search }}&employee={{ filter_employee }}&status={{ filter_status }}&link_type={{ filter_link_type }}&date_from={{ filter_date_from }}&date_to={{ filter_date_to }}">Next</a>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.getElementById('copyPublicLink')?.addEventListener('click', function () {
+    var url = this.getAttribute('data-url');
+    if (navigator.clipboard && url) {
+        navigator.clipboard.writeText(url).then(function () {
+            if (typeof toastr !== 'undefined') toastr.success('Public schedule link copied.');
+        });
+    } else if (url) {
+        prompt('Copy this link:', url);
+    }
+});
+</script>
+{% endblock %}

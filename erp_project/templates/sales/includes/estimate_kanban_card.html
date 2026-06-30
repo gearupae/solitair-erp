@@ -1,7 +1,7 @@
 {% load humanize %}
 <div class="kanban-card kanban-card--readonly" draggable="false">
     <div class="kanban-card-title text-truncate">
-        <a href="{% url 'sales:estimate_detail' estimate.pk %}" class="text-decoration-none text-dark" title="{{ estimate.display_estimate_number }}">{{ estimate.display_estimate_number }}</a>
+        <a href="{% url 'sales:estimate_detail' estimate.pk %}" class="text-decoration-none text-dark" title="{{ estimate.list_display_number|default:estimate.display_estimate_number }}">{{ estimate.list_display_number|default:estimate.display_estimate_number }}</a>
     </div>
     <div class="kanban-card-meta text-truncate fw-medium" title="{{ estimate.customer.name }}">
         <i class="fas fa-user fa-xs me-1 text-muted"></i>{{ estimate.customer.name|default:"—" }}

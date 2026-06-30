@@ -110,6 +110,23 @@
 .estimate-sort-link .fa-sort {
     font-size: 0.75rem;
 }
+.estimate-summary-cards .card-body {
+    padding: 0.75rem 0.85rem;
+}
+.estimate-summary-cards .summary-icon {
+    padding: 0.55rem !important;
+    margin-right: 0.65rem !important;
+}
+.estimate-summary-cards .summary-icon i {
+    font-size: 0.9rem;
+}
+.estimate-summary-cards h5 {
+    font-size: 1.05rem;
+}
+.estimate-summary-cards p.small {
+    font-size: 0.72rem;
+    line-height: 1.25;
+}
 
 /* Kanban — shared column/card styles */
 .kanban-col {
@@ -202,23 +219,24 @@
 <div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2">
     <div>
         <h4 class="mb-1 fw-bold">{{ title }}</h4>
-        <p class="text-muted mb-0">{% if is_approver_portal %}Review and approve sales estimates{% else %}Manage your sales estimates{% endif %}</p>
+        <p class="text-muted mb-0">{% if is_approver_portal %}{{ page_labels.subtitle_approver }}{% else %}{{ page_labels.subtitle_default }}{% endif %}</p>
     </div>
     {% if not is_approver_portal %}
     <div class="d-flex flex-wrap gap-2 align-items-center">
         <div class="btn-group" role="group" aria-label="View mode">
-            <a href="{% url 'sales:estimate_list' %}{{ estimate_list_url_list }}" class="btn btn-sm {% if view_mode != 'kanban' %}btn-primary{% else %}btn-outline-primary{% endif %}"><i class="fas fa-list me-1"></i>List</a>
-            <a href="{% url 'sales:estimate_list' %}{{ estimate_list_url_kanban }}" class="btn btn-sm {% if view_mode == 'kanban' %}btn-primary{% else %}btn-outline-primary{% endif %}"><i class="fas fa-columns me-1"></i>Kanban</a>
+            <a href="{% url list_url_name %}{{ estimate_list_url_list }}" class="btn btn-sm {% if view_mode != 'kanban' %}btn-primary{% else %}btn-outline-primary{% endif %}"><i class="fas fa-list me-1"></i>List</a>
+            <a href="{% url list_url_name %}{{ estimate_list_url_kanban }}" class="btn btn-sm {% if view_mode == 'kanban' %}btn-primary{% else %}btn-outline-primary{% endif %}"><i class="fas fa-columns me-1"></i>Kanban</a>
+            <a href="{% url dashboard_url_name %}" class="btn btn-sm btn-outline-secondary"><i class="fas fa-chart-pie me-1"></i>Dashboard</a>
         </div>
-        {% if can_create and public_estimate_create_url %}
+        {% if can_create and show_public_create_link and public_estimate_create_url %}
         <input type="hidden" id="publicEstimateCreateUrl" value="{{ public_estimate_create_url }}">
         <button type="button" class="btn btn-sm btn-outline-secondary" id="copyPublicEstimateCreateUrl" title="Copy public estimate link (valid 1 hour)">
             <i class="fas fa-link me-1"></i>Copy public URL
         </button>
         {% endif %}
-        {% if can_create %}
+        {% if can_create and show_create_button %}
         <a href="{% url 'sales:estimate_create' %}" class="btn btn-primary btn-sm">
-            <i class="fas fa-plus me-1"></i>Create Estimate
+            <i class="fas fa-plus me-1"></i>{{ page_labels.create_button }}
         </a>
         {% endif %}
     </div>
@@ -228,13 +246,13 @@
 {% if is_approver_portal %}
 <ul class="nav nav-tabs mb-4">
     <li class="nav-item">
-        <a class="nav-link {% if approver_tab == 'pending' %}active fw-semibold{% endif %}" href="{% url 'sales:estimate_list' %}{{ approver_tab_url_pending }}">
+        <a class="nav-link {% if approver_tab == 'pending' %}active fw-semibold{% endif %}" href="{% url list_url_name %}{{ approver_tab_url_pending }}">
             Pending approval
             {% if pending_count %}<span class="badge bg-warning text-dark ms-1">{{ pending_count }}</span>{% endif %}
         </a>
     </li>
     <li class="nav-item">
-        <a class="nav-link {% if approver_tab == 'approved' %}active fw-semibold{% endif %}" href="{% url 'sales:estimate_list' %}{{ approver_tab_url_approved }}">
+        <a class="nav-link {% if approver_tab == 'approved' %}active fw-semibold{% endif %}" href="{% url list_url_name %}{{ approver_tab_url_approved }}">
             Approved
             {% if approved_tab_count %}<span class="badge bg-success ms-1">{{ approved_tab_count }}</span>{% endif %}
         </a>
@@ -268,7 +286,7 @@
                         <i class="fas fa-check-circle text-success"></i>
                     </div>
                     <div>
-                        <p class="text-muted mb-0 small">Approved estimates</p>
+                        <p class="text-muted mb-0 small">{{ page_labels.approved_total }}</p>
                         <h5 class="mb-0 fw-bold">{{ approved_tab_count }}</h5>
                     </div>
                 </div>
@@ -277,16 +295,17 @@
     </div>
 </div>
 {% else %}
-<div class="row g-3 mb-4">
+{% if quotation_pipeline_mode %}
+<div class="row g-3 mb-4 estimate-summary-cards">
     <div class="col-md-3">
-        <div class="card">
+        <div class="card h-100">
             <div class="card-body">
                 <div class="d-flex align-items-center">
-                    <div class="bg-primary bg-opacity-10 rounded p-3 me-3">
+                    <div class="bg-primary bg-opacity-10 rounded summary-icon">
                         <i class="fas fa-file-invoice text-primary"></i>
                     </div>
                     <div>
-                        <p class="text-muted mb-0 small">Total Estimates</p>
+                        <p class="text-muted mb-0 small">{{ page_labels.total_count }}</p>
                         <h5 class="mb-0 fw-bold">{{ total_estimates }}</h5>
                     </div>
                 </div>
@@ -294,51 +313,130 @@
         </div>
     </div>
     <div class="col-md-3">
-        <div class="card">
+        <div class="card h-100">
             <div class="card-body">
                 <div class="d-flex align-items-center">
-                    <div class="bg-info bg-opacity-10 rounded p-3 me-3">
-                        <i class="fas fa-dollar-sign text-info"></i>
+                    <div class="bg-info bg-opacity-10 rounded summary-icon">
+                        <i class="fas fa-handshake text-info"></i>
                     </div>
                     <div>
-                        <p class="text-muted mb-0 small">Total Amount</p>
-                        <h5 class="mb-0 fw-bold">AED {{ total_amount|floatformat:2 }}</h5>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="card">
-            <div class="card-body">
-                <div class="d-flex align-items-center">
-                    <div class="bg-success bg-opacity-10 rounded p-3 me-3">
-                        <i class="fas fa-check-circle text-success"></i>
-                    </div>
-                    <div>
-                        <p class="text-muted mb-0 small">Approved Amount</p>
-                        <h5 class="mb-0 fw-bold">AED {{ approved_amount|floatformat:2 }}</h5>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="card">
-            <div class="card-body">
-                <div class="d-flex align-items-center">
-                    <div class="bg-warning bg-opacity-10 rounded p-3 me-3">
-                        <i class="fas fa-clock text-warning"></i>
-                    </div>
-                    <div>
-                        <p class="text-muted mb-0 small">Pending</p>
+                        <p class="text-muted mb-0 small">{{ page_labels.negotiation_count_label }}</p>
                         <h5 class="mb-0 fw-bold">{{ pending_count }}</h5>
                     </div>
                 </div>
             </div>
         </div>
     </div>
+    <div class="col-md-3">
+        <div class="card h-100">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="bg-success bg-opacity-10 rounded summary-icon">
+                        <i class="fas fa-check-circle text-success"></i>
+                    </div>
+                    <div>
+                        <p class="text-muted mb-0 small">{{ page_labels.won_count_label }}</p>
+                        <h5 class="mb-0 fw-bold">{{ quotation_won_count }}</h5>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card h-100">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="bg-danger bg-opacity-10 rounded summary-icon">
+                        <i class="fas fa-times-circle text-danger"></i>
+                    </div>
+                    <div>
+                        <p class="text-muted mb-0 small">{{ page_labels.lost_count_label }}</p>
+                        <h5 class="mb-0 fw-bold">{{ quotation_lost_count }}</h5>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
+{% else %}
+<div class="row row-cols-1 row-cols-sm-2 row-cols-xl-5 g-3 mb-4 estimate-summary-cards">
+    <div class="col">
+        <div class="card h-100">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="bg-primary bg-opacity-10 rounded summary-icon">
+                        <i class="fas fa-file-invoice text-primary"></i>
+                    </div>
+                    <div class="min-w-0">
+                        <p class="text-muted mb-0 small">Total estimates</p>
+                        <h5 class="mb-0 fw-bold">{{ total_estimates }}</h5>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="card h-100">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="bg-success bg-opacity-10 rounded summary-icon">
+                        <i class="fas fa-check-circle text-success"></i>
+                    </div>
+                    <div class="min-w-0">
+                        <p class="text-muted mb-0 small">Total approved</p>
+                        <h5 class="mb-0 fw-bold">{{ approved_count }}</h5>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="card h-100">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="bg-danger bg-opacity-10 rounded summary-icon">
+                        <i class="fas fa-times-circle text-danger"></i>
+                    </div>
+                    <div class="min-w-0">
+                        <p class="text-muted mb-0 small">Total rejected</p>
+                        <h5 class="mb-0 fw-bold">{{ rejected_count }}</h5>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="card h-100">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="bg-info bg-opacity-10 rounded summary-icon">
+                        <i class="fas fa-coins text-info"></i>
+                    </div>
+                    <div class="min-w-0">
+                        <p class="text-muted mb-0 small">Approved amount</p>
+                        <h5 class="mb-0 fw-bold">AED {{ approved_amount|floatformat:2 }}</h5>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="card h-100">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="bg-warning bg-opacity-10 rounded summary-icon">
+                        <i class="fas fa-dollar-sign text-warning"></i>
+                    </div>
+                    <div class="min-w-0">
+                        <p class="text-muted mb-0 small">Total amount</p>
+                        <h5 class="mb-0 fw-bold">AED {{ total_amount|floatformat:2 }}</h5>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
 {% endif %}
 
 <!-- Filters -->
@@ -356,7 +454,7 @@
             {% endif %}
             <div class="col-md-{% if is_approver_portal %}8{% else %}4{% endif %}">
                 <label class="form-label small text-muted mb-0">Search</label>
-                <input type="text" name="search" class="form-control form-control-sm" placeholder="Estimate #, Customer..." value="{{ request.GET.search }}">
+                <input type="text" name="search" class="form-control form-control-sm" placeholder="{{ page_labels.search_placeholder }}" value="{{ request.GET.search }}">
             </div>
             {% if not is_approver_portal %}
             <div class="col-md-3">
@@ -373,7 +471,7 @@
                 <button type="submit" class="btn btn-primary btn-sm me-2">
                     <i class="fas fa-filter me-1"></i>Filter
                 </button>
-                <a href="{% url 'sales:estimate_list' %}{% if is_approver_portal %}{% if approver_tab == 'approved' %}{{ approver_tab_url_approved }}{% else %}{{ approver_tab_url_pending }}{% endif %}{% elif view_mode == 'kanban' %}?view=kanban{% endif %}" class="btn btn-light btn-sm">Clear</a>
+                <a href="{% url list_url_name %}{% if is_approver_portal %}{% if approver_tab == 'approved' %}{{ approver_tab_url_approved }}{% else %}{{ approver_tab_url_pending }}{% endif %}{% elif view_mode == 'kanban' %}?view=kanban{% endif %}" class="btn btn-light btn-sm">Clear</a>
             </div>
         </form>
     </div>
@@ -387,7 +485,7 @@
             {% for estimate in estimates_board_draft %}
             {% include "sales/includes/estimate_kanban_card.html" with estimate=estimate %}
             {% empty %}
-            <p class="text-muted small mb-0 py-2 text-center">No estimates</p>
+            <p class="text-muted small mb-0 py-2 text-center">{{ page_labels.empty_kanban }}</p>
             {% endfor %}
         </div>
     </div>
@@ -397,17 +495,18 @@
             {% for estimate in estimates_board_sent %}
             {% include "sales/includes/estimate_kanban_card.html" with estimate=estimate %}
             {% empty %}
-            <p class="text-muted small mb-0 py-2 text-center">No estimates</p>
+            <p class="text-muted small mb-0 py-2 text-center">{{ page_labels.empty_kanban }}</p>
             {% endfor %}
         </div>
     </div>
+    {% if not quotation_pipeline_mode %}
     <div class="kanban-col estimate-k-col--approved" data-status="approved">
         <div class="kanban-col-header">approved <span class="badge" style="background:#3730a3;">{{ estimates_board_approved|length }}</span></div>
         <div class="kanban-col-body">
             {% for estimate in estimates_board_approved %}
             {% include "sales/includes/estimate_kanban_card.html" with estimate=estimate %}
             {% empty %}
-            <p class="text-muted small mb-0 py-2 text-center">No estimates</p>
+            <p class="text-muted small mb-0 py-2 text-center">{{ page_labels.empty_kanban }}</p>
             {% endfor %}
         </div>
     </div>
@@ -417,37 +516,38 @@
             {% for estimate in estimates_board_lost %}
             {% include "sales/includes/estimate_kanban_card.html" with estimate=estimate %}
             {% empty %}
-            <p class="text-muted small mb-0 py-2 text-center">No estimates</p>
+            <p class="text-muted small mb-0 py-2 text-center">{{ page_labels.empty_kanban }}</p>
             {% endfor %}
         </div>
     </div>
+    {% endif %}
     <div class="kanban-col estimate-k-col--negotiation" data-status="under_negotiation">
         <div class="kanban-col-header">under negotiation <span class="badge" style="background:#0e7490;">{{ estimates_board_negotiation|length }}</span></div>
         <div class="kanban-col-body">
             {% for estimate in estimates_board_negotiation %}
             {% include "sales/includes/estimate_kanban_card.html" with estimate=estimate %}
             {% empty %}
-            <p class="text-muted small mb-0 py-2 text-center">No estimates</p>
+            <p class="text-muted small mb-0 py-2 text-center">{{ page_labels.empty_kanban }}</p>
             {% endfor %}
         </div>
     </div>
     <div class="kanban-col estimate-k-col--quot-won kanban-col--done" data-status="quotation_won">
-        <div class="kanban-col-header">quot won <span class="badge bg-success">{{ estimates_board_quot_won|length }}</span></div>
+        <div class="kanban-col-header">{{ page_labels.kanban_won_header }} <span class="badge bg-success">{{ estimates_board_quot_won|length }}</span></div>
         <div class="kanban-col-body">
             {% for estimate in estimates_board_quot_won %}
             {% include "sales/includes/estimate_kanban_card.html" with estimate=estimate %}
             {% empty %}
-            <p class="text-muted small mb-0 py-2 text-center">No estimates</p>
+            <p class="text-muted small mb-0 py-2 text-center">{{ page_labels.empty_kanban }}</p>
             {% endfor %}
         </div>
     </div>
     <div class="kanban-col estimate-k-col--quot-lost" data-status="quotation_lost">
-        <div class="kanban-col-header">quot lost <span class="badge bg-danger">{{ estimates_board_quot_lost|length }}</span></div>
+        <div class="kanban-col-header">{{ page_labels.kanban_lost_header }} <span class="badge bg-danger">{{ estimates_board_quot_lost|length }}</span></div>
         <div class="kanban-col-body">
             {% for estimate in estimates_board_quot_lost %}
             {% include "sales/includes/estimate_kanban_card.html" with estimate=estimate %}
             {% empty %}
-            <p class="text-muted small mb-0 py-2 text-center">No estimates</p>
+            <p class="text-muted small mb-0 py-2 text-center">{{ page_labels.empty_kanban }}</p>
             {% endfor %}
         </div>
     </div>
@@ -455,7 +555,7 @@
 {% endif %}
 
 {% if view_mode != 'kanban' %}
-<!-- Estimates Table -->
+<!-- List table -->
 <div class="card">
     <div class="card-body p-0">
         <div class="table-responsive">
@@ -463,34 +563,34 @@
                 <thead>
                     <tr>
                         <th class="estimate-sort-th">
-                            <a href="{% url 'sales:estimate_list' %}?{{ sort_links.estimate_number }}" class="estimate-sort-link" title="Sort by estimate number">
-                                Estimate #{% if sort_field == 'estimate_number' %}{% if sort_order == 'asc' %}<i class="fas fa-sort-up ms-1" aria-hidden="true"></i>{% else %}<i class="fas fa-sort-down ms-1" aria-hidden="true"></i>{% endif %}{% else %}<i class="fas fa-sort ms-1 text-muted opacity-50" aria-hidden="true"></i>{% endif %}
+                            <a href="{% url list_url_name %}?{{ sort_links.estimate_number }}" class="estimate-sort-link" title="{{ page_labels.sort_number_title }}">
+                                {{ page_labels.number_header }}{% if sort_field == 'estimate_number' %}{% if sort_order == 'asc' %}<i class="fas fa-sort-up ms-1" aria-hidden="true"></i>{% else %}<i class="fas fa-sort-down ms-1" aria-hidden="true"></i>{% endif %}{% else %}<i class="fas fa-sort ms-1 text-muted opacity-50" aria-hidden="true"></i>{% endif %}
                             </a>
                         </th>
                         <th class="estimate-sort-th col-customer">
-                            <a href="{% url 'sales:estimate_list' %}?{{ sort_links.customer }}" class="estimate-sort-link" title="Sort by company">
+                            <a href="{% url list_url_name %}?{{ sort_links.customer }}" class="estimate-sort-link" title="Sort by company">
                                 Company{% if sort_field == 'customer' %}{% if sort_order == 'asc' %}<i class="fas fa-sort-up ms-1" aria-hidden="true"></i>{% else %}<i class="fas fa-sort-down ms-1" aria-hidden="true"></i>{% endif %}{% else %}<i class="fas fa-sort ms-1 text-muted opacity-50" aria-hidden="true"></i>{% endif %}
                             </a>
                         </th>
-                        <th class="col-qw" title="Previous quotation won for this company">QW</th>
-                        <th class="col-ql" title="Previous quotation lost for this company">QL</th>
+                        <th class="col-qw" title="{{ page_labels.col_won_title }}">{{ page_labels.col_won_abbr }}</th>
+                        <th class="col-ql" title="{{ page_labels.col_lost_title }}">{{ page_labels.col_lost_abbr }}</th>
                         <th class="estimate-sort-th">
-                            <a href="{% url 'sales:estimate_list' %}?{{ sort_links.date }}" class="estimate-sort-link" title="Sort by date">
+                            <a href="{% url list_url_name %}?{{ sort_links.date }}" class="estimate-sort-link" title="Sort by date">
                                 Date{% if sort_field == 'date' %}{% if sort_order == 'asc' %}<i class="fas fa-sort-up ms-1" aria-hidden="true"></i>{% else %}<i class="fas fa-sort-down ms-1" aria-hidden="true"></i>{% endif %}{% else %}<i class="fas fa-sort ms-1 text-muted opacity-50" aria-hidden="true"></i>{% endif %}
                             </a>
                         </th>
                         <th class="estimate-sort-th">
-                            <a href="{% url 'sales:estimate_list' %}?{{ sort_links.valid }}" class="estimate-sort-link" title="Sort by valid until">
+                            <a href="{% url list_url_name %}?{{ sort_links.valid }}" class="estimate-sort-link" title="Sort by valid until">
                                 Valid{% if sort_field == 'valid' %}{% if sort_order == 'asc' %}<i class="fas fa-sort-up ms-1" aria-hidden="true"></i>{% else %}<i class="fas fa-sort-down ms-1" aria-hidden="true"></i>{% endif %}{% else %}<i class="fas fa-sort ms-1 text-muted opacity-50" aria-hidden="true"></i>{% endif %}
                             </a>
                         </th>
                         <th class="estimate-sort-th">
-                            <a href="{% url 'sales:estimate_list' %}?{{ sort_links.status }}" class="estimate-sort-link" title="Sort by status">
+                            <a href="{% url list_url_name %}?{{ sort_links.status }}" class="estimate-sort-link" title="Sort by status">
                                 Status{% if sort_field == 'status' %}{% if sort_order == 'asc' %}<i class="fas fa-sort-up ms-1" aria-hidden="true"></i>{% else %}<i class="fas fa-sort-down ms-1" aria-hidden="true"></i>{% endif %}{% else %}<i class="fas fa-sort ms-1 text-muted opacity-50" aria-hidden="true"></i>{% endif %}
                             </a>
                         </th>
                         <th class="estimate-sort-th text-end">
-                            <a href="{% url 'sales:estimate_list' %}?{{ sort_links.amount }}" class="estimate-sort-link" title="Sort by amount">
+                            <a href="{% url list_url_name %}?{{ sort_links.amount }}" class="estimate-sort-link" title="Sort by amount">
                                 Amount{% if sort_field == 'amount' %}{% if sort_order == 'asc' %}<i class="fas fa-sort-up ms-1" aria-hidden="true"></i>{% else %}<i class="fas fa-sort-down ms-1" aria-hidden="true"></i>{% endif %}{% else %}<i class="fas fa-sort ms-1 text-muted opacity-50" aria-hidden="true"></i>{% endif %}
                             </a>
                         </th>
@@ -502,8 +602,8 @@
                     {% for estimate in estimates %}
                     <tr>
                         <td>
-                            <a href="{% url 'sales:estimate_detail' estimate.pk %}" class="fw-medium text-decoration-none">
-                                {{ estimate.display_estimate_number }}
+                            <a href="{% if quotation_pipeline_mode %}{% url 'sales:quotation_detail' estimate.pk %}{% else %}{% url 'sales:estimate_detail' estimate.pk %}{% endif %}" class="fw-medium text-decoration-none">
+                                {{ estimate.list_display_number|default:estimate.display_estimate_number }}
                             </a>
                             {% if estimate.submitted_via_public_link %}
                             <span class="badge bg-info bg-opacity-10 text-info ms-1" title="Submitted via public link">Public</span>
@@ -537,17 +637,17 @@
                             {% elif estimate.status == 'sent' %}
                                 <span class="badge" style="background-color: #dbeafe; color: #1e40af;">Sent</span>
                             {% elif estimate.status == 'approved' %}
-                                <span class="badge estimate-status-badge-approved">{{ estimate.get_status_display }}</span>
+                                <span class="badge estimate-status-badge-approved">{{ estimate.list_status_display }}</span>
                             {% elif estimate.status == 'rejected' %}
-                                <span class="badge estimate-status-badge-rejected">{{ estimate.get_status_display }}</span>
+                                <span class="badge estimate-status-badge-rejected">{{ estimate.list_status_display }}</span>
                             {% elif estimate.status == 'under_negotiation' %}
-                                <span class="badge estimate-status-badge-under-negotiation">{{ estimate.get_status_display }}</span>
+                                <span class="badge estimate-status-badge-under-negotiation">{{ estimate.list_status_display }}</span>
                             {% elif estimate.status == 'quotation_won' %}
-                                <span class="badge bg-success">{{ estimate.get_status_display }}</span>
+                                <span class="badge bg-success">{{ estimate.list_status_display }}</span>
                             {% elif estimate.status == 'quotation_lost' %}
-                                <span class="badge bg-danger">{{ estimate.get_status_display }}</span>
+                                <span class="badge bg-danger">{{ estimate.list_status_display }}</span>
                             {% else %}
-                                <span class="badge bg-secondary">{{ estimate.get_status_display }}</span>
+                                <span class="badge bg-secondary">{{ estimate.list_status_display }}</span>
                             {% endif %}
                             {% endif %}
                         </td>
@@ -568,10 +668,10 @@
                         <td class="text-center estimate-list-actions">
                             <div class="d-flex flex-wrap gap-1 justify-content-center align-items-center">
                                 {% if approver_tab_readonly %}
-                                <a href="{% url 'sales:estimate_detail' estimate.pk %}" class="btn btn-action btn-outline-primary" title="View">
+                                <a href="{% if quotation_pipeline_mode %}{% url 'sales:quotation_detail' estimate.pk %}{% else %}{% url 'sales:estimate_detail' estimate.pk %}{% endif %}" class="btn btn-action btn-outline-primary" title="View">
                                     <i class="fas fa-eye"></i>
                                 </a>
-                                <a href="{% url 'sales:estimate_pdf' estimate.pk %}" class="btn btn-action btn-outline-secondary" title="Quotation PDF" target="_blank" rel="noopener">
+                                <a href="{% url 'sales:estimate_pdf' estimate.pk %}" class="btn btn-action btn-outline-secondary" title="{{ page_labels.pdf_button_title }}" target="_blank" rel="noopener">
                                     <i class="fas fa-file-pdf"></i>
                                 </a>
                                 {% else %}
@@ -583,12 +683,12 @@
                                 {% endif %}
                                 {% endif %}
                                 {% if is_approver_portal and approver_tab == 'pending' %}
-                                <a href="{% url 'sales:estimate_detail' estimate.pk %}" class="btn btn-action btn-outline-primary" title="View">
+                                <a href="{% if quotation_pipeline_mode %}{% url 'sales:quotation_detail' estimate.pk %}{% else %}{% url 'sales:estimate_detail' estimate.pk %}{% endif %}" class="btn btn-action btn-outline-primary" title="View">
                                     <i class="fas fa-eye"></i>
                                 </a>
                                 {% endif %}
                                 {% if estimate.can_convert_follow_on and estimate.can_create_invoice_from_estimate %}
-                                <a href="{% url 'sales:estimate_convert' estimate.pk %}" class="btn btn-action btn-outline-success" title="Convert to Invoice" onclick="return confirm('Create invoice from this estimate? Each estimate can only be converted once.');">
+                                <a href="{% url 'sales:estimate_convert' estimate.pk %}" class="btn btn-action btn-outline-success" title="Convert to Invoice" onclick="return confirm('{{ page_labels.convert_confirm|escapejs }}');">
                                     <i class="fas fa-file-invoice"></i>
                                 </a>
                                 {% elif estimate.primary_invoice %}
@@ -597,7 +697,7 @@
                                 </a>
                                 {% endif %}
                                 {% if can_create %}
-                                <form method="post" action="{% url 'sales:estimate_duplicate' estimate.pk %}" class="d-inline" onsubmit="return confirm('Duplicate this estimate as a new draft?');">
+                                <form method="post" action="{% url 'sales:estimate_duplicate' estimate.pk %}" class="d-inline" onsubmit="return confirm('{{ page_labels.duplicate_confirm|escapejs }}');">
                                     {% csrf_token %}
                                     <button type="submit" class="btn btn-action btn-outline-info" title="Duplicate">
                                         <i class="fas fa-copy"></i>
@@ -605,11 +705,11 @@
                                 </form>
                                 {% endif %}
                                 {% if can_delete %}
-                                <a href="{% url 'sales:estimate_delete' estimate.pk %}" class="btn btn-action btn-outline-danger" title="Delete" onclick="return confirm('Delete this estimate?');">
+                                <a href="{% url 'sales:estimate_delete' estimate.pk %}" class="btn btn-action btn-outline-danger" title="Delete" onclick="return confirm('{{ page_labels.delete_confirm|escapejs }}');">
                                     <i class="fas fa-trash"></i>
                                 </a>
                                 {% endif %}
-                                <a href="{% url 'sales:estimate_pdf' estimate.pk %}" class="btn btn-action btn-outline-secondary" title="Quotation PDF" target="_blank" rel="noopener">
+                                <a href="{% url 'sales:estimate_pdf' estimate.pk %}" class="btn btn-action btn-outline-secondary" title="{{ page_labels.pdf_button_title }}" target="_blank" rel="noopener">
                                     <i class="fas fa-file-pdf"></i>
                                 </a>
                                 {% if estimate.status == 'quotation_won' and not estimate.has_invoice %}
@@ -622,7 +722,7 @@
                                 <button type="button" class="btn btn-action btn-outline-warning" title="Create proforma invoice (advance billing — not customer payment)"
                                     data-bs-toggle="modal" data-bs-target="#proformaInvoiceModal"
                                     data-estimate-pk="{{ estimate.pk }}"
-                                    data-estimate-number="{{ estimate.display_estimate_number }}"
+                                    data-estimate-number="{{ estimate.list_display_number|default:estimate.display_estimate_number }}"
                                     data-subtotal="{{ estimate.subtotal }}"
                                     data-vat="{{ estimate.vat_amount }}"
                                     data-estimate-total="{{ estimate.total_amount }}"
@@ -644,10 +744,10 @@
                     <tr>
                         <td colspan="10" class="text-center py-5 text-muted">
                             <i class="fas fa-file-invoice fa-3x mb-3 d-block"></i>
-                            <p class="mb-2">No estimates found</p>
-                            {% if can_create %}
+                            <p class="mb-2">{{ page_labels.empty_list }}</p>
+                            {% if can_create and show_create_button %}
                             <a href="{% url 'sales:estimate_create' %}" class="btn btn-primary btn-sm">
-                                <i class="fas fa-plus me-1"></i>Create First Estimate
+                                <i class="fas fa-plus me-1"></i>{{ page_labels.create_first_button }}
                             </a>
                             {% endif %}
                         </td>
@@ -680,7 +780,7 @@
     </ul>
 </nav>
 {% endif %}
-{% include 'sales/includes/proforma_invoice_modal.html' %}
+{% include 'sales/includes/proforma_invoice_modal.html' with proforma_ref_label=page_labels.proforma_ref_label proforma_percent_label=page_labels.proforma_percent_label %}
 
 <div class="modal fade" id="rejectEstimateListModal" tabindex="-1" aria-labelledby="rejectEstimateListModalLabel" aria-hidden="true">
     <div class="modal-dialog">
@@ -690,16 +790,16 @@
                 <input type="hidden" name="status" value="rejected">
                 <input type="hidden" name="next" id="rejectEstimateListNext" value="">
                 <div class="modal-header">
-                    <h5 class="modal-title" id="rejectEstimateListModalLabel">Reject estimate</h5>
+                    <h5 class="modal-title" id="rejectEstimateListModalLabel">{{ page_labels.reject_title }}</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
                     <label class="form-label" for="id_estimate_list_rejection_reason">Reason <span class="text-danger">*</span></label>
-                    <textarea name="rejection_reason" id="id_estimate_list_rejection_reason" class="form-control" rows="3" required placeholder="Explain why this estimate is rejected"></textarea>
+                    <textarea name="rejection_reason" id="id_estimate_list_rejection_reason" class="form-control" rows="3" required placeholder="{{ page_labels.reject_placeholder }}"></textarea>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-danger">Reject estimate</button>
+                    <button type="submit" class="btn btn-danger">{{ page_labels.reject_button }}</button>
                 </div>
             </form>
         </div>

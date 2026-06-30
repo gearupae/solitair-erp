@@ -1,7 +1,20 @@
 {% extends 'base.html' %}
+{% load crm_extras %}
 
 {% block extra_css %}
 <style>
+.badge.crm-pipeline-stage-hot,
+.badge.crm-pipeline-stage-lost { background-color: #fee2e2; color: #991b1b; }
+.badge.crm-pipeline-stage-warm { background-color: #fef3c7; color: #b45309; }
+.badge.crm-pipeline-stage-active { background-color: #dcfce7; color: #166534; }
+.badge.crm-pipeline-stage-cold { background-color: #dbeafe; color: #1e40af; }
+.badge.crm-pipeline-stage-unassigned { background-color: #f3f4f6; color: #374151; }
+.badge.crm-pipeline-stage-theme-0 { background-color: #dbeafe; color: #1e40af; }
+.badge.crm-pipeline-stage-theme-1 { background-color: #fef3c7; color: #b45309; }
+.badge.crm-pipeline-stage-theme-2 { background-color: #fce7f3; color: #be185d; }
+.badge.crm-pipeline-stage-theme-3 { background-color: #ccfbf1; color: #0f766e; }
+.badge.crm-pipeline-stage-theme-4 { background-color: #e0e7ff; color: #4338ca; }
+.badge.crm-pipeline-stage-theme-5 { background-color: #ffedd5; color: #c2410c; }
 .customer-info-card .card-header {
     padding: 0.625rem 1rem;
 }
@@ -160,7 +173,16 @@
                     {% elif customer.customer_type == 'lead' and customer.lead_kanban_stage %}
                     <div class="col-md-6 info-field">
                         <label class="form-label text-muted small info-label">Pipeline stage</label>
-                        <p class="fw-medium info-value">{{ customer.lead_kanban_stage.name }}</p>
+                        <p class="info-value mb-0">
+                            <span class="badge fw-normal {{ customer.lead_kanban_stage|pipeline_stage_class }}">{{ customer.lead_kanban_stage.name }}</span>
+                        </p>
+                    </div>
+                    {% elif customer.customer_type == 'lead' %}
+                    <div class="col-md-6 info-field">
+                        <label class="form-label text-muted small info-label">Pipeline stage</label>
+                        <p class="info-value mb-0">
+                            <span class="badge fw-normal crm-pipeline-stage-unassigned">Unassigned</span>
+                        </p>
                     </div>
                     {% endif %}
                     <div class="col-md-6 info-field">

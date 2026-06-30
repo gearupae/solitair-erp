@@ -1,0 +1,418 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}{{ dashboard_ui.title }}{% endblock %}
+
+{% block extra_css %}
+<style>
+.est-dash-kpi {
+    border: none;
+    border-radius: 0.75rem;
+    box-shadow: 0 1px 3px rgba(15,23,42,.06);
+    height: 100%;
+}
+.est-dash-kpi__label {
+    font-size: .72rem;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: #64748b;
+    margin-bottom: .35rem;
+}
+.est-dash-kpi__value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #0f172a;
+    line-height: 1.1;
+}
+.est-dash-delta { font-size: .78rem; font-weight: 600; margin-top: .25rem; }
+.est-dash-delta--up { color: #059669; }
+.est-dash-delta--down { color: #dc2626; }
+.est-dash-delta--neutral { color: #64748b; }
+.est-dash-chart-card {
+    border: none;
+    border-radius: 0.75rem;
+    box-shadow: 0 1px 3px rgba(15,23,42,.06);
+    height: 100%;
+}
+.est-dash-chart-wrap { position: relative; height: 280px; }
+.est-dash-chart-wrap--sm { height: 240px; }
+.est-dash-section-title {
+    font-size: .75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: #64748b;
+    margin-bottom: 1rem;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+    <div>
+        <h4 class="mb-1 fw-bold">{{ title }}</h4>
+        <p class="text-muted mb-0">Estimation performance · {{ period_label }}{% if not all_time %} · vs {{ prev_period_label }}{% else %} · % change vs {{ prev_period_label }}{% endif %}</p>
+        {% if total_visible_estimates %}<p class="text-muted small mb-0">{{ total_visible_estimates }} {{ dashboard_ui.record_label_plural }} in scope</p>{% endif %}
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+        <a href="{% url dashboard_ui.list_url_name %}" class="btn btn-sm btn-outline-secondary"><i class="fas fa-list me-1"></i>{{ dashboard_ui.list_link_label }}</a>
+        <a href="{% url 'sales:estimate_create' %}" class="btn btn-sm btn-primary"><i class="fas fa-plus me-1"></i>Create</a>
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-body py-3">
+        <form method="get" class="row g-2 align-items-end">
+            <div class="col-md-6 col-lg-2">
+                <label class="form-label small mb-1">Estimator</label>
+                <select name="estimator" class="form-select form-select-sm">
+                    <option value="">All Estimators</option>
+                    {% for name in filter_options.estimators %}
+                    <option value="{{ name }}" {% if filters.estimator == name %}selected{% endif %}>{{ name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-6 col-lg-2">
+                <label class="form-label small mb-1">Sales Person</label>
+                <select name="sales_person" class="form-select form-select-sm">
+                    <option value="">All Sales Persons</option>
+                    {% for emp in filter_options.sales_persons %}
+                    <option value="{{ emp.pk }}" {% if filters.sales_person == emp.pk %}selected{% endif %}>{{ emp.full_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-6 col-lg-2">
+                <label class="form-label small mb-1">Project Type</label>
+                <select name="project_type" class="form-select form-select-sm">
+                    <option value="">All Project Types</option>
+                    {% for pt in filter_options.project_types %}
+                    <option value="{{ pt }}" {% if filters.project_type == pt %}selected{% endif %}>{{ pt }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-6 col-lg-2">
+                <label class="form-label small mb-1">Customer</label>
+                <select name="customer" class="form-select form-select-sm">
+                    <option value="">All Customers</option>
+                    {% for c in filter_options.customers %}
+                    <option value="{{ c.pk }}" {% if filters.customer_id == c.pk %}selected{% endif %}>{{ c.name }}{% if c.company %} — {{ c.company }}{% endif %}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3 col-lg-1">
+                <label class="form-label small mb-1">From</label>
+                <input type="date" name="date_from" value="{{ date_from_iso }}" class="form-control form-control-sm">
+            </div>
+            <div class="col-md-3 col-lg-1">
+                <label class="form-label small mb-1">To</label>
+                <input type="date" name="date_to" value="{{ date_to_iso }}" class="form-control form-control-sm">
+            </div>
+            <div class="col-md-auto">
+                <button type="submit" class="btn btn-sm btn-primary"><i class="fas fa-filter me-1"></i>Apply</button>
+                <a href="{% url dashboard_url_name %}" class="btn btn-sm btn-light">Reset</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- KPI cards -->
+<div class="est-dash-section-title">Key metrics (vs previous period)</div>
+<div class="row g-3 mb-4">
+    {% for kpi in kpis %}
+    <div class="col-6 col-md-4 col-xl">
+        <div class="card est-dash-kpi">
+            <div class="card-body py-3">
+                <div class="est-dash-kpi__label">{{ kpi.label }}</div>
+                <div class="est-dash-kpi__value">
+                    {% if kpi.format == 'money' %}AED {{ kpi.current|floatformat:0|intcomma }}
+                    {% elif kpi.format == 'pct' %}{{ kpi.current|floatformat:1 }}%
+                    {% else %}{{ kpi.current|floatformat:0|intcomma }}{% endif %}
+                </div>
+                <div class="est-dash-delta est-dash-delta--{{ kpi.direction }}">
+                    {% if kpi.direction == 'up' %}▲{% elif kpi.direction == 'down' %}▼{% else %}—{% endif %}
+                    {{ kpi.change_pct|floatformat:1 }}%
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Row 1: line + status donut -->
+<div class="row g-3 mb-4">
+    <div class="col-lg-7">
+        <div class="card est-dash-chart-card">
+            <div class="card-body">
+                <h6 class="fw-semibold mb-3">{{ dashboard_ui.charts.over_time }}</h6>
+                <div class="est-dash-chart-wrap"><canvas id="chartOverTime"></canvas></div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-5">
+        <div class="card est-dash-chart-card">
+            <div class="card-body">
+                <h6 class="fw-semibold mb-1">{{ dashboard_ui.charts.status }}</h6>
+                <p class="text-muted small mb-3">{{ charts.status_total|floatformat:0 }} Total</p>
+                <div class="est-dash-chart-wrap est-dash-chart-wrap--sm"><canvas id="chartStatus"></canvas></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Row 2: revised combo chart -->
+<div class="row g-3 mb-4">
+    <div class="col-12">
+        <div class="card est-dash-chart-card">
+            <div class="card-body">
+                <h6 class="fw-semibold mb-3">{{ dashboard_ui.charts.revised }}</h6>
+                <div class="est-dash-chart-wrap"><canvas id="chartRevised"></canvas></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Row 3: source + project type donuts -->
+<div class="row g-3 mb-4">
+    <div class="col-md-6">
+        <div class="card est-dash-chart-card">
+            <div class="card-body">
+                <h6 class="fw-semibold mb-1">{{ dashboard_ui.charts.source }}</h6>
+                <p class="text-muted small mb-3">{{ charts.source_total|floatformat:0 }} requests (100%)</p>
+                <div class="est-dash-chart-wrap est-dash-chart-wrap--sm"><canvas id="chartSource"></canvas></div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card est-dash-chart-card">
+            <div class="card-body">
+                <h6 class="fw-semibold mb-1">{{ dashboard_ui.charts.project_type }}</h6>
+                <p class="text-muted small mb-3">{{ charts.project_total|floatformat:0 }} Total (100%)</p>
+                <div class="est-dash-chart-wrap est-dash-chart-wrap--sm"><canvas id="chartProjectType"></canvas></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Row 4: estimator bars + lost reasons -->
+<div class="row g-3 mb-4">
+    <div class="col-lg-7">
+        <div class="card est-dash-chart-card">
+            <div class="card-body">
+                <h6 class="fw-semibold mb-3">{{ dashboard_ui.charts.estimator }}</h6>
+                <div class="est-dash-chart-wrap"><canvas id="chartEstimator"></canvas></div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-5">
+        <div class="card est-dash-chart-card">
+            <div class="card-body">
+                <h6 class="fw-semibold mb-1">{{ dashboard_ui.charts.lost_reason }}</h6>
+                <p class="text-muted small mb-3">{{ charts.lost_total|floatformat:0 }} Total (100%)</p>
+                <div class="est-dash-chart-wrap est-dash-chart-wrap--sm"><canvas id="chartLostReason"></canvas></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Summary repeat -->
+<div class="est-dash-section-title">Summary (This Period)</div>
+<div class="row g-3 mb-4">
+    {% for kpi in kpis %}
+    <div class="col-6 col-md-4 col-xl">
+        <div class="card est-dash-kpi">
+            <div class="card-body py-3">
+                <div class="est-dash-kpi__label">{{ kpi.label }}</div>
+                <div class="est-dash-kpi__value">
+                    {% if kpi.format == 'money' %}AED {{ kpi.current|floatformat:0|intcomma }}
+                    {% elif kpi.format == 'pct' %}{{ kpi.current|floatformat:1 }}%
+                    {% else %}{{ kpi.current|floatformat:0|intcomma }}{% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+{{ day_labels|json_script:"est-dash-labels" }}
+{{ charts|json_script:"est-dash-charts" }}
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    if (typeof Chart === 'undefined') {
+        console.error('Chart.js failed to load');
+        return;
+    }
+
+    var labelsEl = document.getElementById('est-dash-labels');
+    var chartsEl = document.getElementById('est-dash-charts');
+    if (!labelsEl || !chartsEl) return;
+
+    var labels = JSON.parse(labelsEl.textContent);
+    var charts = JSON.parse(chartsEl.textContent);
+
+    var palette = ['#2563eb', '#059669', '#d97706', '#dc2626', '#7c3aed', '#0891b2', '#64748b', '#ea580c'];
+    var donutOpts = {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } },
+            tooltip: {
+                callbacks: {
+                    label: function (ctx) {
+                        var item = ctx.dataset.dataMeta ? ctx.dataset.dataMeta[ctx.dataIndex] : null;
+                        if (item) {
+                            return item.label + ': ' + item.count + ' (' + item.pct + '%)';
+                        }
+                        return ctx.label + ': ' + ctx.raw;
+                    }
+                }
+            }
+        }
+    };
+
+    function donutData(items) {
+        var visible = (items || []).filter(function (i) { return i.count > 0; });
+        if (!visible.length) {
+            visible = [{ label: 'No data', count: 1, pct: 100 }];
+        }
+        return {
+            labels: visible.map(function (i) { return i.label; }),
+            datasets: [{
+                data: visible.map(function (i) { return i.count; }),
+                dataMeta: visible,
+                backgroundColor: visible[0].label === 'No data' ? ['#e2e8f0'] : palette.slice(0, visible.length),
+                borderWidth: 2,
+                borderColor: '#fff'
+            }]
+        };
+    }
+
+    var revisedLabels = labels.length ? labels : ['No data'];
+    var revisedCounts = charts.revised_counts && charts.revised_counts.length === labels.length
+        ? charts.revised_counts
+        : (labels.length ? labels.map(function () { return 0; }) : [0]);
+    var revisedValues = charts.revised_values && charts.revised_values.length === labels.length
+        ? charts.revised_values
+        : (labels.length ? labels.map(function () { return 0; }) : [0]);
+
+    if (document.getElementById('chartOverTime')) {
+    new Chart(document.getElementById('chartOverTime'), {
+        type: 'line',
+        data: {
+            labels: labels.length ? labels : ['No data'],
+            datasets: [{
+                label: 'Estimations',
+                data: labels.length ? charts.over_time : [0],
+                borderColor: '#2563eb',
+                backgroundColor: 'rgba(37,99,235,0.1)',
+                fill: true,
+                tension: 0.35,
+                pointRadius: 4
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } },
+            plugins: { legend: { display: false } }
+        }
+    });
+    }
+
+    if (document.getElementById('chartStatus')) {
+    new Chart(document.getElementById('chartStatus'), {
+        type: 'doughnut',
+        data: donutData(charts.status_donut),
+        options: donutOpts
+    });
+    }
+
+    if (document.getElementById('chartRevised')) {
+    new Chart(document.getElementById('chartRevised'), {
+        type: 'bar',
+        data: {
+            labels: revisedLabels,
+            datasets: [
+                {
+                    type: 'bar',
+                    label: 'Revised count',
+                    data: revisedCounts,
+                    backgroundColor: 'rgba(37,99,235,0.7)',
+                    yAxisID: 'y'
+                },
+                {
+                    type: 'line',
+                    label: 'Revised value (AED)',
+                    data: revisedValues,
+                    borderColor: '#059669',
+                    backgroundColor: '#059669',
+                    yAxisID: 'y1',
+                    tension: 0.35
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: { beginAtZero: true, position: 'left', title: { display: true, text: 'Count' } },
+                y1: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'AED' } }
+            }
+        }
+    });
+    }
+
+    if (document.getElementById('chartSource')) {
+    new Chart(document.getElementById('chartSource'), {
+        type: 'doughnut',
+        data: donutData(charts.source_donut),
+        options: donutOpts
+    });
+    }
+
+    if (document.getElementById('chartProjectType')) {
+    new Chart(document.getElementById('chartProjectType'), {
+        type: 'doughnut',
+        data: donutData(charts.project_donut),
+        options: donutOpts
+    });
+    }
+
+    var estBars = charts.estimator_bars || [];
+    var estLabels = estBars.map(function (r) { return r[0]; });
+    var estCounts = estBars.map(function (r) { return r[1]; });
+    if (document.getElementById('chartEstimator')) {
+    new Chart(document.getElementById('chartEstimator'), {
+        type: 'bar',
+        data: {
+            labels: estLabels.length ? estLabels : ['No data'],
+            datasets: [{
+                label: 'Estimations',
+                data: estCounts.length ? estCounts : [0],
+                backgroundColor: 'rgba(37,99,235,0.75)'
+            }]
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: { x: { beginAtZero: true, ticks: { stepSize: 1 } } }
+        }
+    });
+    }
+
+    if (document.getElementById('chartLostReason')) {
+    new Chart(document.getElementById('chartLostReason'), {
+        type: 'doughnut',
+        data: donutData(charts.lost_donut),
+        options: donutOpts
+    });
+    }
+});
+</script>
+{% endblock %}

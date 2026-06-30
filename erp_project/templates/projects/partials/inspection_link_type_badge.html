@@ -1,0 +1,7 @@
+{% if link_type == 'project' or inspection.link_type == 'project' %}
+<span class="badge bg-primary bg-opacity-10 text-primary"><i class="fas fa-project-diagram me-1"></i>Project</span>
+{% elif link_type == 'amc' or inspection.link_type == 'amc' %}
+<span class="badge bg-info bg-opacity-10 text-info"><i class="fas fa-file-contract me-1"></i>AMC</span>
+{% else %}
+<span class="badge bg-light text-dark border">—</span>
+{% endif %}

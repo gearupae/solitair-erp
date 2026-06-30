@@ -5,7 +5,7 @@ Invoices post to accounting module as single source of truth.
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
-from django.views.generic import ListView, CreateView, UpdateView, DetailView
+from django.views.generic import ListView, CreateView, UpdateView, DetailView, TemplateView
 from django.urls import reverse, reverse_lazy
 from django.db import transaction
 from django.db.models import Q, Sum, Prefetch, Count
@@ -85,6 +85,8 @@ def _inventory_item_estimate_json(item):
         'id': item.id,
         'item_code': item.item_code,
         'name': item.name,
+        'brand': item.brand or '',
+        'description': item.description or '',
         'selling_price': item.selling_price,
         'minimum_selling_price_value': item.minimum_selling_price,
         'minimum_selling_price_type': item.minimum_selling_price_type,
@@ -94,6 +96,18 @@ def _inventory_item_estimate_json(item):
         'quote_minimum_rate': item.get_quote_minimum_rate(item.selling_price),
         'tax_code_id': item.tax_code_id,
     }
+
+
+def _inventory_brands_for_estimate_json():
+    from apps.inventory.models import Item
+
+    return list(
+        Item.objects.filter(is_active=True, status='active')
+        .exclude(brand='')
+        .values_list('brand', flat=True)
+        .distinct()
+        .order_by('brand')
+    )
 
 
 def _inventory_items_for_estimate_json(limit=2000):
@@ -353,6 +367,134 @@ def _scope_estimate_form_fields(form, user):
 
 # ============ ESTIMATE VIEWS ============
 
+ESTIMATE_LIST_PAGE_LABELS = {
+    'subtitle_approver': 'Review and approve sales estimates',
+    'subtitle_default': 'Manage your sales estimates',
+    'create_button': 'Create Estimate',
+    'create_first_button': 'Create First Estimate',
+    'approved_total': 'Approved estimates',
+    'total_count': 'Total Estimates',
+    'search_placeholder': 'Estimate #, Customer...',
+    'empty_kanban': 'No estimates',
+    'empty_list': 'No estimates found',
+    'number_header': 'Estimate #',
+    'sort_number_title': 'Sort by estimate number',
+    'reject_title': 'Reject estimate',
+    'reject_placeholder': 'Explain why this estimate is rejected',
+    'reject_button': 'Reject estimate',
+    'duplicate_confirm': 'Duplicate this estimate as a new draft?',
+    'delete_confirm': 'Delete this estimate?',
+    'convert_confirm': 'Create invoice from this estimate? Each estimate can only be converted once.',
+    'kanban_won_header': 'quotation won',
+    'kanban_lost_header': 'quotation lost',
+    'col_won_abbr': 'EW',
+    'col_lost_abbr': 'EL',
+    'col_won_title': 'Previous estimate won for this company',
+    'col_lost_title': 'Previous estimate lost for this company',
+    'pdf_button_title': 'Estimate PDF',
+    'proforma_ref_label': 'Estimate',
+    'proforma_percent_label': 'Percentage of estimate subtotal',
+    'status_overrides': {
+        'quotation_won': 'Quotation Won',
+        'quotation_lost': 'Quotation Lost',
+    },
+}
+
+QUOTATION_LIST_PAGE_LABELS = {
+    'subtitle_approver': 'Review and approve sales quotations',
+    'subtitle_default': 'Manage your sales quotations',
+    'create_button': 'Create Quotation',
+    'create_first_button': 'Create First Quotation',
+    'approved_total': 'Approved quotations',
+    'total_count': 'Total Quotations',
+    'search_placeholder': 'Quotation #, Customer...',
+    'empty_kanban': 'No quotations',
+    'empty_list': 'No quotations found',
+    'number_header': 'Quotation #',
+    'sort_number_title': 'Sort by quotation number',
+    'reject_title': 'Reject quotation',
+    'reject_placeholder': 'Explain why this quotation is rejected',
+    'reject_button': 'Reject quotation',
+    'duplicate_confirm': 'Duplicate this quotation as a new draft?',
+    'delete_confirm': 'Delete this quotation?',
+    'convert_confirm': 'Create invoice from this quotation? Each quotation can only be converted once.',
+    'kanban_won_header': 'quot won',
+    'kanban_lost_header': 'quot lost',
+    'col_won_abbr': 'QW',
+    'col_lost_abbr': 'QL',
+    'col_won_title': 'Previous quotation won for this company',
+    'col_lost_title': 'Previous quotation lost for this company',
+    'pdf_button_title': 'Quotation PDF',
+    'proforma_ref_label': 'Quotation',
+    'proforma_percent_label': 'Percentage of quotation subtotal',
+    'status_overrides': {
+        'quotation_won': 'Quotation Won',
+        'quotation_lost': 'Quotation Lost',
+    },
+    'negotiation_count_label': 'Under negotiation',
+    'won_amount_label': 'Quot won amount',
+    'won_count_label': 'Quot won',
+    'lost_count_label': 'Quot lost',
+}
+
+QUOTATION_CONVERTED_STATUSES = frozenset({
+    'under_negotiation',
+    'quotation_won',
+    'quotation_lost',
+})
+
+
+def estimate_converted_to_quotation(estimate) -> bool:
+    """True after Convert to Quotation (under negotiation / won / lost)."""
+    return getattr(estimate, 'status', None) in QUOTATION_CONVERTED_STATUSES
+
+
+def estimate_in_quotation_pipeline(estimate) -> bool:
+    return estimate_converted_to_quotation(estimate)
+
+
+def _remap_status_choices(choices, overrides):
+    if not overrides:
+        return choices
+    return [(code, overrides.get(code, label)) for code, label in choices]
+
+
+def _list_status_display(status, overrides):
+    labels = dict(Estimate.STATUS_CHOICES)
+    return overrides.get(status, labels.get(status, status))
+
+
+def _estimate_list_number_display(estimate, *, quotation_pipeline: bool) -> str:
+    """On the estimates list, show EST- prefix; quotations workspace keeps stored QUO- numbers."""
+    num = estimate.display_estimate_number
+    if quotation_pipeline:
+        return num
+    from django.conf import settings
+
+    stored_prefix = settings.NUMBER_SERIES.get('ESTIMATE', {}).get('prefix', 'QUO')
+    if stored_prefix and num.startswith(f'{stored_prefix}-'):
+        return f'EST-{num[len(stored_prefix) + 1:]}'
+    return num
+
+
+def user_can_convert_estimate_to_quotation(user, estimate) -> bool:
+    """True when estimate may move to under negotiation (quotations pipeline)."""
+    from .approval_rules import estimate_status_change_allowed
+
+    if not estimate.is_active or estimate.status in (
+        'under_negotiation',
+        'quotation_won',
+        'quotation_lost',
+    ):
+        return False
+    return estimate_status_change_allowed(
+        estimate.status,
+        'under_negotiation',
+        user=user,
+        estimate=estimate,
+    )
+
+
 class EstimateListView(PermissionRequiredMixin, ListView):
     """List all estimates."""
     model = Estimate
@@ -361,6 +503,12 @@ class EstimateListView(PermissionRequiredMixin, ListView):
     module_name = 'sales'
     permission_type = 'view'
     paginate_by = 25
+    list_url_name = 'sales:estimate_list'
+    show_public_create_link = True
+    show_create_button = True
+    page_title = 'Estimates'
+    page_labels = ESTIMATE_LIST_PAGE_LABELS
+    list_status_filter = None
 
     def get_paginate_by(self, queryset):
         from .approval_rules import user_is_estimate_approver_portal
@@ -409,6 +557,9 @@ class EstimateListView(PermissionRequiredMixin, ListView):
 
         queryset = filter_estimates_for_user(queryset, self.request.user)
 
+        if self.list_status_filter:
+            queryset = queryset.filter(status__in=self.list_status_filter)
+
         is_portal = user_is_estimate_approver_portal(self.request.user)
         if is_portal:
             tab = (self.request.GET.get('tab') or 'pending').strip().lower()
@@ -456,9 +607,20 @@ class EstimateListView(PermissionRequiredMixin, ListView):
             k: _estimate_list_sort_querystring(self.request.GET, k)
             for k in ESTIMATE_LIST_SORT_FIELDS
         }
-        context['title'] = 'Estimates'
+        context['title'] = self.page_title
+        context['list_url_name'] = self.list_url_name
+        context['show_public_create_link'] = self.show_public_create_link
+        context['show_create_button'] = self.show_create_button
+        context['page_labels'] = self.page_labels
+        context['quotation_pipeline_mode'] = bool(self.list_status_filter)
         context['customers'] = Customer.objects.filter(is_active=True)
-        context['status_choices'] = Estimate.STATUS_CHOICES
+        status_overrides = self.page_labels.get('status_overrides') or {}
+        status_choices = Estimate.STATUS_CHOICES
+        if self.list_status_filter:
+            status_choices = [
+                (code, label) for code, label in status_choices if code in self.list_status_filter
+            ]
+        context['status_choices'] = _remap_status_choices(status_choices, status_overrides)
         context['can_create'] = (
             not is_portal
             and (
@@ -466,7 +628,7 @@ class EstimateListView(PermissionRequiredMixin, ListView):
                 or PermissionChecker.has_permission(self.request.user, 'sales', 'create')
             )
         )
-        if context['can_create']:
+        if context['can_create'] and self.show_public_create_link:
             from .estimate_public_create_link import public_create_link_context
 
             context.update(public_create_link_context(self.request))
@@ -496,6 +658,7 @@ class EstimateListView(PermissionRequiredMixin, ListView):
         kanban_q['view'] = 'kanban'
         context['estimate_list_url_list'] = '?' + list_q.urlencode()
         context['estimate_list_url_kanban'] = '?' + kanban_q.urlencode()
+        context['dashboard_url_name'] = getattr(self, 'dashboard_url_name', 'sales:estimate_dashboard')
 
         from .approval_rules import user_can_convert_estimate_follow_on
 
@@ -522,7 +685,19 @@ class EstimateListView(PermissionRequiredMixin, ListView):
             context['approved_amount'] = estimates.filter(
                 status__in=['approved', 'quotation_won'],
             ).aggregate(Sum('total_amount'))['total_amount__sum'] or 0
-            context['pending_count'] = estimates.filter(status__in=['draft', 'sent']).count()
+            if self.list_status_filter:
+                context['pending_count'] = estimates.filter(status='under_negotiation').count()
+                context['quotation_won_count'] = estimates.filter(status='quotation_won').count()
+                context['quotation_lost_count'] = estimates.filter(status='quotation_lost').count()
+                context['approved_amount'] = estimates.filter(
+                    status='quotation_won',
+                ).aggregate(Sum('total_amount'))['total_amount__sum'] or 0
+            else:
+                context['pending_count'] = estimates.filter(status__in=['draft', 'sent']).count()
+                context['approved_count'] = estimates.filter(
+                    status__in=['approved', 'quotation_won'],
+                ).count()
+                context['rejected_count'] = estimates.filter(status='rejected').count()
             context['approved_tab_count'] = 0
 
         q_tab = self.request.GET.copy()
@@ -536,20 +711,28 @@ class EstimateListView(PermissionRequiredMixin, ListView):
 
         estimates = self.get_queryset()
         if context['view_mode'] == 'kanban':
-            bucket_statuses = frozenset(
-                {
-                    'draft',
-                    'sent',
-                    'approved',
-                    'rejected',
-                    'under_negotiation',
-                    'quotation_won',
-                    'quotation_lost',
-                }
-            )
+            if self.list_status_filter:
+                bucket_statuses = self.list_status_filter
+            else:
+                bucket_statuses = frozenset(
+                    {
+                        'draft',
+                        'sent',
+                        'approved',
+                        'rejected',
+                        'under_negotiation',
+                        'quotation_won',
+                        'quotation_lost',
+                    }
+                )
             by_status = defaultdict(list)
+            quotation_pipeline = bool(self.list_status_filter)
             for est in estimates:
-                st = est.status if est.status in bucket_statuses else 'draft'
+                est.list_display_number = _estimate_list_number_display(
+                    est,
+                    quotation_pipeline=quotation_pipeline,
+                )
+                st = est.status if est.status in bucket_statuses else next(iter(bucket_statuses))
                 by_status[st].append(est)
             context['estimates_board_draft'] = list(by_status['draft'])
             context['estimates_board_sent'] = list(by_status['sent'])
@@ -570,15 +753,77 @@ class EstimateListView(PermissionRequiredMixin, ListView):
         from .approval_rules import allowed_status_choices_for_estimate
 
         page_estimates = context.get('estimates') or []
+        quotation_pipeline = bool(self.list_status_filter)
         if context['view_mode'] != 'kanban':
             attach_customer_quotation_won_counts(page_estimates)
             attach_customer_quotation_lost_counts(page_estimates)
         for est in page_estimates:
-            est.allowed_status_choices = allowed_status_choices_for_estimate(
-                est, self.request.user
+            est.list_display_number = _estimate_list_number_display(
+                est,
+                quotation_pipeline=quotation_pipeline,
             )
+            choices = allowed_status_choices_for_estimate(est, self.request.user)
+            if self.list_status_filter:
+                choices = [(code, label) for code, label in choices if code in self.list_status_filter]
+            est.allowed_status_choices = _remap_status_choices(
+                choices,
+                status_overrides,
+            )
+            est.list_status_display = _list_status_display(est.status, status_overrides)
 
         return context
+
+
+class EstimateDashboardView(PermissionRequiredMixin, TemplateView):
+    """Estimation analytics dashboard with KPIs and charts."""
+    template_name = 'sales/estimate_dashboard.html'
+    module_name = 'sales'
+    permission_type = 'view'
+    dashboard_mode = 'estimate'
+    dashboard_url_name = 'sales:estimate_dashboard'
+
+    def get_context_data(self, **kwargs):
+        from .estimate_dashboard import build_dashboard_context, resolve_date_range
+
+        ctx = super().get_context_data(**kwargs)
+        req = self.request.GET
+        date_from, date_to, all_time = resolve_date_range(
+            self.request.user,
+            req.get('date_from'),
+            req.get('date_to'),
+        )
+        dashboard = build_dashboard_context(
+            user=self.request.user,
+            date_from=date_from,
+            date_to=date_to,
+            all_time=all_time,
+            estimator=req.get('estimator', ''),
+            sales_person=req.get('sales_person', ''),
+            project_type=req.get('project_type', ''),
+            customer_id=req.get('customer', ''),
+            mode=self.dashboard_mode,
+        )
+        ctx.update(dashboard)
+        ctx['title'] = dashboard['dashboard_ui']['title']
+        ctx['dashboard_url_name'] = self.dashboard_url_name
+        return ctx
+
+
+class QuotationDashboardView(EstimateDashboardView):
+    """Quotation pipeline analytics — under negotiation / won / lost."""
+    dashboard_mode = 'quotation'
+    dashboard_url_name = 'sales:quotation_dashboard'
+
+
+class QuotationListView(EstimateListView):
+    """Quotations workspace — pipeline for under negotiation / quot won / quot lost."""
+    list_url_name = 'sales:quotation_list'
+    dashboard_url_name = 'sales:quotation_dashboard'
+    show_public_create_link = False
+    show_create_button = False
+    page_title = 'Quotations'
+    page_labels = QUOTATION_LIST_PAGE_LABELS
+    list_status_filter = QUOTATION_CONVERTED_STATUSES
 
 
 class EstimateCreateView(CreatePermissionMixin, CreateView):
@@ -622,6 +867,10 @@ class EstimateCreateView(CreatePermissionMixin, CreateView):
         context['default_tax_code'] = get_default_estimate_csv_tax_code()
         rows = _inventory_items_for_estimate_json()
         context['inventory_items_json'] = json.dumps(rows, cls=DjangoJSONEncoder)
+        context['inventory_brands_json'] = json.dumps(
+            _inventory_brands_for_estimate_json(),
+            cls=DjangoJSONEncoder,
+        )
         context['estimate_items_sample_csv_url'] = reverse('sales:estimate_items_sample_csv')
         context['inventory_items_export_csv_url'] = reverse('inventory:item_export_csv')
         context.update(_estimate_form_inventory_groups_context())
@@ -879,6 +1128,10 @@ class EstimateUpdateView(UpdatePermissionMixin, UpdateView):
         context['default_tax_code'] = get_default_estimate_csv_tax_code()
         rows = _inventory_items_for_estimate_json()
         context['inventory_items_json'] = json.dumps(rows, cls=DjangoJSONEncoder)
+        context['inventory_brands_json'] = json.dumps(
+            _inventory_brands_for_estimate_json(),
+            cls=DjangoJSONEncoder,
+        )
         context['estimate_items_sample_csv_url'] = reverse('sales:estimate_items_sample_csv')
         context['inventory_items_export_csv_url'] = reverse('inventory:item_export_csv')
         context.update(_estimate_form_inventory_groups_context())
@@ -1035,7 +1288,7 @@ class EstimateDetailView(PermissionRequiredMixin, DetailView):
     def get_queryset(self):
         items_qs = EstimateItem.objects.select_related('inventory_item', 'tax_code').order_by('sort_order', 'id')
         qs = Estimate.objects.filter(is_active=True).select_related(
-            'customer', 'assigned_to', 'project', 'created_by', 'updated_by',
+            'customer', 'assigned_to', 'sales_engineer', 'project', 'created_by', 'updated_by',
         ).prefetch_related(
             Prefetch('items', queryset=items_qs),
             Prefetch('proforma_invoices', queryset=EstimateProformaInvoice.objects.select_related('created_by')),
@@ -1067,7 +1320,41 @@ class EstimateDetailView(PermissionRequiredMixin, DetailView):
         from apps.purchase.email_outbound import outgoing_mail_hint
 
         context = super().get_context_data(**kwargs)
-        context['title'] = f'Estimate: {self.object.estimate_number}'
+        quotation_workspace = '/quotations/' in self.request.path
+        converted_to_quotation = estimate_converted_to_quotation(self.object)
+        context['quotation_workspace'] = quotation_workspace
+        context['converted_to_quotation'] = converted_to_quotation
+        context['estimation_display_number'] = _estimate_list_number_display(
+            self.object,
+            quotation_pipeline=False,
+        )
+        context['quotation_display_number'] = self.object.display_estimate_number
+        context['quotation_detail_url'] = reverse(
+            'sales:quotation_detail', args=[self.object.pk]
+        )
+        context['list_url_name'] = (
+            'sales:quotation_list' if quotation_workspace else 'sales:estimate_list'
+        )
+        context['list_label'] = 'Quotations' if quotation_workspace else 'Estimates'
+        if quotation_workspace:
+            context['quotation_record_url'] = context['quotation_detail_url']
+            from urllib.parse import urlencode
+
+            context['quotation_list_search_url'] = (
+                reverse('sales:quotation_list')
+                + '?'
+                + urlencode({'search': self.object.estimate_number})
+            )
+        else:
+            context['quotation_record_url'] = reverse(
+                'sales:estimate_detail', args=[self.object.pk]
+            )
+            context['quotation_list_search_url'] = ''
+        context['title'] = (
+            f'Quotation: {self.object.display_estimate_number}'
+            if quotation_workspace
+            else f'Estimate: {context["estimation_display_number"]}'
+        )
         if (
             not self.object.quotation_creator_ip
             and self.object.created_by_id
@@ -1118,6 +1405,9 @@ class EstimateDetailView(PermissionRequiredMixin, DetailView):
         context['convert_to_project_block_reason'] = block_reason
         context['show_b2b_compliance_banner'] = estimate_show_b2b_compliance_banner(self.object)
         if self.object.customer_id:
+            context['customer_detail_url'] = reverse(
+                'crm:customer_detail', args=[self.object.customer_id]
+            )
             context['customer_edit_url'] = reverse(
                 'crm:customer_edit', args=[self.object.customer_id]
             )
@@ -1151,11 +1441,16 @@ class EstimateDetailView(PermissionRequiredMixin, DetailView):
         context['proforma_invoices'] = list(
             self.object.proforma_invoices.select_related('created_by').all()[:20]
         )
-        from .estimate_pdf_groups import build_expense_type_totals, build_pdf_item_groups
+        from .estimate_pdf_groups import (
+            build_estimate_profit_summary,
+            build_expense_type_totals_for_estimate,
+            build_pdf_item_groups,
+        )
         item_groups = build_pdf_item_groups(self.object)
-        expense_type_totals = build_expense_type_totals(item_groups)
+        expense_type_totals = build_expense_type_totals_for_estimate(self.object)
         context['item_groups'] = item_groups
         context['expense_type_totals'] = expense_type_totals
+        context['profit_summary'] = build_estimate_profit_summary(self.object)
         if expense_type_totals:
             context['expense_type_grand_total'] = sum(
                 (row['line_total'] for row in expense_type_totals),
@@ -1174,6 +1469,10 @@ class EstimateDetailView(PermissionRequiredMixin, DetailView):
             context['public_quotation_stats'] = public_quotation_view_stats(self.object)
         else:
             context['show_public_quotation_link'] = False
+        context['can_convert_to_quotation'] = user_can_convert_estimate_to_quotation(
+            self.request.user,
+            self.object,
+        )
         from .estimate_activity import get_estimate_activity_feed
 
         context['estimate_activity'] = get_estimate_activity_feed(self.object)
@@ -1392,6 +1691,7 @@ def estimate_duplicate(request, pk):
             show_rates_on_pdf=source.show_rates_on_pdf,
             show_group_totals_on_pdf=source.show_group_totals_on_pdf,
             show_brand_name_on_pdf=source.show_brand_name_on_pdf,
+            show_installation_cost_on_pdf=source.show_installation_cost_on_pdf,
             # Fresh draft; avoids two estimates pinned to same project/invoices ambiguity
             project=None,
         )
@@ -1404,9 +1704,12 @@ def estimate_duplicate(request, pk):
                 group_qty_multiplier=it.group_qty_multiplier,
                 sort_order=it.sort_order,
                 inventory_item=it.inventory_item,
+                brand=it.brand,
                 description=it.description,
                 quantity=it.quantity,
                 unit_price=it.unit_price,
+                installation_cost=it.installation_cost,
+                selling_cost=it.selling_cost,
                 profit_type=it.profit_type,
                 profit_value=it.profit_value,
                 tax_code=it.tax_code,
@@ -1743,6 +2046,8 @@ def _build_estimate_pdf_context(request, estimate, *, proforma_invoice=None, for
     pdf_image_1_url = _pdf_media_absolute_url(request, company.estimate_pdf_stamp_image, **media_kw)
     pdf_image_2_url = _pdf_media_absolute_url(request, company.estimate_pdf_footer_image, **media_kw)
 
+    extra_pdf_cols = int(estimate.show_brand_name_on_pdf) + int(estimate.show_installation_cost_on_pdf)
+
     return {
         'estimate': estimate,
         'proforma_invoice': proforma_invoice,
@@ -1755,6 +2060,9 @@ def _build_estimate_pdf_context(request, estimate, *, proforma_invoice=None, for
         'amount_words': amount_words,
         'vat_summary': vat_summary,
         'pdf_item_groups': build_pdf_item_groups(estimate),
+        'pdf_pricing_cols': 6 + extra_pdf_cols,
+        'pdf_compact_cols': 3 + extra_pdf_cols,
+        'pdf_pricing_subtotal_label_cols': 5 + extra_pdf_cols,
         'is_pdf': True,
     }
 
@@ -2236,6 +2544,57 @@ def estimate_send_email(request, pk):
 
 
 @login_required
+def estimate_convert_to_quotation(request, pk):
+    """Move an approved estimate into the quotations pipeline (under negotiation)."""
+    if request.method != 'POST':
+        return HttpResponseNotAllowed(['POST'])
+
+    estimate = get_object_or_404(Estimate, pk=pk, is_active=True)
+    from apps.core.visibility import user_can_access_estimate
+
+    if not user_can_access_estimate(request.user, estimate):
+        messages.error(request, 'You do not have permission to view this estimate.')
+        return redirect('sales:estimate_list')
+
+    if not user_can_convert_estimate_to_quotation(request.user, estimate):
+        messages.error(request, 'This estimate cannot be converted to a quotation.')
+        return redirect('sales:estimate_detail', pk=pk)
+
+    old_status = estimate.status
+    new_status = 'under_negotiation'
+
+    from .estimate_status_change import (
+        after_estimate_status_saved,
+        apply_estimate_status_fields,
+    )
+
+    update_fields = apply_estimate_status_fields(
+        estimate,
+        new_status=new_status,
+        old_status=old_status,
+        user=request.user,
+    )
+    estimate.save(update_fields=update_fields)
+    after_estimate_status_saved(
+        estimate,
+        new_status=new_status,
+        old_status=old_status,
+        user=request.user,
+    )
+
+    from .estimate_public_link import ensure_estimate_public_token
+
+    ensure_estimate_public_token(estimate)
+
+    messages.success(
+        request,
+        f'Estimate {estimate.estimate_number} converted to quotation (under negotiation). '
+        'It now appears on the Quotations page.',
+    )
+    return redirect('sales:estimate_detail', pk=pk)
+
+
+@login_required
 def estimate_set_status(request, pk):
     """POST: update estimate status from list (inline). Fields: status, next (optional relative URL)."""
     if request.method != 'POST':
@@ -2360,6 +2719,7 @@ def inventory_item_json(request, pk):
         'id': item.pk,
         'item_code': item.item_code,
         'name': item.name,
+        'brand': item.brand or '',
         'description': item.description or '',
         'selling_price': str(item.selling_price),
         'minimum_selling_price': str(item.get_effective_minimum_selling_price()),

@@ -4,8 +4,8 @@ from .models import Customer, CustomerPublicUpload, CrmLeadKanbanStage
 
 @admin.register(CrmLeadKanbanStage)
 class CrmLeadKanbanStageAdmin(admin.ModelAdmin):
-    list_display = ['name', 'slug', 'sort_order', 'is_active', 'converts_to_customer']
-    list_filter = ['is_active', 'converts_to_customer']
+    list_display = ['name', 'slug', 'sort_order', 'is_active', 'converts_to_customer', 'is_site_visit']
+    list_filter = ['is_active', 'converts_to_customer', 'is_site_visit']
     search_fields = ['name', 'slug']
     ordering = ['sort_order', 'id']
 

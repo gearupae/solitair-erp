@@ -1,0 +1,154 @@
+{% extends 'base.html' %}
+
+{% block extra_css %}
+<style>
+.ops-cal-day { min-height: 5.5rem; vertical-align: top; width: 14%; }
+.ops-cal-day-num { font-weight: 600; margin-bottom: 0.35rem; }
+.ops-cal-entry {
+    font-size: 0.72rem;
+    line-height: 1.35;
+    padding: 0.2rem 0.35rem;
+    margin-bottom: 0.2rem;
+    border-radius: 4px;
+    background: #eff6ff;
+    border-left: 3px solid #3b82f6;
+}
+.ops-cal-entry.paused { background: #fffbeb; border-left-color: #f59e0b; }
+.ops-period-col { min-width: 10rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+    <div>
+        <h4 class="mb-1 fw-bold">{{ title }}</h4>
+        <p class="text-muted mb-0">View staff duty assignments by month or custom period</p>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
+        <a href="{% url 'operations:schedule_list' %}" class="btn btn-light btn-sm">List view</a>
+        {% if can_edit %}
+        <a href="{% url 'operations:schedule_create' %}" class="btn btn-primary btn-sm"><i class="fas fa-plus me-1"></i>Schedule</a>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-body py-3">
+        <form method="get" class="row g-2 align-items-end">
+            <div class="col-auto">
+                <label class="form-label small text-muted mb-0">View</label>
+                <select name="view" class="form-select form-select-sm" id="calViewMode">
+                    <option value="month" {% if view_mode == 'month' %}selected{% endif %}>Month</option>
+                    <option value="period" {% if view_mode == 'period' %}selected{% endif %}>Period</option>
+                </select>
+            </div>
+            <div class="col-auto month-fields" {% if view_mode != 'month' %}style="display:none"{% endif %}>
+                <label class="form-label small text-muted mb-0">Year</label>
+                <input type="number" name="year" class="form-control form-control-sm" value="{{ year }}">
+            </div>
+            <div class="col-auto month-fields" {% if view_mode != 'month' %}style="display:none"{% endif %}>
+                <label class="form-label small text-muted mb-0">Month</label>
+                <input type="number" name="month" min="1" max="12" class="form-control form-control-sm" value="{{ month }}">
+            </div>
+            <div class="col-auto period-fields" {% if view_mode != 'period' %}style="display:none"{% endif %}>
+                <label class="form-label small text-muted mb-0">From</label>
+                <input type="date" name="date_from" class="form-control form-control-sm" value="{{ period_start|date:'Y-m-d' }}">
+            </div>
+            <div class="col-auto period-fields" {% if view_mode != 'period' %}style="display:none"{% endif %}>
+                <label class="form-label small text-muted mb-0">To</label>
+                <input type="date" name="date_to" class="form-control form-control-sm" value="{{ period_end|date:'Y-m-d' }}">
+            </div>
+            <div class="col-auto">
+                <label class="form-label small text-muted mb-0">Staff</label>
+                <select name="employee" class="form-select form-select-sm">
+                    <option value="">Everyone</option>
+                    {% for emp in filter_employees %}
+                    <option value="{{ emp.pk }}" {% if filter_employee == emp.pk|stringformat:"s" %}selected{% endif %}>{{ emp.full_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-auto">
+                <button type="submit" class="btn btn-primary btn-sm">Apply</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% if view_mode == 'period' %}
+<div class="table-responsive">
+    <table class="table table-bordered table-sm">
+        <thead class="table-light">
+            <tr>
+                {% for day in days_data %}
+                <th class="ops-period-col text-center">{{ day.date|date:"D d M" }}</th>
+                {% endfor %}
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                {% for day in days_data %}
+                <td class="align-top">
+                    {% for s in day.schedules %}
+                    <div class="ops-cal-entry {% if s.status == 'paused' %}paused{% endif %}">
+                        <strong>{{ s.employee.full_name }}</strong><br>
+                        {{ s.time_display }}<br>
+                        <span class="text-muted">{{ s.target_label|truncatechars:28 }}</span>
+                    </div>
+                    {% empty %}
+                    <span class="text-muted small">—</span>
+                    {% endfor %}
+                </td>
+                {% endfor %}
+            </tr>
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="table-responsive">
+    <table class="table table-bordered table-sm text-center mb-0">
+        <thead class="table-light">
+            <tr>
+                <th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th><th>Sat</th><th>Sun</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for week in calendar_weeks %}
+            <tr>
+                {% for day in week %}
+                <td class="ops-cal-day {% if day == 0 %}bg-light{% endif %}">
+                    {% if day %}
+                    <div class="ops-cal-day-num">{{ day }}</div>
+                    {% with cell_date=year|stringformat:"s"|add:"-" %}
+                    {% endwith %}
+                    {% for s in schedules %}
+                    {% if s.duty_date.day == day and s.duty_date.month == month and s.duty_date.year == year %}
+                    <div class="ops-cal-entry text-start {% if s.status == 'paused' %}paused{% endif %}">
+                        <strong>{{ s.employee.full_name|truncatechars:14 }}</strong><br>
+                        {{ s.time_display }} · {{ s.get_link_type_display|slice:":3" }}
+                    </div>
+                    {% endif %}
+                    {% endfor %}
+                    {% endif %}
+                </td>
+                {% endfor %}
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.getElementById('calViewMode')?.addEventListener('change', function () {
+    var isPeriod = this.value === 'period';
+    document.querySelectorAll('.month-fields').forEach(function (el) {
+        el.style.display = isPeriod ? 'none' : '';
+    });
+    document.querySelectorAll('.period-fields').forEach(function (el) {
+        el.style.display = isPeriod ? '' : 'none';
+    });
+});
+</script>
+{% endblock %}

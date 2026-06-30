@@ -70,6 +70,74 @@
 .ceo-alert--low { border-left-color: #16a34a; background: #f0fdf4; }
 .ceo-table { font-size: .875rem; }
 .ceo-table th { font-weight: 600; color: #64748b; font-size: .72rem; text-transform: uppercase; }
+.ceo-kpi--alert { border: 2px solid #dc2626; background: #fef2f2; }
+.ceo-kpi--alert .ceo-kpi__value { color: #b91c1c; }
+.ceo-target-bar {
+    height: 4px;
+    background: #e2e8f0;
+    border-radius: 2px;
+    margin-top: .5rem;
+    overflow: hidden;
+}
+.ceo-target-bar__fill { height: 100%; background: #1e3a5f; border-radius: 2px; }
+.ceo-target-bar__fill--over { background: #059669; }
+.ceo-toggle-wrap {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    font-size: .875rem;
+}
+.ceo-yesterday-only { display: none; }
+.ceo-yesterday-mode .ceo-main-content { display: none !important; }
+.ceo-yesterday-mode .ceo-yesterday-only { display: block !important; }
+.ceo-collections-table td { vertical-align: top; }
+.ceo-predictive {
+    background: #fff7ed;
+    border-left: 4px solid #ea580c;
+    border-radius: 0.5rem;
+    padding: 1rem 1.25rem;
+    min-height: 3rem;
+}
+.ceo-ops-card {
+    border: none;
+    border-radius: 0.75rem;
+    box-shadow: 0 1px 3px rgba(15,23,42,.06);
+    height: 100%;
+}
+.ceo-ops-stat {
+    text-align: center;
+    padding: .5rem .25rem;
+}
+.ceo-ops-stat__val {
+    font-size: 1.35rem;
+    font-weight: 700;
+    color: #0f172a;
+    line-height: 1.2;
+}
+.ceo-ops-stat__lbl {
+    font-size: .68rem;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: #64748b;
+    margin-top: .2rem;
+}
+.ceo-ops-summary {
+    background: #f8fafc;
+    border-radius: 0.5rem;
+    padding: .85rem 1rem;
+    font-size: .9rem;
+    line-height: 1.6;
+    color: #334155;
+    min-height: 4rem;
+}
+.ceo-ops-flag {
+    border-left: 3px solid #dc2626;
+    background: #fef2f2;
+    padding: .55rem .75rem;
+    margin-top: .5rem;
+    border-radius: 0 .375rem .375rem 0;
+    font-size: .82rem;
+}
 .ceo-ai-loading { color: #64748b; font-size: .875rem; }
 </style>
 {% endblock %}
@@ -81,13 +149,36 @@
             <h4 class="mb-1 fw-bold">CEO Dashboard</h4>
             <p class="text-muted small mb-0">Executive decision view · live ERP data</p>
         </div>
-        <div class="d-flex gap-2">
+        <div class="d-flex flex-wrap gap-3 align-items-center">
+            <div class="ceo-toggle-wrap">
+                <div class="form-check form-switch mb-0">
+                    <input class="form-check-input" type="checkbox" id="ceo-yesterday-toggle">
+                    <label class="form-check-label" for="ceo-yesterday-toggle">What changed since yesterday</label>
+                </div>
+            </div>
             <button type="button" class="btn btn-outline-secondary btn-sm" id="ceo-refresh-ai">
                 <i class="fas fa-sync-alt me-1"></i>Refresh AI
             </button>
         </div>
     </div>
 
+    <!-- Yesterday-only view -->
+    <section class="ceo-yesterday-only mb-4" id="ceo-yesterday-panel">
+        <p class="ceo-section-title">Since yesterday</p>
+        <div id="ceo-yesterday-deltas">
+            {% for d in yesterday_deltas %}
+            <div class="ceo-alert ceo-alert--{{ d.severity|default:'medium' }}">
+                <div class="fw-semibold small">{{ d.label }}</div>
+                <div class="small text-muted">{{ d.detail }}</div>
+                <div class="small mt-1"><strong>Action:</strong> {{ d.action }}</div>
+            </div>
+            {% empty %}
+            <p class="text-muted small" id="ceo-yesterday-empty">No snapshot from yesterday yet — check back tomorrow for daily deltas.</p>
+            {% endfor %}
+        </div>
+    </section>
+
+    <div class="ceo-main-content">
     <!-- Section 1: AI Daily Briefing (loads after page open) -->
     <section class="mb-4">
         <p class="ceo-section-title mb-2"><i class="fas fa-robot me-1"></i>Gearup AI · Daily briefing</p>
@@ -98,25 +189,48 @@
         </div>
     </section>
 
+    <!-- Predictive cash alert -->
+    <section class="mb-4">
+        <p class="ceo-section-title mb-2"><i class="fas fa-chart-line me-1"></i>Predictive cash alert</p>
+        <div class="ceo-predictive" id="ceo-predictive-cash">
+            <span class="ceo-ai-loading" id="ceo-predictive-loading">
+                <span class="spinner-border spinner-border-sm me-1"></span>Analysing cash runway…
+            </span>
+        </div>
+    </section>
+
     <!-- Section 2: Money -->
     <section class="mb-4">
         <p class="ceo-section-title">Money</p>
         <div class="row g-3">
             {% for card in money_cards %}
             <div class="col-12 col-sm-6 col-xl">
-                <div class="card ceo-kpi">
+                <div class="card ceo-kpi{% if card.alert %} ceo-kpi--alert{% endif %}">
                     <div class="card-body py-3 px-3">
                         <div class="ceo-kpi__label">{{ card.label }}</div>
                         <div class="ceo-kpi__value">
                             {% if card.value_suffix %}{{ card.value|floatformat:1 }}{{ card.value_suffix }}
+                            {% elif card.margin_pct is not None %}
+                                {{ currency }} {{ card.value|floatformat:0|intcomma }}
+                                <span class="fs-6 fw-semibold text-muted ms-1">· {{ card.margin_pct }}% margin</span>
                             {% else %}{{ currency }} {{ card.value|floatformat:0|intcomma }}{% endif %}
                         </div>
-                        {% if card.delta is not None %}
-                        <div class="ceo-delta ceo-delta--{{ card.direction|default:'neutral' }} mt-1">
+                        {% if card.vs_pct is not None %}
+                        <div class="ceo-delta ceo-delta--{% if card.bad_when_up and card.direction == 'up' %}down{% elif card.bad_when_up and card.direction == 'down' %}up{% else %}{{ card.direction|default:'neutral' }}{% endif %} mt-1">
                             {% if card.direction == 'up' %}<i class="fas fa-arrow-up me-1"></i>
                             {% elif card.direction == 'down' %}<i class="fas fa-arrow-down me-1"></i>{% endif %}
-                            {% if card.value_suffix %}{{ card.delta|floatformat:1 }}{% else %}{{ currency }} {{ card.delta|floatformat:0|intcomma }}{% endif %}
-                            {% if card.delta_label %} {{ card.delta_label }}{% endif %}
+                            {% if card.vs_pct > 0 %}+{% endif %}{{ card.vs_pct }}% {{ card.delta_label|default:'vs last month' }}
+                        </div>
+                        {% elif card.delta_label %}
+                        <div class="ceo-delta ceo-delta--neutral mt-1 text-muted">{{ card.delta_label }}</div>
+                        {% endif %}
+                        {% if card.target_pct is not None %}
+                        <div class="small mt-1 {% if card.over_target %}text-success{% else %}text-muted{% endif %}">
+                            {{ card.target_label }}
+                        </div>
+                        <div class="ceo-target-bar" title="{{ card.target_pct }}% of MTD target">
+                            <div class="ceo-target-bar__fill{% if card.over_target %} ceo-target-bar__fill--over{% endif %}"
+                                 style="width: {{ card.target_bar_pct|default:0 }}%"></div>
                         </div>
                         {% endif %}
                         {% if card.hint %}<div class="ceo-kpi__hint">{{ card.hint }}</div>{% endif %}
@@ -248,7 +362,171 @@
         </div>
     </section>
 
-    <!-- Section 5: Risk & Alerts (rule-based first, AI enhances after load) -->
+    <!-- Operations & People -->
+    <section class="mb-4">
+        <p class="ceo-section-title">Operations &amp; people</p>
+        <div class="row g-3">
+            <!-- Projects overview -->
+            <div class="col-12 col-lg-6">
+                <div class="card ceo-ops-card">
+                    <div class="card-body">
+                        <h6 class="fw-bold mb-3"><i class="fas fa-project-diagram me-1 text-primary"></i>Projects</h6>
+                        <div class="row g-2 mb-3">
+                            <div class="col-4">
+                                <div class="ceo-ops-stat">
+                                    <div class="ceo-ops-stat__val">{{ projects_overview.active_count }}</div>
+                                    <div class="ceo-ops-stat__lbl">Active</div>
+                                </div>
+                            </div>
+                            <div class="col-4">
+                                <div class="ceo-ops-stat">
+                                    <div class="ceo-ops-stat__val text-success">{{ projects_overview.on_track_count }}</div>
+                                    <div class="ceo-ops-stat__lbl">On track ({{ projects_overview.on_track_pct }}%)</div>
+                                </div>
+                            </div>
+                            <div class="col-4">
+                                <div class="ceo-ops-stat">
+                                    <div class="ceo-ops-stat__val {% if projects_overview.delayed_count %}text-danger{% endif %}">{{ projects_overview.delayed_count }}</div>
+                                    <div class="ceo-ops-stat__lbl">Delayed ({{ projects_overview.delayed_pct }}%)</div>
+                                </div>
+                            </div>
+                            <div class="col-4">
+                                <div class="ceo-ops-stat">
+                                    <div class="ceo-ops-stat__val">{{ projects_overview.completed_mtd }}</div>
+                                    <div class="ceo-ops-stat__lbl">Done MTD</div>
+                                    {% if projects_overview.completed_last_month %}
+                                    <div class="small text-muted">vs {{ projects_overview.completed_last_month }} last mo</div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            <div class="col-4">
+                                <div class="ceo-ops-stat">
+                                    <div class="ceo-ops-stat__val">{{ projects_overview.avg_progress_pct }}%</div>
+                                    <div class="ceo-ops-stat__lbl">Avg progress</div>
+                                </div>
+                            </div>
+                            <div class="col-4">
+                                <div class="ceo-ops-stat">
+                                    <div class="ceo-ops-stat__val {% if projects_overview.overdue_tasks %}text-danger{% endif %}">{{ projects_overview.overdue_tasks }}</div>
+                                    <div class="ceo-ops-stat__lbl">Overdue tasks</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="small text-muted mb-2">
+                            Yesterday: {{ projects_overview.tasks_completed_yesterday }} task(s) completed
+                        </div>
+                        <div class="ceo-ops-summary" id="ceo-projects-summary">
+                            <span class="ceo-ai-loading" id="ceo-projects-loading">
+                                <span class="spinner-border spinner-border-sm me-1"></span>Loading Gearup AI summary…
+                            </span>
+                        </div>
+                        {% for flag in projects_overview.issue_flags %}
+                        <div class="ceo-ops-flag">
+                            <div class="fw-semibold">{{ flag.title }}</div>
+                            <div class="text-muted">{{ flag.detail }}</div>
+                            <div class="mt-1"><strong>Action:</strong> {{ flag.action }}</div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- HR overview -->
+            <div class="col-12 col-lg-6">
+                <div class="card ceo-ops-card">
+                    <div class="card-body">
+                        <h6 class="fw-bold mb-3"><i class="fas fa-users me-1 text-primary"></i>HR / People</h6>
+                        <div class="row g-2 mb-3">
+                            <div class="col-4">
+                                <div class="ceo-ops-stat">
+                                    <div class="ceo-ops-stat__val">{{ hr_overview.headcount }}</div>
+                                    <div class="ceo-ops-stat__lbl">Headcount</div>
+                                    {% if hr_overview.vs_last_month.headcount is not None %}
+                                    <div class="small {% if hr_overview.vs_last_month.headcount > 0 %}text-success{% elif hr_overview.vs_last_month.headcount < 0 %}text-danger{% else %}text-muted{% endif %}">
+                                        {% if hr_overview.vs_last_month.headcount > 0 %}+{% endif %}{{ hr_overview.vs_last_month.headcount }} vs last mo
+                                    </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            <div class="col-4">
+                                <div class="ceo-ops-stat">
+                                    <div class="ceo-ops-stat__val">
+                                        {% if hr_overview.attendance_yesterday.attendance_rate %}{{ hr_overview.attendance_yesterday.attendance_rate }}%{% else %}—{% endif %}
+                                    </div>
+                                    <div class="ceo-ops-stat__lbl">Attendance yesterday</div>
+                                    <div class="small text-muted">{{ hr_overview.attendance_yesterday.present }} in · {{ hr_overview.attendance_yesterday.absent }} out</div>
+                                </div>
+                            </div>
+                            <div class="col-4">
+                                <div class="ceo-ops-stat">
+                                    <div class="ceo-ops-stat__val">—</div>
+                                    <div class="ceo-ops-stat__lbl">Open positions</div>
+                                    <div class="small text-muted">Not tracked</div>
+                                </div>
+                            </div>
+                            <div class="col-4">
+                                <div class="ceo-ops-stat">
+                                    <div class="ceo-ops-stat__val {% if hr_overview.pending_leave %}text-warning{% endif %}">{{ hr_overview.pending_leave }}</div>
+                                    <div class="ceo-ops-stat__lbl">Pending leave</div>
+                                </div>
+                            </div>
+                            <div class="col-4">
+                                <div class="ceo-ops-stat">
+                                    <div class="ceo-ops-stat__val {% if hr_overview.docs_expiring_30d %}text-danger{% endif %}">{{ hr_overview.docs_expiring_30d }}</div>
+                                    <div class="ceo-ops-stat__lbl">Docs ≤30 days</div>
+                                </div>
+                            </div>
+                            <div class="col-4">
+                                <div class="ceo-ops-stat">
+                                    <div class="ceo-ops-stat__val">
+                                        {% if hr_overview.net_headcount_mtd > 0 %}+{% endif %}{{ hr_overview.net_headcount_mtd }}
+                                    </div>
+                                    <div class="ceo-ops-stat__lbl">Net MTD</div>
+                                    <div class="small text-muted">{{ hr_overview.joiners_mtd }} in · {{ hr_overview.leavers_mtd }} out</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="ceo-ops-summary" id="ceo-hr-summary">
+                            <span class="ceo-ai-loading" id="ceo-hr-loading">
+                                <span class="spinner-border spinner-border-sm me-1"></span>Loading Gearup AI summary…
+                            </span>
+                        </div>
+                        {% for flag in hr_overview.issue_flags %}
+                        <div class="ceo-ops-flag">
+                            <div class="fw-semibold">{{ flag.title }}</div>
+                            <div class="text-muted">{{ flag.detail }}</div>
+                            <div class="mt-1"><strong>Action:</strong> {{ flag.action }}</div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Section 5: Ranked collections -->
+    <section class="mb-4">
+        <p class="ceo-section-title"><i class="fas fa-hand-holding-usd me-1"></i>Who to chase first</p>
+        <p class="small fw-semibold mb-2" id="ceo-collections-headline">
+            <span class="ceo-ai-loading" id="ceo-collections-loading">
+                <span class="spinner-border spinner-border-sm me-1"></span>Ranking collections…
+            </span>
+        </p>
+        <div class="card ceo-chart-card">
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm ceo-table ceo-collections-table mb-0">
+                        <thead><tr><th>Client</th><th class="text-end">Owed</th><th>Days overdue</th><th>Why prioritise</th></tr></thead>
+                        <tbody id="ceo-collections-body">
+                            <tr><td colspan="4" class="text-muted p-3">Loading…</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Section 6: Risk & Alerts -->
     <section class="mb-5">
         <p class="ceo-section-title">
             <i class="fas fa-exclamation-triangle me-1"></i>Risk &amp; alerts
@@ -268,6 +546,7 @@
             {% endfor %}
         </div>
     </section>
+    </div><!-- /.ceo-main-content -->
 </div>
 {% endblock %}
 
@@ -281,6 +560,10 @@
     const BRIEFING_URL = '{{ briefing_url|escapejs }}';
     const ALERTS_URL = '{{ alerts_url|escapejs }}';
     const CASH_URL = '{{ cash_forecast_url|escapejs }}';
+    const PREDICTIVE_URL = '{{ predictive_cash_url|escapejs }}';
+    const COLLECTIONS_URL = '{{ collections_url|escapejs }}';
+    const YESTERDAY_URL = '{{ yesterday_url|escapejs }}';
+    const OPERATIONS_URL = '{{ operations_url|escapejs }}';
 
     Chart.defaults.font.family = "'Inter', system-ui, sans-serif";
     Chart.defaults.color = '#64748b';
@@ -377,11 +660,118 @@
             .catch(() => { if (loading) loading.style.display = 'none'; });
     }
 
+    function loadPredictiveCash(force) {
+        const el = document.getElementById('ceo-predictive-cash');
+        if (!el || !openaiConfigured) {
+            if (el) el.innerHTML = '<span class="text-muted">Configure OpenAI for predictive cash alerts.</span>';
+            return;
+        }
+        const url = PREDICTIVE_URL + (force ? '?force=1' : '');
+        fetch(url, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+            .then(r => r.json())
+            .then(data => {
+                if (data.ok && data.text) {
+                    el.innerHTML = escapeHtml(data.text);
+                } else {
+                    el.innerHTML = '<span class="text-muted">Predictive alert unavailable.</span>';
+                }
+            })
+            .catch(() => {
+                el.innerHTML = '<span class="text-muted">Could not load predictive cash alert.</span>';
+            });
+    }
+
+    function loadCollections(force) {
+        const headline = document.getElementById('ceo-collections-headline');
+        const body = document.getElementById('ceo-collections-body');
+        const loading = document.getElementById('ceo-collections-loading');
+        if (!body) return;
+        if (!openaiConfigured) {
+            if (headline) headline.textContent = 'Configure OpenAI for ranked collections.';
+            body.innerHTML = '<tr><td colspan="4" class="text-muted p-3">—</td></tr>';
+            return;
+        }
+        const url = COLLECTIONS_URL + (force ? '?force=1' : '');
+        fetch(url, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+            .then(r => r.json())
+            .then(data => {
+                if (loading) loading.style.display = 'none';
+                if (!data.ok) return;
+                if (headline) headline.textContent = data.headline || '';
+                const items = data.items || [];
+                if (!items.length) {
+                    body.innerHTML = '<tr><td colspan="4" class="text-muted p-3">No overdue receivables to chase.</td></tr>';
+                    return;
+                }
+                body.innerHTML = items.map(row => {
+                    return '<tr>'
+                        + '<td>' + escapeHtml(row.name || '') + '</td>'
+                        + '<td class="text-end">' + fmtMoney(row.amount) + '</td>'
+                        + '<td>' + escapeHtml(String(row.days_overdue || 0)) + '</td>'
+                        + '<td class="text-muted">' + escapeHtml(row.why || '') + '</td>'
+                        + '</tr>';
+                }).join('');
+            })
+            .catch(() => {
+                if (loading) loading.style.display = 'none';
+                body.innerHTML = '<tr><td colspan="4" class="text-muted p-3">Could not load collections list.</td></tr>';
+            });
+    }
+
+    function loadYesterdayDeltas() {
+        const panel = document.getElementById('ceo-yesterday-deltas');
+        if (!panel) return;
+        fetch(YESTERDAY_URL, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+            .then(r => r.json())
+            .then(data => {
+                if (!data.ok || !data.deltas || !data.deltas.length) return;
+                panel.innerHTML = data.deltas.map(d => {
+                    const sev = escapeHtml(d.severity || 'medium');
+                    return '<div class="ceo-alert ceo-alert--' + sev + '">'
+                        + '<div class="fw-semibold small">' + escapeHtml(d.label || '') + '</div>'
+                        + '<div class="small text-muted">' + escapeHtml(d.detail || '') + '</div>'
+                        + '<div class="small mt-1"><strong>Action:</strong> ' + escapeHtml(d.action || '') + '</div>'
+                        + '</div>';
+                }).join('');
+            })
+            .catch(() => {});
+    }
+
+    function loadOperationsSummaries(force) {
+        const pEl = document.getElementById('ceo-projects-summary');
+        const hEl = document.getElementById('ceo-hr-summary');
+        if (!pEl && !hEl) return;
+        if (!openaiConfigured) {
+            if (pEl) pEl.innerHTML = '<span class="text-muted">Configure OpenAI for AI summaries.</span>';
+            if (hEl) hEl.innerHTML = '<span class="text-muted">Configure OpenAI for AI summaries.</span>';
+            return;
+        }
+        const url = OPERATIONS_URL + (force ? '?force=1' : '');
+        fetch(url, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+            .then(r => r.json())
+            .then(data => {
+                if (data.ok && data.projects_text && pEl) pEl.textContent = data.projects_text;
+                if (data.ok && data.hr_text && hEl) hEl.textContent = data.hr_text;
+            })
+            .catch(() => {
+                if (pEl) pEl.innerHTML = '<span class="text-muted">Summary unavailable.</span>';
+                if (hEl) hEl.innerHTML = '<span class="text-muted">Summary unavailable.</span>';
+            });
+    }
+
     function loadAllAi(force) {
         loadBriefing(force);
         loadAlerts(force);
         loadCashForecast(force);
+        loadPredictiveCash(force);
+        loadCollections(force);
+        loadOperationsSummaries(force);
     }
+
+    document.getElementById('ceo-yesterday-toggle')?.addEventListener('change', function() {
+        document.querySelector('.ceo-page')?.classList.toggle('ceo-yesterday-mode', this.checked);
+        if (this.checked) loadYesterdayDeltas();
+    });
 
     if (document.getElementById('chart-revenue') && charts.revenue_trend) {
         new Chart(document.getElementById('chart-revenue'), {

@@ -155,12 +155,9 @@ $(function () {
                     <div class="form-text">Select B2B or B2C.</div>
                 </div>
                 <div class="col-md-4">
-                    <label class="form-label">Status</label>
-                    <select name="status" class="form-select">
-                        <option value="active" {% if object.status == 'active' %}selected{% endif %}>Active</option>
-                        <option value="prospect" {% if object.status == 'prospect' %}selected{% endif %}>Prospect</option>
-                        <option value="inactive" {% if object.status == 'inactive' %}selected{% endif %}>Inactive</option>
-                    </select>
+                    <label class="form-label" for="{{ form.lead_kanban_stage.id_for_label }}">Pipeline stage</label>
+                    {{ form.lead_kanban_stage }}
+                    {% for err in form.lead_kanban_stage.errors %}<div class="text-danger small">{{ err }}</div>{% endfor %}
                 </div>
                 <div class="col-md-4">
                     <label class="form-label" for="{{ form.assigned_salesperson.id_for_label }}">{{ form.assigned_salesperson.label }} <span class="text-danger">*</span></label>

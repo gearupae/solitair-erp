@@ -1,20 +1,22 @@
 {% extends base_template|default:"base.html" %}
 
-{% block container_style %}{% if is_public_create %}max-width: 1200px;{% else %}max-width: 640px;{% endif %}{% endblock %}
+{% block container_style %}max-width: 1200px;{% endblock %}
 
 {% block extra_css %}
 <style>
-/* Line items: fit card width — no horizontal scroll; action column stays visible */
+/* Line items: horizontal scroll as columns grow */
 .line-items-table-wrap {
     width: 100%;
     box-sizing: border-box;
-    /* Inset from card edge: space before Group, space after × */
     padding-left: 0.65rem;
     padding-right: 0.65rem;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
 }
 #itemsTable {
-    table-layout: fixed;
-    width: 100%;
+    table-layout: auto;
+    width: max-content;
+    min-width: 100%;
     margin-bottom: 0;
     border-collapse: collapse;
 }
@@ -37,12 +39,28 @@
     padding-left: 0.3rem;
     padding-right: 0.3rem;
 }
-/* Percent widths sum to 100% — keeps table inside card (no overflow-x scroll) */
-#itemsTable .items-col-group {
-    width: 11%;
-}
-#itemsTable .items-col-group-mult {
-    width: 5%;
+/* Column min-widths — table scrolls horizontally when needed */
+#itemsTable .items-col-group { min-width: 9rem; }
+#itemsTable .items-col-group-mult { min-width: 3.25rem; }
+#itemsTable .items-col-inventory { min-width: 9rem; position: relative; }
+#itemsTable .items-col-brand { min-width: 6.5rem; }
+#itemsTable .items-col-desc { min-width: 10rem; }
+#itemsTable .items-col-qty { min-width: 4rem; }
+#itemsTable .items-col-base { min-width: 5.5rem; overflow: visible; }
+#itemsTable .items-col-net-cost { min-width: 4.5rem; }
+#itemsTable .items-col-install { min-width: 5.5rem; }
+#itemsTable .items-col-net-install { min-width: 4.5rem; }
+#itemsTable .items-col-profit { min-width: 4.5rem; }
+#itemsTable .items-col-profit-num { min-width: 4.5rem; overflow: visible; }
+#itemsTable .items-col-selling { min-width: 5.5rem; overflow: visible; }
+#itemsTable .items-col-tax { min-width: 5rem; }
+#itemsTable .items-col-net { min-width: 5rem; }
+#itemsTable .items-col-gross { min-width: 5rem; }
+#itemsTable .items-col-actions {
+    min-width: 2.5rem;
+    padding-left: 0.15rem !important;
+    padding-right: 0.25rem !important;
+    vertical-align: middle;
 }
 #itemsTable .items-col-group-mult .form-control {
     padding-left: 0.2rem;
@@ -66,11 +84,7 @@
 #itemsTable .items-col-group .estimate-group-combo .item-group-name {
     min-width: 0;
 }
-#itemsTable .items-col-inventory {
-    width: 12%;
-    position: relative;
-}
-/* Select2 keeps the native <select> for submit; hide it whenever the Select2 UI is present (avoids a second visible dropdown) */
+/* Select2 keeps the native <select> for submit; hide it whenever the Select2 UI is present */
 #itemsTable .items-col-inventory:has(.select2-container) select.item-inventory,
 #itemsTable .items-col-inventory select.item-inventory.select2-hidden-accessible {
     position: absolute !important;
@@ -88,15 +102,13 @@
 #itemsTable .items-col-inventory .select2-container {
     display: block;
     margin: 0;
+    width: 100% !important;
 }
 #itemsTable .items-col-desc .form-control {
     font-size: 0.875rem;
     line-height: 1.5;
     min-height: calc(1.5em + 0.5rem + 2px);
     max-height: calc(1.5em + 0.5rem + 2px);
-}
-#itemsTable .items-col-inventory .select2-container {
-    width: 100% !important;
 }
 #itemsTable .items-col-inventory .select2-container--bootstrap-5 .select2-selection,
 #itemsTable .items-col-inventory .select2-container--bootstrap-5 .select2-selection--single {
@@ -129,53 +141,15 @@
 .estimate-inventory-select2-dropdown .select2-search__field {
     width: 100% !important;
 }
-#itemsTable .items-col-desc {
-    width: 17%;
-}
-/* Qty / Base / Profit / Profit # / Rate / Tax — a bit wider; totals 100% with other cols */
-#itemsTable .items-col-qty {
-    width: 7%;
-}
-#itemsTable .items-col-base {
-    width: 9%;
-}
-#itemsTable .items-col-profit {
-    width: 7%;
-}
 #itemsTable .items-col-profit .form-select {
     font-size: 0.75rem;
     padding-left: 0.2rem;
     padding-right: 1.1rem;
 }
-#itemsTable .items-col-profit-num {
-    width: 6%;
-}
-#itemsTable .items-col-rate {
-    width: 6%;
-}
-#itemsTable .items-col-tax {
-    width: 7%;
-}
 #itemsTable .items-col-tax .form-select {
     font-size: 0.72rem;
     padding-left: 0.2rem;
     padding-right: 1.1rem;
-}
-#itemsTable .items-col-net {
-    width: 6%;
-}
-#itemsTable .items-col-gross {
-    width: 6%;
-}
-#itemsTable .items-col-base,
-#itemsTable .items-col-profit-num {
-    overflow: visible;
-}
-#itemsTable .items-col-actions {
-    width: 3%;
-    padding-left: 0.15rem !important;
-    padding-right: 0.25rem !important;
-    vertical-align: middle;
 }
 #itemsTable .items-col-actions .btn {
     padding: 0.15rem 0.25rem;
@@ -305,6 +279,18 @@
                     {{ form.prepared_by }}
                 </div>
                 <div class="col-md-4">
+                    <label class="form-label" for="{{ form.estimation_reference_number.id_for_label }}">Estimation reference number</label>
+                    {{ form.estimation_reference_number }}
+                    {% if form.estimation_reference_number.errors %}<div class="text-danger small">{{ form.estimation_reference_number.errors|join:", " }}</div>{% endif %}
+                </div>
+                {% if not is_public_create %}
+                <div class="col-md-4">
+                    <label class="form-label" for="{{ form.sales_engineer.id_for_label }}">Sales engineer</label>
+                    {{ form.sales_engineer }}
+                    {% if form.sales_engineer.errors %}<div class="text-danger small">{{ form.sales_engineer.errors|join:", " }}</div>{% endif %}
+                </div>
+                {% endif %}
+                <div class="col-md-4">
                     <label class="form-label" for="{{ form.type_of_occupancy.id_for_label }}">Type of occupancy</label>
                     {{ form.type_of_occupancy }}
                     {% if form.type_of_occupancy.errors %}<div class="text-danger small">{{ form.type_of_occupancy.errors|join:", " }}</div>{% endif %}
@@ -338,27 +324,34 @@
                     <small class="text-muted d-block">Use % or fixed amount based on type</small>
                 </div>
                 <div class="col-12 mt-1">
-                    <div class="row g-3 align-items-center">
-                        <div class="col-md-4">
+                    <div class="row g-2 g-md-3 align-items-center">
+                        <div class="col-md-3">
                             <div class="form-check form-switch mb-0">
                                 {{ form.show_rates_on_pdf }}
                                 <label class="form-check-label" for="{{ form.show_rates_on_pdf.id_for_label }}">Show rates &amp; line totals on PDF</label>
                             </div>
                             {% if form.show_rates_on_pdf.errors %}<div class="text-danger small">{{ form.show_rates_on_pdf.errors|join:", " }}</div>{% endif %}
                         </div>
-                        <div class="col-md-4">
+                        <div class="col-md-3">
                             <div class="form-check form-switch mb-0">
                                 {{ form.show_group_totals_on_pdf }}
                                 <label class="form-check-label" for="{{ form.show_group_totals_on_pdf.id_for_label }}">Show group totals on PDF</label>
                             </div>
                             {% if form.show_group_totals_on_pdf.errors %}<div class="text-danger small">{{ form.show_group_totals_on_pdf.errors|join:", " }}</div>{% endif %}
                         </div>
-                        <div class="col-md-4">
+                        <div class="col-md-3">
                             <div class="form-check form-switch mb-0">
                                 {{ form.show_brand_name_on_pdf }}
                                 <label class="form-check-label" for="{{ form.show_brand_name_on_pdf.id_for_label }}">Show brand name</label>
                             </div>
                             {% if form.show_brand_name_on_pdf.errors %}<div class="text-danger small">{{ form.show_brand_name_on_pdf.errors|join:", " }}</div>{% endif %}
+                        </div>
+                        <div class="col-md-3">
+                            <div class="form-check form-switch mb-0">
+                                {{ form.show_installation_cost_on_pdf }}
+                                <label class="form-check-label" for="{{ form.show_installation_cost_on_pdf.id_for_label }}">Show installation cost</label>
+                            </div>
+                            {% if form.show_installation_cost_on_pdf.errors %}<div class="text-danger small">{{ form.show_installation_cost_on_pdf.errors|join:", " }}</div>{% endif %}
                         </div>
                     </div>
                 </div>
@@ -415,10 +408,11 @@
             <p class="text-muted small px-3 pt-3 mb-2 mb-md-3">
                 <strong>Scope of work:</strong> choosing a main group loads all of its sub-groups and items below (group name = sub-group on each line).
                 <strong>How each line is calculated:</strong>
-                <strong>Rate</strong> = base per unit + profit — if profit is <strong>%</strong>, rate = base × (1 + %÷100) (e.g. base 10 and 100% → 20/unit).
-                If profit is <strong>Amt</strong>, rate = base + AED <em>per unit</em> (e.g. base 10 + 100 → 110/unit).
-                <strong>Group ×</strong> multiplies the <strong>Qty</strong> on every line with the same group name (not shown on PDF). <strong>Net</strong> = qty × rate (excl. VAT).
-                <strong>Gross</strong> includes VAT from the tax code (not shown per line).
+                <strong>Net cost</strong> = qty × unit cost.
+                <strong>Net installation cost</strong> = qty × unit installation cost (not in line net — consolidated under Expenses).
+                Enter <strong>Selling cost</strong> per unit; <strong>Profit value</strong> is calculated automatically.
+                <strong>Group ×</strong> multiplies the <strong>Qty</strong> on every line with the same group name (not shown on PDF).
+                <strong>Net</strong> = qty × selling cost (excl. VAT). <strong>Gross</strong> includes VAT from the tax code.
             </p>
             {{ items_formset.management_form }}
             <div class="line-items-table-wrap">
@@ -428,14 +422,18 @@
                             <th class="items-col-group" title="Choose a group on the left to load items; edit the PDF section title on the right (screen layout only—does not change inventory).">Group</th>
                             <th class="items-col-group-mult" title="Multiplied with qty for all lines in this group">Group ×</th>
                             <th class="items-col-inventory">Inventory</th>
+                            <th class="items-col-brand">Brand</th>
                             <th class="items-col-desc">Description</th>
                             <th class="items-col-qty">Qty</th>
-                            <th class="items-col-base" title="Base price per unit">Base</th>
+                            <th class="items-col-base" title="Unit cost per unit">Unit cost</th>
+                            <th class="items-col-net-cost text-end" title="Qty × unit cost">Net cost</th>
+                            <th class="items-col-install" title="Unit installation cost per unit">Unit install cost</th>
+                            <th class="items-col-net-install text-end" title="Qty × unit installation cost">Net install cost</th>
                             <th class="items-col-profit">Profit</th>
-                            <th class="items-col-profit-num" title="% or AED per unit">Profit value</th>
-                            <th class="items-col-rate" title="Selling price per unit after profit">Rate</th>
+                            <th class="items-col-profit-num" title="Calculated from selling cost vs unit cost">Profit value</th>
+                            <th class="items-col-selling" title="Unit selling price (user enters)">Selling cost</th>
                             <th class="items-col-tax">Tax</th>
-                            <th class="items-col-net text-end" title="Quantity × rate (before VAT)">Net (excl.)</th>
+                            <th class="items-col-net text-end" title="Subtotal + profit (before VAT)">Net (excl.)</th>
                             <th class="items-col-gross text-end" title="Net + VAT for this line">Gross (incl.)</th>
                             <th class="items-col-actions"></th>
                         </tr>
@@ -453,12 +451,16 @@
                             </td>
                             <td class="items-col-group-mult">{{ item_form.group_qty_multiplier }}</td>
                             <td class="items-col-inventory">{{ item_form.inventory_item }}</td>
+                            <td class="items-col-brand">{{ item_form.brand }}</td>
                             <td class="items-col-desc">{{ item_form.description }}</td>
                             <td class="items-col-qty">{{ item_form.quantity }}</td>
                             <td class="items-col-base">{{ item_form.unit_price }}</td>
+                            <td class="items-col-net-cost text-end"><span class="row-net-cost text-muted small">0.00</span></td>
+                            <td class="items-col-install">{{ item_form.installation_cost }}</td>
+                            <td class="items-col-net-install text-end"><span class="row-net-install-total text-muted small">0.00</span></td>
                             <td class="items-col-profit">{{ item_form.profit_type }}</td>
                             <td class="items-col-profit-num">{{ item_form.profit_value }}</td>
-                            <td class="items-col-rate">{{ item_form.rate }}</td>
+                            <td class="items-col-selling">{{ item_form.selling_cost }}</td>
                             <td class="items-col-tax">{{ item_form.tax_code }}</td>
                             <td class="items-col-net text-end"><span class="row-net text-muted small">0.00</span></td>
                             <td class="items-col-gross text-end"><span class="row-gross fw-medium">0.00</span></td>
@@ -474,31 +476,31 @@
                     </tbody>
                     <tfoot>
                         <tr>
-                            <td colspan="10" class="text-end fw-medium">Subtotal (excl. VAT):</td>
+                            <td colspan="12" class="text-end fw-medium">Subtotal (excl. VAT):</td>
                             <td class="text-end fw-medium" id="subtotal">0.00</td>
                             <td></td>
                             <td></td>
                         </tr>
                         <tr id="discountExclRow" class="d-none">
-                            <td colspan="10" class="text-end fw-medium text-danger">Discount (before VAT):</td>
+                            <td colspan="12" class="text-end fw-medium text-danger">Discount (before VAT):</td>
                             <td class="text-end fw-medium text-danger" id="discountDisplayExcl">0.00</td>
                             <td></td>
                             <td></td>
                         </tr>
                         <tr id="discountInclRow" class="d-none">
-                            <td colspan="10" class="text-end fw-medium text-danger">Discount (after VAT):</td>
+                            <td colspan="12" class="text-end fw-medium text-danger">Discount (after VAT):</td>
                             <td class="text-end fw-medium text-danger" id="discountDisplayIncl">0.00</td>
                             <td></td>
                             <td></td>
                         </tr>
                         <tr>
-                            <td colspan="10" class="text-end fw-medium">VAT:</td>
+                            <td colspan="12" class="text-end fw-medium">VAT:</td>
                             <td></td>
                             <td class="text-end fw-medium" id="vatTotal">0.00</td>
                             <td></td>
                         </tr>
                         <tr>
-                            <td colspan="10" class="text-end fw-bold">Total (incl. VAT):</td>
+                            <td colspan="12" class="text-end fw-bold">Total (incl. VAT):</td>
                             <td></td>
                             <td class="text-end fw-bold" id="grandTotal">0.00</td>
                             <td></td>
@@ -512,7 +514,7 @@
     {% if object %}
     <div class="card mb-4">
         <div class="card-header">
-            <h6 class="mb-0 fw-semibold"><i class="fas fa-comment me-2"></i>Client note</h6>
+            <h6 class="mb-0 fw-semibold"><i class="fas fa-comment me-2"></i>Payment terms</h6>
         </div>
         <div class="card-body">
             <div class="mb-3">
@@ -610,6 +612,7 @@ const taxCodes = [
     {% endfor %}
 ];
 const inventoryItems = {{ inventory_items_json|safe }};
+const inventoryBrands = {{ inventory_brands_json|safe }};
 const inventoryItemEditUrl = (id) => '{% url "inventory:item_edit" 0 %}'.replace('/0/edit/', `/${id}/edit/`);
 const inventoryGroups = {{ inventory_groups_json|safe }};
 const estimateClientNoteTemplates = {{ estimate_client_note_templates_json|safe }};
@@ -640,6 +643,32 @@ function escapeHtml(text) {
         .replace(/"/g, '&quot;');
 }
 
+function getBrandOptions(selected) {
+    const sel = (selected || '').trim();
+    let o = '<option value=""></option>';
+    (inventoryBrands || []).forEach(b => {
+        const picked = sel && sel === b ? ' selected' : '';
+        o += `<option value="${escapeHtml(b)}"${picked}>${escapeHtml(b)}</option>`;
+    });
+    if (sel && !(inventoryBrands || []).includes(sel)) {
+        o += `<option value="${escapeHtml(sel)}" selected>${escapeHtml(sel)}</option>`;
+    }
+    return o;
+}
+
+function syncBrandFromInventory(row, meta) {
+    const brandSel = row?.querySelector('.item-brand');
+    if (!brandSel) return;
+    const brand = (meta?.brand || '').trim();
+    if (!brand) {
+        brandSel.innerHTML = getBrandOptions('');
+        brandSel.value = '';
+        return;
+    }
+    brandSel.innerHTML = getBrandOptions(brand);
+    brandSel.value = brand;
+}
+
 function getInventoryOptions(selectedId) {
     const selected = selectedId != null && selectedId !== '' ? String(selectedId) : '';
     let o = '<option value=""></option>';
@@ -666,11 +695,11 @@ function money2(n) {
     return Math.round(x * 100) / 100;
 }
 
-/** Default profit from inventory item maximum selling price settings. */
+/** Default selling cost from inventory item maximum selling price settings. */
 function applyProfitFromItemMaximum(row, meta) {
     const ptSel = row.querySelector('.item-profit-type');
-    const pvInput = row.querySelector('.item-profit-value');
-    if (!ptSel || !pvInput || !meta) return;
+    const scInput = row.querySelector('.item-selling-cost');
+    if (!ptSel || !scInput || !meta) return;
 
     const rawMax = parseFloat(meta.maximum_selling_price_value);
     const maxType = meta.maximum_selling_price_type || 'amount';
@@ -678,16 +707,16 @@ function applyProfitFromItemMaximum(row, meta) {
         || parseFloat(meta.selling_price) || 0;
     if (!rawMax || rawMax <= 0 || Number.isNaN(rawMax)) {
         ptSel.value = 'none';
-        pvInput.value = '0';
+        scInput.value = base.toFixed(2);
         return;
     }
 
     if (maxType === 'percent') {
         ptSel.value = 'percent';
-        pvInput.value = parseFloat(rawMax).toFixed(2);
+        scInput.value = money2(base * (1 + rawMax / 100)).toFixed(2);
     } else {
         ptSel.value = 'amount';
-        pvInput.value = Math.max(0, rawMax - base).toFixed(2);
+        scInput.value = parseFloat(rawMax).toFixed(2);
     }
 }
 
@@ -733,9 +762,9 @@ function getRowPricingContext(row, meta) {
     const base = money2(row.querySelector('.item-base-price')?.value || 0);
     const pt = row.querySelector('.item-profit-type')?.value || 'none';
     const pv = money2(row.querySelector('.item-profit-value')?.value || 0);
-    const rate = computeRate(row);
+    const selling = money2(row.querySelector('.item-selling-cost')?.value || 0);
     const bounds = getQuoteRateBounds(meta, base);
-    return { base, pt, pv, rate, bounds };
+    return { base, pt, pv, selling, bounds };
 }
 
 function buildBoundsDetailHtml(meta, ctx, issueKind) {
@@ -743,16 +772,16 @@ function buildBoundsDetailHtml(meta, ctx, issueKind) {
     const code = escapeHtml(meta.item_code || '');
     const ptLabel = profitChoices.find(p => p.v === ctx.pt)?.l || ctx.pt;
     const profitPart = ctx.pt === 'percent'
-        ? `${ctx.pv.toFixed(2)}% on base`
+        ? `${ctx.pv.toFixed(2)}% on unit cost`
         : (ctx.pt === 'amount' ? `AED ${ctx.pv.toFixed(2)} per unit` : 'none');
     const rangeParts = [];
     if (ctx.bounds.min > 0) rangeParts.push(`AED ${ctx.bounds.min.toFixed(2)} minimum`);
     if (ctx.bounds.max > 0) rangeParts.push(`AED ${ctx.bounds.max.toFixed(2)} maximum`);
     const rangeText = rangeParts.length ? rangeParts.join(' · ') : 'No min/max limits';
     const issueLead = issueKind === 'low'
-        ? `<p class="text-danger mb-2"><strong>Too low:</strong> The selling <strong>rate</strong> (after profit) is below the allowed minimum for this item.</p>`
+        ? `<p class="text-danger mb-2"><strong>Too low:</strong> The <strong>selling cost</strong> is below the allowed minimum for this item.</p>`
         : (issueKind === 'high'
-            ? `<p class="text-danger mb-2"><strong>Too high:</strong> The selling <strong>rate</strong> (after profit) is above the allowed maximum for this item.</p>`
+            ? `<p class="text-danger mb-2"><strong>Too high:</strong> The <strong>selling cost</strong> is above the allowed maximum for this item.</p>`
             : '');
     return `
         ${issueLead}
@@ -761,8 +790,8 @@ function buildBoundsDetailHtml(meta, ctx, issueKind) {
             <tbody>
                 <tr><th scope="row">Base (unit cost)</th><td>AED ${ctx.base.toFixed(2)}</td></tr>
                 <tr><th scope="row">Profit</th><td>${escapeHtml(ptLabel)} — ${escapeHtml(profitPart)}</td></tr>
-                <tr><th scope="row">Rate (base + profit)</th><td class="fw-semibold">AED ${ctx.rate.toFixed(2)}</td></tr>
-                <tr><th scope="row">Allowed rate on quotes</th><td>${escapeHtml(rangeText)}</td></tr>
+                <tr><th scope="row">Selling cost</th><td class="fw-semibold">AED ${ctx.selling.toFixed(2)}</td></tr>
+                <tr><th scope="row">Allowed selling cost</th><td>${escapeHtml(rangeText)}</td></tr>
             </tbody>
         </table>
         <p class="mb-1 text-muted">Inventory rules for this base price:</p>
@@ -869,7 +898,7 @@ function setRowBoundsHelpVisible(row, visible) {
 
 function clearRowBoundsHighlight(row) {
     if (!row) return;
-    row.querySelectorAll('.item-base-price, .item-profit-value').forEach(el => {
+    row.querySelectorAll('.item-base-price, .item-selling-cost, .item-profit-value').forEach(el => {
         el.classList.remove('estimate-price-out-of-bounds');
         el.removeAttribute('title');
     });
@@ -889,18 +918,16 @@ function showBoundsToastOnce(msg) {
 
 function getRowRateHighlightField(row) {
     const pt = row.querySelector('.item-profit-type')?.value || 'none';
-    const pval = parseFloat(row.querySelector('.item-profit-value')?.value);
-    if (pt !== 'none' && !Number.isNaN(pval) && pval > 0) {
-        return row.querySelector('.item-profit-value');
+    if (pt !== 'none') {
+        return row.querySelector('.item-selling-cost');
     }
     return row.querySelector('.item-base-price');
 }
 
-/** Validate computed selling rate (base + profit) against inventory min/max bounds. */
+/** Validate selling cost against inventory min/max bounds. */
 function validateRowSellingRate(row, showToast, triggerEl) {
     const invSel = row.querySelector('.item-inventory');
-    const bp = row.querySelector('.item-base-price');
-    const pv = row.querySelector('.item-profit-value');
+    const sc = row.querySelector('.item-selling-cost');
     if (!invSel || row.style.display === 'none') return true;
 
     initBasePriceBoundsUI(row);
@@ -910,10 +937,10 @@ function validateRowSellingRate(row, showToast, triggerEl) {
     const invId = invSel.value;
     if (!invId) return true;
 
-    const rate = computeRate(row);
+    const selling = money2(sc?.value || 0);
     const meta = getInventoryMeta(invId);
     const base = parseFloat(row.querySelector('.item-base-price')?.value) || 0;
-    const issue = analyzeQuoteRateBounds(meta, rate, base);
+    const issue = analyzeQuoteRateBounds(meta, selling, base);
     if (issue) {
         const ctx = getRowPricingContext(row, meta);
         issue.detailHtml = buildBoundsDetailHtml(meta, ctx, issue.kind);
@@ -943,7 +970,8 @@ function validateAllSellingRates(showToast) {
                 const invId = row.querySelector('.item-inventory')?.value;
                 const meta = getInventoryMeta(invId);
                 const base = parseFloat(row.querySelector('.item-base-price')?.value) || 0;
-                const issue = meta && analyzeQuoteRateBounds(meta, computeRate(row), base);
+                const selling = money2(row.querySelector('.item-selling-cost')?.value || 0);
+                const issue = meta && analyzeQuoteRateBounds(meta, selling, base);
                 if (issue) firstIssueMsg = issue.short;
             }
         }
@@ -1249,17 +1277,69 @@ function getProfitTypeOptions(val) {
     return o;
 }
 
-function computeRate(row) {
-    const base = parseFloat(row.querySelector('.item-base-price')?.value) || 0;
+function computeNetCost(row) {
+    const qty = parseFloat(row.querySelector('.item-qty')?.value) || 0;
+    const unit = parseFloat(row.querySelector('.item-base-price')?.value) || 0;
+    return money2(qty * unit);
+}
+
+function computeNetInstallation(row) {
+    const qty = parseFloat(row.querySelector('.item-qty')?.value) || 0;
+    const install = parseFloat(row.querySelector('.item-installation-cost')?.value) || 0;
+    return money2(qty * install);
+}
+
+function getSellingCost(row) {
+    return parseFloat(row.querySelector('.item-selling-cost')?.value) || 0;
+}
+
+function applyProfitFromSellingCost(row) {
+    const unit = parseFloat(row.querySelector('.item-base-price')?.value) || 0;
+    const selling = getSellingCost(row);
     const pt = row.querySelector('.item-profit-type')?.value || 'none';
-    const pv = parseFloat(row.querySelector('.item-profit-value')?.value) || 0;
-    let rate = base;
-    if (pt === 'percent') rate = base * (1 + pv / 100);
-    else if (pt === 'amount') rate = base + pv;
-    rate = money2(rate);
-    const r = row.querySelector('.item-rate');
-    if (r) r.value = rate.toFixed(2);
-    return rate;
+    const pvInput = row.querySelector('.item-profit-value');
+    if (!pvInput) return;
+    if (pt === 'percent') {
+        pvInput.value = unit > 0 ? money2((selling - unit) / unit * 100).toFixed(2) : '0';
+    } else if (pt === 'amount') {
+        pvInput.value = money2(selling - unit).toFixed(2);
+    } else {
+        pvInput.value = '0';
+    }
+}
+
+function syncSellingWhenNoProfit(row) {
+    const pt = row.querySelector('.item-profit-type')?.value || 'none';
+    if (pt !== 'none') return;
+    const unit = parseFloat(row.querySelector('.item-base-price')?.value) || 0;
+    const sc = row.querySelector('.item-selling-cost');
+    if (sc) sc.value = unit.toFixed(2);
+}
+
+function updateRowComputedFields(row) {
+    syncSellingWhenNoProfit(row);
+    const netCostEl = row.querySelector('.row-net-cost');
+    const netInstEl = row.querySelector('.row-net-install-total');
+    if (netCostEl) netCostEl.textContent = computeNetCost(row).toFixed(2);
+    if (netInstEl) netInstEl.textContent = computeNetInstallation(row).toFixed(2);
+    applyProfitFromSellingCost(row);
+}
+
+function computeLinePreProfit(row) {
+    return computeNetCost(row);
+}
+
+function computeLineProfit(row) {
+    const qty = parseFloat(row.querySelector('.item-qty')?.value) || 0;
+    const unit = parseFloat(row.querySelector('.item-base-price')?.value) || 0;
+    const selling = getSellingCost(row);
+    return money2(qty * (selling - unit));
+}
+
+function computeLineNet(row) {
+    const qty = parseFloat(row.querySelector('.item-qty')?.value) || 0;
+    const selling = getSellingCost(row);
+    return money2(qty * selling);
 }
 
 /** VAT % for the row — Django-rendered tax selects have no data-rate on options; use taxCodes. */
@@ -1281,12 +1361,15 @@ function populateRowFromInventory(row, invId, groupName, defaultQuantity) {
     }
     const desc = row.querySelector('input[name$="-description"]');
     if (desc) desc.value = meta.name || '';
+    syncBrandFromInventory(row, meta);
     const bp = row.querySelector('.item-base-price');
     if (bp) bp.value = parseFloat(meta.selling_price || 0).toFixed(2);
+    const sc = row.querySelector('.item-selling-cost');
+    if (sc) sc.value = parseFloat(meta.selling_price || 0).toFixed(2);
     applyProfitFromItemMaximum(row, meta);
     const tc = row.querySelector('.item-tax-code');
     if (tc) tc.value = meta.tax_code_id || defaultTaxCodeId || '';
-    computeRate(row);
+    updateRowComputedFields(row);
     const qtyInput = row.querySelector('.item-qty');
     if (qtyInput) {
         const dq = resolvedDefaultQty != null ? parseFloat(resolvedDefaultQty) : NaN;
@@ -1310,7 +1393,11 @@ function onInventoryChange(sel) {
     if (suppressInventoryChange) return;
     const row = sel.closest('tr');
     const id = sel.value;
-    if (!id || !row) return;
+    if (!row) return;
+    if (!id) {
+        syncBrandFromInventory(row, null);
+        return;
+    }
     populateRowFromInventory(row, id);
 }
 
@@ -1520,6 +1607,7 @@ function addItemRow() {
         </td>
         <td class="items-col-group-mult"><input type="number" name="items-${formCount}-group_qty_multiplier" value="1" step="1" min="1" class="form-control form-control-sm item-group-qty-mult" title="Multiplied with qty for every line in this group"></td>
         <td class="items-col-inventory"><select name="items-${formCount}-inventory_item" class="form-select form-select-sm item-inventory">${getInventoryOptions()}</select></td>
+        <td class="items-col-brand"><select name="items-${formCount}-brand" class="form-select form-select-sm item-brand">${getBrandOptions('')}</select></td>
         <td class="items-col-desc"><input type="text" name="items-${formCount}-description" class="form-control form-control-sm"></td>
         <td class="items-col-qty"><input type="number" name="items-${formCount}-quantity" value="1" step="1" min="1" class="form-control form-control-sm item-qty"></td>
         <td class="items-col-base">
@@ -1528,9 +1616,12 @@ function addItemRow() {
                 <button type="button" class="btn btn-sm btn-outline-info item-bounds-help d-none" title="Selling price limits"><i class="fas fa-eye"></i></button>
             </div>
         </td>
+        <td class="items-col-net-cost text-end"><span class="row-net-cost text-muted small">0.00</span></td>
+        <td class="items-col-install"><input type="number" name="items-${formCount}-installation_cost" value="0" step="0.01" min="0" class="form-control form-control-sm item-installation-cost"></td>
+        <td class="items-col-net-install text-end"><span class="row-net-install-total text-muted small">0.00</span></td>
         <td class="items-col-profit"><select name="items-${formCount}-profit_type" class="form-select form-select-sm item-profit-type">${getProfitTypeOptions('none')}</select></td>
-        <td class="items-col-profit-num"><input type="number" name="items-${formCount}-profit_value" value="0" step="0.01" min="0" class="form-control form-control-sm item-profit-value"></td>
-        <td class="items-col-rate"><input type="number" name="items-${formCount}-rate" value="0" step="0.01" class="form-control form-control-sm item-rate" readonly></td>
+        <td class="items-col-profit-num"><input type="number" name="items-${formCount}-profit_value" value="0" step="0.01" class="form-control form-control-sm item-profit-value" readonly></td>
+        <td class="items-col-selling"><input type="number" name="items-${formCount}-selling_cost" value="0" step="0.01" min="0" class="form-control form-control-sm item-selling-cost"></td>
         <td class="items-col-tax"><select name="items-${formCount}-tax_code" class="form-select form-select-sm item-tax-code">${getTaxOptions(defaultTaxCodeId)}</select></td>
         <td class="items-col-net text-end"><span class="row-net text-muted small">0.00</span></td>
         <td class="items-col-gross text-end"><span class="row-gross fw-medium">0.00</span></td>
@@ -1637,11 +1728,10 @@ function calculateRowTotal(input) {
     if (!input || !input.closest) return;
     const row = input.closest('tr');
     if (!row || !row.classList.contains('item-row')) return;
-    const rate = computeRate(row);
-    const qty = parseFloat(row.querySelector('.item-qty')?.value) || 0;
+    updateRowComputedFields(row);
     const taxSel = row.querySelector('.item-tax-code');
     const vatRate = getVatRatePercent(taxSel);
-    const net = qty * rate;
+    const net = computeLineNet(row);
     const vat = net * (vatRate / 100);
     const gross = net + vat;
     const netEl = row.querySelector('.row-net');
@@ -1671,18 +1761,23 @@ function updateExpenseTypeTotals() {
     if (!card || !list) return;
 
     const totalsByType = {};
+    let installNet = 0;
+    let installGross = 0;
     document.querySelectorAll('#itemsBody .item-row').forEach(row => {
         if (row.style.display === 'none') return;
+        const taxSel = row.querySelector('.item-tax-code');
+        const vatRate = getVatRatePercent(taxSel);
+        const netInst = computeNetInstallation(row);
+        if (netInst > 0) {
+            installNet += netInst;
+            installGross += netInst + netInst * (vatRate / 100);
+        }
         const groupName = getRowGroupName(row);
         if (!groupName) return;
         const meta = groupExpenseMetaByName[groupName.toLowerCase()];
         if (!meta) return;
 
-        const qty = parseFloat(row.querySelector('.item-qty')?.value) || 0;
-        const rate = computeRate(row);
-        const taxSel = row.querySelector('.item-tax-code');
-        const vatRate = getVatRatePercent(taxSel);
-        const net = qty * rate;
+        const net = computeLineNet(row);
         const gross = net + net * (vatRate / 100);
         const key = meta.expenseTypeName;
         if (!totalsByType[key]) {
@@ -1694,6 +1789,14 @@ function updateExpenseTypeTotals() {
         }
         totalsByType[key].total += gross;
     });
+
+    if (installNet > 0) {
+        totalsByType['Installation cost'] = {
+            expenseTypeName: 'Installation cost',
+            expenseTypeOrder: 9999,
+            total: installGross,
+        };
+    }
 
     const rows = Object.values(totalsByType).sort((a, b) => {
         if (a.expenseTypeOrder !== b.expenseTypeOrder) {
@@ -1747,10 +1850,9 @@ function calculateTotals() {
     document.querySelectorAll('#itemsBody .item-row').forEach(row => {
         if (row.style.display === 'none') return;
         const qty = parseFloat(row.querySelector('.item-qty')?.value) || 0;
-        const rate = computeRate(row);
         const taxSel = row.querySelector('.item-tax-code');
         const vatRate = getVatRatePercent(taxSel);
-        const net = qty * rate;
+        const net = computeLineNet(row);
         rows.push({ net, vatRate });
         subtotal += net;
     });
@@ -1822,12 +1924,12 @@ function bindLineItemsTableEvents() {
             ensureTrailingEmptyRow();
             return;
         }
-        if (!t.matches('.item-qty, .item-base-price, .item-profit-value')) return;
+        if (!t.matches('.item-qty, .item-base-price, .item-installation-cost, .item-selling-cost')) return;
         if (!row) return;
         if (t.matches('.item-qty')) updateBaseQtyFromManualEdit(row);
         const q = row.querySelector('.item-qty');
         if (q) calculateRowTotal(q);
-        if (t.matches('.item-base-price, .item-profit-value')) {
+        if (t.matches('.item-base-price, .item-selling-cost')) {
             validateRowSellingRate(row, false, t);
         }
     });
@@ -1838,7 +1940,7 @@ function bindLineItemsTableEvents() {
             addLinesFromInventoryGroupSelect(t);
             return;
         }
-        if (t.matches('.item-base-price, .item-profit-value')) {
+        if (t.matches('.item-base-price, .item-selling-cost')) {
             const row = t.closest('tr.item-row');
             if (row) validateRowSellingRate(row, false, t);
             return;
@@ -1864,7 +1966,7 @@ function bindLineItemsTableEvents() {
             if (!row) return;
             const q = row.querySelector('.item-qty');
             if (q) calculateRowTotal(q);
-            validateRowSellingRate(row, false, row.querySelector('.item-profit-value'));
+            validateRowSellingRate(row, false, row.querySelector('.item-selling-cost'));
             return;
         }
         if (!t.matches('.item-qty, .item-tax-code')) return;

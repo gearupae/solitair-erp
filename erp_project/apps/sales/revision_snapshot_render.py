@@ -22,10 +22,33 @@ def _decimal(value, default='0'):
         return Decimal(default)
 
 
+def _attach_snapshot_line_calc(item_ns: SimpleNamespace) -> SimpleNamespace:
+    """Add computed line breakdown attrs for PDF/detail (snapshot rows)."""
+    from .models import EstimateItem
+
+    tmp = EstimateItem(
+        quantity=item_ns.quantity,
+        unit_price=item_ns.unit_price,
+        installation_cost=getattr(item_ns, 'installation_cost', Decimal('0')),
+        selling_cost=getattr(item_ns, 'selling_cost', None) or item_ns.unit_price,
+        profit_type=item_ns.profit_type or 'none',
+        vat_rate=item_ns.vat_rate or Decimal('0'),
+        is_vat_inclusive=False,
+    )
+    tmp.apply_profit_from_selling_cost()
+    item_ns.line_profit_amount = tmp.line_profit_amount
+    item_ns.line_calc_summary = tmp.line_calc_summary
+    item_ns.line_total_incl_vat = tmp.line_total_incl_vat
+    item_ns.line_net_excl_vat = tmp.line_net_excl_vat
+    item_ns.effective_rate = tmp.effective_rate
+    return item_ns
+
+
 def snapshot_item_from_dict(row: dict) -> SimpleNamespace:
     code = row.get('inventory_item_code') or ''
-    inv = SimpleNamespace(item_code=code, brand_name='') if code else None
-    return SimpleNamespace(
+    brand = row.get('brand') or ''
+    inv = SimpleNamespace(item_code=code, brand='') if code else None
+    item = SimpleNamespace(
         description=row.get('description', ''),
         quantity=_decimal(row.get('quantity')),
         unit_price=_decimal(row.get('unit_price')),
@@ -36,9 +59,14 @@ def snapshot_item_from_dict(row: dict) -> SimpleNamespace:
         vat_amount=_decimal(row.get('vat_amount')),
         group_name=row.get('group_name', ''),
         group_qty_multiplier=_decimal(row.get('group_qty_multiplier'), '1'),
+        brand=brand,
+        installation_cost=_decimal(row.get('installation_cost')),
+        selling_cost=_decimal(row.get('selling_cost'), row.get('rate')),
         inventory_item=inv,
+        display_brand=brand,
         vat_rate=Decimal('0'),
     )
+    return _attach_snapshot_line_calc(item)
 
 
 def group_snapshot_items_for_display(items_data: list) -> list[dict]:
@@ -68,6 +96,7 @@ class SnapshotEstimateProxy:
         self.project = live_estimate.project
         self.show_rates_on_pdf = live_estimate.show_rates_on_pdf
         self.show_brand_name_on_pdf = live_estimate.show_brand_name_on_pdf
+        self.show_installation_cost_on_pdf = live_estimate.show_installation_cost_on_pdf
         self.show_group_totals_on_pdf = live_estimate.show_group_totals_on_pdf
         self.authorized_signature = None
         self.customer_signature = None

@@ -1,0 +1,758 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Forecast — {{ sheet.month_label }}{% endblock %}
+
+{% block extra_css %}
+<style>
+.cf-table {
+    font-size: 0.9375rem;
+}
+.cf-table th,
+.cf-table td {
+    padding: 0.45rem 0.6rem;
+    vertical-align: middle;
+}
+.cf-table thead th {
+    font-weight: 600;
+    white-space: nowrap;
+}
+.cf-table .num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+.cf-table tfoot td {
+    background: var(--gray-50, #f9fafb);
+    font-weight: 600;
+    border-top: 2px solid var(--gray-200, #e5e7eb);
+}
+.cf-row-special {
+    background-color: #fffbeb;
+}
+.cf-sheet-banner {
+    border-left: 4px solid var(--blue, #2563eb);
+}
+.cf-summary-value {
+    font-size: 1.25rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+.cf-amount-hint {
+    font-size: 0.75rem;
+}
+.cf-editable-expected {
+    cursor: pointer;
+    position: relative;
+}
+.cf-editable-expected:hover .cf-expected-display {
+    text-decoration: underline dotted;
+    color: var(--blue, #2563eb);
+}
+.cf-editable-expected .cf-expected-input {
+    width: 7.5rem;
+    text-align: right;
+    margin-left: auto;
+    display: block;
+}
+.cf-editable-salesman {
+    cursor: pointer;
+    min-width: 8rem;
+}
+.cf-editable-salesman:hover .cf-salesman-display {
+    text-decoration: underline dotted;
+    color: var(--blue, #2563eb);
+}
+.cf-editable-salesman .cf-salesman-select {
+    min-width: 9rem;
+    max-width: 12rem;
+}
+.cf-source-badge {
+    font-size: 0.65rem;
+    vertical-align: middle;
+}
+.cf-add-lines-card .cf-add-row {
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--gray-200, #e5e7eb);
+}
+.cf-add-lines-card .cf-add-row:last-child {
+    border-bottom: none;
+}
+.cf-add-section-title {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    margin-bottom: 0.65rem;
+}
+.cf-add-fields-line {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: flex-end;
+    gap: 0.5rem;
+    overflow-x: auto;
+    padding-bottom: 0.15rem;
+}
+.cf-add-field {
+    flex: 0 0 auto;
+}
+.cf-add-field--date { width: 9.5rem; }
+.cf-add-field--sm { width: 7.5rem; }
+.cf-add-field--md { width: 10rem; }
+.cf-add-field--lg { width: 12rem; }
+.cf-add-field--xl { width: 14rem; }
+.cf-add-field--amount { width: 7.5rem; }
+.cf-add-field--actions {
+    flex: 0 0 auto;
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 0.35rem;
+    align-items: flex-end;
+    padding-bottom: 0.1rem;
+}
+@media (max-width: 991.98px) {
+    .cf-add-fields-line {
+        flex-wrap: wrap;
+        overflow-x: visible;
+    }
+    .cf-add-field {
+        width: calc(50% - 0.25rem) !important;
+        min-width: 0;
+    }
+    .cf-add-field--actions {
+        width: 100%;
+    }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-3">
+    <div>
+        <h4 class="mb-1 fw-bold">{{ title }}</h4>
+        <p class="text-muted mb-0">Monthly cash-flow estimation · expected vs received/paid · AED</p>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-body py-3">
+        <form method="get" class="row g-2 align-items-end">
+            <div class="col-md-3 col-lg-2">
+                <label class="form-label small mb-1">Year</label>
+                <select name="year" class="form-select form-select-sm">
+                    {% for y in year_choices %}<option value="{{ y }}" {% if y == year %}selected{% endif %}>{{ y }}</option>{% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3 col-lg-2">
+                <label class="form-label small mb-1">Month</label>
+                <select name="month" class="form-select form-select-sm">
+                    {% for m in month_choices %}<option value="{{ m }}" {% if m == month %}selected{% endif %}>{{ m|stringformat:"02d" }}</option>{% endfor %}
+                </select>
+            </div>
+            <div class="col-md-auto">
+                <button type="submit" class="btn btn-sm btn-primary"><i class="fas fa-folder-open me-1"></i>Open sheet</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm mb-4 cf-sheet-banner">
+    <div class="card-body d-flex flex-wrap justify-content-between align-items-start gap-3">
+        <div>
+            <div class="text-muted small text-uppercase fw-semibold mb-1">Estimating expense</div>
+            <h5 class="fw-bold mb-1">{{ company.company_name|default:"Company" }}</h5>
+            <p class="text-muted mb-0">{{ sheet.month_label }}</p>
+        </div>
+        <div class="text-md-end">
+            <span class="badge bg-light text-dark border">AED</span>
+            <div class="small text-muted mt-2">Last updated {{ sheet.updated_at|date:"d M Y, H:i" }}</div>
+        </div>
+    </div>
+</div>
+
+{% if can_edit %}
+<!-- Combined add lines -->
+<div class="card border-0 shadow-sm mb-4 cf-add-lines-card">
+    <div class="card-header bg-transparent py-3">
+        <h6 class="mb-0 fw-semibold"><i class="fas fa-plus-circle me-2 text-primary"></i>Add lines</h6>
+    </div>
+    <div class="card-body p-0">
+        <!-- Income -->
+        <div class="cf-add-row">
+            <form method="post" id="incomeLineForm">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="add_income" id="incomeFormAction">
+                <input type="hidden" name="line_id" id="incomeLineId" value="">
+                <input type="hidden" name="line_kind" id="incomeLineKind" value="normal">
+                <h6 class="cf-add-section-title text-success"><i class="fas fa-arrow-down me-1"></i>Income expected</h6>
+                <div class="cf-add-fields-line">
+                    <div class="cf-add-field cf-add-field--date"><label class="form-label small mb-1">Date</label><input type="date" name="line_date" class="form-control form-control-sm"></div>
+                    <div class="cf-add-field cf-add-field--xl"><label class="form-label small mb-1">Customer</label>
+                        <select name="customer" class="form-select form-select-sm" id="incomeCustomer"><option value="">— Select —</option>{% for c in customers %}<option value="{{ c.pk }}">{{ c.name }}{% if c.company %} — {{ c.company }}{% endif %}</option>{% endfor %}</select>
+                    </div>
+                    <div class="cf-add-field cf-add-field--sm"><label class="form-label small mb-1">Category</label><select name="category" class="form-select form-select-sm">{% for val, lbl in income_categories %}<option value="{{ val }}">{{ lbl }}</option>{% endfor %}</select></div>
+                    <div class="cf-add-field cf-add-field--lg"><label class="form-label small mb-1">Details</label><input type="text" name="details" class="form-control form-control-sm" placeholder="Quotation / AMC"></div>
+                    <div class="cf-add-field cf-add-field--sm"><label class="form-label small mb-1">Type</label><select name="payment_type" class="form-select form-select-sm">{% for val, lbl in income_payment_types %}<option value="{{ val }}">{{ lbl }}</option>{% endfor %}</select></div>
+                    <div class="cf-add-field cf-add-field--md"><label class="form-label small mb-1">Employee</label>
+                        <select name="employee" class="form-select form-select-sm"><option value="">—</option>{% for emp in employees %}<option value="{{ emp.pk }}">{{ emp.full_name }}</option>{% endfor %}</select>
+                    </div>
+                    <div class="cf-add-field cf-add-field--lg"><label class="form-label small mb-1">Quotation</label>
+                        <select name="estimate" id="incomeQuotation" class="form-select form-select-sm"><option value="">—</option>{% for q in quotation_options %}<option value="{{ q.pk }}" data-customer="{{ q.customer_id }}" data-max="{{ q.max_amount }}">{{ q.label }}</option>{% endfor %}</select>
+                    </div>
+                    <div class="cf-add-field cf-add-field--sm"><label class="form-label small mb-1">AMC</label><select name="amc_contract" class="form-select form-select-sm"><option value="">—</option>{% for a in amc_contracts %}<option value="{{ a.pk }}">{{ a.contract_number }}</option>{% endfor %}</select></div>
+                    <div class="cf-add-field cf-add-field--amount"><label class="form-label small mb-1">Expected</label>
+                        <input type="number" step="0.01" min="0" name="income_expected" id="incomeExpected" class="form-control form-control-sm" required>
+                        <div class="cf-amount-hint text-muted mt-1" id="incomeAmountHint"></div>
+                    </div>
+                    <div class="cf-add-field cf-add-field--actions">
+                        <button type="submit" class="btn btn-success btn-sm" id="incomeSubmitBtn"><i class="fas fa-plus me-1"></i>Add</button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" id="btnUnexpectedIncome">Unexpected</button>
+                        <button type="button" class="btn btn-light btn-sm" id="btnIncomeReset">Reset</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+
+        <!-- Cheque -->
+        <div class="cf-add-row">
+            <form method="post" id="chequeLineForm">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="add_cheque">
+                <h6 class="cf-add-section-title text-primary"><i class="fas fa-money-check me-1"></i>Cheque in hand</h6>
+                <div class="cf-add-fields-line">
+                    <div class="cf-add-field cf-add-field--date"><label class="form-label small mb-1">Date</label><input type="date" name="line_date" class="form-control form-control-sm"></div>
+                    <div class="cf-add-field cf-add-field--xl"><label class="form-label small mb-1">Customer</label>
+                        <select name="customer" id="chequeCustomer" class="form-select form-select-sm" required><option value="">— Select —</option>{% for c in customers %}<option value="{{ c.pk }}">{{ c.name }}</option>{% endfor %}</select>
+                    </div>
+                    <div class="cf-add-field cf-add-field--sm"><label class="form-label small mb-1">Category</label><select name="category" class="form-select form-select-sm">{% for val, lbl in income_categories %}<option value="{{ val }}">{{ lbl }}</option>{% endfor %}</select></div>
+                    <div class="cf-add-field cf-add-field--lg"><label class="form-label small mb-1">Details</label><input type="text" name="details" class="form-control form-control-sm"></div>
+                    <div class="cf-add-field cf-add-field--lg"><label class="form-label small mb-1">Invoice</label>
+                        <select name="invoice" id="chequeInvoice" class="form-select form-select-sm"><option value="">—</option>{% for inv in invoice_options %}<option value="{{ inv.pk }}" data-customer="{{ inv.customer_id }}" data-max="{{ inv.max_amount }}">{{ inv.label }}</option>{% endfor %}</select>
+                    </div>
+                    <div class="cf-add-field cf-add-field--amount"><label class="form-label small mb-1">Amount</label>
+                        <input type="number" step="0.01" min="0" name="income_balance" id="chequeAmount" class="form-control form-control-sm" required>
+                        <div class="cf-amount-hint text-muted mt-1" id="chequeAmountHint"></div>
+                    </div>
+                    <div class="cf-add-field cf-add-field--actions">
+                        <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-plus me-1"></i>Add</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+
+        <!-- Expense -->
+        <div class="cf-add-row">
+            <form method="post" id="expenseLineForm">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="add_expense" id="expenseFormAction">
+                <input type="hidden" name="line_kind" id="expenseLineKind" value="normal">
+                <h6 class="cf-add-section-title text-danger"><i class="fas fa-arrow-up me-1"></i>Expense</h6>
+                <div class="cf-add-fields-line">
+                    <div class="cf-add-field cf-add-field--date"><label class="form-label small mb-1">Date</label><input type="date" name="line_date" class="form-control form-control-sm"></div>
+                    <div class="cf-add-field cf-add-field--xl"><label class="form-label small mb-1">Vendor</label>
+                        <select name="vendor" class="form-select form-select-sm" id="expenseVendor"><option value="">— Select —</option>{% for v in vendors %}<option value="{{ v.pk }}">{{ v.name }}</option>{% endfor %}</select>
+                    </div>
+                    <div class="cf-add-field cf-add-field--md"><label class="form-label small mb-1">Account</label><select name="account" class="form-select form-select-sm">{% for val, lbl in expense_accounts %}<option value="{{ val }}">{{ lbl }}</option>{% endfor %}</select></div>
+                    <div class="cf-add-field cf-add-field--lg"><label class="form-label small mb-1">Details</label><input type="text" name="details" class="form-control form-control-sm"></div>
+                    <div class="cf-add-field cf-add-field--sm"><label class="form-label small mb-1">Type</label><select name="payment_type" class="form-select form-select-sm">{% for val, lbl in expense_payment_types %}<option value="{{ val }}">{{ lbl }}</option>{% endfor %}</select></div>
+                    <div class="cf-add-field cf-add-field--xl"><label class="form-label small mb-1">Vendor bill</label>
+                        <select name="vendor_bill" id="expenseBill" class="form-select form-select-sm"><option value="">—</option>{% for bill in bill_options %}<option value="{{ bill.pk }}" data-vendor="{{ bill.vendor_id }}" data-max="{{ bill.max_amount }}">{{ bill.label }}</option>{% endfor %}</select>
+                    </div>
+                    <div class="cf-add-field cf-add-field--amount"><label class="form-label small mb-1">Expense</label>
+                        <input type="number" step="0.01" min="0" name="expense" id="expenseAmount" class="form-control form-control-sm" required>
+                        <div class="cf-amount-hint text-muted mt-1" id="expenseAmountHint"></div>
+                    </div>
+                    <div class="cf-add-field cf-add-field--actions">
+                        <button type="submit" class="btn btn-danger btn-sm"><i class="fas fa-plus me-1"></i>Add</button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" id="btnVehiclePetrol">Petrol</button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" id="btnUnexpectedExpense">Unexpected</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Section 1: Income Expected -->
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-transparent py-3 d-flex justify-content-between align-items-center">
+        <h6 class="mb-0 fw-semibold"><i class="fas fa-arrow-down me-2 text-success"></i>Income expected</h6>
+        <span class="badge bg-success bg-opacity-10 text-success">Section 1</span>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover table-sm cf-table mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Date</th>
+                        <th>Customer</th>
+                        <th>Category</th>
+                        <th>Details</th>
+                        <th>Type</th>
+                        <th>Sales man</th>
+                        <th class="num">Income expected</th>
+                        <th class="num">Received</th>
+                        <th class="num">Balance</th>
+                        {% if can_edit %}<th class="text-center">Actions</th>{% endif %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in income_rows %}
+                    <tr class="{% if row.line_kind == 'unexpected_income' %}cf-row-special{% endif %}">
+                        <td>{% if row.line_date %}{{ row.line_date|date:"d/m/Y" }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+                        <td>{% if row.line_kind == 'unexpected_income' %}<span class="badge bg-warning bg-opacity-10 text-warning">Unexpected income</span>{% else %}{{ row.customer }}{% endif %}</td>
+                        <td><span class="badge bg-light text-dark border">{{ row.category }}</span></td>
+                        <td>{{ row.details|default:"—" }}{% if row.is_auto %} <span class="badge bg-info bg-opacity-10 text-info cf-source-badge" title="Auto-synced from {{ row.line_source_label }}">{{ row.line_source_label }}</span>{% endif %}</td>
+                        <td>{{ row.payment_type }}</td>
+                        {% if can_edit %}
+                        <td class="cf-editable-salesman" data-line-id="{{ row.pk }}" data-employee-id="{{ row.employee_id|default:'' }}" title="Click to choose sales person">
+                            <span class="cf-salesman-display">{{ row.sales_man|default:"—" }}</span>
+                            <form method="post" class="cf-salesman-form d-none">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="patch_income_sales_man">
+                                <input type="hidden" name="line_id" value="{{ row.pk }}">
+                                <select name="employee" class="form-select form-select-sm cf-salesman-select">
+                                    <option value="">—</option>
+                                    {% for emp in employees %}
+                                    <option value="{{ emp.pk }}" {% if row.employee_id == emp.pk %}selected{% endif %}>{{ emp.full_name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </form>
+                        </td>
+                        {% else %}
+                        <td>{{ row.sales_man|default:"—" }}</td>
+                        {% endif %}
+                        {% if can_edit %}
+                        <td class="num cf-editable-expected" data-line-id="{{ row.pk }}" data-value="{{ row.expected }}" title="Click to edit expected amount">
+                            <span class="cf-expected-display">{{ row.expected|floatformat:2|intcomma }}</span>
+                            <form method="post" class="cf-expected-form d-none">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="patch_income_expected">
+                                <input type="hidden" name="line_id" value="{{ row.pk }}">
+                                <input type="number" step="0.01" min="0" name="income_expected" class="form-control form-control-sm cf-expected-input" value="{{ row.expected }}">
+                            </form>
+                        </td>
+                        {% else %}
+                        <td class="num">{{ row.expected|floatformat:2|intcomma }}</td>
+                        {% endif %}
+                        <td class="num text-success">{{ row.received|floatformat:2|intcomma }}</td>
+                        <td class="num {% if row.balance > 0 %}text-warning{% endif %}">{{ row.balance|floatformat:2|intcomma }}</td>
+                        {% if can_edit %}
+                        <td class="text-center text-nowrap">
+                            <form method="post" class="d-inline" onsubmit="return confirm('Remove this line?');">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="delete_income">
+                                <input type="hidden" name="line_id" value="{{ row.pk }}">
+                                <button type="submit" class="btn btn-action btn-outline-danger" title="Remove"><i class="fas fa-trash"></i></button>
+                            </form>
+                        </td>
+                        {% endif %}
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="{% if can_edit %}10{% else %}9{% endif %}" class="text-center text-muted py-4">No income lines yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot>
+                    <tr>
+                        <td colspan="6" class="text-end">Total</td>
+                        <td class="num">{{ summary.income_totals.expected|floatformat:2|intcomma }}</td>
+                        <td class="num text-success">{{ summary.income_totals.received|floatformat:2|intcomma }}</td>
+                        <td class="num">{{ summary.income_totals.balance|floatformat:2|intcomma }}</td>
+                        {% if can_edit %}<td></td>{% endif %}
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Section 2: Cheque In Hand -->
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-transparent py-3 d-flex justify-content-between align-items-center">
+        <h6 class="mb-0 fw-semibold"><i class="fas fa-money-check me-2 text-primary"></i>Cheque in hand</h6>
+        <span class="badge bg-primary bg-opacity-10 text-primary">Section 2</span>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover table-sm cf-table mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Date</th><th>Customer</th><th>Category</th><th>Details</th><th>Type</th>
+                        <th class="num">Income balance</th><th class="num">Received</th><th class="num">Balance</th>
+                        {% if can_edit %}<th class="text-center">Actions</th>{% endif %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in cheque_rows %}
+                    <tr>
+                        <td>{% if row.line_date %}{{ row.line_date|date:"d/m/Y" }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+                        <td>{{ row.customer }}</td>
+                        <td><span class="badge bg-light text-dark border">{{ row.category }}</span></td>
+                        <td>{{ row.details|default:"—" }}{% if row.is_auto %} <span class="badge bg-info bg-opacity-10 text-info cf-source-badge" title="Auto-synced from {{ row.line_source_label }}">{{ row.line_source_label }}</span>{% endif %}</td>
+                        <td>Cheque</td>
+                        <td class="num">{{ row.expected|floatformat:2|intcomma }}</td>
+                        <td class="num text-success">{{ row.received|floatformat:2|intcomma }}</td>
+                        <td class="num">{{ row.balance|floatformat:2|intcomma }}</td>
+                        {% if can_edit %}
+                        <td class="text-center">
+                            <form method="post" class="d-inline" onsubmit="return confirm('Remove this line?');">
+                                {% csrf_token %}<input type="hidden" name="action" value="delete_cheque"><input type="hidden" name="line_id" value="{{ row.pk }}">
+                                <button type="submit" class="btn btn-action btn-outline-danger" title="Remove"><i class="fas fa-trash"></i></button>
+                            </form>
+                        </td>
+                        {% endif %}
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="{% if can_edit %}9{% else %}8{% endif %}" class="text-center text-muted py-4">No cheques in hand.</td></tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot>
+                    <tr>
+                        <td colspan="5" class="text-end">Total</td>
+                        <td class="num">{{ summary.cheque_totals.expected|floatformat:2|intcomma }}</td>
+                        <td class="num text-success">{{ summary.cheque_totals.received|floatformat:2|intcomma }}</td>
+                        <td class="num">{{ summary.cheque_totals.balance|floatformat:2|intcomma }}</td>
+                        {% if can_edit %}<td></td>{% endif %}
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Section 3: Expense -->
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-transparent py-3 d-flex justify-content-between align-items-center">
+        <h6 class="mb-0 fw-semibold"><i class="fas fa-arrow-up me-2 text-danger"></i>Expense</h6>
+        <span class="badge bg-danger bg-opacity-10 text-danger">Section 3</span>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover table-sm cf-table mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Date</th><th>Vendor</th><th>Account</th><th>Details</th><th>Type</th>
+                        <th class="num">Expense</th><th class="num">Paid</th><th class="num">Balance</th>
+                        {% if can_edit %}<th class="text-center">Actions</th>{% endif %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in expense_rows %}
+                    <tr class="{% if row.line_kind != 'normal' %}cf-row-special{% endif %}">
+                        <td>{% if row.line_date %}{{ row.line_date|date:"d/m/Y" }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+                        <td>
+                            {% if row.line_kind == 'vehicle_petrol' %}<span class="badge bg-warning bg-opacity-10 text-warning">Vehicle petrol</span>
+                            {% elif row.line_kind == 'unexpected_expense' %}<span class="badge bg-warning bg-opacity-10 text-warning">Unexpected expense</span>
+                            {% else %}{{ row.vendor }}{% endif %}
+                        </td>
+                        <td>{{ row.account }}</td>
+                        <td>{{ row.details|default:"—" }}{% if row.is_auto %} <span class="badge bg-info bg-opacity-10 text-info cf-source-badge" title="Auto-synced from {{ row.line_source_label }}">{{ row.line_source_label }}</span>{% endif %}</td>
+                        <td>{{ row.payment_type }}</td>
+                        <td class="num">{{ row.expected|floatformat:2|intcomma }}</td>
+                        <td class="num text-success">{{ row.received|floatformat:2|intcomma }}</td>
+                        <td class="num {% if row.balance > 0 %}text-warning{% endif %}">{{ row.balance|floatformat:2|intcomma }}</td>
+                        {% if can_edit %}
+                        <td class="text-center">
+                            <form method="post" class="d-inline" onsubmit="return confirm('Remove this line?');">
+                                {% csrf_token %}<input type="hidden" name="action" value="delete_expense"><input type="hidden" name="line_id" value="{{ row.pk }}">
+                                <button type="submit" class="btn btn-action btn-outline-danger" title="Remove"><i class="fas fa-trash"></i></button>
+                            </form>
+                        </td>
+                        {% endif %}
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="{% if can_edit %}9{% else %}8{% endif %}" class="text-center text-muted py-4">No expense lines yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot>
+                    <tr>
+                        <td colspan="5" class="text-end">Total</td>
+                        <td class="num">{{ summary.expense_totals.expected|floatformat:2|intcomma }}</td>
+                        <td class="num text-success">{{ summary.expense_totals.received|floatformat:2|intcomma }}</td>
+                        <td class="num">{{ summary.expense_totals.balance|floatformat:2|intcomma }}</td>
+                        {% if can_edit %}<td></td>{% endif %}
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Section 4: Summary -->
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-transparent py-3">
+        <h6 class="mb-0 fw-semibold"><i class="fas fa-calculator me-2 text-primary"></i>Summary</h6>
+    </div>
+    <div class="card-body">
+        <div class="row g-3 mb-4">
+            <div class="col-md-4 col-lg">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-body py-3">
+                        <p class="text-muted small mb-1">Total expense</p>
+                        <div class="cf-summary-value text-danger">AED {{ summary.total_expense|floatformat:0|intcomma }}</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4 col-lg">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-body py-3">
+                        <p class="text-muted small mb-1">Cheque in hand</p>
+                        <div class="cf-summary-value">AED {{ summary.cheque_in_hand|floatformat:0|intcomma }}</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4 col-lg">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-body py-3">
+                        <p class="text-muted small mb-1">Expected income</p>
+                        <div class="cf-summary-value text-success">AED {{ summary.expected_income|floatformat:0|intcomma }}</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4 col-lg">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-body py-3">
+                        <p class="text-muted small mb-1">Balance</p>
+                        <div class="cf-summary-value">AED {{ summary.balance|floatformat:0|intcomma }}</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4 col-lg">
+                <div class="card border-0 shadow-sm h-100 border-primary border-2">
+                    <div class="card-body py-3">
+                        <p class="text-muted small mb-1">Closing balance</p>
+                        <div class="cf-summary-value text-primary">AED {{ summary.closing_balance|floatformat:0|intcomma }}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row g-3 align-items-end">
+            <div class="col-md-6 col-lg-4">
+                <label class="form-label">Cash / bank in hand</label>
+                {% if can_edit %}
+                <form method="post" class="d-flex gap-2">
+                    {% csrf_token %}<input type="hidden" name="action" value="save_summary">
+                    <input type="number" step="0.01" name="cash_bank_in_hand" value="{{ summary.cash_bank_in_hand }}" class="form-control">
+                    <button type="submit" class="btn btn-primary"><i class="fas fa-save me-1"></i>Save</button>
+                </form>
+                {% else %}
+                <p class="fw-semibold mb-0">AED {{ summary.cash_bank_in_hand|floatformat:2|intcomma }}</p>
+                {% endif %}
+            </div>
+            <div class="col-12">
+                <p class="small text-muted mb-0">
+                    <i class="fas fa-info-circle me-1"></i>
+                    Balance = Cash/bank + Cheque in hand − Total expense · Closing balance = Balance + Expected income.
+                    Received and paid update automatically from payments recorded in {{ sheet.month_label }}.
+                    Cheques, quotations, AMC renewals, and vendor bills for this month are listed automatically alongside manual lines.
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    function selectedMax(selectEl) {
+        if (!selectEl || !selectEl.value) return null;
+        var opt = selectEl.options[selectEl.selectedIndex];
+        var max = parseFloat(opt.getAttribute('data-max'));
+        return isNaN(max) ? null : max;
+    }
+
+    function bindDocAmountLimit(selectEl, amountEl, hintEl, partySelectEl, partyAttr) {
+        if (!selectEl || !amountEl) return;
+
+        function sync() {
+            var max = selectedMax(selectEl);
+            if (max !== null) {
+                amountEl.max = max.toFixed(2);
+                if (hintEl) {
+                    hintEl.textContent = 'Max available: AED ' + max.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                }
+                if (partySelectEl && partyAttr) {
+                    var opt = selectEl.options[selectEl.selectedIndex];
+                    var partyId = opt.getAttribute(partyAttr);
+                    if (partyId) partySelectEl.value = partyId;
+                }
+            } else {
+                amountEl.removeAttribute('max');
+                if (hintEl) hintEl.textContent = '';
+            }
+        }
+
+        selectEl.addEventListener('change', sync);
+        sync();
+    }
+
+    function bindAmountSubmitGuard(formEl, selectEl, amountEl) {
+        if (!formEl || !selectEl || !amountEl) return;
+        formEl.addEventListener('submit', function (e) {
+            var max = selectedMax(selectEl);
+            var val = parseFloat(amountEl.value);
+            if (max !== null && !isNaN(val) && val > max + 0.001) {
+                e.preventDefault();
+                alert('Amount exceeds available balance (max AED ' + max.toFixed(2) + ').');
+            }
+        });
+    }
+
+    bindDocAmountLimit(
+        document.getElementById('incomeQuotation'),
+        document.getElementById('incomeExpected'),
+        document.getElementById('incomeAmountHint'),
+        document.getElementById('incomeCustomer'),
+        'data-customer'
+    );
+    bindDocAmountLimit(
+        document.getElementById('chequeInvoice'),
+        document.getElementById('chequeAmount'),
+        document.getElementById('chequeAmountHint'),
+        document.getElementById('chequeCustomer'),
+        'data-customer'
+    );
+    bindDocAmountLimit(
+        document.getElementById('expenseBill'),
+        document.getElementById('expenseAmount'),
+        document.getElementById('expenseAmountHint'),
+        document.getElementById('expenseVendor'),
+        'data-vendor'
+    );
+
+    bindAmountSubmitGuard(document.getElementById('incomeLineForm'), document.getElementById('incomeQuotation'), document.getElementById('incomeExpected'));
+    bindAmountSubmitGuard(document.getElementById('chequeLineForm'), document.getElementById('chequeInvoice'), document.getElementById('chequeAmount'));
+    bindAmountSubmitGuard(document.getElementById('expenseLineForm'), document.getElementById('expenseBill'), document.getElementById('expenseAmount'));
+
+    var btnUnexpected = document.getElementById('btnUnexpectedIncome');
+    var incomeKind = document.getElementById('incomeLineKind');
+    var incomeCustomer = document.getElementById('incomeCustomer');
+    if (btnUnexpected && incomeKind) {
+        btnUnexpected.addEventListener('click', function () {
+            incomeKind.value = 'unexpected_income';
+            if (incomeCustomer) incomeCustomer.removeAttribute('required');
+            btnUnexpected.classList.replace('btn-outline-secondary', 'btn-warning');
+        });
+    }
+    document.getElementById('btnIncomeReset')?.addEventListener('click', function () {
+        document.getElementById('incomeLineForm')?.reset();
+        if (incomeKind) incomeKind.value = 'normal';
+        document.getElementById('incomeFormAction').value = 'add_income';
+        document.getElementById('incomeLineId').value = '';
+        document.getElementById('incomeSubmitBtn').innerHTML = '<i class="fas fa-plus me-1"></i>Add';
+        if (btnUnexpected) btnUnexpected.classList.replace('btn-warning', 'btn-outline-secondary');
+        document.getElementById('incomeAmountHint').textContent = '';
+    });
+    document.getElementById('btnVehiclePetrol')?.addEventListener('click', function () {
+        document.getElementById('expenseLineKind').value = 'vehicle_petrol';
+        document.getElementById('expenseVendor').value = '';
+    });
+    document.getElementById('btnUnexpectedExpense')?.addEventListener('click', function () {
+        document.getElementById('expenseLineKind').value = 'unexpected_expense';
+        document.getElementById('expenseVendor').value = '';
+    });
+
+    document.querySelectorAll('.cf-editable-expected').forEach(function (cell) {
+        var display = cell.querySelector('.cf-expected-display');
+        var form = cell.querySelector('.cf-expected-form');
+        var input = cell.querySelector('.cf-expected-input');
+        if (!display || !form || !input) return;
+
+        function showEdit() {
+            display.classList.add('d-none');
+            form.classList.remove('d-none');
+            input.focus();
+            input.select();
+        }
+
+        function hideEdit() {
+            form.classList.add('d-none');
+            display.classList.remove('d-none');
+        }
+
+        cell.addEventListener('click', function (e) {
+            if (form.classList.contains('d-none')) {
+                showEdit();
+                e.stopPropagation();
+            }
+        });
+
+        input.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                form.submit();
+            } else if (e.key === 'Escape') {
+                input.value = cell.getAttribute('data-value') || '';
+                hideEdit();
+            }
+        });
+
+        input.addEventListener('blur', function () {
+            setTimeout(function () {
+                if (!form.classList.contains('d-none')) {
+                    var original = parseFloat(cell.getAttribute('data-value'));
+                    var current = parseFloat(input.value);
+                    if (!isNaN(current) && current !== original) {
+                        form.submit();
+                    } else {
+                        hideEdit();
+                    }
+                }
+            }, 120);
+        });
+    });
+
+    document.querySelectorAll('.cf-editable-salesman').forEach(function (cell) {
+        var display = cell.querySelector('.cf-salesman-display');
+        var form = cell.querySelector('.cf-salesman-form');
+        var select = cell.querySelector('.cf-salesman-select');
+        if (!display || !form || !select) return;
+
+        var originalValue = cell.getAttribute('data-employee-id') || '';
+
+        function showEdit() {
+            display.classList.add('d-none');
+            form.classList.remove('d-none');
+            select.focus();
+        }
+
+        function hideEdit() {
+            select.value = originalValue;
+            form.classList.add('d-none');
+            display.classList.remove('d-none');
+        }
+
+        cell.addEventListener('click', function (e) {
+            if (form.classList.contains('d-none')) {
+                showEdit();
+                e.stopPropagation();
+            }
+        });
+
+        select.addEventListener('change', function () {
+            if ((select.value || '') !== originalValue) {
+                form.submit();
+            } else {
+                hideEdit();
+            }
+        });
+
+        select.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                hideEdit();
+            }
+        });
+
+        select.addEventListener('blur', function () {
+            setTimeout(function () {
+                if (!form.classList.contains('d-none') && (select.value || '') === originalValue) {
+                    hideEdit();
+                }
+            }, 120);
+        });
+    });
+})();
+</script>
+{% endblock %}

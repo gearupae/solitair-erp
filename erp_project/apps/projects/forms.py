@@ -1,7 +1,7 @@
 from django import forms
 from django.core.exceptions import ValidationError
 from decimal import Decimal
-from .models import Project, Task, ProjectExpense, ProjectGatepass, ProjectItemLine
+from .models import Project, Task, ProjectExpense, ProjectGatepass, ProjectItemLine, Inspection
 from apps.crm.models import Customer
 from apps.inventory.models import Item
 from apps.purchase.models import Vendor
@@ -412,5 +412,41 @@ class ProjectItemReturnForm(forms.Form):
                 )
             if item.track_by_serial and qty != qty.to_integral_value():
                 self.add_error('quantity', 'Serial-tracked items require a whole-number quantity.')
+        return cleaned
+
+
+class InspectionForm(forms.ModelForm):
+    class Meta:
+        model = Inspection
+        fields = ['name', 'link_type', 'project', 'amc_contract', 'inspection_date', 'notes']
+        widgets = {
+            'name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Inspection title'}),
+            'link_type': forms.RadioSelect(attrs={'class': 'form-check-input'}),
+            'project': forms.Select(attrs={'class': 'form-select'}),
+            'amc_contract': forms.Select(attrs={'class': 'form-select'}),
+            'inspection_date': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
+            'notes': forms.Textarea(attrs={'class': 'form-control', 'rows': 2}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        from apps.operations.utils import get_amc_contract_queryset
+
+        super().__init__(*args, **kwargs)
+        self.fields['project'].queryset = Project.objects.filter(is_active=True).order_by('-created_at')
+        self.fields['project'].required = False
+        self.fields['project'].empty_label = '— Select project —'
+        self.fields['amc_contract'].queryset = get_amc_contract_queryset()
+        self.fields['amc_contract'].required = False
+        self.fields['amc_contract'].empty_label = '— Select AMC —'
+        self.fields['amc_contract'].label = 'AMC contract'
+        self.fields['inspection_date'].label = 'Inspection date'
+
+    def clean(self):
+        cleaned = super().clean()
+        link_type = cleaned.get('link_type')
+        if link_type == 'project' and not cleaned.get('project'):
+            self.add_error('project', 'Select a project.')
+        elif link_type == 'amc' and not cleaned.get('amc_contract'):
+            self.add_error('amc_contract', 'Select an AMC contract.')
         return cleaned
 

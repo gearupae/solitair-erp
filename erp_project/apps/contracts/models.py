@@ -132,3 +132,58 @@ class ContractAttachment(BaseModel):
 
     def __str__(self):
         return self.original_name or str(self.file)
+
+
+class ContractDocumentExpiry(BaseModel):
+    """Per-document expiry tracking with optional reminder lead time."""
+
+    contract = models.ForeignKey(
+        Contract,
+        on_delete=models.CASCADE,
+        related_name='document_expiries',
+    )
+    document_name = models.CharField(max_length=200)
+    expiry_date = models.DateField()
+    remind_before_days = models.PositiveIntegerField(
+        default=10,
+        help_text='Reminder this many days before expiry date',
+    )
+
+    class Meta:
+        ordering = ['expiry_date', 'document_name']
+        verbose_name = 'Document expiry'
+        verbose_name_plural = 'Document expiries'
+
+    def __str__(self):
+        return f'{self.document_name} ({self.expiry_date:%d %b %Y})'
+
+    @property
+    def as_of_date(self):
+        return timezone.now().date()
+
+    @property
+    def days_until_expiry(self):
+        return (self.expiry_date - self.as_of_date).days
+
+    @property
+    def is_expired(self):
+        return self.expiry_date < self.as_of_date
+
+    def reminder_due(self):
+        today = self.as_of_date
+        if self.expiry_date < today:
+            return True
+        warn_from = self.expiry_date - timedelta(days=self.remind_before_days)
+        return today >= warn_from
+
+    @property
+    def expiry_status(self):
+        """Badge severity: expired, due_today, expiring, ok."""
+        days_left = self.days_until_expiry
+        if days_left < 0:
+            return 'expired'
+        if days_left == 0:
+            return 'due_today'
+        if self.reminder_due():
+            return 'expiring'
+        return 'ok'

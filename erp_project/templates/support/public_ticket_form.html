@@ -1,0 +1,221 @@
+{% extends 'minimal_public.html' %}
+
+{% block title %}Submit support request{% endblock %}
+
+{% block extra_css %}
+<style>
+.public-link-search-wrap { position: relative; }
+.public-link-suggestions {
+    position: absolute;
+    z-index: 20;
+    left: 0;
+    right: 0;
+    top: 100%;
+    margin-top: 0.25rem;
+    background: #fff;
+    border: 1px solid #dee2e6;
+    border-radius: 0.375rem;
+    box-shadow: 0 0.5rem 1rem rgba(0,0,0,0.08);
+    max-height: 14rem;
+    overflow-y: auto;
+    display: none;
+}
+.public-link-suggestions.show { display: block; }
+.public-link-suggestion {
+    display: block;
+    width: 100%;
+    text-align: left;
+    border: 0;
+    background: transparent;
+    padding: 0.65rem 0.85rem;
+    border-bottom: 1px solid #f1f5f9;
+}
+.public-link-suggestion:last-child { border-bottom: 0; }
+.public-link-suggestion:hover,
+.public-link-suggestion:focus { background: #f8fafc; }
+.public-link-suggestion .label { font-weight: 600; font-size: 0.9375rem; }
+.public-link-suggestion .subtitle { font-size: 0.8125rem; color: #64748b; }
+.public-link-selected {
+    display: none;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: 0.375rem;
+    margin-top: 0.5rem;
+    font-size: 0.875rem;
+}
+.public-link-selected.show { display: flex; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card shadow-sm border-0">
+    <div class="card-body p-4">
+        <h1 class="h4 fw-bold mb-1">Submit a support request</h1>
+        <p class="text-muted small mb-4">No login required. Type your name or company — if we find a match you can select it. Then describe your issue and we will follow up.</p>
+
+        <form method="post" id="publicSupportForm" novalidate>
+            {% csrf_token %}
+            {% if form.non_field_errors %}
+            <div class="alert alert-danger">{{ form.non_field_errors }}</div>
+            {% endif %}
+
+            <div class="mb-3 public-link-search-wrap">
+                <label for="id_requester_name" class="form-label">{{ form.requester_name.label }} <span class="text-danger">*</span></label>
+                {{ form.requester_name }}
+                {% if form.requester_name.errors %}<div class="text-danger small mt-1">{{ form.requester_name.errors }}</div>{% endif %}
+                <div class="form-text">Start typing — matching customers, projects, or AMC contracts will appear below.</div>
+                <div id="linkSuggestions" class="public-link-suggestions" role="listbox" aria-label="Matching records"></div>
+                <div id="linkSelected" class="public-link-selected">
+                    <span><i class="fas fa-link me-1 text-primary"></i><span id="linkSelectedLabel"></span></span>
+                    <button type="button" class="btn btn-link btn-sm p-0" id="linkClearBtn">Change</button>
+                </div>
+                {{ form.link_type }}
+                {{ form.link_id }}
+            </div>
+
+            <div class="row g-3 mb-3">
+                <div class="col-md-6">
+                    <label for="id_requester_email" class="form-label">{{ form.requester_email.label }}</label>
+                    {{ form.requester_email }}
+                </div>
+                <div class="col-md-6">
+                    <label for="id_requester_phone" class="form-label">{{ form.requester_phone.label }}</label>
+                    {{ form.requester_phone }}
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label for="id_subject" class="form-label">Subject <span class="text-danger">*</span></label>
+                {{ form.subject }}
+                {% if form.subject.errors %}<div class="text-danger small mt-1">{{ form.subject.errors }}</div>{% endif %}
+            </div>
+
+            <div class="mb-3">
+                <label for="id_priority" class="form-label">Priority</label>
+                {{ form.priority }}
+            </div>
+
+            <div class="mb-4">
+                <label for="id_description" class="form-label">Description</label>
+                {{ form.description }}
+                {% if form.description.errors %}<div class="text-danger small mt-1">{{ form.description.errors }}</div>{% endif %}
+            </div>
+
+            <button type="submit" class="btn btn-primary w-100">
+                <i class="fas fa-paper-plane me-2"></i>Submit support request
+            </button>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    var searchUrl = '{% url "support:public_link_search" %}';
+    var nameInput = document.getElementById('id_requester_name');
+    var linkTypeInput = document.getElementById('id_link_type');
+    var linkIdInput = document.getElementById('id_link_id');
+    var suggestionsEl = document.getElementById('linkSuggestions');
+    var selectedEl = document.getElementById('linkSelected');
+    var selectedLabelEl = document.getElementById('linkSelectedLabel');
+    var clearBtn = document.getElementById('linkClearBtn');
+    var debounceTimer = null;
+    var selectedLink = null;
+
+    function hideSuggestions() {
+        suggestionsEl.classList.remove('show');
+        suggestionsEl.innerHTML = '';
+    }
+
+    function clearSelection() {
+        selectedLink = null;
+        if (linkTypeInput) linkTypeInput.value = '';
+        if (linkIdInput) linkIdInput.value = '';
+        selectedEl.classList.remove('show');
+        selectedLabelEl.textContent = '';
+        if (nameInput) {
+            nameInput.readOnly = false;
+            nameInput.focus();
+        }
+    }
+
+    function applySelection(item) {
+        selectedLink = item;
+        if (linkTypeInput) linkTypeInput.value = item.type;
+        if (linkIdInput) linkIdInput.value = String(item.id);
+        selectedLabelEl.textContent = item.label + ' (' + item.subtitle + ')';
+        selectedEl.classList.add('show');
+        hideSuggestions();
+        if (nameInput) {
+            nameInput.value = item.label;
+            nameInput.readOnly = true;
+        }
+    }
+
+    function renderSuggestions(results) {
+        suggestionsEl.innerHTML = '';
+        if (!results.length) {
+            hideSuggestions();
+            return;
+        }
+        results.forEach(function (item) {
+            var btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'public-link-suggestion';
+            btn.innerHTML = '<div class="label">' + escapeHtml(item.label) + '</div><div class="subtitle">' + escapeHtml(item.subtitle) + '</div>';
+            btn.addEventListener('click', function () { applySelection(item); });
+            suggestionsEl.appendChild(btn);
+        });
+        suggestionsEl.classList.add('show');
+    }
+
+    function escapeHtml(text) {
+        var div = document.createElement('div');
+        div.textContent = text || '';
+        return div.innerHTML;
+    }
+
+    function fetchSuggestions(q) {
+        fetch(searchUrl + '?q=' + encodeURIComponent(q), { headers: { 'Accept': 'application/json' } })
+            .then(function (r) { return r.json(); })
+            .then(function (data) { renderSuggestions(data.results || []); })
+            .catch(function () { hideSuggestions(); });
+    }
+
+    if (nameInput) {
+        nameInput.addEventListener('input', function () {
+            if (selectedLink) return;
+            var q = nameInput.value.trim();
+            clearTimeout(debounceTimer);
+            if (q.length < 2) {
+                hideSuggestions();
+                return;
+            }
+            debounceTimer = setTimeout(function () { fetchSuggestions(q); }, 280);
+        });
+        nameInput.addEventListener('blur', function () {
+            setTimeout(hideSuggestions, 180);
+        });
+        nameInput.addEventListener('focus', function () {
+            if (selectedLink || nameInput.value.trim().length < 2) return;
+            fetchSuggestions(nameInput.value.trim());
+        });
+    }
+
+    if (clearBtn) {
+        clearBtn.addEventListener('click', clearSelection);
+    }
+
+    document.addEventListener('click', function (e) {
+        if (!suggestionsEl.contains(e.target) && e.target !== nameInput) {
+            hideSuggestions();
+        }
+    });
+})();
+</script>
+{% endblock %}

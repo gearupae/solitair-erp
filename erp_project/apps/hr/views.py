@@ -18,7 +18,7 @@ from django.core.exceptions import ValidationError
 from datetime import date
 from apps.settings_app.models import Company
 
-from .models import Department, Designation, Employee, EmployeeAdvance, EmployeeAttachment, LeaveType, LeaveRequest, Payroll
+from .models import Department, Designation, Employee, EmployeeAdvance, EmployeeAttachment, EmployeeRemark, LeaveType, LeaveRequest, Payroll
 from .forms import DepartmentForm, DesignationForm, EmployeeBankDetailForm, EmployeeForm, LeaveRequestForm, PayrollForm
 from apps.core.mixins import PermissionRequiredMixin, CreatePermissionMixin, UpdatePermissionMixin
 from apps.core.utils import PermissionChecker
@@ -483,6 +483,9 @@ class EmployeeDetailView(PermissionRequiredMixin, DetailView):
         context['employee_attachments'] = self.object.attachments.select_related('uploaded_by').order_by('-uploaded_at')
         context['employee_attachment_upload_url'] = reverse('hr:employee_attachment_upload', args=[self.object.pk])
         context['has_employee_attachments'] = context['employee_attachments'].exists()
+        context['employee_remarks'] = self.object.remarks.select_related('created_by').order_by('-created_at')
+        context['employee_remark_add_url'] = reverse('hr:employee_remark_add', args=[self.object.pk])
+        context['employee_remark_score'] = EmployeeRemark.score_for_employee(self.object.pk)
 
         return context
 
@@ -528,6 +531,65 @@ def _serialize_employee_attachment(att: EmployeeAttachment) -> dict:
         'uploaded_by': att.uploaded_by.get_full_name() if att.uploaded_by_id else '',
         'download_url': reverse('hr:employee_attachment_download', args=[att.employee_id, att.pk]),
     }
+
+
+def _serialize_employee_remark(remark: EmployeeRemark) -> dict:
+    type_labels = dict(EmployeeRemark.REMARK_TYPE_CHOICES)
+    return {
+        'id': remark.pk,
+        'body': remark.body,
+        'remark_type': remark.remark_type,
+        'remark_type_display': type_labels.get(remark.remark_type, remark.remark_type),
+        'point_value': remark.point_value,
+        'created_at': remark.created_at.strftime('%d/%m/%Y %H:%M') if remark.created_at else '',
+        'created_by': remark.created_by.get_full_name() if remark.created_by_id else '',
+        'delete_url': reverse('hr:employee_remark_delete', args=[remark.employee_id, remark.pk]),
+    }
+
+
+@login_required
+@require_POST
+def employee_remark_add(request, pk):
+    """Add a remark/note about an employee."""
+    employee = get_object_or_404(Employee, pk=pk, is_active=True)
+    if not _can_manage_employee_attachments(request.user, employee):
+        return JsonResponse({'ok': False, 'error': 'Permission denied.'}, status=403)
+
+    body = (request.POST.get('body') or '').strip()
+    if not body:
+        return JsonResponse({'ok': False, 'error': 'Enter a remark before saving.'}, status=400)
+    if len(body) > 5000:
+        return JsonResponse({'ok': False, 'error': 'Remark is too long (max 5000 characters).'}, status=400)
+
+    remark_type = (request.POST.get('remark_type') or 'plus').strip()
+    valid_types = {c[0] for c in EmployeeRemark.REMARK_TYPE_CHOICES}
+    if remark_type not in valid_types:
+        remark_type = 'plus'
+
+    remark = EmployeeRemark.objects.create(
+        employee=employee,
+        body=body,
+        remark_type=remark_type,
+        created_by=request.user,
+    )
+    return JsonResponse({
+        'ok': True,
+        'remark': _serialize_employee_remark(remark),
+        'score': EmployeeRemark.score_for_employee(employee.pk),
+    })
+
+
+@login_required
+@require_POST
+def employee_remark_delete(request, pk, remark_id):
+    """Remove an employee remark."""
+    employee = get_object_or_404(Employee, pk=pk, is_active=True)
+    if not _can_manage_employee_attachments(request.user, employee):
+        return JsonResponse({'ok': False, 'error': 'Permission denied.'}, status=403)
+
+    remark = get_object_or_404(EmployeeRemark, pk=remark_id, employee=employee)
+    remark.delete()
+    return JsonResponse({'ok': True, 'score': EmployeeRemark.score_for_employee(employee.pk)})
 
 
 @login_required

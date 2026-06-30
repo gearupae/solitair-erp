@@ -174,23 +174,38 @@
 <div class="page-header">
     <nav aria-label="breadcrumb">
         <ol class="breadcrumb mb-2">
-            <li class="breadcrumb-item"><a href="{% url 'sales:estimate_list' %}">Estimates</a></li>
-            <li class="breadcrumb-item active">{{ estimate.display_estimate_number }}</li>
+            <li class="breadcrumb-item"><a href="{% if quotation_workspace %}{% url 'sales:quotation_list' %}{% else %}{% url 'sales:estimate_list' %}{% endif %}">{% if quotation_workspace %}Quotations{% else %}Estimates{% endif %}</a></li>
+            <li class="breadcrumb-item active">{% if quotation_workspace %}{{ quotation_display_number }}{% else %}{{ estimation_display_number }}{% endif %}</li>
         </ol>
     </nav>
     <div class="d-flex justify-content-between align-items-center">
         <div>
             <h4 class="mb-1 fw-bold d-flex align-items-center flex-wrap gap-2">
-                <span>{{ estimate.estimate_number }}</span>
+                {% if quotation_workspace %}
+                <span>{{ quotation_display_number }}</span>
+                {% else %}
+                <span>{{ estimation_display_number }}</span>
+                {% endif %}
                 {% if estimate.revision_label %}
                 <span class="badge bg-info text-dark fs-6">{{ estimate.revision_label }}</span>
                 {% endif %}
             </h4>
             <span class="text-muted">
+                {% if customer_detail_url %}
+                <a href="{{ customer_detail_url }}" class="link-dark text-decoration-none">
+                    {% if estimate.customer.company %}{{ estimate.customer.company }}{% if estimate.customer.name %} · {{ estimate.customer.name }}{% endif %}{% else %}{{ estimate.customer.name }}{% endif %}
+                </a>
+                {% else %}
                 {% if estimate.customer.company %}{{ estimate.customer.company }}{% if estimate.customer.name %} · {{ estimate.customer.name }}{% endif %}{% else %}{{ estimate.customer.name }}{% endif %}
+                {% endif %}
             </span>
+            {% if converted_to_quotation and not quotation_workspace %}
+            <div class="text-muted small mt-1">
+                <a href="{{ quotation_detail_url }}" class="text-decoration-none">Quotation {{ quotation_display_number }}</a>
+            </div>
+            {% endif %}
             {% if estimate.revision_label %}
-            <div class="text-muted small mt-1">Quotation ref: {{ estimate.display_estimate_number }}</div>
+            <div class="text-muted small mt-1">Estimation ref: {{ estimation_display_number }}</div>
             {% endif %}
         </div>
         <div class="d-flex flex-wrap gap-2 align-items-center">
@@ -262,6 +277,15 @@
                 <i class="fas fa-link me-2"></i>Copy public link
             </button>
             {% endif %}
+            {% if can_convert_to_quotation %}
+            <form method="post" action="{% url 'sales:estimate_convert_to_quotation' estimate.pk %}" class="d-inline"
+                  onsubmit="return confirm('Move this estimate to quotations as under negotiation?');">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-outline-info">
+                    <i class="fas fa-file-contract me-2"></i>Convert to Quotation
+                </button>
+            </form>
+            {% endif %}
             <a href="{% url 'sales:estimate_pdf' estimate.pk %}" class="btn btn-outline-danger" target="_blank">
                 <i class="fas fa-file-pdf me-2"></i>PDF
             </a>
@@ -290,16 +314,36 @@
             <div class="card-body pt-0 pb-3">
                 <div class="row row-cols-1 row-cols-sm-2 row-cols-lg-3 g-4 align-items-start mt-3">
                     <div class="col">
-                        <h6 class="text-muted mb-2 text-uppercase small fw-semibold">Quotation number</h6>
-                        <p class="fw-medium mb-0">{{ estimate.display_estimate_number }}</p>
+                        <h6 class="text-muted mb-2 text-uppercase small fw-semibold">Estimation number</h6>
+                        <p class="fw-medium mb-0">{{ estimation_display_number }}</p>
                     </div>
+                    {% if converted_to_quotation %}
+                    <div class="col">
+                        <h6 class="text-muted mb-2 text-uppercase small fw-semibold">Quotation number</h6>
+                        <p class="fw-medium mb-0">
+                            <a href="{{ quotation_detail_url }}" class="text-decoration-none">{{ quotation_display_number }}</a>
+                        </p>
+                    </div>
+                    {% endif %}
                     <div class="col">
                         <h6 class="text-muted mb-2 text-uppercase small fw-semibold">Company</h6>
-                        <p class="fw-medium mb-0">{{ estimate.customer.company|default:"—" }}</p>
+                        <p class="fw-medium mb-0">
+                            {% if customer_detail_url and estimate.customer.company %}
+                            <a href="{{ customer_detail_url }}" class="text-decoration-none">{{ estimate.customer.company }}</a>
+                            {% else %}
+                            {{ estimate.customer.company|default:"—" }}
+                            {% endif %}
+                        </p>
                     </div>
                     <div class="col">
                         <h6 class="text-muted mb-2 text-uppercase small fw-semibold">Contact person</h6>
-                        <p class="mb-0">{{ estimate.customer.name|default:"—" }}</p>
+                        <p class="mb-0">
+                            {% if customer_detail_url and estimate.customer.name %}
+                            <a href="{{ customer_detail_url }}" class="text-decoration-none">{{ estimate.customer.name }}</a>
+                            {% else %}
+                            {{ estimate.customer.name|default:"—" }}
+                            {% endif %}
+                        </p>
                     </div>
                     <div class="col">
                         <h6 class="text-muted mb-2 text-uppercase small fw-semibold">Date</h6>
@@ -317,6 +361,18 @@
                         <h6 class="text-muted mb-2 text-uppercase small fw-semibold">Prepared by</h6>
                         <p class="mb-0">{{ estimate.prepared_by|default:"—" }}</p>
                     </div>
+                    {% if estimate.estimation_reference_number %}
+                    <div class="col">
+                        <h6 class="text-muted mb-2 text-uppercase small fw-semibold">Estimation reference number</h6>
+                        <p class="mb-0">{{ estimate.estimation_reference_number }}</p>
+                    </div>
+                    {% endif %}
+                    {% if estimate.sales_engineer %}
+                    <div class="col">
+                        <h6 class="text-muted mb-2 text-uppercase small fw-semibold">Sales engineer</h6>
+                        <p class="mb-0">{{ estimate.sales_engineer.full_name }} ({{ estimate.sales_engineer.employee_code }})</p>
+                    </div>
+                    {% endif %}
                     {% if estimate.project %}
                     <div class="col">
                         <h6 class="text-muted mb-2 text-uppercase small fw-semibold">Project</h6>
@@ -350,32 +406,6 @@
             </div>
         </div>
         
-        {% if expense_type_totals %}
-        <div class="card mb-4">
-            <div class="card-header bg-transparent py-3">
-                <h6 class="mb-0 fw-semibold"><i class="fas fa-tags me-2 text-dark"></i>Expenses</h6>
-            </div>
-            <div class="card-body pt-0">
-                <div class="row row-cols-1 g-2{% if expense_type_totals|length >= 3 %} row-cols-md-3{% elif expense_type_totals|length == 2 %} row-cols-md-2{% endif %}">
-                    {% for row in expense_type_totals %}
-                    <div class="col">
-                        <div class="estimate-expense-cell">
-                            <div class="estimate-expense-name">{{ row.expense_type_name }}</div>
-                            <div class="estimate-expense-amount">AED {{ row.line_total|floatformat:2 }}</div>
-                        </div>
-                    </div>
-                    {% endfor %}
-                </div>
-                {% if expense_type_totals|length > 1 %}
-                <div class="estimate-expenses-total d-flex justify-content-between align-items-center">
-                    <span class="text-muted text-uppercase small fw-semibold">Total expenses</span>
-                    <span class="fw-bold text-dark">AED {{ expense_type_grand_total|floatformat:2 }}</span>
-                </div>
-                {% endif %}
-            </div>
-        </div>
-        {% endif %}
-
         <!-- Line Items -->
         <div class="card mb-4">
             <div class="card-header bg-transparent py-3">
@@ -387,10 +417,14 @@
                         <thead class="table-light">
                             <tr>
                                 <th>Description</th>
+                                <th>Brand</th>
                                 <th class="text-center">Qty</th>
-                                <th class="text-end">Base</th>
+                                <th class="text-end">Unit cost</th>
+                                <th class="text-end">Net cost</th>
+                                <th class="text-end">Unit install</th>
+                                <th class="text-end">Net install</th>
                                 <th class="text-center">Profit</th>
-                                <th class="text-end">Rate</th>
+                                <th class="text-end">Selling cost</th>
                                 <th class="text-end">Net</th>
                                 <th class="text-end">Line</th>
                             </tr>
@@ -399,7 +433,7 @@
                             {% for group in item_groups %}
                             {% if group.name %}
                             <tr class="table-secondary">
-                                <td colspan="7" class="fw-semibold small text-uppercase">{{ group.name }}</td>
+                                <td colspan="11" class="fw-semibold small text-uppercase">{{ group.name }}</td>
                             </tr>
                             {% endif %}
                             {% for row in group.items %}
@@ -409,26 +443,39 @@
                                     {{ item.description }}
                                     {% if item.inventory_item %}<br><small class="text-muted">{{ item.inventory_item.item_code }}</small>{% endif %}
                                 </td>
+                                <td>{% if item.brand %}{{ item.brand }}{% else %}—{% endif %}</td>
                                 <td class="text-center">{{ item.quantity|floatformat:2 }}</td>
                                 <td class="text-end">{{ item.unit_price|floatformat:2 }}</td>
+                                <td class="text-end">{{ item.net_cost|floatformat:2 }}</td>
+                                <td class="text-end">{% if item.installation_cost %}{{ item.installation_cost|floatformat:2 }}{% else %}—{% endif %}</td>
+                                <td class="text-end">{% if item.net_installation_cost %}{{ item.net_installation_cost|floatformat:2 }}{% else %}—{% endif %}</td>
                                 <td class="text-center small">
-                                    {% if item.profit_type == 'percent' %}{{ item.profit_value|floatformat:2 }}%{% elif item.profit_type == 'amount' %}AED {{ item.profit_value|floatformat:2 }}{% else %}—{% endif %}
+                                    {% if item.profit_type == 'percent' %}
+                                    {{ item.profit_value|floatformat:2 }}%
+                                    <div class="text-muted" style="font-size:0.7rem;">+ AED {{ item.line_profit_amount|floatformat:2 }}</div>
+                                    {% elif item.profit_type == 'amount' %}
+                                    AED {{ item.profit_value|floatformat:2 }}/u
+                                    <div class="text-muted" style="font-size:0.7rem;">+ AED {{ item.line_profit_amount|floatformat:2 }}</div>
+                                    {% else %}—{% endif %}
                                 </td>
-                                <td class="text-end">{{ item.rate|floatformat:2 }}</td>
-                                <td class="text-end">{{ item.total|floatformat:2 }}</td>
-                                <td class="text-end fw-medium">{{ item.total|add:item.vat_amount|floatformat:2 }}</td>
+                                <td class="text-end">{{ item.selling_cost|floatformat:2 }}</td>
+                                <td class="text-end" title="{{ item.line_calc_summary }}">
+                                    {{ item.line_net_excl_vat|floatformat:2 }}
+                                    <div class="text-muted" style="font-size:0.7rem;">{{ item.line_calc_summary }}</div>
+                                </td>
+                                <td class="text-end fw-medium">{{ item.line_total_incl_vat|floatformat:2 }}</td>
                             </tr>
                             {% endwith %}
                             {% endfor %}
                             {% if group.name and estimate.show_group_totals_on_pdf %}
                             <tr class="table-light">
-                                <td colspan="6" class="text-end fw-semibold small">{{ group.name }} total</td>
+                                <td colspan="10" class="text-end fw-semibold small">{{ group.name }} total</td>
                                 <td class="text-end fw-semibold">AED {{ group.line_total|floatformat:2 }}</td>
                             </tr>
                             {% endif %}
                             {% empty %}
                             <tr>
-                                <td colspan="7" class="text-center text-muted py-4">No items</td>
+                                <td colspan="11" class="text-center text-muted py-4">No items</td>
                             </tr>
                             {% endfor %}
                         </tbody>
@@ -479,7 +526,7 @@
         {% if estimate.client_note %}
         <div class="card mb-4">
             <div class="card-header bg-transparent py-3">
-                <h6 class="mb-0 fw-semibold"><i class="fas fa-comment-dots me-2 text-dark"></i>Client note</h6>
+                <h6 class="mb-0 fw-semibold"><i class="fas fa-comment-dots me-2 text-dark"></i>Payment terms</h6>
             </div>
             <div class="card-body">
                 <p class="mb-0">{{ estimate.client_note|linebreaks }}</p>
@@ -526,7 +573,7 @@
                     {% endif %}
                 </div>
                 {% if estimate.revision_label %}
-                <p class="text-muted small mb-2">Quotation revision {{ estimate.revision_label }} · ref {{ estimate.display_estimate_number }}</p>
+                <p class="text-muted small mb-2">Estimation revision {{ estimate.revision_label }} · ref {{ estimation_display_number }}</p>
                 {% endif %}
                 {% if estimate.status == 'rejected' and estimate.rejection_reason %}
                 <div class="alert alert-warning py-2 px-3 mb-0 small">
@@ -640,6 +687,62 @@
                     <span class="fw-bold">Total</span>
                     <span class="fw-bold">AED {{ estimate.total_amount|floatformat:2 }}</span>
                 </div>
+
+                {% if expense_type_totals or profit_summary.profit_total %}
+                <hr class="my-3">
+                {% if expense_type_totals %}
+                <p class="text-muted small text-uppercase fw-semibold mb-2">By expense type</p>
+                {% for row in expense_type_totals %}
+                <div class="{% if not forloop.last %}mb-3 pb-3 border-bottom{% else %}mb-2{% endif %}">
+                    <div class="d-flex justify-content-between mb-1">
+                        <span class="fw-semibold">{{ row.expense_type_name }}</span>
+                        <span class="fw-semibold">AED {{ row.line_total|floatformat:2 }}</span>
+                    </div>
+                    <div class="d-flex justify-content-between mb-1 ps-2">
+                        <span class="text-muted small">Cost subtotal (excl. VAT)</span>
+                        <span class="text-muted small">AED {{ row.pre_profit_subtotal|floatformat:2 }}</span>
+                    </div>
+                    <div class="d-flex justify-content-between mb-1 ps-2">
+                        <span class="text-muted small">Net (excl. VAT)</span>
+                        <span class="text-muted small">AED {{ row.line_subtotal|floatformat:2 }}</span>
+                    </div>
+                    {% if row.profit_amount and row.profit_amount > 0 %}
+                    <div class="d-flex justify-content-between mb-1 ps-2">
+                        <span class="text-muted small">Profit</span>
+                        <span class="text-muted small">AED {{ row.profit_amount|floatformat:2 }}</span>
+                    </div>
+                    <div class="d-flex justify-content-between ps-2">
+                        <span class="text-muted small">Profit %</span>
+                        <span class="text-muted small">{{ row.profit_percent|floatformat:2 }}%</span>
+                    </div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+                {% if expense_type_totals|length > 1 %}
+                <div class="d-flex justify-content-between mb-2 pt-2 border-top">
+                    <span class="small fw-semibold text-muted">Expense types total (incl. VAT)</span>
+                    <span class="fw-semibold">AED {{ expense_type_grand_total|floatformat:2 }}</span>
+                </div>
+                {% endif %}
+                {% endif %}
+
+                {% if profit_summary.profit_total and profit_summary.profit_total > 0 %}
+                {% if expense_type_totals %}<hr class="my-3">{% endif %}
+                <p class="text-muted small text-uppercase fw-semibold mb-2">Overall profit</p>
+                <div class="d-flex justify-content-between mb-2">
+                    <span>Cost subtotal (excl. VAT)</span>
+                    <span>AED {{ profit_summary.pre_profit_subtotal|floatformat:2 }}</span>
+                </div>
+                <div class="d-flex justify-content-between mb-2">
+                    <span>Total profit</span>
+                    <span class="fw-medium">AED {{ profit_summary.profit_total|floatformat:2 }}</span>
+                </div>
+                <div class="d-flex justify-content-between mb-0">
+                    <span class="text-muted small">Profit % on cost subtotal</span>
+                    <span class="text-muted small">{{ profit_summary.profit_percent|floatformat:2 }}%</span>
+                </div>
+                {% endif %}
+                {% endif %}
             </div>
         </div>
 

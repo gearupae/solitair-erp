@@ -7,6 +7,7 @@ VAT is ALWAYS derived from a TaxCode:
 """
 from django import forms
 from django.contrib.auth import get_user_model
+from django.db.models import Q
 from django.forms.models import BaseInlineFormSet
 from decimal import Decimal
 from .models import Estimate, EstimateItem, Invoice, InvoiceItem
@@ -32,10 +33,11 @@ class EstimateForm(forms.ModelForm):
         model = Estimate
         fields = [
             'customer', 'assigned_to', 'prepared_by',
+            'estimation_reference_number', 'sales_engineer',
             'type_of_occupancy', 'type_of_work', 'scope_of_work',
             'date', 'valid_until',
             'discount_type', 'discount_value', 'show_rates_on_pdf', 'show_group_totals_on_pdf',
-            'show_brand_name_on_pdf',
+            'show_brand_name_on_pdf', 'show_installation_cost_on_pdf',
             'notes', 'client_note', 'terms_and_conditions',
             'authorized_signature', 'customer_signature',
         ]
@@ -52,6 +54,9 @@ class EstimateForm(forms.ModelForm):
             'client_note': forms.Textarea(attrs={'rows': 3, 'class': 'form-control'}),
             'terms_and_conditions': forms.Textarea(attrs={'rows': 5, 'class': 'form-control'}),
             'prepared_by': forms.TextInput(attrs={'class': 'form-control'}),
+            'estimation_reference_number': forms.TextInput(
+                attrs={'class': 'form-control', 'placeholder': 'External / client reference'},
+            ),
             'discount_value': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'min': '0'}),
             'authorized_signature': forms.FileInput(attrs={'class': 'form-control'}),
             'customer_signature': forms.FileInput(attrs={'class': 'form-control'}),
@@ -62,6 +67,9 @@ class EstimateForm(forms.ModelForm):
                 attrs={'class': 'form-check-input', 'role': 'switch'},
             ),
             'show_brand_name_on_pdf': forms.CheckboxInput(
+                attrs={'class': 'form-check-input', 'role': 'switch'},
+            ),
+            'show_installation_cost_on_pdf': forms.CheckboxInput(
                 attrs={'class': 'form-check-input', 'role': 'switch'},
             ),
         }
@@ -80,8 +88,30 @@ class EstimateForm(forms.ModelForm):
         self.fields['discount_type'].widget.attrs['class'] = 'form-select'
         self.fields['notes'].required = False
         self.fields['client_note'].required = False
+        self.fields['client_note'].label = 'Payment terms'
         self.fields['terms_and_conditions'].required = False
         self.fields['prepared_by'].required = False
+        self.fields['estimation_reference_number'].required = False
+        self.fields['estimation_reference_number'].label = 'Estimation reference number'
+        from apps.hr.models import Employee
+
+        include_engineer_id = None
+        if self.instance.pk and self.instance.sales_engineer_id:
+            include_engineer_id = self.instance.sales_engineer_id
+        engineer_qs = Employee.objects.filter(is_active=True, status='active').order_by(
+            'first_name', 'last_name', 'employee_code',
+        )
+        if include_engineer_id:
+            engineer_qs = Employee.objects.filter(
+                Q(is_active=True, status='active') | Q(pk=include_engineer_id),
+            ).order_by('first_name', 'last_name', 'employee_code')
+        self.fields['sales_engineer'].queryset = engineer_qs
+        self.fields['sales_engineer'].required = False
+        self.fields['sales_engineer'].empty_label = '— Select sales engineer —'
+        self.fields['sales_engineer'].label_from_instance = (
+            lambda emp: f'{emp.full_name} ({emp.employee_code})'
+        )
+        self.fields['sales_engineer'].widget.attrs['class'] = 'form-select'
         for field_name in ('type_of_occupancy', 'type_of_work'):
             field = self.fields[field_name]
             field.required = False
@@ -102,6 +132,8 @@ class EstimateForm(forms.ModelForm):
         self.fields['show_group_totals_on_pdf'].required = False
         self.fields['show_brand_name_on_pdf'].label = 'Show brand name'
         self.fields['show_brand_name_on_pdf'].required = False
+        self.fields['show_installation_cost_on_pdf'].label = 'Show installation cost'
+        self.fields['show_installation_cost_on_pdf'].required = False
 
     def save(self, commit=True):
         instance = super().save(commit=False)
@@ -121,8 +153,9 @@ class EstimateItemForm(forms.ModelForm):
     class Meta:
         model = EstimateItem
         fields = [
-            'group_name', 'group_qty_multiplier', 'sort_order', 'inventory_item', 'description', 'quantity', 'unit_price',
-            'profit_type', 'profit_value', 'rate', 'tax_code', 'is_vat_inclusive',
+            'group_name', 'group_qty_multiplier', 'sort_order', 'inventory_item', 'brand',
+            'description', 'quantity', 'unit_price', 'installation_cost', 'selling_cost',
+            'profit_type', 'profit_value', 'tax_code', 'is_vat_inclusive',
         ]
         widgets = {
             'group_name': forms.TextInput(attrs={
@@ -141,9 +174,22 @@ class EstimateItemForm(forms.ModelForm):
             'description': forms.TextInput(attrs={'class': 'form-control form-control-sm'}),
             'quantity': forms.NumberInput(attrs={'class': 'form-control form-control-sm item-qty', 'step': '1', 'min': '1'}),
             'unit_price': forms.NumberInput(attrs={'class': 'form-control form-control-sm item-base-price', 'step': '0.01', 'min': '0'}),
+            'installation_cost': forms.NumberInput(attrs={
+                'class': 'form-control form-control-sm item-installation-cost',
+                'step': '0.01',
+                'min': '0',
+            }),
+            'selling_cost': forms.NumberInput(attrs={
+                'class': 'form-control form-control-sm item-selling-cost',
+                'step': '0.01',
+                'min': '0',
+            }),
             'profit_type': forms.Select(attrs={'class': 'form-select form-select-sm item-profit-type'}),
-            'profit_value': forms.NumberInput(attrs={'class': 'form-control form-control-sm item-profit-value', 'step': '0.01', 'min': '0'}),
-            'rate': forms.NumberInput(attrs={'class': 'form-control form-control-sm item-rate', 'step': '0.01', 'readonly': 'readonly'}),
+            'profit_value': forms.NumberInput(attrs={
+                'class': 'form-control form-control-sm item-profit-value',
+                'step': '0.01',
+                'readonly': 'readonly',
+            }),
             'inventory_item': forms.Select(attrs={'class': 'form-select form-select-sm item-inventory'}),
             'is_vat_inclusive': forms.HiddenInput(),
         }
@@ -155,15 +201,38 @@ class EstimateItemForm(forms.ModelForm):
         self.fields['inventory_item'].queryset = Item.objects.filter(is_active=True, status='active').order_by('name')
         self.fields['inventory_item'].required = False
         self.fields['inventory_item'].empty_label = '-- Select from inventory --'
+        brand_choices = [
+            (b, b)
+            for b in Item.objects.filter(is_active=True, status='active')
+            .exclude(brand='')
+            .values_list('brand', flat=True)
+            .distinct()
+            .order_by('brand')
+        ]
+        if self.instance and self.instance.brand and self.instance.brand not in dict(brand_choices):
+            brand_choices = [(self.instance.brand, self.instance.brand)] + brand_choices
+        self.fields['brand'] = forms.ChoiceField(
+            choices=[('', '')] + brand_choices,
+            required=False,
+            widget=forms.Select(attrs={'class': 'form-select form-select-sm item-brand'}),
+        )
         self.fields['description'].required = False
         self.fields['unit_price'].required = False
+        self.fields['unit_price'].label = 'Unit cost'
+        self.fields['installation_cost'].required = False
+        self.fields['installation_cost'].label = 'Unit installation cost'
+        self.fields['selling_cost'].required = False
+        self.fields['selling_cost'].label = 'Selling cost'
         self.fields['profit_value'].required = False
-        self.fields['rate'].required = False
 
         for field_name, field in self.fields.items():
             if field_name in ['tax_code']:
                 field.widget.attrs['class'] = 'form-select form-select-sm item-tax-code'
-            elif field_name not in ('inventory_item', 'profit_type', 'profit_value', 'rate', 'group_name', 'group_qty_multiplier', 'sort_order', 'description', 'quantity', 'unit_price', 'is_vat_inclusive'):
+            elif field_name not in (
+                'inventory_item', 'brand', 'profit_type', 'profit_value', 'selling_cost', 'group_name',
+                'group_qty_multiplier', 'sort_order', 'description', 'quantity', 'unit_price',
+                'installation_cost', 'is_vat_inclusive',
+            ):
                 pass
 
         self.fields['tax_code'].queryset = TaxCode.objects.filter(is_active=True)
@@ -175,8 +244,8 @@ class EstimateItemForm(forms.ModelForm):
             ('percent', 'Percent (%)'),
             ('amount', 'AED per unit'),
         ]
-        self.fields['profit_value'].label = 'Profit'
-        self.fields['profit_value'].help_text = 'Percent markup on base, or AED added to base per unit (not one lump for the whole line).'
+        self.fields['profit_value'].label = 'Profit value'
+        self.fields['profit_value'].help_text = 'Calculated from selling cost vs unit cost.'
 
         self.fields['group_name'].required = False
         self.fields['group_name'].help_text = 'Shown when this estimate is printed / on the PDF; does not update inventory.'
@@ -195,15 +264,17 @@ class EstimateItemForm(forms.ModelForm):
         if inv and unit_price is not None:
             item = EstimateItem(
                 unit_price=unit_price,
+                quantity=cleaned.get('quantity') or Decimal('1'),
+                installation_cost=cleaned.get('installation_cost') or Decimal('0'),
+                selling_cost=cleaned.get('selling_cost') or unit_price or Decimal('0'),
                 profit_type=cleaned.get('profit_type') or 'none',
-                profit_value=cleaned.get('profit_value') or Decimal('0'),
             )
-            rate = item.compute_rate()
-            err = inv.quote_rate_bounds_error(unit_price, rate)
+            item.apply_profit_from_selling_cost()
+            selling = item.effective_selling_unit
+            err = inv.quote_rate_bounds_error(unit_price, selling)
             if err:
-                highlight = 'profit_value' if (
+                highlight = 'selling_cost' if (
                     (cleaned.get('profit_type') or 'none') != 'none'
-                    and (cleaned.get('profit_value') or 0) > 0
                 ) else 'unit_price'
                 self.add_error(highlight, err)
         mult = cleaned.get('group_qty_multiplier')

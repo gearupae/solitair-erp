@@ -41,6 +41,7 @@ class Permission(models.Model):
         ('assets', 'Fixed Assets'),
         ('property', 'Property Management'),
         ('contracts', 'Contracts'),
+        ('support', 'Support'),
         ('fleet', 'Fleet'),
         ('reports', 'Reports'),
         ('settings', 'Settings'),
@@ -109,6 +110,7 @@ class ModulePermission(models.Model):
         ('property', 'Property Management'),
         ('service_request', 'Service Request'),
         ('contracts', 'Contracts'),
+        ('support', 'Support'),
         ('fleet', 'Fleet'),
         ('reports', 'Reports'),
         ('settings', 'Settings'),
@@ -430,12 +432,12 @@ class ItemSubGroupExpenseType(models.Model):
 
 
 class EstimateTextTemplate(models.Model):
-    """Reusable client note or terms & conditions templates for sales estimates."""
+    """Reusable payment terms or terms & conditions templates for sales estimates."""
 
     CLIENT_NOTE = 'client_note'
     TERMS = 'terms'
     TEMPLATE_TYPE_CHOICES = [
-        (CLIENT_NOTE, 'Client note'),
+        (CLIENT_NOTE, 'Payment terms'),
         (TERMS, 'Terms & conditions'),
     ]
 
@@ -818,4 +820,268 @@ class Notification(models.Model):
         if link and not isinstance(link, str):
             link = str(link)
         return cls.objects.create(user=user, title=title, message=message, link=link or '')
+
+
+class ForecastSalesAchievement(BaseModel):
+    """Manual target-achieved entry per sales employee and month."""
+
+    employee = models.ForeignKey(
+        'hr.Employee',
+        on_delete=models.CASCADE,
+        related_name='forecast_achievements',
+    )
+    year = models.PositiveIntegerField()
+    month = models.PositiveIntegerField()
+    achieved_amount = models.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        help_text='Actual value achieved for the month (AED).',
+    )
+    notes = models.CharField(max_length=500, blank=True)
+
+    class Meta:
+        ordering = ['-year', '-month', 'employee__first_name']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['employee', 'year', 'month'],
+                name='settings_unique_forecast_achievement_per_month',
+            ),
+        ]
+        verbose_name = 'Forecast sales achievement'
+        verbose_name_plural = 'Forecast sales achievements'
+
+    def __str__(self):
+        return f'{self.employee} — {self.year}-{self.month:02d}'
+
+
+class CashFlowMonthSheet(BaseModel):
+    """One monthly cash-flow estimation workbook."""
+
+    year = models.PositiveIntegerField()
+    month = models.PositiveIntegerField()
+    cash_bank_in_hand = models.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        help_text='Cash/bank balance for summary (AED).',
+    )
+
+    class Meta:
+        ordering = ['-year', '-month']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['year', 'month'],
+                name='settings_unique_cashflow_sheet_per_month',
+            ),
+        ]
+        verbose_name = 'Cash flow month sheet'
+        verbose_name_plural = 'Cash flow month sheets'
+
+    def __str__(self):
+        return f'Cash flow {self.year}-{self.month:02d}'
+
+    @property
+    def month_label(self):
+        from datetime import date
+
+        return date(self.year, self.month, 1).strftime('%B %Y')
+
+
+class CashFlowIncomeLine(BaseModel):
+    LINE_SOURCE_CHOICES = [
+        ('manual', 'Manual'),
+        ('auto_quotation', 'Quotation'),
+        ('auto_amc', 'AMC renewal'),
+    ]
+
+    INCOME_CATEGORY_CHOICES = [
+        ('maintenance', 'Maintenance'),
+        ('amc', 'AMC'),
+        ('project', 'Project'),
+        ('decor', 'Decor'),
+        ('office', 'Office'),
+    ]
+    PAYMENT_TYPE_CHOICES = [
+        ('bank_adcb', 'Bank/ADCB'),
+        ('cheque', 'Cheque'),
+        ('cash', 'Cash'),
+        ('online', 'Online'),
+    ]
+    LINE_KIND_CHOICES = [
+        ('normal', 'Normal'),
+        ('unexpected_income', 'Unexpected Income'),
+    ]
+
+    sheet = models.ForeignKey(CashFlowMonthSheet, on_delete=models.CASCADE, related_name='income_lines')
+    line_date = models.DateField(null=True, blank=True)
+    customer = models.ForeignKey(
+        'crm.Customer',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='cashflow_income_lines',
+    )
+    category = models.CharField(max_length=30, choices=INCOME_CATEGORY_CHOICES, default='project')
+    details = models.CharField(max_length=500, blank=True)
+    payment_type = models.CharField(max_length=20, choices=PAYMENT_TYPE_CHOICES, default='bank_adcb')
+    sales_man = models.CharField(max_length=200, blank=True)
+    employee = models.ForeignKey(
+        'hr.Employee',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='cashflow_income_lines',
+    )
+    income_expected = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    invoice = models.ForeignKey(
+        'sales.Invoice',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='cashflow_income_lines',
+    )
+    estimate = models.ForeignKey(
+        'sales.Estimate',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='cashflow_income_lines',
+    )
+    project = models.ForeignKey(
+        'projects.Project',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='cashflow_income_lines',
+    )
+    amc_contract = models.ForeignKey(
+        'contracts.Contract',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='cashflow_income_lines',
+    )
+    line_kind = models.CharField(max_length=30, choices=LINE_KIND_CHOICES, default='normal')
+    line_source = models.CharField(max_length=30, choices=LINE_SOURCE_CHOICES, default='manual')
+    sync_suppressed = models.BooleanField(
+        default=False,
+        help_text='When set, auto-sync will not recreate this line after the user removes it.',
+    )
+    sort_order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ['sort_order', 'line_date', 'pk']
+
+
+class CashFlowChequeLine(BaseModel):
+    LINE_SOURCE_CHOICES = [
+        ('manual', 'Manual'),
+        ('auto_pdc', 'PDC'),
+    ]
+
+    CATEGORY_CHOICES = CashFlowIncomeLine.INCOME_CATEGORY_CHOICES
+
+    sheet = models.ForeignKey(CashFlowMonthSheet, on_delete=models.CASCADE, related_name='cheque_lines')
+    line_date = models.DateField(null=True, blank=True)
+    customer = models.ForeignKey(
+        'crm.Customer',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='cashflow_cheque_lines',
+    )
+    category = models.CharField(max_length=30, choices=CATEGORY_CHOICES, default='maintenance')
+    details = models.CharField(max_length=500, blank=True)
+    income_balance = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    invoice = models.ForeignKey(
+        'sales.Invoice',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='cashflow_cheque_lines',
+    )
+    pdc_cheque = models.ForeignKey(
+        'property.PDCCheque',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='cashflow_cheque_lines',
+    )
+    line_source = models.CharField(max_length=30, choices=LINE_SOURCE_CHOICES, default='manual')
+    sync_suppressed = models.BooleanField(
+        default=False,
+        help_text='When set, auto-sync will not recreate this line after the user removes it.',
+    )
+    sort_order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ['sort_order', 'line_date', 'pk']
+
+
+class CashFlowExpenseLine(BaseModel):
+    LINE_SOURCE_CHOICES = [
+        ('manual', 'Manual'),
+        ('auto_vendor_bill', 'Vendor bill'),
+    ]
+
+    ACCOUNT_CHOICES = [
+        ('purchase', 'Purchase'),
+        ('salary', 'Salary'),
+        ('loan', 'Loan'),
+        ('vehicle_loan_emi', 'Vehicle Loan / EMI'),
+        ('visa_exp', 'Visa Exp'),
+        ('office', 'Office'),
+        ('utility', 'Utility'),
+        ('labor', 'Labor'),
+        ('settlement', 'Settlement'),
+        ('civil_defence_fee', 'Civil Defence Fee'),
+        ('reserve_fund', 'Reserve Fund'),
+        ('pdc_cheques', 'PDC Cheques'),
+        ('manpower', 'Manpower'),
+    ]
+    PAYMENT_TYPE_CHOICES = [
+        ('pdc', 'PDC'),
+        ('cheque', 'Cheque'),
+        ('cash', 'Cash'),
+        ('bank', 'Bank'),
+        ('emi', 'EMI'),
+        ('online', 'Online'),
+    ]
+    LINE_KIND_CHOICES = [
+        ('normal', 'Normal'),
+        ('vehicle_petrol', 'Vehicle Petrol'),
+        ('unexpected_expense', 'Unexpected Expense'),
+    ]
+
+    sheet = models.ForeignKey(CashFlowMonthSheet, on_delete=models.CASCADE, related_name='expense_lines')
+    line_date = models.DateField(null=True, blank=True)
+    vendor = models.ForeignKey(
+        'purchase.Vendor',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='cashflow_expense_lines',
+    )
+    account = models.CharField(max_length=30, choices=ACCOUNT_CHOICES, default='purchase')
+    details = models.CharField(max_length=500, blank=True)
+    payment_type = models.CharField(max_length=20, choices=PAYMENT_TYPE_CHOICES, default='bank')
+    expense = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    vendor_bill = models.ForeignKey(
+        'purchase.VendorBill',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='cashflow_expense_lines',
+    )
+    line_kind = models.CharField(max_length=30, choices=LINE_KIND_CHOICES, default='normal')
+    line_source = models.CharField(max_length=30, choices=LINE_SOURCE_CHOICES, default='manual')
+    sync_suppressed = models.BooleanField(
+        default=False,
+        help_text='When set, auto-sync will not recreate this line after the user removes it.',
+    )
+    sort_order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ['sort_order', 'line_date', 'pk']
 

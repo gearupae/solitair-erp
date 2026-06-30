@@ -127,6 +127,11 @@
                             </a>
                         </li>
                         <li>
+                            <a class="dropdown-item" href="{% url 'sales:quotation_list' %}">
+                                <i class="fas fa-file-contract me-2"></i>Quotations
+                            </a>
+                        </li>
+                        <li>
                             <a class="dropdown-item" href="{% url 'sales:sales_order_list' %}">
                                 <i class="fas fa-clipboard-check me-2"></i>Sales Orders
                             </a>
@@ -161,6 +166,17 @@
                         <li>
                             <a class="dropdown-item" href="{% url 'projects:expense_list' %}">
                                 <i class="fas fa-receipt me-2"></i>Project Expenses
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item {% if '/projects/inspection' in request.path %}active{% endif %}" href="{% url 'projects:inspection_list' %}">
+                                <i class="fas fa-clipboard-check me-2"></i>Inspection
+                            </a>
+                        </li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li>
+                            <a class="dropdown-item {% if '/operations/' in request.path %}active{% endif %}" href="{% url 'operations:schedule_list' %}">
+                                <i class="fas fa-user-clock me-2"></i>Operations
                             </a>
                         </li>
                     </ul>
@@ -453,6 +469,11 @@
                         <li>
                             <a class="dropdown-item" href="{% url 'hr:payroll_list' %}">
                                 <i class="fas fa-money-check-alt me-2"></i>Payroll
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'hr:kpi_dashboard' %}">
+                                <i class="fas fa-tachometer-alt me-2"></i>KPI Dashboard
                             </a>
                         </li>
                         <li>
@@ -771,6 +792,20 @@
                                 <i class="fas fa-columns me-2"></i>CRM Kanban
                             </a>
                         </li>
+                        {% if is_superuser or 'support' in user_permissions %}
+                        <li>
+                            <a class="dropdown-item" href="{% url 'support:ticket_list' %}">
+                                <i class="fas fa-life-ring me-2"></i>Support
+                            </a>
+                        </li>
+                        {% endif %}
+                        {% if is_superuser or 'settings' in user_permissions %}
+                        <li>
+                            <a class="dropdown-item" href="{% url 'settings:support_kanban' %}">
+                                <i class="fas fa-stream me-2"></i>Support pipeline
+                            </a>
+                        </li>
+                        {% endif %}
                         <li>
                             <a class="dropdown-item" href="{% url 'settings:sub_group_expense_types' %}">
                                 <i class="fas fa-tags me-2"></i>Expense types
@@ -789,6 +824,11 @@
                             </a>
                         </li>
                         {% endif %}
+                        <li>
+                            <a class="dropdown-item {% if '/settings/forecast' in request.path %}active{% endif %}" href="{% url 'settings:forecast' %}">
+                                <i class="fas fa-chart-bar me-2"></i>Forecast
+                            </a>
+                        </li>
                         <li>
                             <a class="dropdown-item" href="{% url 'settings:audit_log' %}">
                                 <i class="fas fa-history me-2"></i>Audit Log

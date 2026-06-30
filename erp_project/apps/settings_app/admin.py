@@ -14,6 +14,10 @@ from .models import (
     AuditLog,
     ApprovalWorkflow,
     ModulePermission,
+    CashFlowMonthSheet,
+    CashFlowIncomeLine,
+    CashFlowChequeLine,
+    CashFlowExpenseLine,
 )
 
 
@@ -107,4 +111,32 @@ class ModulePermissionAdmin(admin.ModelAdmin):
     list_display = ['role', 'module', 'can_view', 'can_create', 'can_edit', 'can_delete']
     list_filter = ['role', 'module']
     search_fields = ['role__name', 'module']
+
+
+@admin.register(CashFlowMonthSheet)
+class CashFlowMonthSheetAdmin(admin.ModelAdmin):
+    list_display = ['year', 'month', 'cash_bank_in_hand', 'updated_at', 'is_active']
+    list_filter = ['year', 'is_active']
+
+
+class CashFlowIncomeLineInline(admin.TabularInline):
+    model = CashFlowIncomeLine
+    extra = 0
+
+
+class CashFlowChequeLineInline(admin.TabularInline):
+    model = CashFlowChequeLine
+    extra = 0
+
+
+class CashFlowExpenseLineInline(admin.TabularInline):
+    model = CashFlowExpenseLine
+    extra = 0
+
+
+CashFlowMonthSheetAdmin.inlines = [
+    CashFlowIncomeLineInline,
+    CashFlowChequeLineInline,
+    CashFlowExpenseLineInline,
+]
 

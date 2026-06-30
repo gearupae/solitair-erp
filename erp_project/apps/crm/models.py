@@ -23,6 +23,10 @@ class CrmLeadKanbanStage(models.Model):
         default=False,
         help_text='If checked, leads dropped in the “Won” zone become customers.',
     )
+    is_site_visit = models.BooleanField(
+        default=False,
+        help_text='If checked, leads in this column appear on the dashboard Notifications card.',
+    )
 
     class Meta:
         ordering = ['sort_order', 'id']
@@ -37,6 +41,8 @@ class CrmLeadKanbanStage(models.Model):
             self.slug = slugify(self.name)[:80] or 'stage'
         if self.converts_to_customer:
             CrmLeadKanbanStage.objects.exclude(pk=self.pk).update(converts_to_customer=False)
+        if self.is_site_visit:
+            CrmLeadKanbanStage.objects.exclude(pk=self.pk).update(is_site_visit=False)
         super().save(*args, **kwargs)
 
 
@@ -188,7 +194,8 @@ class Customer(BaseModel):
             if first:
                 self.lead_kanban_stage = first
         if not self.customer_number:
-            self.customer_number = generate_number('CUSTOMER', Customer, 'customer_number')
+            series = 'LEAD' if self.customer_type == 'lead' else 'CUSTOMER'
+            self.customer_number = generate_number(series, Customer, 'customer_number')
         super().save(*args, **kwargs)
     
     @property

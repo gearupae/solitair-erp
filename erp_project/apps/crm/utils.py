@@ -207,6 +207,28 @@ CRM_KANBAN_STAGE_THEMES = [
 ]
 
 
+CRM_PIPELINE_STAGE_SLUG_CLASSES = {
+    'hot': 'crm-pipeline-stage-hot',
+    'warm': 'crm-pipeline-stage-warm',
+    'cold': 'crm-pipeline-stage-cold',
+    'lost': 'crm-pipeline-stage-lost',
+    'site-visit': 'crm-pipeline-stage-active',
+    'site_visit': 'crm-pipeline-stage-active',
+}
+
+
+def kanban_stage_inline_class(stage, *, index=None) -> str:
+    """CSS class for pipeline stage labels (list badges / inline selects)."""
+    if not stage:
+        return 'crm-pipeline-stage-unassigned'
+    slug = (getattr(stage, 'slug', None) or '').lower().replace('_', '-')
+    if slug in CRM_PIPELINE_STAGE_SLUG_CLASSES:
+        return CRM_PIPELINE_STAGE_SLUG_CLASSES[slug]
+    if index is None:
+        index = getattr(stage, 'sort_order', 0) or getattr(stage, 'pk', 0)
+    return f'crm-pipeline-stage-theme-{int(index) % len(CRM_KANBAN_STAGE_THEMES)}'
+
+
 def kanban_theme_style(theme) -> str:
     """Inline CSS variables for a kanban column theme."""
     return (

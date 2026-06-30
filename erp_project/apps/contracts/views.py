@@ -13,13 +13,13 @@ from django.shortcuts import redirect, get_object_or_404, render
 from django.urls import reverse_lazy
 from django.utils import timezone
 from django.utils.dateparse import parse_date
-from django.views.generic import ListView, UpdateView
+from django.views.generic import DetailView, ListView, UpdateView
 
 from apps.core.mixins import PermissionRequiredMixin, UpdatePermissionMixin
 from apps.core.utils import PermissionChecker
 from apps.crm.models import Customer
 
-from .forms import ContractForm
+from .forms import ContractDocumentExpiryFormSet, ContractForm
 from .models import Contract, ContractAttachment, ContractType
 
 
@@ -133,18 +133,74 @@ class ContractListView(PermissionRequiredMixin, ListView):
         _persist_contract_types_and_attachments(request, contract, selected, extra_names)
 
         messages.success(request, f'Contract {contract.contract_number} created.')
-        return redirect('contracts:contract_list')
+        return redirect('contracts:contract_detail', pk=contract.pk)
+
+
+class ContractDetailView(PermissionRequiredMixin, DetailView):
+    model = Contract
+    template_name = 'contracts/contract_detail.html'
+    context_object_name = 'contract'
+    module_name = 'contracts'
+    permission_type = 'view'
+
+    def get_queryset(self):
+        return (
+            Contract.objects.filter(is_active=True)
+            .select_related('customer', 'created_by', 'updated_by')
+            .prefetch_related('contract_types', 'attachments', 'document_expiries')
+        )
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        today = timezone.now().date()
+        ctx['today'] = today
+        ctx['can_edit'] = self.request.user.is_superuser or PermissionChecker.has_permission(
+            self.request.user, 'contracts', 'edit'
+        )
+        ctx['can_delete'] = self.request.user.is_superuser or PermissionChecker.has_permission(
+            self.request.user, 'contracts', 'delete'
+        )
+        ctx['document_expiries'] = self.object.document_expiries.filter(is_active=True).order_by(
+            'expiry_date', 'document_name'
+        )
+        ctx['contract_expiring_within_30'] = self.object.is_expiring_within(30)
+        if 'doc_formset' in kwargs:
+            ctx['doc_formset'] = kwargs['doc_formset']
+        elif ctx['can_edit']:
+            ctx['doc_formset'] = ContractDocumentExpiryFormSet(instance=self.object)
+        return ctx
+
+    def post(self, request, *args, **kwargs):
+        if request.POST.get('action') != 'save_document_expiries':
+            return HttpResponseNotAllowed(['GET'])
+
+        self.object = self.get_object()
+        if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'contracts', 'edit')):
+            messages.error(request, 'Permission denied.')
+            return redirect('contracts:contract_detail', pk=self.object.pk)
+
+        formset = ContractDocumentExpiryFormSet(request.POST, instance=self.object)
+        if formset.is_valid():
+            formset.save()
+            messages.success(request, 'Document expiry reminders updated.')
+            return redirect('contracts:contract_detail', pk=self.object.pk)
+
+        messages.error(request, 'Please correct the document expiry errors below.')
+        context = self.get_context_data(doc_formset=formset)
+        return self.render_to_response(context)
 
 
 class ContractUpdateView(UpdatePermissionMixin, UpdateView):
     model = Contract
     form_class = ContractForm
     template_name = 'contracts/contract_form.html'
-    success_url = reverse_lazy('contracts:contract_list')
     module_name = 'contracts'
 
     def get_queryset(self):
         return Contract.objects.filter(is_active=True).select_related('customer').prefetch_related('contract_types')
+
+    def get_success_url(self):
+        return reverse_lazy('contracts:contract_detail', kwargs={'pk': self.object.pk})
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
@@ -153,6 +209,10 @@ class ContractUpdateView(UpdatePermissionMixin, UpdateView):
         ctx['can_create'] = self.request.user.is_superuser or PermissionChecker.has_permission(
             self.request.user, 'contracts', 'create'
         )
+        if self.request.POST:
+            ctx['doc_formset'] = ContractDocumentExpiryFormSet(self.request.POST, instance=self.object)
+        else:
+            ctx['doc_formset'] = ContractDocumentExpiryFormSet(instance=self.object)
         return ctx
 
     def form_valid(self, form):
@@ -161,11 +221,18 @@ class ContractUpdateView(UpdatePermissionMixin, UpdateView):
         if not selected.exists() and not extra_names:
             form.add_error(None, 'Select at least one contract type or add a new type.')
             return self.form_invalid(form)
+
+        doc_formset = ContractDocumentExpiryFormSet(self.request.POST, instance=self.object)
+        if not doc_formset.is_valid():
+            return self.render_to_response(self.get_context_data(form=form, doc_formset=doc_formset))
+
         contract = form.save(commit=False)
         contract.save()
         _persist_contract_types_and_attachments(self.request, contract, selected, extra_names)
+        doc_formset.instance = contract
+        doc_formset.save()
         messages.success(self.request, f'Contract {contract.contract_number} updated.')
-        return redirect(self.success_url)
+        return redirect(self.get_success_url())
 
 
 @login_required

@@ -1,0 +1,356 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block extra_css %}
+<style>
+.lead-dash-kpi {
+    border: none;
+    border-radius: 0.75rem;
+    box-shadow: 0 1px 3px rgba(15,23,42,.06);
+    height: 100%;
+}
+.lead-dash-kpi__label {
+    font-size: .72rem;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: #64748b;
+    margin-bottom: .35rem;
+}
+.lead-dash-kpi__value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #0f172a;
+    line-height: 1.1;
+}
+.lead-dash-delta { font-size: .78rem; font-weight: 600; margin-top: .25rem; }
+.lead-dash-delta--up { color: #059669; }
+.lead-dash-delta--down { color: #dc2626; }
+.lead-dash-delta--neutral { color: #64748b; }
+.lead-dash-chart-card {
+    border: none;
+    border-radius: 0.75rem;
+    box-shadow: 0 1px 3px rgba(15,23,42,.06);
+    height: 100%;
+}
+.lead-dash-chart-wrap { position: relative; height: 280px; }
+.lead-dash-chart-wrap--sm { height: 240px; }
+.lead-dash-section-title {
+    font-size: .75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: #64748b;
+    margin-bottom: 1rem;
+}
+.lead-dash-funnel-row {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    margin-bottom: .65rem;
+}
+.lead-dash-funnel-row:last-child { margin-bottom: 0; }
+.lead-dash-funnel-label {
+    flex: 0 0 7rem;
+    font-size: .82rem;
+    font-weight: 600;
+    color: #334155;
+}
+.lead-dash-funnel-bar-wrap {
+    flex: 1;
+    background: #f1f5f9;
+    border-radius: 999px;
+    height: 1.35rem;
+    overflow: hidden;
+}
+.lead-dash-funnel-bar {
+    height: 100%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #2563eb, #3b82f6);
+    min-width: 2px;
+}
+.lead-dash-funnel-meta {
+    flex: 0 0 8.5rem;
+    text-align: right;
+    font-size: .78rem;
+    color: #64748b;
+}
+.lead-dash-funnel-meta strong { color: #0f172a; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+    <div>
+        <h4 class="mb-1 fw-bold">{{ title }}</h4>
+        <p class="text-muted mb-0">Lead pipeline · {{ period_label }}{% if not all_time %} · vs {{ prev_period_label }}{% else %} · % change vs {{ prev_period_label }}{% endif %}</p>
+        {% if total_visible_leads %}<p class="text-muted small mb-0">{{ total_visible_leads|intcomma }} leads in scope</p>{% endif %}
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+        <a href="{% url 'crm:lead_list' %}" class="btn btn-sm btn-outline-secondary"><i class="fas fa-list me-1"></i>Board / List</a>
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-body py-3">
+        <form method="get" class="row g-2 align-items-end">
+            <div class="col-md-3 col-lg-2">
+                <label class="form-label small mb-1">From</label>
+                <input type="date" name="date_from" value="{{ date_from_iso }}" class="form-control form-control-sm">
+            </div>
+            <div class="col-md-3 col-lg-2">
+                <label class="form-label small mb-1">To</label>
+                <input type="date" name="date_to" value="{{ date_to_iso }}" class="form-control form-control-sm">
+            </div>
+            <div class="col-md-auto">
+                <button type="submit" class="btn btn-sm btn-primary"><i class="fas fa-filter me-1"></i>Apply</button>
+                <a href="{% url dashboard_url_name %}" class="btn btn-sm btn-light">Reset</a>
+            </div>
+        </form>
+        <p class="text-muted small mb-0 mt-2">Leave dates empty to show all leads (same scope as the Leads list).</p>
+    </div>
+</div>
+
+<!-- KPI cards -->
+<div class="lead-dash-section-title">KPI cards (vs {% if all_time %}previous 30 days{% else %}last period{% endif %})</div>
+<div class="row g-3 mb-4">
+    {% for kpi in kpis %}
+    <div class="col-6 col-md-4 col-xl">
+        <div class="card lead-dash-kpi">
+            <div class="card-body py-3">
+                <div class="lead-dash-kpi__label">{{ kpi.label }}</div>
+                <div class="lead-dash-kpi__value">
+                    {% if kpi.format == 'money' %}AED {{ kpi.current|floatformat:0|intcomma }}
+                    {% elif kpi.format == 'pct' %}{{ kpi.current|floatformat:2 }}%
+                    {% else %}{{ kpi.current|floatformat:0|intcomma }}{% endif %}
+                </div>
+                <div class="lead-dash-delta lead-dash-delta--{{ kpi.direction }}">
+                    {% if kpi.direction == 'up' %}▲{% elif kpi.direction == 'down' %}▼{% else %}—{% endif %}
+                    {{ kpi.change_pct|floatformat:1 }}%
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Pipeline funnel + stage donut -->
+<div class="row g-3 mb-4">
+    <div class="col-lg-7">
+        <div class="card lead-dash-chart-card">
+            <div class="card-body">
+                <h6 class="fw-semibold mb-1">Pipeline Overview (funnel, {{ month_label }})</h6>
+                <p class="text-muted small mb-3">Total Pipeline Value: <strong>AED {{ pipeline_value_total|floatformat:0|intcomma }}</strong></p>
+                {% for row in funnel %}
+                <div class="lead-dash-funnel-row">
+                    <div class="lead-dash-funnel-label">{{ row.label }}</div>
+                    <div class="lead-dash-funnel-bar-wrap">
+                        <div class="lead-dash-funnel-bar" style="width: {{ row.pct }}%;"></div>
+                    </div>
+                    <div class="lead-dash-funnel-meta">
+                        <strong>{{ row.count|intcomma }}</strong> — {{ row.pct|floatformat:1 }}%
+                    </div>
+                </div>
+                {% empty %}
+                <p class="text-muted mb-0">No pipeline data for this period.</p>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-5">
+        <div class="card lead-dash-chart-card">
+            <div class="card-body">
+                <h6 class="fw-semibold mb-1">Deals by Stage</h6>
+                <p class="text-muted small mb-3">{% if charts.stage_total %}{{ charts.stage_total|floatformat:0|intcomma }} Total Deals{% else %}No deals in scope{% endif %}</p>
+                {% if charts.stage_total %}
+                <div class="lead-dash-chart-wrap lead-dash-chart-wrap--sm"><canvas id="chartStage"></canvas></div>
+                {% else %}
+                <p class="text-muted small mb-0">No active leads or won conversions for this period.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Source donut + sales trend -->
+<div class="row g-3 mb-4">
+    <div class="col-md-5 col-lg-4">
+        <div class="card lead-dash-chart-card">
+            <div class="card-body">
+                <h6 class="fw-semibold mb-1">Leads Source</h6>
+                <p class="text-muted small mb-3">{% if charts.source_total %}{{ charts.source_total|floatformat:0|intcomma }} leads (100%){% else %}No leads in scope{% endif %}</p>
+                {% if charts.source_total %}
+                <div class="lead-dash-chart-wrap lead-dash-chart-wrap--sm"><canvas id="chartSource"></canvas></div>
+                {% else %}
+                <p class="text-muted small mb-0">Source breakdown appears when leads exist in this period.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="col-md-7 col-lg-8">
+        <div class="card lead-dash-chart-card">
+            <div class="card-body">
+                <h6 class="fw-semibold mb-3">Sales Trend ({{ month_label }})</h6>
+                {% if trend_labels %}
+                <div class="lead-dash-chart-wrap"><canvas id="chartSalesTrend"></canvas></div>
+                {% else %}
+                <p class="text-muted small mb-0">No estimate activity linked to leads or won conversions in this period.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+{{ trend_labels|json_script:"lead-dash-labels" }}
+{{ charts|json_script:"lead-dash-charts" }}
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    if (typeof Chart === 'undefined') {
+        console.error('Chart.js failed to load');
+        return;
+    }
+
+    var labelsEl = document.getElementById('lead-dash-labels');
+    var chartsEl = document.getElementById('lead-dash-charts');
+    if (!labelsEl || !chartsEl) return;
+
+    var labels = JSON.parse(labelsEl.textContent);
+    var charts = JSON.parse(chartsEl.textContent);
+    var trendData = charts.sales_trend || [];
+
+    var palette = ['#2563eb', '#059669', '#d97706', '#dc2626', '#7c3aed', '#0891b2', '#64748b', '#ea580c'];
+    var donutOpts = {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } },
+            tooltip: {
+                callbacks: {
+                    label: function (ctx) {
+                        var item = ctx.dataset.dataMeta ? ctx.dataset.dataMeta[ctx.dataIndex] : null;
+                        if (item) {
+                            return item.label + ': ' + item.count + ' (' + item.pct + '%)';
+                        }
+                        return ctx.label + ': ' + ctx.raw;
+                    }
+                }
+            }
+        }
+    };
+
+    function donutData(items) {
+        var visible = (items || []).filter(function (i) { return i.count > 0; });
+        if (!visible.length) {
+            visible = [{ label: 'No data', count: 1, pct: 100 }];
+        }
+        return {
+            labels: visible.map(function (i) { return i.label; }),
+            datasets: [{
+                data: visible.map(function (i) { return i.count; }),
+                dataMeta: visible,
+                backgroundColor: visible[0].label === 'No data' ? ['#e2e8f0'] : palette.slice(0, visible.length),
+                borderWidth: 2,
+                borderColor: '#fff'
+            }]
+        };
+    }
+
+    var peakIdx = 0;
+    var peakVal = 0;
+    trendData.forEach(function (v, i) {
+        if (v > peakVal) {
+            peakVal = v;
+            peakIdx = i;
+        }
+    });
+
+    if (document.getElementById('chartStage')) {
+        new Chart(document.getElementById('chartStage'), {
+            type: 'doughnut',
+            data: donutData(charts.stage_donut),
+            options: donutOpts
+        });
+    }
+
+    if (document.getElementById('chartSource')) {
+        new Chart(document.getElementById('chartSource'), {
+            type: 'doughnut',
+            data: donutData(charts.source_donut),
+            options: donutOpts
+        });
+    }
+
+    if (document.getElementById('chartSalesTrend')) {
+        new Chart(document.getElementById('chartSalesTrend'), {
+            type: 'line',
+            data: {
+                labels: labels.length ? labels : ['No data'],
+                datasets: [{
+                    label: 'Estimate value (AED)',
+                    data: labels.length ? trendData : [0],
+                    borderColor: '#2563eb',
+                    backgroundColor: 'rgba(37,99,235,0.1)',
+                    fill: true,
+                    tension: 0.35,
+                    pointRadius: function (ctx) {
+                        return ctx.dataIndex === peakIdx && peakVal > 0 ? 6 : 4;
+                    },
+                    pointBackgroundColor: function (ctx) {
+                        return ctx.dataIndex === peakIdx && peakVal > 0 ? '#059669' : '#2563eb';
+                    }
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function (v) {
+                                if (v >= 1000000) return 'AED ' + (v / 1000000).toFixed(1) + 'M';
+                                if (v >= 1000) return 'AED ' + (v / 1000).toFixed(0) + 'K';
+                                return 'AED ' + v;
+                            }
+                        }
+                    }
+                },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: function (ctx) {
+                                return 'AED ' + Number(ctx.raw).toLocaleString();
+                            }
+                        }
+                    },
+                    annotation: undefined
+                }
+            },
+            plugins: [{
+                id: 'peakCallout',
+                afterDraw: function (chart) {
+                    if (!peakVal || !labels.length) return;
+                    var meta = chart.getDatasetMeta(0);
+                    var pt = meta.data[peakIdx];
+                    if (!pt) return;
+                    var ctx = chart.ctx;
+                    ctx.save();
+                    ctx.font = '11px sans-serif';
+                    ctx.fillStyle = '#059669';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('AED ' + Number(peakVal).toLocaleString(), pt.x, pt.y - 12);
+                    ctx.restore();
+                }
+            }]
+        });
+    }
+});
+</script>
+{% endblock %}

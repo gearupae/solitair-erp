@@ -4,7 +4,7 @@ CRM Forms
 from django import forms
 from django.core.exceptions import ValidationError
 
-from .models import Customer
+from .models import Customer, CrmLeadKanbanStage
 from .utils import (
     get_crm_project_queryset,
     get_sales_employee_for_user,
@@ -36,12 +36,36 @@ class CustomerForm(forms.ModelForm):
             'name', 'email', 'phone', 'company', 'address',
             'trn', 'website', 'scope', 'job_type', 'primary_project',
             'assigned_salesperson',
-            'status', 'customer_type', 'business_segment', 'trn_document', 'trade_license_document',
+            'status', 'customer_type', 'lead_kanban_stage', 'business_segment',
+            'trn_document', 'trade_license_document',
             'notes',
         ]
 
-    def __init__(self, *args, projects_queryset=None, user=None, **kwargs):
+    def __init__(self, *args, projects_queryset=None, user=None, for_lead=None, **kwargs):
         super().__init__(*args, **kwargs)
+
+        is_lead = for_lead if for_lead is not None else (
+            self.instance.pk and self.instance.customer_type == 'lead'
+        )
+        if not self.instance.pk and for_lead is None:
+            ctype = (self.initial.get('customer_type') or '').strip()
+            if not ctype and self.data:
+                ctype = (self.data.get('customer_type') or '').strip()
+            is_lead = ctype == 'lead'
+
+        if is_lead:
+            self.fields.pop('status', None)
+            stage_qs = CrmLeadKanbanStage.objects.filter(
+                is_active=True,
+                converts_to_customer=False,
+            ).order_by('sort_order', 'id')
+            self.fields['lead_kanban_stage'].queryset = stage_qs
+            self.fields['lead_kanban_stage'].required = False
+            self.fields['lead_kanban_stage'].empty_label = '— Unassigned —'
+            self.fields['lead_kanban_stage'].label = 'Pipeline stage'
+            self.fields['lead_kanban_stage'].widget.attrs['class'] = 'form-select'
+        else:
+            self.fields.pop('lead_kanban_stage', None)
 
         qs = projects_queryset if projects_queryset is not None else get_crm_project_queryset()
         if self.instance.pk:
@@ -125,6 +149,9 @@ class CustomerForm(forms.ModelForm):
     def save(self, commit=True):
         instance = super().save(commit=False)
         instance.job_type = self.cleaned_data.get('job_type') or []
+        if instance.customer_type == 'lead' and 'status' not in self.fields:
+            if not instance.status:
+                instance.status = 'active'
         if commit:
             instance.save()
             self.save_m2m()

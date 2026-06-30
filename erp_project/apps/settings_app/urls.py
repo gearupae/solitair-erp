@@ -4,6 +4,7 @@ Settings app URL configuration.
 from django.urls import path
 from . import views
 from . import views_ceo
+from . import views_forecast
 
 app_name = 'settings'
 
@@ -36,6 +37,7 @@ urlpatterns = [
     # Approval Configuration
     path('approval-configuration/', views.ApprovalConfigurationView.as_view(), name='approval_configuration'),
     path('crm-kanban/', views.CrmKanbanSettingsView.as_view(), name='crm_kanban'),
+    path('support-kanban/', views.SupportKanbanSettingsView.as_view(), name='support_kanban'),
     path(
         'sub-group-expense-types/',
         views.SubGroupExpenseTypeSettingsView.as_view(),
@@ -45,6 +47,11 @@ urlpatterns = [
     path('ceo/api/briefing/', views_ceo.ceo_api_briefing, name='ceo_api_briefing'),
     path('ceo/api/alerts/', views_ceo.ceo_api_alerts, name='ceo_api_alerts'),
     path('ceo/api/cash-forecast/', views_ceo.ceo_api_cash_forecast, name='ceo_api_cash_forecast'),
+    path('ceo/api/predictive-cash/', views_ceo.ceo_api_predictive_cash, name='ceo_api_predictive_cash'),
+    path('ceo/api/collections/', views_ceo.ceo_api_collections, name='ceo_api_collections'),
+    path('ceo/api/yesterday/', views_ceo.ceo_api_yesterday, name='ceo_api_yesterday'),
+    path('ceo/api/operations/', views_ceo.ceo_api_operations, name='ceo_api_operations'),
+    path('forecast/', views_forecast.ForecastView.as_view(), name='forecast'),
 ]
 
 

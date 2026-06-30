@@ -38,6 +38,8 @@ urlpatterns = [
     path('fleet/', include('apps.fleet.urls')),
     path('advances/', include('apps.advances.urls')),
     path('reports/', include('apps.reports.urls')),
+    path('support/', include('apps.support.urls')),
+    path('operations/', include('apps.operations.urls')),
 ]
 
 if settings.DEBUG:

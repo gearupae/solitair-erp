@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Contract, ContractAttachment, ContractType
+from .models import Contract, ContractAttachment, ContractDocumentExpiry, ContractType
 
 
 @admin.register(ContractType)
@@ -14,6 +14,12 @@ class ContractAttachmentInline(admin.TabularInline):
     extra = 0
 
 
+class ContractDocumentExpiryInline(admin.TabularInline):
+    model = ContractDocumentExpiry
+    extra = 0
+    fields = ['document_name', 'expiry_date', 'remind_before_days', 'is_active']
+
+
 @admin.register(Contract)
 class ContractAdmin(admin.ModelAdmin):
     list_display = ['contract_number', 'name', 'customer', 'contract_value', 'start_date', 'end_date', 'status', 'is_active']
@@ -21,4 +27,4 @@ class ContractAdmin(admin.ModelAdmin):
     search_fields = ['contract_number', 'name', 'customer__name']
     raw_id_fields = ['customer']
     filter_horizontal = ('contract_types',)
-    inlines = [ContractAttachmentInline]
+    inlines = [ContractAttachmentInline, ContractDocumentExpiryInline]

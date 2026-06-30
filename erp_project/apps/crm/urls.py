@@ -11,6 +11,7 @@ urlpatterns = [
     path('customers/project-options/', views.crm_project_options, name='project_options'),
     path('customers/', views.CustomerListView.as_view(), name='customer_list'),
     path('leads/', views.LeadListView.as_view(), name='lead_list'),
+    path('leads/dashboard/', views.LeadDashboardView.as_view(), name='lead_dashboard'),
     path('customers/kanban/move/', views.crm_kanban_move, name='kanban_move'),
     path('customers/<int:pk>/', views.CustomerDetailView.as_view(), name='customer_detail'),
     path('customers/<int:pk>/edit/', views.CustomerUpdateView.as_view(), name='customer_edit'),

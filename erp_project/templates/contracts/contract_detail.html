@@ -1,0 +1,296 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}{{ contract.contract_number }} — Contract{% endblock %}
+
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <div>
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-1">
+                <li class="breadcrumb-item"><a href="{% url 'contracts:contract_list' %}">Contracts</a></li>
+                <li class="breadcrumb-item active">{{ contract.contract_number }}</li>
+            </ol>
+        </nav>
+        <h4 class="mb-0 fw-bold">{{ contract.name }}</h4>
+        <p class="text-muted mb-0 small">{{ contract.contract_number }}</p>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+        <a href="{% url 'contracts:contract_pdf' contract.pk %}" class="btn btn-light" target="_blank" rel="noopener">
+            <i class="fas fa-file-pdf me-1"></i> PDF
+        </a>
+        {% if can_edit %}
+        <a href="{% url 'contracts:contract_edit' contract.pk %}" class="btn btn-outline-primary">
+            <i class="fas fa-edit me-1"></i> Edit
+        </a>
+        {% endif %}
+        <a href="{% url 'contracts:contract_list' %}" class="btn btn-outline-secondary">Back to list</a>
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-8">
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-transparent">
+                <h6 class="fw-semibold mb-0"><i class="fas fa-file-contract me-2 text-primary"></i>Contract information</h6>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="text-muted small">Customer</label>
+                        <p class="mb-0 fw-medium">
+                            {% if contract.customer %}
+                            <a href="{% url 'crm:customer_detail' contract.customer.pk %}" class="text-decoration-none">{{ contract.customer.name }}</a>
+                            {% if contract.customer.company %}<span class="text-muted"> — {{ contract.customer.company }}</span>{% endif %}
+                            {% else %}<span class="text-muted">—</span>{% endif %}
+                        </p>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="text-muted small">Contract types</label>
+                        <p class="mb-0">
+                            {% for t in contract.contract_types.all %}
+                            <span class="badge bg-light text-dark border me-1">{{ t.name }}</span>
+                            {% empty %}<span class="text-muted">—</span>{% endfor %}
+                        </p>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="text-muted small">Contract value</label>
+                        <p class="mb-0 fw-semibold">AED {{ contract.contract_value|floatformat:2|intcomma }}</p>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="text-muted small">Start date</label>
+                        <p class="mb-0">{{ contract.start_date|date:"d M Y" }}</p>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="text-muted small">End date</label>
+                        <p class="mb-0">{{ contract.end_date|date:"d M Y" }}</p>
+                    </div>
+                    {% if contract.description %}
+                    <div class="col-12">
+                        <label class="text-muted small">Description</label>
+                        <p class="mb-0">{{ contract.description|linebreaksbr }}</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-transparent d-flex justify-content-between align-items-center">
+                <h6 class="fw-semibold mb-0"><i class="fas fa-bell me-2 text-primary"></i>Document expiry</h6>
+                {% if document_expiries %}
+                <span class="badge bg-primary">{{ document_expiries|length }} document{{ document_expiries|length|pluralize }}</span>
+                {% endif %}
+            </div>
+            <div class="card-body">
+                {% if can_edit %}
+                <p class="small text-muted">Track licence, permit, or certificate expiry dates. Reminders appear when within the lead time.</p>
+                <form method="post">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="save_document_expiries">
+                    {{ doc_formset.management_form }}
+                    {% if doc_formset.non_form_errors %}
+                    <div class="alert alert-danger">{{ doc_formset.non_form_errors }}</div>
+                    {% endif %}
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-3">
+                            <thead>
+                                <tr>
+                                    <th>Document name</th>
+                                    <th>Expiry date <span class="text-danger">*</span></th>
+                                    <th>Remind before (days)</th>
+                                    <th>Status</th>
+                                    <th class="text-center">Remove</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for f in doc_formset %}
+                                <tr>
+                                    <td>
+                                        {{ f.id }}
+                                        {{ f.document_name }}
+                                        {% if f.document_name.errors %}<div class="text-danger small">{{ f.document_name.errors|join:", " }}</div>{% endif %}
+                                    </td>
+                                    <td>
+                                        {{ f.expiry_date }}
+                                        {% if f.expiry_date.errors %}<div class="text-danger small">{{ f.expiry_date.errors|join:", " }}</div>{% endif %}
+                                    </td>
+                                    <td style="max-width: 8rem;">
+                                        {{ f.remind_before_days }}
+                                        {% if f.remind_before_days.errors %}<div class="text-danger small">{{ f.remind_before_days.errors|join:", " }}</div>{% endif %}
+                                    </td>
+                                    <td>
+                                        {% if f.instance.pk %}
+                                        {% if f.instance.expiry_status == 'expired' %}
+                                        <span class="badge bg-danger">Expired</span>
+                                        {% elif f.instance.expiry_status == 'due_today' %}
+                                        <span class="badge bg-warning text-dark">Due today</span>
+                                        {% elif f.instance.expiry_status == 'expiring' %}
+                                        <span class="badge bg-warning text-dark">{{ f.instance.days_until_expiry }} day{{ f.instance.days_until_expiry|pluralize }} left</span>
+                                        {% else %}
+                                        <span class="badge badge-active">OK</span>
+                                        {% endif %}
+                                        {% else %}
+                                        <span class="text-muted small">—</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-center">{% if f.DELETE %}{{ f.DELETE }}{% endif %}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-save me-1"></i>Save document expiry</button>
+                </form>
+                {% else %}
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>Document name</th>
+                                <th>Expiry date</th>
+                                <th>Remind before</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for doc in document_expiries %}
+                            <tr>
+                                <td class="fw-medium">{{ doc.document_name }}</td>
+                                <td>{{ doc.expiry_date|date:"d M Y" }}</td>
+                                <td>{{ doc.remind_before_days }} day{{ doc.remind_before_days|pluralize }}</td>
+                                <td>
+                                    {% if doc.expiry_status == 'expired' %}
+                                    <span class="badge bg-danger">Expired</span>
+                                    {% elif doc.expiry_status == 'due_today' %}
+                                    <span class="badge bg-warning text-dark">Due today</span>
+                                    {% elif doc.expiry_status == 'expiring' %}
+                                    <span class="badge bg-warning text-dark">{{ doc.days_until_expiry }} day{{ doc.days_until_expiry|pluralize }} left</span>
+                                    {% else %}
+                                    <span class="badge badge-active">OK</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="4" class="text-center text-muted py-4">No document expiry records.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        {% if contract.attachments.all %}
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-transparent">
+                <h6 class="fw-semibold mb-0"><i class="fas fa-paperclip me-2 text-primary"></i>Attachments</h6>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>File</th>
+                                <th>Uploaded</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for att in contract.attachments.all %}
+                            {% if att.is_active %}
+                            <tr>
+                                <td><a href="{{ att.file.url }}" target="_blank" rel="noopener" class="text-decoration-none">{{ att.original_name|default:att.file.name }}</a></td>
+                                <td class="text-muted">{{ att.created_at|date:"d M Y" }}</td>
+                            </tr>
+                            {% endif %}
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if contract.terms_and_conditions %}
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-transparent">
+                <h6 class="fw-semibold mb-0"><i class="fas fa-align-left me-2 text-primary"></i>Terms &amp; conditions</h6>
+            </div>
+            <div class="card-body">
+                <div class="small">{{ contract.terms_and_conditions|linebreaks }}</div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-transparent">
+                <h6 class="fw-semibold mb-0"><i class="fas fa-info-circle me-2 text-primary"></i>Status</h6>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="text-muted small">Lifecycle status</label>
+                    <p class="mb-0">
+                        {% if contract.status == 'cancelled' %}
+                        <span class="badge bg-danger bg-opacity-25 text-danger">{{ contract.get_status_display }}</span>
+                        {% elif contract.status == 'expired' %}
+                        <span class="badge bg-secondary">{{ contract.get_status_display }}</span>
+                        {% elif contract.status == 'active' %}
+                        <span class="badge badge-active">{{ contract.get_status_display }}</span>
+                        {% else %}
+                        <span class="badge" style="background:#dbeafe;color:#1e40af;">{{ contract.get_status_display }}</span>
+                        {% endif %}
+                    </p>
+                </div>
+                <div class="mb-3">
+                    <label class="text-muted small">Contract end reminder</label>
+                    <p class="mb-0 small">
+                        Remind {{ contract.remind_before_days }} day{{ contract.remind_before_days|pluralize }} before end date
+                    </p>
+                    {% if contract.is_expired %}
+                    <span class="badge bg-danger mt-1">Contract expired</span>
+                    {% elif contract.reminder_due %}
+                    <span class="badge bg-warning text-dark mt-1">End date reminder active</span>
+                    {% elif contract_expiring_within_30 %}
+                    <span class="badge bg-warning text-dark mt-1">Ends within 30 days</span>
+                    {% endif %}
+                </div>
+                {% with due_docs=document_expiries %}
+                {% if due_docs %}
+                {% for doc in due_docs %}
+                {% if doc.reminder_due %}
+                <div class="alert alert-warning py-2 px-3 small mb-2">
+                    <strong>{{ doc.document_name }}</strong>
+                    {% if doc.is_expired %} expired {{ doc.expiry_date|date:"d M Y" }}
+                    {% elif doc.days_until_expiry == 0 %} expires today
+                    {% else %} expires {{ doc.expiry_date|date:"d M Y" }} ({{ doc.days_until_expiry }} day{{ doc.days_until_expiry|pluralize }} left)
+                    {% endif %}
+                </div>
+                {% endif %}
+                {% endfor %}
+                {% endif %}
+                {% endwith %}
+            </div>
+        </div>
+
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-transparent">
+                <h6 class="fw-semibold mb-0"><i class="fas fa-history me-2 text-primary"></i>Audit</h6>
+            </div>
+            <div class="card-body small">
+                <div class="mb-2">
+                    <span class="text-muted">Created</span><br>
+                    {{ contract.created_at|date:"d M Y, H:i" }}
+                    {% if contract.created_by %}<span class="text-muted">by {{ contract.created_by.get_full_name|default:contract.created_by.username }}</span>{% endif %}
+                </div>
+                <div>
+                    <span class="text-muted">Updated</span><br>
+                    {{ contract.updated_at|date:"d M Y, H:i" }}
+                    {% if contract.updated_by %}<span class="text-muted">by {{ contract.updated_by.get_full_name|default:contract.updated_by.username }}</span>{% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

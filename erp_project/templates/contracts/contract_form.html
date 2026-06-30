@@ -9,13 +9,13 @@
 {% block content %}
 <div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2">
     <div>
-        <nav aria-label="breadcrumb"><ol class="breadcrumb mb-2"><li class="breadcrumb-item"><a href="{% url 'contracts:contract_list' %}">Contracts</a></li><li class="breadcrumb-item active">Edit</li></ol></nav>
+        <nav aria-label="breadcrumb"><ol class="breadcrumb mb-2"><li class="breadcrumb-item"><a href="{% url 'contracts:contract_list' %}">Contracts</a></li><li class="breadcrumb-item"><a href="{% url 'contracts:contract_detail' object.pk %}">{{ object.contract_number }}</a></li><li class="breadcrumb-item active">Edit</li></ol></nav>
         <h4 class="mb-1 fw-bold">{{ title }}</h4>
         <p class="text-muted mb-0">{{ object.name }}</p>
     </div>
     <div class="d-flex flex-wrap gap-2">
         <a href="{% url 'contracts:contract_pdf' object.pk %}" class="btn btn-light" target="_blank" rel="noopener"><i class="fas fa-file-pdf me-2"></i>PDF</a>
-        <a href="{% url 'contracts:contract_list' %}" class="btn btn-outline-secondary">Back to list</a>
+        <a href="{% url 'contracts:contract_detail' object.pk %}" class="btn btn-outline-secondary">Back to overview</a>
     </div>
 </div>
 
@@ -93,13 +93,54 @@
                     <div class="form-text">Shown on the contract PDF.</div>
                     {% if form.terms_and_conditions.errors %}<div class="text-danger small">{{ form.terms_and_conditions.errors }}</div>{% endif %}
                 </div>
+
+                <div class="col-12">
+                    <h6 class="fw-semibold text-muted text-uppercase small border-bottom pb-2 mb-3 mt-2">Document expiry</h6>
+                    <p class="small text-muted">Track licence, permit, or certificate expiry. Leave unused rows empty.</p>
+                    {{ doc_formset.management_form }}
+                    {% if doc_formset.non_form_errors %}
+                    <div class="alert alert-danger">{{ doc_formset.non_form_errors }}</div>
+                    {% endif %}
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle">
+                            <thead>
+                                <tr>
+                                    <th>Document name</th>
+                                    <th>Expiry date <span class="text-danger">*</span></th>
+                                    <th>Remind before (days)</th>
+                                    <th class="text-center">Remove</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for f in doc_formset %}
+                                <tr>
+                                    <td>
+                                        {{ f.id }}
+                                        {{ f.document_name }}
+                                        {% if f.document_name.errors %}<div class="text-danger small">{{ f.document_name.errors|join:", " }}</div>{% endif %}
+                                    </td>
+                                    <td>
+                                        {{ f.expiry_date }}
+                                        {% if f.expiry_date.errors %}<div class="text-danger small">{{ f.expiry_date.errors|join:", " }}</div>{% endif %}
+                                    </td>
+                                    <td style="max-width: 8rem;">
+                                        {{ f.remind_before_days }}
+                                        {% if f.remind_before_days.errors %}<div class="text-danger small">{{ f.remind_before_days.errors|join:", " }}</div>{% endif %}
+                                    </td>
+                                    <td class="text-center">{% if f.DELETE %}{{ f.DELETE }}{% endif %}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
                 {% if form.non_field_errors %}
                 <div class="col-12"><div class="alert alert-danger mb-0">{{ form.non_field_errors }}</div></div>
                 {% endif %}
             </div>
             <div class="mt-4 pt-3 border-top">
                 <button type="submit" class="btn btn-primary"><i class="fas fa-save me-2"></i>Save</button>
-                <a href="{% url 'contracts:contract_list' %}" class="btn btn-light">Cancel</a>
+                <a href="{% url 'contracts:contract_detail' object.pk %}" class="btn btn-light">Cancel</a>
             </div>
         </form>
     </div>

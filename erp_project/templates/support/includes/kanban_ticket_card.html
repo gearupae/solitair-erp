@@ -1,0 +1,15 @@
+<div class="kanban-card-title">
+    <a href="{% url 'support:ticket_detail' ticket.pk %}">{{ ticket.subject|truncatechars:45 }}</a>
+</div>
+<div class="kanban-card-meta">
+    <div>{{ ticket.ticket_number }}</div>
+    <div>{{ ticket.get_link_type_display }}: {{ ticket.link_label|truncatechars:35 }}</div>
+    <div class="{% if ticket.priority == 'urgent' %}priority-urgent{% elif ticket.priority == 'high' %}priority-high{% endif %}">
+        {{ ticket.get_priority_display }} · {{ ticket.opened_date|date:"d/m/Y" }}
+    </div>
+    {% if ticket.submitted_via_public %}
+    <div><i class="fas fa-globe me-1"></i>{{ ticket.requester_name|truncatechars:30 }}</div>
+    {% elif ticket.assigned_to %}
+    <div><i class="fas fa-user me-1"></i>{{ ticket.assigned_to.full_name }}</div>
+    {% endif %}
+</div>

@@ -759,6 +759,132 @@ class ProjectChecklistUpload(BaseModel):
         return name.endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.heic', '.heif'))
 
 
+class Inspection(BaseModel):
+    """Field inspection checklist linked to a project or AMC contract."""
+
+    LINK_TYPE_CHOICES = [
+        ('project', 'Project'),
+        ('amc', 'AMC'),
+    ]
+
+    inspection_number = models.CharField(max_length=50, unique=True, editable=False)
+    name = models.CharField(max_length=255)
+    link_type = models.CharField(max_length=20, choices=LINK_TYPE_CHOICES, default='project')
+    project = models.ForeignKey(
+        Project,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='inspections',
+    )
+    amc_contract = models.ForeignKey(
+        'contracts.Contract',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='inspections',
+    )
+    inspection_date = models.DateField()
+    notes = models.TextField(blank=True)
+    public_token = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        editable=False,
+        db_index=True,
+    )
+
+    class Meta:
+        ordering = ['-inspection_date', '-created_at']
+        verbose_name = 'Inspection'
+        verbose_name_plural = 'Inspections'
+
+    def __str__(self):
+        return f'{self.inspection_number} — {self.name}'
+
+    def save(self, *args, **kwargs):
+        if not self.inspection_number:
+            self.inspection_number = generate_number('INSPECTION', Inspection, 'inspection_number')
+        super().save(*args, **kwargs)
+
+    def clean(self):
+        errors = {}
+        if self.link_type == 'project':
+            if not self.project_id:
+                errors['project'] = 'Select a project.'
+            self.amc_contract = None
+        elif self.link_type == 'amc':
+            if not self.amc_contract_id:
+                errors['amc_contract'] = 'Select an AMC contract.'
+            self.project = None
+        if errors:
+            raise ValidationError(errors)
+
+    @property
+    def target_label(self):
+        if self.link_type == 'project' and self.project_id:
+            return f'{self.project.project_code} — {self.project.name}'
+        if self.link_type == 'amc' and self.amc_contract_id:
+            return f'{self.amc_contract.contract_number} — {self.amc_contract.name}'
+        return '—'
+
+    def ensure_public_token(self):
+        if not self.public_token:
+            self.public_token = uuid.uuid4()
+            self.save(update_fields=['public_token', 'updated_at'])
+        return self.public_token
+
+
+class InspectionChecklistItem(BaseModel):
+    """Checklist row on an inspection (green circle = complete)."""
+
+    inspection = models.ForeignKey(
+        Inspection,
+        on_delete=models.CASCADE,
+        related_name='checklist_items',
+    )
+    text = models.CharField(max_length=500)
+    item_date = models.DateField()
+    is_flagged_red = models.BooleanField(default=False)
+    sort_order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ['-item_date', '-sort_order', '-created_at']
+
+    def __str__(self):
+        return f'{self.inspection.inspection_number}: {self.text[:40]}'
+
+
+class InspectionChecklistUpload(BaseModel):
+    """Photo/file attached via the inspection public link."""
+
+    inspection = models.ForeignKey(
+        Inspection,
+        on_delete=models.CASCADE,
+        related_name='checklist_uploads',
+    )
+    checklist_item = models.ForeignKey(
+        InspectionChecklistItem,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='uploads',
+    )
+    file = models.FileField(upload_to='inspection_checklist/%Y/%m/', max_length=500)
+    original_filename = models.CharField(max_length=255, blank=True)
+    note = models.CharField(max_length=500, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.inspection.inspection_number}: {self.original_filename or self.file.name}'
+
+    @property
+    def is_probably_image(self):
+        name = (self.original_filename or self.file.name or '').lower()
+        return name.endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.heic', '.heif'))
+
+
 class ProjectInvoice(BaseModel):
     """
     Link between projects and sales invoices for revenue tracking.

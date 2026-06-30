@@ -144,7 +144,7 @@
             <h5 class="fw-semibold mb-2">
                 <i class="fas fa-file-invoice me-2 text-primary"></i>Sales estimates — defaults
             </h5>
-            <p class="text-muted small mb-3">Default signatures, PDF images, and project conversion behaviour. Client note and terms templates are managed in the section below.</p>
+            <p class="text-muted small mb-3">Default signatures, PDF images, and project conversion behaviour. Payment terms and terms templates are managed in the section below.</p>
 
             <h6 class="fw-semibold mb-2">Default signatures</h6>
             <p class="text-muted small mb-3">Uploaded images are copied automatically onto new estimates (users can still replace them per estimate).</p>
@@ -387,13 +387,13 @@
         <h5 class="fw-semibold mb-1">
             <i class="fas fa-file-invoice me-2 text-primary"></i>Estimate text templates
         </h5>
-        <p class="text-muted small mb-4">Manage reusable client notes and terms for new estimates. Pick a template to edit, or click <strong>New</strong> to create one.</p>
+        <p class="text-muted small mb-4">Manage reusable payment terms and terms &amp; conditions for new estimates. Pick a template to edit, or click <strong>New</strong> to create one.</p>
 
         <div class="row g-4">
             <div class="col-lg-6">
                 <div class="border rounded p-3 h-100 bg-light-subtle">
                     <div class="d-flex justify-content-between align-items-center mb-3">
-                        <h6 class="fw-semibold mb-0">Client note</h6>
+                        <h6 class="fw-semibold mb-0">Payment terms</h6>
                         <button type="button" class="btn btn-sm btn-outline-primary" id="cnNewBtn">
                             <i class="fas fa-plus me-1"></i>New
                         </button>
@@ -414,11 +414,11 @@
                         <input type="hidden" name="sort_order" id="cnSortOrder" value="0">
                         <div class="mb-3">
                             <label class="form-label" for="cnTemplateName">Template name</label>
-                            <input type="text" name="name" id="cnTemplateName" class="form-control" maxlength="120" required placeholder="e.g. Standard client note">
+                            <input type="text" name="name" id="cnTemplateName" class="form-control" maxlength="120" required placeholder="e.g. Standard payment terms">
                         </div>
                         <div class="mb-3">
                             <label class="form-label" for="cnTemplateBody">Text</label>
-                            <textarea name="body" id="cnTemplateBody" class="form-control" rows="6" placeholder="Client note text…"></textarea>
+                            <textarea name="body" id="cnTemplateBody" class="form-control" rows="6" placeholder="Payment terms text…"></textarea>
                         </div>
                         <div class="d-flex flex-wrap gap-3 mb-3">
                             <div class="form-check">
@@ -442,7 +442,7 @@
                         <input type="hidden" name="template_type" value="client_note">
                         <input type="hidden" name="template_id" id="cnDeleteTemplateId" value="">
                     </form>
-                    <p class="text-muted small mb-0 mt-3" id="cnEmptyHint"{% if client_note_templates %} style="display:none"{% endif %}>No templates yet. Click <strong>New</strong> to create your first client note template.</p>
+                    <p class="text-muted small mb-0 mt-3" id="cnEmptyHint"{% if client_note_templates %} style="display:none"{% endif %}>No templates yet. Click <strong>New</strong> to create your first payment terms template.</p>
                 </div>
             </div>
 

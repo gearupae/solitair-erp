@@ -483,7 +483,9 @@
                                 {% if estimate.show_brand_name_on_pdf %}<th>Brand</th>{% endif %}
                                 <th class="text-center">Qty</th>
                                 <th class="text-right">Rate</th>
-                                <th class="text-right">Line</th>
+                                {% if estimate.show_installation_cost_on_pdf %}<th class="text-right">Installation</th>{% endif %}
+                                <th class="text-right">Net</th>
+                                <th class="text-right">Total</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -494,34 +496,44 @@
                                 <td><strong>{{ group.name }}</strong></td>
                                 {% if estimate.show_brand_name_on_pdf %}<td></td>{% endif %}
                                 <td class="text-center">1.00</td>
+                                <td class="text-right"></td>
+                                {% if estimate.show_installation_cost_on_pdf %}<td></td>{% endif %}
                                 <td class="text-right">{{ group.line_subtotal|floatformat:2 }}</td>
                                 <td class="text-right">{{ group.line_total|floatformat:2 }}</td>
                             </tr>
                             {% else %}
                             {% if group.name %}
-                            <tr class="group-row"><td colspan="{% if estimate.show_brand_name_on_pdf %}6{% else %}5{% endif %}">{{ group.name }}</td></tr>
+                            <tr class="group-row"><td colspan="{{ pdf_pricing_cols }}">{{ group.name }}</td></tr>
                             {% endif %}
                             {% for row in group.items %}
                             <tr>
                                 <td>{{ row.index }}</td>
-                                <td>{{ row.item.description }}{% if row.item.inventory_item %} <span class="muted">({{ row.item.inventory_item.item_code }})</span>{% endif %}</td>
+                                <td>{{ row.item.description }}{% if row.item.inventory_item %} <span class="muted">({{ row.item.inventory_item.item_code }})</span>{% endif %}
+                                    {% if estimate.show_rates_on_pdf %}
+                                    <div class="muted" style="font-size:0.75rem;margin-top:2px;">{{ row.item.line_calc_summary }}</div>
+                                    {% endif %}
+                                </td>
                                 {% if estimate.show_brand_name_on_pdf %}
-                                <td>{% if row.item.inventory_item and row.item.inventory_item.brand %}{{ row.item.inventory_item.brand }}{% endif %}</td>
+                                <td>{{ row.item.display_brand }}</td>
                                 {% endif %}
                                 <td class="text-center">{{ row.item.quantity|floatformat:2 }}</td>
-                                <td class="text-right">{{ row.item.rate|floatformat:2 }}</td>
-                                <td class="text-right">{{ row.item.total|add:row.item.vat_amount|floatformat:2 }}</td>
+                                <td class="text-right">{{ row.item.effective_rate|floatformat:2 }}</td>
+                                {% if estimate.show_installation_cost_on_pdf %}
+                                <td class="text-right">{% if row.item.installation_cost %}{{ row.item.installation_cost|floatformat:2 }}{% endif %}</td>
+                                {% endif %}
+                                <td class="text-right">{{ row.item.line_net_excl_vat|floatformat:2 }}</td>
+                                <td class="text-right">{{ row.item.line_total_incl_vat|floatformat:2 }}</td>
                             </tr>
                             {% endfor %}
                             {% if group.name and estimate.show_group_totals_on_pdf %}
                             <tr>
-                                <td colspan="{% if estimate.show_brand_name_on_pdf %}5{% else %}4{% endif %}" class="text-right"><strong>Subtotal</strong></td>
+                                <td colspan="{{ pdf_pricing_subtotal_label_cols }}" class="text-right"><strong>Subtotal</strong></td>
                                 <td class="text-right"><strong>AED {{ group.line_total|floatformat:2 }}</strong></td>
                             </tr>
                             {% endif %}
                             {% endif %}
                             {% empty %}
-                            <tr><td colspan="{% if estimate.show_brand_name_on_pdf %}6{% else %}5{% endif %}" class="text-center muted" style="padding:2rem;">No items</td></tr>
+                            <tr><td colspan="{{ pdf_pricing_cols }}" class="text-center muted" style="padding:2rem;">No items</td></tr>
                             {% endfor %}
                         </tbody>
                     </table>
@@ -533,6 +545,7 @@
                                 <th>Description</th>
                                 {% if estimate.show_brand_name_on_pdf %}<th>Brand</th>{% endif %}
                                 <th class="text-center">Qty</th>
+                                {% if estimate.show_installation_cost_on_pdf %}<th class="text-right">Installation</th>{% endif %}
                             </tr>
                         </thead>
                         <tbody>
@@ -543,24 +556,32 @@
                                 <td><strong>{{ group.name }}</strong> <span class="muted">— AED {{ group.line_total|floatformat:2 }}</span></td>
                                 {% if estimate.show_brand_name_on_pdf %}<td></td>{% endif %}
                                 <td class="text-center">1.00</td>
+                                {% if estimate.show_installation_cost_on_pdf %}<td></td>{% endif %}
                             </tr>
                             {% else %}
                             {% if group.name %}
-                            <tr class="group-row"><td colspan="{% if estimate.show_brand_name_on_pdf %}4{% else %}3{% endif %}">{{ group.name }}</td></tr>
+                            <tr class="group-row"><td colspan="{{ pdf_compact_cols }}">{{ group.name }}</td></tr>
                             {% endif %}
                             {% for row in group.items %}
                             <tr>
                                 <td>{{ row.index }}</td>
-                                <td>{{ row.item.description }}{% if row.item.inventory_item %} <span class="muted">({{ row.item.inventory_item.item_code }})</span>{% endif %}</td>
+                                <td>{{ row.item.description }}{% if row.item.inventory_item %} <span class="muted">({{ row.item.inventory_item.item_code }})</span>{% endif %}
+                                    {% if estimate.show_rates_on_pdf %}
+                                    <div class="muted" style="font-size:0.75rem;margin-top:2px;">{{ row.item.line_calc_summary }}</div>
+                                    {% endif %}
+                                </td>
                                 {% if estimate.show_brand_name_on_pdf %}
-                                <td>{% if row.item.inventory_item and row.item.inventory_item.brand %}{{ row.item.inventory_item.brand }}{% endif %}</td>
+                                <td>{{ row.item.display_brand }}</td>
                                 {% endif %}
                                 <td class="text-center">{{ row.item.quantity|floatformat:2 }}</td>
+                                {% if estimate.show_installation_cost_on_pdf %}
+                                <td class="text-right">{% if row.item.installation_cost %}{{ row.item.installation_cost|floatformat:2 }}{% endif %}</td>
+                                {% endif %}
                             </tr>
                             {% endfor %}
                             {% endif %}
                             {% empty %}
-                            <tr><td colspan="{% if estimate.show_brand_name_on_pdf %}4{% else %}3{% endif %}" class="text-center muted" style="padding:2rem;">No items</td></tr>
+                            <tr><td colspan="{{ pdf_compact_cols }}" class="text-center muted" style="padding:2rem;">No items</td></tr>
                             {% endfor %}
                         </tbody>
                     </table>
@@ -610,7 +631,7 @@
 
                 {% if estimate.client_note %}
                 <div class="pub-note">
-                    <h3>Note</h3>
+                    <h3>Payment terms</h3>
                     <div>{{ estimate.client_note|linebreaks }}</div>
                 </div>
                 {% endif %}

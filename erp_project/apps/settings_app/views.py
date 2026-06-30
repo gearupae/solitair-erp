@@ -758,6 +758,7 @@ class CrmKanbanSettingsView(PermissionRequiredMixin, TemplateView):
             s.sort_order = int(request.POST.get('sort_order') or 0)
             s.is_active = request.POST.get('is_active') == 'on'
             s.converts_to_customer = request.POST.get('converts_to_customer') == 'on'
+            s.is_site_visit = request.POST.get('is_site_visit') == 'on'
             s.save()
             messages.success(request, f'Stage “{s.name}” saved.')
         elif action == 'delete' and request.POST.get('stage_id'):
@@ -768,6 +769,51 @@ class CrmKanbanSettingsView(PermissionRequiredMixin, TemplateView):
         else:
             messages.error(request, 'Invalid request.')
         return redirect('settings:crm_kanban')
+
+
+class SupportKanbanSettingsView(PermissionRequiredMixin, TemplateView):
+    """Configure support ticket pipeline columns."""
+
+    template_name = 'settings/support_kanban_stages.html'
+    module_name = 'settings'
+    permission_type = 'edit'
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        from apps.support.models import SupportTicketKanbanStage
+
+        ctx['title'] = 'Support pipeline (Kanban)'
+        ctx['stages'] = SupportTicketKanbanStage.objects.all().order_by('sort_order', 'id')
+        return ctx
+
+    def post(self, request, *args, **kwargs):
+        from apps.support.models import SupportTicketKanbanStage
+
+        action = request.POST.get('action')
+        if action == 'add':
+            name = (request.POST.get('name') or '').strip()[:80]
+            if not name:
+                messages.error(request, 'Stage name is required.')
+                return redirect('settings:support_kanban')
+            sort_order = int(request.POST.get('sort_order') or 0)
+            SupportTicketKanbanStage.objects.create(name=name, sort_order=sort_order)
+            messages.success(request, 'Stage added.')
+        elif action == 'save' and request.POST.get('stage_id'):
+            s = get_object_or_404(SupportTicketKanbanStage, pk=int(request.POST['stage_id']))
+            s.name = (request.POST.get('name') or '').strip()[:80] or s.name
+            s.sort_order = int(request.POST.get('sort_order') or 0)
+            s.is_active = request.POST.get('is_active') == 'on'
+            s.is_closed = request.POST.get('is_closed') == 'on'
+            s.save()
+            messages.success(request, f'Stage “{s.name}” saved.')
+        elif action == 'delete' and request.POST.get('stage_id'):
+            s = get_object_or_404(SupportTicketKanbanStage, pk=int(request.POST['stage_id']))
+            nm = s.name
+            s.delete()
+            messages.success(request, f'Stage “{nm}” deleted.')
+        else:
+            messages.error(request, 'Invalid request.')
+        return redirect('settings:support_kanban')
 
 
 class SubGroupExpenseTypeSettingsView(PermissionRequiredMixin, TemplateView):

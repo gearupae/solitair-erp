@@ -1,0 +1,358 @@
+{% extends 'base.html' %}
+
+{% block extra_css %}
+<style>
+.support-kanban-board-row {
+    --support-kanban-col-min: 16rem;
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 0.5rem;
+    align-items: stretch;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: 0.25rem;
+}
+.support-kanban-board-row .kanban-col {
+    flex: 1 1 0;
+    min-width: var(--support-kanban-col-min);
+}
+.kanban-col {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    min-height: 200px;
+    display: flex;
+    flex-direction: column;
+}
+.kanban-col-header {
+    padding: 0.65rem 0.85rem;
+    font-weight: 600;
+    font-size: 0.8125rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    border-bottom: 1px solid #e2e8f0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.kanban-col-body {
+    padding: 0.4rem;
+    flex: 1;
+    min-height: 120px;
+}
+.kanban-col--themed {
+    background: var(--kb-body-bg, #f8fafc);
+    border-color: var(--kb-card-border, #e2e8f0);
+}
+.kanban-col--themed .kanban-col-header {
+    background: var(--kb-header-bg, #f3f4f6);
+    color: var(--kb-header-color, #374151);
+    border-bottom-color: var(--kb-card-border, #e2e8f0);
+}
+.kanban-col--themed .kanban-col-header .badge {
+    background: var(--kb-accent, #6b7280) !important;
+    color: #fff;
+}
+.kanban-card {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 0.55rem 0.65rem;
+    margin-bottom: 0.35rem;
+    cursor: grab;
+}
+.kanban-card.kanban-card--readonly { cursor: default; }
+.kanban-card-title { font-weight: 600; font-size: 0.9rem; margin-bottom: 0.35rem; }
+.kanban-card-meta { font-size: 0.75rem; color: #64748b; line-height: 1.45; }
+.kanban-col-body.kanban-drop-hover { outline: 2px dashed #94a3b8; outline-offset: 2px; }
+.priority-urgent { color: #dc2626; font-weight: 600; }
+.priority-high { color: #d97706; font-weight: 600; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+    <div>
+        <h4 class="mb-1 fw-bold">{{ title }}</h4>
+        <p class="text-muted mb-0">Customer support tickets — list view or pipeline board</p>
+    </div>
+    <div class="d-flex gap-2 flex-wrap align-items-center">
+        <div class="btn-group" role="tablist" aria-label="View mode">
+            <a href="#supportTabList" class="btn btn-primary active" id="support-tab-list" data-bs-toggle="tab" role="tab" aria-controls="supportTabList" aria-selected="true">List</a>
+            <a href="#supportTabKanban" class="btn btn-outline-primary" id="support-tab-kanban" data-bs-toggle="tab" role="tab" aria-controls="supportTabKanban" aria-selected="false" tabindex="-1">Pipeline</a>
+        </div>
+        {% if can_create %}
+        <a href="{% url 'support:ticket_create' %}" class="btn btn-primary">
+            <i class="fas fa-plus me-2"></i>New Ticket
+        </a>
+        {% endif %}
+        <a href="{% url 'support:public_create' %}" class="btn btn-outline-secondary" target="_blank" rel="noopener" title="Public page for customers to submit support requests">
+            <i class="fas fa-link me-1"></i>Public link
+        </a>
+    </div>
+</div>
+
+<div class="tab-content">
+    <div class="tab-pane fade" id="supportTabKanban" role="tabpanel" aria-labelledby="support-tab-kanban" tabindex="0">
+        <div class="card border-0 shadow-sm mb-2">
+            <div class="card-body py-2 px-2">
+                {% if can_configure_kanban %}
+                <div class="d-flex justify-content-end mb-3">
+                    <a href="{% url 'settings:support_kanban' %}" class="btn btn-light btn-sm"><i class="fas fa-cog me-1"></i>Pipeline settings</a>
+                </div>
+                {% endif %}
+                <form id="supportKanbanCsrf" class="d-none">{% csrf_token %}</form>
+                <div class="support-kanban-board-row">
+                    <div class="kanban-col kanban-col--themed" style="{{ kanban_unassigned_style }}">
+                        <div class="kanban-col-header">Unassigned <span class="badge">{{ kanban_tickets_unassigned|length }}</span></div>
+                        <div class="kanban-col-body support-kanban-list" data-stage-id="">
+                            {% for ticket in kanban_tickets_unassigned %}
+                            <div class="kanban-card support-kanban-card{% if not can_edit %} kanban-card--readonly{% endif %}" data-ticket-id="{{ ticket.pk }}">
+                                {% include 'support/includes/kanban_ticket_card.html' with ticket=ticket %}
+                            </div>
+                            {% empty %}
+                            <p class="text-muted small mb-0 py-2 text-center">No tickets</p>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% for col in kanban_columns %}
+                    <div class="kanban-col kanban-col--themed" style="{{ col.theme_style }}">
+                        <div class="kanban-col-header">{{ col.stage.name }} <span class="badge">{{ col.tickets|length }}</span></div>
+                        <div class="kanban-col-body support-kanban-list" data-stage-id="{{ col.stage.pk }}">
+                            {% for ticket in col.tickets %}
+                            <div class="kanban-card support-kanban-card{% if not can_edit %} kanban-card--readonly{% endif %}" data-ticket-id="{{ ticket.pk }}">
+                                {% include 'support/includes/kanban_ticket_card.html' with ticket=ticket %}
+                            </div>
+                            {% empty %}
+                            <p class="text-muted small mb-0 py-2 text-center">No tickets</p>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                    {% if kanban_closed_stage %}
+                    <div class="kanban-col kanban-col--themed" style="{{ kanban_closed_style }}">
+                        <div class="kanban-col-header">{{ kanban_closed_stage.name }} <span class="badge">Closed</span></div>
+                        <div id="supportKanbanClosed" class="kanban-col-body support-kanban-list support-kanban-closed-body" data-stage-closed="1">
+                            <p class="text-muted small mb-0 py-2 text-center">Drop here to close.</p>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="tab-pane fade show active" id="supportTabList" role="tabpanel" aria-labelledby="support-tab-list" tabindex="0">
+        <div class="row g-3 mb-4">
+            <div class="col-md-3">
+                <div class="card"><div class="card-body">
+                    <p class="text-muted mb-0 small">Total tickets</p>
+                    <h5 class="mb-0 fw-bold">{{ total_tickets }}</h5>
+                </div></div>
+            </div>
+            <div class="col-md-3">
+                <div class="card"><div class="card-body">
+                    <p class="text-muted mb-0 small">Open</p>
+                    <h5 class="mb-0 fw-bold">{{ open_tickets }}</h5>
+                </div></div>
+            </div>
+            <div class="col-md-3">
+                <div class="card"><div class="card-body">
+                    <p class="text-muted mb-0 small">Urgent</p>
+                    <h5 class="mb-0 fw-bold text-danger">{{ urgent_tickets }}</h5>
+                </div></div>
+            </div>
+            <div class="col-md-3">
+                <div class="card"><div class="card-body">
+                    <p class="text-muted mb-0 small">Unassigned</p>
+                    <h5 class="mb-0 fw-bold">{{ unassigned_tickets }}</h5>
+                </div></div>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-body py-3">
+                <form method="get" class="row g-3 align-items-end">
+                    <div class="col-md-3">
+                        <input type="text" name="search" class="form-control" placeholder="Search tickets..." value="{{ request.GET.search }}">
+                    </div>
+                    <div class="col-md-2">
+                        <select name="priority" class="form-select">
+                            <option value="">All priorities</option>
+                            {% for value, label in priority_choices %}
+                            <option value="{{ value }}" {% if request.GET.priority == value %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <select name="link_type" class="form-select">
+                            <option value="">All types</option>
+                            {% for value, label in link_type_choices %}
+                            <option value="{{ value }}" {% if request.GET.link_type == value %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <select name="assigned_to" class="form-select">
+                            <option value="">All assignees</option>
+                            {% for emp in assignee_choices %}
+                            <option value="{{ emp.pk }}" {% if request.GET.assigned_to == emp.pk|stringformat:"s" %}selected{% endif %}>{{ emp.full_name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <button type="submit" class="btn btn-primary me-2"><i class="fas fa-filter me-1"></i>Filter</button>
+                        <a href="{% url 'support:ticket_list' %}" class="btn btn-light">Clear</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>Ticket #</th>
+                                <th>Subject</th>
+                                <th>Linked to</th>
+                                <th>Opened</th>
+                                <th>Priority</th>
+                                <th>Stage</th>
+                                <th>Assigned to</th>
+                                <th class="text-center" width="140">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for ticket in tickets %}
+                            <tr>
+                                <td class="fw-medium"><a href="{% url 'support:ticket_detail' ticket.pk %}">{{ ticket.ticket_number }}</a></td>
+                                <td>{{ ticket.subject|truncatechars:50 }}</td>
+                                <td>
+                                    <span class="badge bg-light text-dark">{{ ticket.get_link_type_display }}</span>
+                                    {{ ticket.link_label|truncatechars:40 }}
+                                </td>
+                                <td>{{ ticket.opened_date|date:"d/m/Y" }}</td>
+                                <td>
+                                    {% if ticket.priority == 'urgent' %}<span class="badge bg-danger">Urgent</span>
+                                    {% elif ticket.priority == 'high' %}<span class="badge bg-warning text-dark">High</span>
+                                    {% elif ticket.priority == 'medium' %}<span class="badge bg-info">Medium</span>
+                                    {% else %}<span class="badge bg-secondary">Low</span>{% endif %}
+                                </td>
+                                <td>{{ ticket.kanban_stage.name|default:"Unassigned" }}</td>
+                                <td>{{ ticket.assigned_to.full_name|default:"—" }}</td>
+                                <td class="text-center">
+                                    <a href="{% url 'support:ticket_detail' ticket.pk %}" class="btn btn-action btn-outline-primary" title="View"><i class="fas fa-eye"></i></a>
+                                    {% if can_edit %}
+                                    <a href="{% url 'support:ticket_edit' ticket.pk %}" class="btn btn-action btn-outline-primary" title="Edit"><i class="fas fa-edit"></i></a>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="8" class="text-center text-muted py-4">No support tickets yet.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% if is_paginated %}
+        <nav class="mt-3" aria-label="Support tickets pagination">
+            <ul class="pagination pagination-sm justify-content-center mb-0">
+                {% if page_obj.has_previous %}
+                <li class="page-item"><a class="page-link" href="?page={{ page_obj.previous_page_number }}">Previous</a></li>
+                {% endif %}
+                <li class="page-item disabled"><span class="page-link">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span></li>
+                {% if page_obj.has_next %}
+                <li class="page-item"><a class="page-link" href="?page={{ page_obj.next_page_number }}">Next</a></li>
+                {% endif %}
+            </ul>
+        </nav>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    document.addEventListener('DOMContentLoaded', function () {
+        var board = document.getElementById('support-tab-kanban');
+        var list = document.getElementById('support-tab-list');
+        function syncTabs() {
+            if (!board || !list) return;
+            var boardOn = board.classList.contains('active');
+            board.classList.toggle('btn-primary', boardOn);
+            board.classList.toggle('btn-outline-primary', !boardOn);
+            list.classList.toggle('btn-primary', !boardOn);
+            list.classList.toggle('btn-outline-primary', boardOn);
+            list.setAttribute('aria-selected', boardOn ? 'false' : 'true');
+            board.setAttribute('aria-selected', boardOn ? 'true' : 'false');
+        }
+        if (window.location.hash === '#supportTabKanban' && board && window.bootstrap && bootstrap.Tab) {
+            bootstrap.Tab.getOrCreateInstance(board).show();
+        } else if (window.location.hash === '#supportTabList' && list && window.bootstrap && bootstrap.Tab) {
+            bootstrap.Tab.getOrCreateInstance(list).show();
+        }
+        syncTabs();
+        document.addEventListener('shown.bs.tab', function (e) {
+            if (e.target !== board && e.target !== list) return;
+            syncTabs();
+        });
+    });
+})();
+</script>
+{% if can_edit %}
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+<script>
+(function () {
+    function csrf() {
+        var el = document.querySelector('#supportKanbanCsrf input[name=csrfmiddlewaretoken]');
+        return el ? el.value : '';
+    }
+    function postMove(ticketId, stagePayload) {
+        return fetch('{% url "support:kanban_move" %}', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf() },
+            body: JSON.stringify({ ticket_id: ticketId, stage_id: stagePayload })
+        }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, json: j }; }); });
+    }
+    document.addEventListener('DOMContentLoaded', function () {
+        if (typeof Sortable === 'undefined') return;
+        document.querySelectorAll('.support-kanban-list').forEach(function (el) {
+            var isClosed = el.getAttribute('data-stage-closed');
+            Sortable.create(el, {
+                group: { name: 'support-tickets', pull: isClosed ? false : true, put: true },
+                animation: 150,
+                draggable: '.support-kanban-card',
+                onEnd: function (evt) {
+                    if (evt.from === evt.to) return;
+                    var item = evt.item;
+                    var ticketId = item.getAttribute('data-ticket-id');
+                    if (!ticketId) return;
+                    if (evt.to.getAttribute('data-stage-closed')) {
+                        postMove(ticketId, 'closed').then(function (res) {
+                            if (!res.ok) {
+                                window.alert((res.json && res.json.error) || 'Could not close ticket.');
+                                evt.from.appendChild(item);
+                            }
+                        }).catch(function () { evt.from.appendChild(item); });
+                        return;
+                    }
+                    var sid = evt.to.getAttribute('data-stage-id');
+                    var payload = sid === '' || sid === null ? 'unassigned' : parseInt(sid, 10);
+                    postMove(ticketId, payload).then(function (res) {
+                        if (!res.ok) {
+                            window.alert((res.json && res.json.error) || 'Could not move ticket.');
+                            evt.from.appendChild(item);
+                        }
+                    }).catch(function () { evt.from.appendChild(item); });
+                }
+            });
+        });
+    });
+})();
+</script>
+{% endif %}
+{% endblock %}

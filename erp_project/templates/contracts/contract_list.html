@@ -373,7 +373,9 @@
                 <tbody>
                     {% for c in contracts %}
                     <tr>
-                        <td class="text-nowrap fw-medium">{{ c.contract_number }}</td>
+                        <td class="text-nowrap fw-medium">
+                            <a href="{% url 'contracts:contract_detail' c.pk %}" class="text-decoration-none">{{ c.contract_number }}</a>
+                        </td>
                         {% if can_edit %}
                         <td>
                             <form method="post" action="{% url 'contracts:contract_inline_update' c.pk %}" class="contract-inline-field-form">
@@ -451,7 +453,9 @@
                             </form>
                         </td>
                         {% else %}
-                        <td>{{ c.name }}</td>
+                        <td>
+                            <a href="{% url 'contracts:contract_detail' c.pk %}" class="text-decoration-none fw-medium">{{ c.name }}</a>
+                        </td>
                         <td>{% if c.customer %}{{ c.customer.name }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
                         <td class="text-end">AED {{ c.contract_value|floatformat:2 }}</td>
                         <td>{{ c.start_date|date:"d/m/Y" }}</td>
@@ -470,6 +474,7 @@
                         </td>
                         {% endif %}
                         <td class="text-center text-nowrap">
+                            <a href="{% url 'contracts:contract_detail' c.pk %}" class="btn btn-action btn-outline-info" title="Overview"><i class="fas fa-eye"></i></a>
                             <a href="{% url 'contracts:contract_pdf' c.pk %}" class="btn btn-action btn-outline-secondary" title="PDF" target="_blank" rel="noopener"><i class="fas fa-file-pdf"></i></a>
                             {% if can_edit %}
                             <a href="{% url 'contracts:contract_edit' c.pk %}" class="btn btn-action btn-outline-primary" title="Edit"><i class="fas fa-edit"></i></a>

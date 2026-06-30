@@ -1,0 +1,432 @@
+{% extends 'minimal_public.html' %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block body_class %} ops-pub-page{% endblock %}
+{% block container_class %} ops-pub-container{% endblock %}
+{% block container_style %}max-width: 900px;{% endblock %}
+
+{% block extra_css %}
+<style>
+:root {
+    --ops-bw-black: #111111;
+    --ops-bw-gray-900: #1a1a1a;
+    --ops-bw-gray-700: #404040;
+    --ops-bw-gray-500: #737373;
+    --ops-bw-gray-300: #d4d4d4;
+    --ops-bw-gray-100: #f5f5f5;
+    --ops-bw-white: #ffffff;
+}
+
+body.ops-pub-page {
+    background: var(--ops-bw-white);
+    color: var(--ops-bw-black);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+}
+
+.ops-pub-container {
+    padding-top: 2rem !important;
+    padding-bottom: 3rem !important;
+}
+
+/* Header */
+.ops-pub-brand {
+    text-align: center;
+    padding-bottom: 1.5rem;
+    margin-bottom: 1.75rem;
+    border-bottom: 2px solid var(--ops-bw-black);
+}
+.ops-pub-brand h1 {
+    font-size: 1.35rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    margin: 0 0 0.35rem;
+    color: var(--ops-bw-black);
+}
+.ops-pub-brand p {
+    margin: 0;
+    font-size: 0.8125rem;
+    color: var(--ops-bw-gray-500);
+    letter-spacing: 0.02em;
+}
+
+/* Filter bar */
+.ops-pub-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 0.75rem 1rem;
+    padding: 1rem 1.15rem;
+    margin-bottom: 1.75rem;
+    border: 1px solid var(--ops-bw-black);
+    background: var(--ops-bw-gray-100);
+}
+.ops-pub-toolbar label {
+    display: block;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--ops-bw-gray-700);
+    margin-bottom: 0.3rem;
+}
+.ops-pub-toolbar .form-select,
+.ops-pub-toolbar .form-control {
+    border: 1px solid var(--ops-bw-black);
+    border-radius: 0;
+    background: var(--ops-bw-white);
+    color: var(--ops-bw-black);
+    font-size: 0.875rem;
+    min-height: 36px;
+}
+.ops-pub-toolbar .form-select:focus,
+.ops-pub-toolbar .form-control:focus {
+    border-color: var(--ops-bw-black);
+    box-shadow: 0 0 0 2px rgba(17, 17, 17, 0.12);
+}
+.ops-pub-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 36px;
+    padding: 0 1.1rem;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    border: 1px solid var(--ops-bw-black);
+    background: var(--ops-bw-black);
+    color: var(--ops-bw-white);
+    text-decoration: none;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+}
+.ops-pub-btn:hover {
+    background: var(--ops-bw-white);
+    color: var(--ops-bw-black);
+}
+.ops-pub-btn--ghost {
+    background: var(--ops-bw-white);
+    color: var(--ops-bw-black);
+}
+.ops-pub-btn--ghost:hover {
+    background: var(--ops-bw-black);
+    color: var(--ops-bw-white);
+}
+.ops-pub-toolbar-actions {
+    margin-left: auto;
+    display: flex;
+    gap: 0.5rem;
+    align-items: flex-end;
+}
+
+/* Day sections */
+.ops-pub-day {
+    margin-bottom: 2rem;
+}
+.ops-pub-day:last-child {
+    margin-bottom: 0;
+}
+.ops-pub-day-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding: 0.65rem 0;
+    margin-bottom: 0.5rem;
+    border-bottom: 1px solid var(--ops-bw-gray-300);
+}
+.ops-pub-day-head h2 {
+    font-size: 0.9375rem;
+    font-weight: 700;
+    margin: 0;
+    color: var(--ops-bw-black);
+    letter-spacing: 0.02em;
+}
+.ops-pub-today-tag {
+    font-size: 0.625rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 0.2rem 0.55rem;
+    background: var(--ops-bw-black);
+    color: var(--ops-bw-white);
+}
+
+/* Table */
+.ops-pub-table-wrap {
+    border: 1px solid var(--ops-bw-black);
+    overflow-x: auto;
+}
+.ops-pub-table {
+    width: 100%;
+    margin: 0;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+}
+.ops-pub-table thead th {
+    background: var(--ops-bw-black);
+    color: var(--ops-bw-white);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding: 0.65rem 1rem;
+    border: none;
+    white-space: nowrap;
+}
+.ops-pub-table tbody td {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--ops-bw-gray-300);
+    vertical-align: top;
+    color: var(--ops-bw-black);
+}
+.ops-pub-table tbody tr:last-child td {
+    border-bottom: none;
+}
+.ops-pub-table tbody tr:nth-child(even) {
+    background: var(--ops-bw-gray-100);
+}
+.ops-pub-table .col-staff {
+    font-weight: 600;
+    min-width: 9rem;
+}
+.ops-pub-table .col-time {
+    white-space: nowrap;
+    color: var(--ops-bw-gray-700);
+    font-variant-numeric: tabular-nums;
+}
+.ops-pub-table .col-type {
+    white-space: nowrap;
+}
+.ops-pub-type {
+    display: inline-block;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 0.15rem 0.45rem;
+    border: 1px solid var(--ops-bw-black);
+    color: var(--ops-bw-black);
+    background: var(--ops-bw-white);
+}
+.ops-pub-table .col-assignment {
+    color: var(--ops-bw-gray-900);
+}
+.ops-pub-table .col-notes {
+    font-size: 0.8125rem;
+    color: var(--ops-bw-gray-500);
+}
+.ops-pub-link {
+    color: var(--ops-bw-black);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+.ops-pub-link:hover {
+    color: var(--ops-bw-gray-700);
+}
+
+/* Empty state */
+.ops-pub-empty {
+    text-align: center;
+    padding: 2.5rem 1.5rem;
+    border: 1px dashed var(--ops-bw-gray-300);
+    color: var(--ops-bw-gray-500);
+    font-size: 0.875rem;
+}
+.ops-pub-empty-day {
+    padding: 1rem;
+    text-align: center;
+    font-size: 0.8125rem;
+    color: var(--ops-bw-gray-500);
+    border: 1px dashed var(--ops-bw-gray-300);
+    background: var(--ops-bw-gray-100);
+}
+
+/* Footer */
+.ops-pub-footer {
+    margin-top: 2.5rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--ops-bw-gray-300);
+    text-align: center;
+    font-size: 0.75rem;
+    color: var(--ops-bw-gray-500);
+    letter-spacing: 0.03em;
+}
+
+@media (max-width: 576px) {
+    .ops-pub-toolbar-actions {
+        margin-left: 0;
+        width: 100%;
+    }
+    .ops-pub-toolbar-actions .ops-pub-btn {
+        flex: 1;
+    }
+    .ops-pub-table thead {
+        display: none;
+    }
+    .ops-pub-table tbody tr {
+        display: block;
+        padding: 0.75rem 1rem;
+        border-bottom: 1px solid var(--ops-bw-gray-300);
+    }
+    .ops-pub-table tbody tr:nth-child(even) {
+        background: var(--ops-bw-gray-100);
+    }
+    .ops-pub-table tbody td {
+        display: block;
+        padding: 0.2rem 0;
+        border: none;
+    }
+    .ops-pub-table tbody td::before {
+        content: attr(data-label);
+        display: block;
+        font-size: 0.625rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--ops-bw-gray-500);
+        margin-bottom: 0.15rem;
+    }
+    .ops-pub-table .col-staff {
+        font-size: 1rem;
+        margin-bottom: 0.35rem;
+    }
+    .ops-pub-table .col-staff::before {
+        display: none !important;
+    }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<header class="ops-pub-brand">
+    <h1>Staff Duty Schedule</h1>
+    <p>Field assignments · updated live</p>
+</header>
+
+<form method="get" class="ops-pub-toolbar" id="pubScheduleForm">
+    <div>
+        <label for="pubViewMode">View</label>
+        <select name="view" class="form-select form-select-sm" id="pubViewMode" style="min-width: 7.5rem;">
+            <option value="day" {% if view_mode == 'day' %}selected{% endif %}>Single day</option>
+            <option value="period" {% if view_mode == 'period' %}selected{% endif %}>Date range</option>
+        </select>
+    </div>
+    <div class="day-fields" {% if view_mode != 'day' %}style="display:none"{% endif %}>
+        <label for="pubDate">Date</label>
+        <input type="date" name="date" id="pubDate" class="form-control form-control-sm" value="{{ selected_date|date:'Y-m-d' }}">
+    </div>
+    <div class="period-fields" {% if view_mode != 'period' %}style="display:none"{% endif %}>
+        <label for="pubDateFrom">From</label>
+        <input type="date" name="date_from" id="pubDateFrom" class="form-control form-control-sm" value="{{ period_start|date:'Y-m-d' }}">
+    </div>
+    <div class="period-fields" {% if view_mode != 'period' %}style="display:none"{% endif %}>
+        <label for="pubDateTo">To</label>
+        <input type="date" name="date_to" id="pubDateTo" class="form-control form-control-sm" value="{{ period_end|date:'Y-m-d' }}">
+    </div>
+    <div class="ops-pub-toolbar-actions">
+        <button type="submit" class="ops-pub-btn">Show</button>
+        {% if view_mode == 'day' %}
+        <a href="?view=day&date={{ today|date:'Y-m-d' }}" class="ops-pub-btn ops-pub-btn--ghost">Today</a>
+        {% endif %}
+    </div>
+</form>
+
+{% if not schedules %}
+<div class="ops-pub-empty">No staff scheduled for this period.</div>
+{% else %}
+{% for day in days_data %}
+<section class="ops-pub-day">
+    <div class="ops-pub-day-head">
+        <h2>{{ day.date|date:"l, d F Y" }}</h2>
+        {% if day.date == today %}<span class="ops-pub-today-tag">Today</span>{% endif %}
+    </div>
+
+    {% if day.schedules %}
+    <div class="ops-pub-table-wrap">
+        <table class="ops-pub-table">
+            <thead>
+                <tr>
+                    <th class="col-staff">Staff</th>
+                    <th class="col-time">Time</th>
+                    <th class="col-type">Type</th>
+                    <th class="col-assignment">Project / AMC</th>
+                    <th class="col-location">Location</th>
+                    <th class="col-contact">Contact</th>
+                    <th class="col-notes">Notes</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for s in day.schedules %}
+                <tr>
+                    <td class="col-staff" data-label="Staff">{{ s.employee.full_name }}</td>
+                    <td class="col-time" data-label="Time">{{ s.time_display }}</td>
+                    <td class="col-type" data-label="Type">
+                        <span class="ops-pub-type">{{ s.get_link_type_display }}</span>
+                    </td>
+                    <td class="col-assignment" data-label="Assignment">{{ s.target_label }}</td>
+                    <td class="col-location" data-label="Location">
+                        {% if s.location %}
+                        <a href="{{ s.location_maps_url }}" class="ops-pub-link" target="_blank" rel="noopener noreferrer">{{ s.location }}</a>
+                        {% else %}—{% endif %}
+                    </td>
+                    <td class="col-contact" data-label="Contact">
+                        {% if s.contact_person_name or s.contact_person_phone %}
+                        {% if s.contact_person_name %}{{ s.contact_person_name }}{% endif %}
+                        {% if s.contact_person_phone %}
+                        <br><a href="{{ s.contact_phone_tel_href }}" class="ops-pub-link">{{ s.contact_person_phone }}</a>
+                        {% endif %}
+                        {% else %}—{% endif %}
+                    </td>
+                    <td class="col-notes" data-label="Notes">{% if s.notes %}{{ s.notes }}{% else %}—{% endif %}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="ops-pub-empty-day">No assignments this day.</div>
+    {% endif %}
+</section>
+{% endfor %}
+{% endif %}
+
+<footer class="ops-pub-footer">
+    Gearup Operations · {{ today|date:"d M Y" }}
+</footer>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    var viewMode = document.getElementById('pubViewMode');
+    var form = document.getElementById('pubScheduleForm');
+
+    function syncFields() {
+        var isPeriod = viewMode && viewMode.value === 'period';
+        document.querySelectorAll('.day-fields').forEach(function (el) {
+            el.style.display = isPeriod ? 'none' : '';
+        });
+        document.querySelectorAll('.period-fields').forEach(function (el) {
+            el.style.display = isPeriod ? '' : 'none';
+        });
+    }
+
+    viewMode?.addEventListener('change', syncFields);
+
+    form?.addEventListener('submit', function () {
+        var isPeriod = viewMode && viewMode.value === 'period';
+        if (isPeriod) {
+            document.getElementById('pubDate')?.removeAttribute('name');
+        } else {
+            document.getElementById('pubDateFrom')?.removeAttribute('name');
+            document.getElementById('pubDateTo')?.removeAttribute('name');
+        }
+    });
+})();
+</script>
+{% endblock %}
