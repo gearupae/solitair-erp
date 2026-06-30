@@ -11,6 +11,7 @@ from apps.projects.gatepass_alerts import get_gatepass_dashboard_alerts
 from apps.fleet.fleet_alerts import get_fleet_dashboard_alerts
 from apps.core.compliance_service import get_compliance_dashboard_alerts, sync_compliance_notifications
 from apps.crm.dashboard_notifications import get_dashboard_notifications, sync_dashboard_notifications
+from apps.core.dashboard_pending_cards import get_dashboard_pending_cards
 
 
 @login_required
@@ -128,6 +129,7 @@ def dashboard(request):
     context['fleet_expiry_alerts'] = get_fleet_dashboard_alerts(request.user)
     context['dashboard_notifications'] = get_dashboard_notifications(request.user)
     sync_dashboard_notifications(request.user, context['dashboard_notifications'])
+    context['dashboard_pending_cards'] = get_dashboard_pending_cards(request.user)
     context['compliance_alerts'] = get_compliance_dashboard_alerts(request.user)
     sync_compliance_notifications(request.user, context['compliance_alerts'])
     context['fleet_can_edit'] = request.user.is_superuser or PermissionChecker.has_permission(

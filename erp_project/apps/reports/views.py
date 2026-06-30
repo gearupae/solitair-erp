@@ -16,6 +16,8 @@ from apps.core.utils import PermissionChecker
 from apps.projects.models import Project
 
 from .lead_report import build_lead_report
+from .project_report_actual_invoice import build_project_actual_invoice_report
+from .project_report_actual_value import build_project_actual_value_report
 from .project_report_customer import build_project_report_customer, project_choices_for_report as customer_project_choices
 from .project_report_period import build_project_report_period
 from .project_report_internal import build_project_report_internal, project_choices_for_report
@@ -72,6 +74,30 @@ def _parse_period_request(request):
     if start > end:
         start, end = end, start
     return start, end
+
+
+def _project_reports_permission(request):
+    return (
+        request.user.is_superuser
+        or PermissionChecker.has_permission(request.user, 'reports', 'view')
+        or PermissionChecker.has_permission(request.user, 'projects', 'view')
+    )
+
+
+def _parse_month_filter(request, start_date, end_date):
+    """Optional ?month=YYYY-MM overrides the date range to that calendar month."""
+    raw = (request.GET.get('month') or '').strip()
+    if not raw:
+        return start_date, end_date, ''
+    try:
+        year_str, month_str = raw.split('-', 1)
+        year, month = int(year_str), int(month_str)
+        from calendar import monthrange
+
+        last_day = monthrange(year, month)[1]
+        return date(year, month, 1), date(year, month, last_day), raw
+    except (ValueError, TypeError):
+        return start_date, end_date, raw
 
 
 def _parse_period(request):
@@ -211,6 +237,44 @@ def project_report_period(request):
     )
     context['title'] = 'Period Wise Report'
     return render(request, 'reports/project_report_period.html', context)
+
+
+@login_required
+def project_report_actual_invoice(request):
+    if not _project_reports_permission(request):
+        messages.error(request, 'Permission denied.')
+        return redirect('dashboard')
+
+    start_date, end_date = _parse_period(request)
+    status = (request.GET.get('status') or '').strip()
+    context = build_project_actual_invoice_report(
+        start_date=start_date,
+        end_date=end_date,
+        status=status,
+    )
+    context['title'] = 'Project Actual Invoice Report'
+    return render(request, 'reports/project_report_actual_invoice.html', context)
+
+
+@login_required
+def project_report_actual_value(request):
+    if not _project_reports_permission(request):
+        messages.error(request, 'Permission denied.')
+        return redirect('dashboard')
+
+    start_date, end_date = _parse_period(request)
+    start_date, end_date, month_filter = _parse_month_filter(request, start_date, end_date)
+    status = (request.GET.get('status') or '').strip()
+    monthly = (request.GET.get('monthly') or '').strip() in ('1', 'true', 'on', 'yes')
+    context = build_project_actual_value_report(
+        start_date=start_date,
+        end_date=end_date,
+        status=status,
+        monthly=monthly,
+    )
+    context['title'] = 'Actual Project Value Report'
+    context['month_filter'] = month_filter
+    return render(request, 'reports/project_report_actual_value.html', context)
 
 
 class ProjectForecastingView(LoginRequiredMixin, View):

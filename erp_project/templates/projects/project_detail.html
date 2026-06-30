@@ -645,12 +645,12 @@
                 <h6 class="mb-0 fw-semibold"><i class="fas fa-tags me-2 text-dark"></i>Estimated vs actual expenses</h6>
             </div>
             <div class="card-body pt-3">
-                <h6 class="text-muted text-uppercase small fw-semibold mb-2">Estimated <span class="fw-normal text-lowercase">(from quotation)</span></h6>
+                <h6 class="text-muted text-uppercase small fw-semibold mb-2">Estimated <span class="fw-normal text-lowercase">(from quotation, excl. VAT)</span></h6>
                 {% if estimated_expense_rows %}
                 {% include 'projects/partials/expense_amount_grid.html' with rows=estimated_expense_rows %}
                 {% if estimated_expense_rows|length > 1 %}
                 <div class="project-expense-section-total d-flex justify-content-between align-items-center mb-3">
-                    <span class="text-muted text-uppercase small fw-semibold">Total estimated</span>
+                    <span class="text-muted text-uppercase small fw-semibold">Total estimated (excl. VAT)</span>
                     <span class="fw-bold text-dark">AED {{ estimated_expense_grand_total|floatformat:2 }}</span>
                 </div>
                 {% else %}
@@ -661,10 +661,10 @@
                 {% else %}
                 <p class="text-muted small mb-3">No quotation linked to this project.</p>
                 {% endif %}
-                <h6 class="text-muted text-uppercase small fw-semibold mb-2">Actual</h6>
+                <h6 class="text-muted text-uppercase small fw-semibold mb-2">Actual <span class="fw-normal text-lowercase">(excl. VAT)</span></h6>
                 {% include 'projects/partials/expense_amount_grid.html' with rows=actual_expense_rows %}
                 <div class="project-expense-section-total d-flex justify-content-between align-items-center">
-                    <span class="text-muted text-uppercase small fw-semibold">Total actual</span>
+                    <span class="text-muted text-uppercase small fw-semibold">Total actual (excl. VAT)</span>
                     <span class="fw-bold text-dark">AED {{ actual_expense_grand_total|floatformat:2 }}</span>
                 </div>
             </div>
@@ -676,15 +676,16 @@
             </div>
             <div class="card-body pt-3">
                 <div class="d-flex justify-content-between align-items-baseline mb-2">
-                    <span class="text-muted small">Proposed budget</span>
-                    <span class="fw-semibold text-nowrap">AED {{ project.budget|floatformat:2 }}</span>
+                    <span class="text-muted small">Proposed budget <span class="fw-normal">(excl. VAT)</span></span>
+                    <span class="fw-semibold text-nowrap">AED {{ budget_proposed|floatformat:2 }}</span>
                 </div>
                 <div class="d-flex justify-content-between align-items-baseline mb-1">
-                    <span class="text-muted small">Actual spend</span>
+                    <span class="text-muted small">Actual spend <span class="fw-normal">(excl. VAT)</span></span>
                     <span class="fw-semibold text-nowrap">AED {{ recorded_expenses_total|floatformat:2 }}</span>
                 </div>
-                {% if inventory_spend_total > 0 or has_vendor_bills or has_manual_expenses %}
+                {% if inventory_spend_total > 0 or has_vendor_bills or has_manual_expenses or labour_spend_total > 0 %}
                 <div class="small text-muted mb-3 ps-1">
+                    {% if labour_spend_total > 0 %}<div class="d-flex justify-content-between"><span>Labour (timesheets)</span><span>AED {{ labour_spend_total|floatformat:2 }}</span></div>{% endif %}
                     {% if has_vendor_bills %}<div class="d-flex justify-content-between"><span>Vendor bills</span><span>AED {{ project_vendor_bills_total|floatformat:2 }}</span></div>{% endif %}
                     {% if has_manual_expenses %}<div class="d-flex justify-content-between"><span>Other expenses</span><span>AED {{ manual_expenses_total|floatformat:2 }}</span></div>{% endif %}
                     {% if inventory_spend_total > 0 %}<div class="d-flex justify-content-between"><span>Inventory on site</span><span>AED {{ inventory_spend_total|floatformat:2 }}</span></div>{% endif %}
@@ -721,7 +722,7 @@
                 {% endif %}
                 <details class="small text-muted mt-3 mb-0">
                     <summary class="user-select-none" style="cursor: pointer;">How is actual spend calculated?</summary>
-                    <p class="mb-0 mt-2 lh-sm">Includes vendor bills, project expenses, and inventory on site (valued at estimate scope base price when items came from the quotation).</p>
+                    <p class="mb-0 mt-2 lh-sm">All amounts exclude VAT. Actual spend is labour timesheets, vendor bill subtotals, manual project expenses, and inventory on site (estimate unit cost when items came from the quotation).</p>
                 </details>
             </div>
         </div>
@@ -970,7 +971,7 @@
                                 <th>Vendor</th>
                                 <th>Date</th>
                                 <th>Status</th>
-                                <th class="text-end">Amount (AED)</th>
+                                <th class="text-end">Amount excl. VAT (AED)</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -988,7 +989,7 @@
                                     {% else %}<span class="badge bg-secondary">{{ bill.get_status_display }}</span>
                                     {% endif %}
                                 </td>
-                                <td class="text-end fw-medium">{{ bill.total_amount|floatformat:2 }}</td>
+                                <td class="text-end fw-medium">{{ bill.subtotal|floatformat:2 }}</td>
                             </tr>
                             {% endfor %}
                         </tbody>
@@ -1015,7 +1016,7 @@
 
             </div>
             <div class="card-footer bg-transparent d-flex justify-content-between align-items-center py-2">
-                <span class="fw-semibold">Total Expenses</span>
+                <span class="fw-semibold">Total expenses (excl. VAT)</span>
                 <span class="fw-bold fs-6">AED {{ recorded_expenses_total|floatformat:2 }}</span>
             </div>
         </div>

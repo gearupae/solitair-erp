@@ -28,37 +28,128 @@ def _itemgroup_expense_type_by_name():
     return result
 
 
-def build_expense_type_totals(item_groups):
-    """
-    Totals by expense type (incl. VAT) for estimate sections whose inventory
-    sub-group has an expense type assigned. item_groups: build_pdf_item_groups.
-    """
-    expense_by_name = _itemgroup_expense_type_by_name()
-    by_type = {}
-    for grp in item_groups:
-        name = (grp.get('name') or '').strip()
-        if not name:
-            continue
-        meta = expense_by_name.get(name.lower())
-        if not meta:
-            continue
-        type_name = meta['expense_type_name']
-        entry = by_type.setdefault(type_name, {
+SERVICE_EXPENSE_TYPE_PREFERRED_NAMES = (
+    'Other service expenses',
+    'Other expenses',
+)
+
+UNTYPED_GROUP_EXPENSE_TYPE_PREFERRED_NAMES = (
+    'Other expenses',
+    'Materials',
+)
+
+
+def _expense_type_meta_from_names(names: tuple[str, ...]) -> dict:
+    from apps.settings_app.models import ItemSubGroupExpenseType
+
+    for name in names:
+        row = ItemSubGroupExpenseType.objects.filter(name__iexact=name, is_active=True).first()
+        if row:
+            return {
+                'expense_type_name': row.name,
+                'expense_type_sort_order': row.sort_order,
+            }
+    row = ItemSubGroupExpenseType.objects.filter(is_active=True).order_by('sort_order', 'name').first()
+    if row:
+        return {
+            'expense_type_name': row.name,
+            'expense_type_sort_order': row.sort_order,
+        }
+    return {
+        'expense_type_name': names[0],
+        'expense_type_sort_order': 99,
+    }
+
+
+def get_service_item_expense_type_meta() -> dict:
+    """Expense bucket for inventory service lines on estimates."""
+    return _expense_type_meta_from_names(SERVICE_EXPENSE_TYPE_PREFERRED_NAMES)
+
+
+def get_untyped_group_expense_type_meta() -> dict:
+    """Fallback bucket when a sub-group exists but has no expense type assigned."""
+    return _expense_type_meta_from_names(UNTYPED_GROUP_EXPENSE_TYPE_PREFERRED_NAMES)
+
+
+def _itemgroup_exists_by_name(name: str) -> bool:
+    from apps.inventory.models import ItemGroup
+
+    return ItemGroup.objects.filter(name__iexact=name.strip()).exists()
+
+
+def resolve_item_expense_type(item, expense_by_name, service_meta, untyped_meta=None):
+    """Return (expense type name, sort order) for an estimate line, or (None, None)."""
+    inv = getattr(item, 'inventory_item', None)
+    if inv is not None and getattr(inv, 'item_type', None) == 'service':
+        return service_meta['expense_type_name'], service_meta['expense_type_sort_order']
+
+    name = (getattr(item, 'group_name', None) or '').strip()
+    if not name:
+        return None, None
+
+    meta = expense_by_name.get(name.lower())
+    if meta:
+        return meta['expense_type_name'], meta['expense_type_sort_order']
+
+    if untyped_meta is None:
+        untyped_meta = get_untyped_group_expense_type_meta()
+    if _itemgroup_exists_by_name(name):
+        return untyped_meta['expense_type_name'], untyped_meta['expense_type_sort_order']
+
+    return None, None
+
+
+def _accumulate_item_expense(by_type, item, type_name, sort_order):
+    entry = by_type.setdefault(
+        type_name,
+        {
             'expense_type_name': type_name,
-            'expense_type_sort_order': meta['expense_type_sort_order'],
+            'expense_type_sort_order': sort_order,
             'line_total': Decimal('0.00'),
             'line_subtotal': Decimal('0.00'),
+            'pre_profit_subtotal': Decimal('0.00'),
             'profit_amount': Decimal('0.00'),
-        })
-        entry['line_total'] += grp.get('line_total') or Decimal('0.00')
-        entry['line_subtotal'] += grp.get('line_subtotal') or Decimal('0.00')
-        for row in grp.get('items') or []:
-            item = row.get('item') if isinstance(row, dict) else row
-            entry['profit_amount'] += getattr(item, 'line_profit_amount', Decimal('0.00'))
+        },
+    )
+    entry['line_total'] += item.line_total_incl_vat
+    entry['line_subtotal'] += item.line_net_excl_vat
+    entry['pre_profit_subtotal'] += item.line_pre_profit_subtotal
+    entry['profit_amount'] += item.line_profit_amount
 
+
+def _finalize_expense_type_rows(by_type):
     totals = list(by_type.values())
+    for row in totals:
+        pre = row['pre_profit_subtotal']
+        profit = row['profit_amount']
+        if pre > 0 and profit > 0:
+            row['profit_percent'] = (profit / pre * Decimal('100')).quantize(Decimal('0.01'))
+        else:
+            row['profit_percent'] = Decimal('0.00')
     totals.sort(key=lambda row: (row['expense_type_sort_order'], row['expense_type_name']))
     return totals
+
+
+def build_expense_type_totals(item_groups):
+    """
+    Totals by expense type (incl. VAT) per line item.
+    Service inventory lines use the Other service expenses bucket.
+    """
+    expense_by_name = _itemgroup_expense_type_by_name()
+    service_meta = get_service_item_expense_type_meta()
+    untyped_meta = get_untyped_group_expense_type_meta()
+    by_type = {}
+    for grp in item_groups:
+        for row in grp.get('items') or []:
+            item = row.get('item') if isinstance(row, dict) else row
+            type_name, sort_order = resolve_item_expense_type(
+                item, expense_by_name, service_meta, untyped_meta
+            )
+            if not type_name:
+                continue
+            _accumulate_item_expense(by_type, item, type_name, sort_order)
+
+    return _finalize_expense_type_rows(by_type)
 
 
 def build_consolidated_installation_summary(estimate):
@@ -93,58 +184,90 @@ def build_consolidated_installation_summary(estimate):
 def build_expense_type_totals_for_estimate(estimate):
     """Expense-type totals from line items (incl. VAT, profit, net excl. VAT)."""
     expense_by_name = _itemgroup_expense_type_by_name()
+    service_meta = get_service_item_expense_type_meta()
+    untyped_meta = get_untyped_group_expense_type_meta()
     by_type = {}
-    for item in estimate.items.all():
-        name = (item.group_name or '').strip()
-        if not name:
+    for item in estimate.items.select_related('inventory_item').all():
+        type_name, sort_order = resolve_item_expense_type(
+            item, expense_by_name, service_meta, untyped_meta
+        )
+        if not type_name:
             continue
-        meta = expense_by_name.get(name.lower())
-        if not meta:
-            continue
-        type_name = meta['expense_type_name']
-        entry = by_type.setdefault(type_name, {
-            'expense_type_name': type_name,
-            'expense_type_sort_order': meta['expense_type_sort_order'],
-            'line_total': Decimal('0.00'),
-            'line_subtotal': Decimal('0.00'),
-            'pre_profit_subtotal': Decimal('0.00'),
-            'profit_amount': Decimal('0.00'),
-        })
-        entry['line_total'] += item.line_total_incl_vat
-        entry['line_subtotal'] += item.line_net_excl_vat
-        entry['pre_profit_subtotal'] += item.line_pre_profit_subtotal
-        entry['profit_amount'] += item.line_profit_amount
+        _accumulate_item_expense(by_type, item, type_name, sort_order)
 
-    totals = list(by_type.values())
-    for row in totals:
-        pre = row['pre_profit_subtotal']
-        profit = row['profit_amount']
-        if pre > 0 and profit > 0:
-            row['profit_percent'] = (profit / pre * Decimal('100')).quantize(Decimal('0.01'))
-        else:
-            row['profit_percent'] = Decimal('0.00')
+    totals = _finalize_expense_type_rows(by_type)
     install_row = build_consolidated_installation_summary(estimate)
     if install_row:
         totals.append(install_row)
-    totals.sort(key=lambda row: (row['expense_type_sort_order'], row['expense_type_name']))
+        totals.sort(key=lambda row: (row['expense_type_sort_order'], row['expense_type_name']))
     return totals
 
 
 def build_estimate_profit_summary(estimate):
-    """Total profit added on lines and overall margin on pre-profit subtotal."""
+    """Total profit = sum of each line's profit amount; % = profit / net selling (excl. VAT)."""
     pre = Decimal('0.00')
     profit = Decimal('0.00')
+    net = Decimal('0.00')
     for item in estimate.items.all():
+        line_profit = item.line_profit_amount
         pre += item.line_pre_profit_subtotal
-        profit += item.line_profit_amount
+        profit += line_profit
+        net += item.line_net_excl_vat
     pre = pre.quantize(Decimal('0.01'))
     profit = profit.quantize(Decimal('0.01'))
-    pct = (profit / pre * Decimal('100')) if pre > 0 else Decimal('0.00')
+    net = net.quantize(Decimal('0.01'))
+    pct = (profit / net * Decimal('100')) if net > 0 else Decimal('0.00')
     return {
         'pre_profit_subtotal': pre,
         'profit_total': profit,
         'profit_percent': pct.quantize(Decimal('0.01')),
+        'net_selling_subtotal': net,
     }
+
+
+def build_detail_item_groups(estimate):
+    """
+    Estimate detail page — always list every line item.
+    PDF may collapse groups with hide_items_on_pdf; internal detail should not.
+    """
+    group_order = []
+    groups_by_name = {}
+
+    for item in estimate.items.select_related('inventory_item').all():
+        name = (item.group_name or '').strip()
+        line_amt = item.line_total_incl_vat
+
+        if name not in groups_by_name:
+            group_order.append(name)
+            groups_by_name[name] = {
+                'name': name,
+                'items': [],
+                'line_total': Decimal('0.00'),
+                'line_subtotal': Decimal('0.00'),
+            }
+
+        groups_by_name[name]['items'].append(item)
+        groups_by_name[name]['line_total'] += line_amt
+        groups_by_name[name]['line_subtotal'] += item.line_net_excl_vat
+
+    groups = []
+    row_index = 0
+    for name in group_order:
+        data = groups_by_name[name]
+        numbered_items = []
+        for item in data['items']:
+            row_index += 1
+            numbered_items.append({'item': item, 'index': row_index})
+
+        groups.append({
+            'name': data['name'],
+            'items': numbered_items,
+            'line_total': data['line_total'],
+            'line_subtotal': data['line_subtotal'],
+            'hide_items_on_pdf': False,
+        })
+
+    return groups
 
 
 def build_pdf_item_groups(estimate):

@@ -1,0 +1,126 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block extra_css %}
+<style>
+.project-fin-report-table { font-size: 0.8125rem; }
+.project-fin-report-table th,
+.project-fin-report-table td { white-space: nowrap; vertical-align: middle; }
+.project-fin-report-table .text-wrap-col { white-space: normal; min-width: 12rem; max-width: 18rem; }
+@media print {
+    .no-print { display: none !important; }
+    .project-fin-report-table { font-size: 0.7rem; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+    <div>
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-1 small">
+                <li class="breadcrumb-item"><a href="{% url 'reports:index' %}">Reports</a></li>
+                <li class="breadcrumb-item active">Project Actual Invoice Report</li>
+            </ol>
+        </nav>
+        <h4 class="mb-0 fw-bold">{{ title }}</h4>
+        <p class="text-muted small mb-0">{{ start_date|date:"d/m/Y" }} – {{ end_date|date:"d/m/Y" }} · AED · amounts excl. VAT except Project Value</p>
+    </div>
+    <button type="button" class="btn btn-outline-secondary btn-sm no-print" onclick="window.print()">
+        <i class="fas fa-print me-1"></i>Print
+    </button>
+</div>
+
+<div class="card mb-3 border-0 shadow-sm no-print">
+    <div class="card-body py-2 px-3">
+        <form method="get" class="row g-2 align-items-end">
+            <div class="col-sm-6 col-md-2">
+                <label class="form-label small mb-1">From</label>
+                <input type="date" name="start_date" class="form-control form-control-sm" value="{{ start_date|date:'Y-m-d' }}">
+            </div>
+            <div class="col-sm-6 col-md-2">
+                <label class="form-label small mb-1">To</label>
+                <input type="date" name="end_date" class="form-control form-control-sm" value="{{ end_date|date:'Y-m-d' }}">
+            </div>
+            <div class="col-sm-6 col-md-3">
+                <label class="form-label small mb-1">Status</label>
+                <select name="status" class="form-select form-select-sm">
+                    <option value="">All statuses</option>
+                    {% for v, l in status_choices %}
+                    <option value="{{ v }}" {% if status_filter == v %}selected{% endif %}>{{ l }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-sm-6 col-md-2">
+                <button type="submit" class="btn btn-primary btn-sm w-100"><i class="fas fa-filter me-1"></i>Apply</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0 project-fin-report-table">
+                <thead class="table-light">
+                    <tr>
+                        <th>Project Code</th>
+                        <th class="text-wrap-col">Customer</th>
+                        <th class="text-end">Project Value (V)</th>
+                        <th class="text-end">Material (M)</th>
+                        <th class="text-end">Expense (E)</th>
+                        <th class="text-end">Labour (L)</th>
+                        <th class="text-end">Actual Expense (A)</th>
+                        <th class="text-end">Total Actual (P)</th>
+                        <th class="text-end">Total Est. (T)</th>
+                        <th class="text-end">Invoice Value (I)</th>
+                        <th class="text-end">Status % (S)</th>
+                        <th>Status (D)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in rows %}
+                    <tr>
+                        <td><a href="{% url 'projects:project_detail' row.project_pk %}" class="fw-medium text-decoration-none">{{ row.project_code }}</a></td>
+                        <td class="text-wrap-col">{{ row.customer_label }}</td>
+                        <td class="text-end">{{ row.project_value|floatformat:2|intcomma }}</td>
+                        <td class="text-end">{{ row.material|floatformat:2|intcomma }}</td>
+                        <td class="text-end">{{ row.expense|floatformat:2|intcomma }}</td>
+                        <td class="text-end">{{ row.labour|floatformat:2|intcomma }}</td>
+                        <td class="text-end">{{ row.actual_expense|floatformat:2|intcomma }}</td>
+                        <td class="text-end">{{ row.total_actual_expense|floatformat:2|intcomma }}</td>
+                        <td class="text-end">{{ row.total_estimated_expense|floatformat:2|intcomma }}</td>
+                        <td class="text-end fw-medium">{{ row.invoice_value|floatformat:2|intcomma }}</td>
+                        <td class="text-end">{{ row.status_pct|floatformat:1 }}%</td>
+                        <td>{{ row.status }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="12" class="text-center py-5 text-muted">No projects in this period.</td></tr>
+                    {% endfor %}
+                </tbody>
+                {% if rows %}
+                <tfoot class="table-light fw-semibold">
+                    <tr>
+                        <td colspan="2" class="text-end">Totals ({{ row_count|intcomma }} project{{ row_count|pluralize }})</td>
+                        <td class="text-end">{{ totals.project_value|floatformat:2|intcomma }}</td>
+                        <td class="text-end">{{ totals.material|floatformat:2|intcomma }}</td>
+                        <td class="text-end">{{ totals.expense|floatformat:2|intcomma }}</td>
+                        <td class="text-end">{{ totals.labour|floatformat:2|intcomma }}</td>
+                        <td class="text-end">{{ totals.actual_expense|floatformat:2|intcomma }}</td>
+                        <td class="text-end">{{ totals.total_actual_expense|floatformat:2|intcomma }}</td>
+                        <td class="text-end">{{ totals.total_estimated_expense|floatformat:2|intcomma }}</td>
+                        <td class="text-end">{{ totals.invoice_value|floatformat:2|intcomma }}</td>
+                        <td colspan="2"></td>
+                    </tr>
+                </tfoot>
+                {% endif %}
+            </table>
+        </div>
+    </div>
+</div>
+
+<p class="text-muted small mt-3 mb-0">
+    <strong>Formulas:</strong> A = M + E + L · S = P ÷ T · I = V × S · Completed projects: S = 100%, I = V.
+    Spend columns exclude VAT; Project Value uses contract value (or estimate net excl. VAT if no contract).
+</p>
+{% endblock %}

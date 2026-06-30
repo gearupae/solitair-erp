@@ -8,7 +8,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth import get_user_model
 from django.contrib import messages
 from django.core.exceptions import ValidationError
-from django.views.generic import ListView, CreateView, UpdateView, DetailView
+from django.views.generic import ListView, CreateView, UpdateView, DetailView, TemplateView
 from django.urls import reverse, reverse_lazy
 from django.db.models import Q, Sum, Count, Value, Prefetch, Max
 from django.db.models.fields import DecimalField
@@ -32,7 +32,6 @@ from .item_delivery import (
     deliver_items_to_project,
     project_delivery_display_rows,
     project_delivery_summary_groups,
-    project_inventory_spend_total,
     project_item_delivered_qty,
     project_item_remaining_qty,
     project_item_returnable_qty,
@@ -46,7 +45,54 @@ from apps.core.mixins import PermissionRequiredMixin, CreatePermissionMixin, Upd
 from apps.core.notification_utils import notify_if_new_assignee, notify_user
 from apps.core.utils import PermissionChecker
 
+from apps.reports.project_report_financial import (
+    PROJECT_LIST_SORT_FIELDS,
+    attach_project_list_financials,
+)
+
 User = get_user_model()
+
+
+PROJECT_LIST_DB_SORT_FIELDS = {
+    'code': 'project_code',
+    'name': 'name',
+    'status': 'status',
+    'created': '-created_at',
+}
+
+
+def _project_list_sort_querystring(request_get, field):
+    params = request_get.copy()
+    params.pop('page', None)
+    all_fields = set(PROJECT_LIST_DB_SORT_FIELDS) | set(PROJECT_LIST_SORT_FIELDS)
+    if field not in all_fields:
+        field = 'created'
+    current = params.get('sort', 'created')
+    order = (params.get('order') or 'desc').lower()
+    if order not in ('asc', 'desc'):
+        order = 'desc'
+    if current == field:
+        params['sort'] = field
+        params['order'] = 'asc' if order == 'desc' else 'desc'
+    else:
+        params['sort'] = field
+        params['order'] = 'desc'
+    return params.urlencode()
+
+
+class ProjectDashboardView(PermissionRequiredMixin, TemplateView):
+    """Integrated project & operations dashboard."""
+    template_name = 'projects/project_dashboard.html'
+    module_name = 'projects'
+    permission_type = 'view'
+
+    def get_context_data(self, **kwargs):
+        from .project_dashboard import build_dashboard_context
+
+        ctx = super().get_context_data(**kwargs)
+        ctx.update(build_dashboard_context(self.request.user, self.request.GET))
+        ctx['title'] = 'Project Dashboard'
+        return ctx
 
 
 class ProjectListView(PermissionRequiredMixin, ListView):
@@ -57,6 +103,8 @@ class ProjectListView(PermissionRequiredMixin, ListView):
     permission_type = 'view'
     
     def get_queryset(self):
+        from apps.sales.models import Estimate
+
         queryset = Project.objects.filter(is_active=True).select_related('customer', 'manager', 'created_by')
         from apps.core.visibility import filter_projects_for_user
 
@@ -74,32 +122,32 @@ class ProjectListView(PermissionRequiredMixin, ListView):
             )
         elif status:
             queryset = queryset.filter(status=status)
-        # Sum manual project expenses (active, not rejected, not from a vendor bill)
-        queryset = queryset.annotate(
-            manual_expenses_sum=Coalesce(
-                Sum(
-                    'project_expenses__total_amount',
-                    filter=Q(project_expenses__is_active=True)
-                    & ~Q(project_expenses__status='rejected')
-                    & Q(project_expenses__vendor_bill__isnull=True),
+
+        sort_field = (self.request.GET.get('sort') or 'created').strip()
+        sort_order = (self.request.GET.get('order') or 'desc').strip().lower()
+        if sort_order not in ('asc', 'desc'):
+            sort_order = 'desc'
+        if sort_field in PROJECT_LIST_DB_SORT_FIELDS:
+            db_field = PROJECT_LIST_DB_SORT_FIELDS[sort_field]
+            if sort_field == 'created':
+                db_field = 'created_at'
+            else:
+                db_field = db_field.lstrip('-')
+            prefix = '-' if sort_order == 'desc' else ''
+            queryset = queryset.order_by(f'{prefix}{db_field}', '-pk')
+        else:
+            queryset = queryset.order_by('-created_at', '-pk')
+
+        return queryset.prefetch_related(
+            Prefetch(
+                'estimates',
+                queryset=Estimate.objects.filter(is_active=True).select_related(
+                    'assigned_to', 'customer'
                 ),
-                Value(Decimal('0.00')),
-                output_field=DecimalField(max_digits=18, decimal_places=2),
-            )
+            ),
+            'technicians',
+            'members__employee_profile__designation',
         )
-        # Sum vendor bill amounts linked to the project (all active, non-cancelled)
-        queryset = queryset.annotate(
-            vendor_bills_sum=Coalesce(
-                Sum(
-                    'vendor_bills__total_amount',
-                    filter=Q(vendor_bills__is_active=True)
-                    & ~Q(vendor_bills__status='cancelled'),
-                ),
-                Value(Decimal('0.00')),
-                output_field=DecimalField(max_digits=18, decimal_places=2),
-            )
-        )
-        return queryset.order_by('-created_at', '-pk')
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -136,10 +184,38 @@ class ProjectListView(PermissionRequiredMixin, ListView):
         all_projects = filter_projects_for_user(
             Project.objects.filter(is_active=True), self.request.user
         )
-        context['total_projects'] = all_projects.count()
-        context['in_progress_projects'] = all_projects.filter(status='ongoing').count()
-        context['completed_projects'] = all_projects.filter(status='completed').count()
-        
+        from .project_list_metrics import build_project_list_metrics
+
+        context.update(build_project_list_metrics(all_projects))
+
+        projects = list(context['projects'])
+        attach_project_list_financials(projects, as_of_date=timezone.localdate())
+
+        sort_field = (self.request.GET.get('sort') or 'created').strip()
+        sort_order = (self.request.GET.get('order') or 'desc').strip().lower()
+        if sort_order not in ('asc', 'desc'):
+            sort_order = 'desc'
+        if sort_field in PROJECT_LIST_SORT_FIELDS:
+            attr = PROJECT_LIST_SORT_FIELDS[sort_field]
+            projects.sort(
+                key=lambda p: p.list_financials.get(attr, Decimal('0.00')),
+                reverse=(sort_order == 'desc'),
+            )
+
+        context['projects'] = projects
+        context['sort_field'] = sort_field
+        context['sort_order'] = sort_order
+        financial_sort_keys = list(PROJECT_LIST_SORT_FIELDS.keys())
+        context['sort_links'] = {
+            key: _project_list_sort_querystring(self.request.GET, key) for key in financial_sort_keys
+        }
+        context['sort_links'].update({
+            'code': _project_list_sort_querystring(self.request.GET, 'code'),
+            'name': _project_list_sort_querystring(self.request.GET, 'name'),
+            'status': _project_list_sort_querystring(self.request.GET, 'status'),
+            'created': _project_list_sort_querystring(self.request.GET, 'created'),
+        })
+
         return context
 
 
@@ -1023,48 +1099,39 @@ class ProjectDetailView(PermissionRequiredMixin, DetailView):
         context['can_create_projects'] = self.request.user.is_superuser or PermissionChecker.has_permission(
             self.request.user, 'projects', 'create'
         )
-        pe = self.object.project_expenses.filter(is_active=True).exclude(
-            status='rejected'
-        ).exclude(vendor_bill__isnull=False)   # bill-synced rows counted via vendor bills below
-        agg = pe.aggregate(s=Sum('total_amount'), c=Count('id'))
-        manual_expenses_total = agg['s'] if agg['s'] is not None else Decimal('0.00')
-        context['manual_expenses_total'] = manual_expenses_total
-        context['has_manual_expenses'] = (agg['c'] or 0) > 0
-
-        # Vendor bills linked to this project (all active statuses — draft counts as committed)
-        from apps.purchase.models import VendorBill
-        vendor_bills = (
-            self.object.vendor_bills
-            .filter(is_active=True)
-            .exclude(status='cancelled')
-            .select_related('vendor')
-            .order_by('-bill_date')
+        labour_rows, labour_hours, labour_cost = project_labour_summary(self.object)
+        context['labour_rows'] = labour_rows
+        context['labour_total_hours'] = labour_hours
+        context['labour_total_cost'] = labour_cost
+        context['show_labour_card'] = (
+            self.object.technicians.exists() or labour_hours > 0 or labour_cost > 0
         )
-        bills_total = vendor_bills.aggregate(s=Sum('total_amount'))['s'] or Decimal('0.00')
-        context['project_vendor_bills'] = vendor_bills
-        context['project_vendor_bills_total'] = bills_total
-        context['has_vendor_bills'] = vendor_bills.exists()
 
-        inventory_spend = project_inventory_spend_total(self.object)
-        context['inventory_spend_total'] = inventory_spend
+        from .project_spend import (
+            project_actual_spend_ex_vat,
+            project_budget_pct_used,
+            project_proposed_budget_ex_vat,
+        )
 
-        recorded = manual_expenses_total + bills_total + inventory_spend
-        context['recorded_expenses_total'] = recorded
-        budget_prop = self.object.budget
+        spend = project_actual_spend_ex_vat(self.object, labour_cost=labour_cost)
+        context.update(spend)
+        manual_expenses_total = spend['manual_expenses_total']
+        bills_total = spend['project_vendor_bills_total']
+        inventory_spend = spend['inventory_spend_total']
+        recorded = spend['recorded_expenses_total']
+
+        budget_prop = project_proposed_budget_ex_vat(self.object, source_estimate=source_estimate)
+        context['budget_proposed'] = budget_prop
         context['budget_profit'] = budget_prop - recorded
         est_cost = self.object.estimated_cost or Decimal('0.00')
-        cv = self.object.contract_value or Decimal('0.00')
         if est_cost > 0:
             context['header_profit_vs_expenses'] = est_cost - recorded
             context['header_profit_label'] = 'Estimate (excl. VAT) − expenses'
-        elif cv > 0:
-            context['header_profit_vs_expenses'] = cv - recorded
-            context['header_profit_label'] = 'Contract value − total expense'
         else:
             context['header_profit_vs_expenses'] = budget_prop - recorded
-            context['header_profit_label'] = 'Budget − total expense'
-        if budget_prop > 0:
-            pct = (recorded / budget_prop * Decimal('100')).quantize(Decimal('0.1'))
+            context['header_profit_label'] = 'Budget (excl. VAT) − expenses'
+        pct = project_budget_pct_used(budget_prop, recorded)
+        if pct is not None:
             context['budget_pct_used'] = pct
             context['budget_over'] = recorded > budget_prop
             cap = Decimal('100')
@@ -1078,13 +1145,6 @@ class ProjectDetailView(PermissionRequiredMixin, DetailView):
         context['gatepass_alert_horizon'] = date.today() + timedelta(days=10)
         context['public_uploads'] = (
             self.object.public_uploads.filter(is_active=True).order_by('-created_at')
-        )
-        labour_rows, labour_hours, labour_cost = project_labour_summary(self.object)
-        context['labour_rows'] = labour_rows
-        context['labour_total_hours'] = labour_hours
-        context['labour_total_cost'] = labour_cost
-        context['show_labour_card'] = (
-            self.object.technicians.exists() or labour_hours > 0 or labour_cost > 0
         )
         from .project_expense_comparison import build_project_expense_comparison_context
 
@@ -1597,22 +1657,16 @@ def project_ai_evaluate(request, pk):
     if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'projects', 'view')):
         return JsonResponse({'ok': False, 'error': 'Permission denied.'}, status=403)
 
-    from .item_delivery import project_inventory_spend_total
     from .project_evaluate_ai import evaluate_project
+    from .project_spend import (
+        project_actual_spend_ex_vat,
+        project_budget_pct_used,
+        project_proposed_budget_ex_vat,
+    )
 
-    pe = project.project_expenses.filter(is_active=True).exclude(status='rejected').exclude(
-        vendor_bill__isnull=False
-    )
-    manual_total = pe.aggregate(s=Sum('total_amount'))['s'] or Decimal('0.00')
-    bills_total = (
-        project.vendor_bills.filter(is_active=True).exclude(status='cancelled')
-        .aggregate(s=Sum('total_amount'))['s'] or Decimal('0.00')
-    )
-    inventory_spend = project_inventory_spend_total(project)
-    recorded = manual_total + bills_total + inventory_spend
-    budget_pct_used = None
-    if project.budget and project.budget > 0:
-        budget_pct_used = (recorded / project.budget * Decimal('100')).quantize(Decimal('0.1'))
+    spend = project_actual_spend_ex_vat(project)
+    recorded = spend['recorded_expenses_total']
+    budget_pct_used = project_budget_pct_used(project_proposed_budget_ex_vat(project), recorded)
 
     force = request.POST.get('force') == '1'
     try:

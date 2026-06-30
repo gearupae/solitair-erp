@@ -59,13 +59,10 @@ def _item_unit_cost(item: Item, *, warehouse=None) -> Decimal:
 
 def _project_item_budget_unit_cost(project: Project, item: Item, *, warehouse=None) -> Decimal:
     """
-    Per-unit value for budget / inventory-on-site reporting (not stock COGS).
+    Per-unit value for budget / inventory-on-site reporting (excl. VAT).
 
-    Priority:
-    1. Estimate scope base on the project (``ProjectItemLine.unit_price``) — same
-       as the estimate **Base** column; usually copied from ``Item.selling_price``.
-    2. Item master ``selling_price`` when there is no scoped line.
-    3. Never use ``purchase_price`` here (that stays on stock-out movements only).
+    Uses estimate scope ``ProjectItemLine.unit_price`` (same as estimate **Unit cost**
+    / base column). Does not use selling ``rate``, line net, or inventory selling price.
     """
     from django.db.models import DecimalField, ExpressionWrapper, F, Sum
 
@@ -85,8 +82,9 @@ def _project_item_budget_unit_cost(project: Project, item: Item, *, warehouse=No
     base = agg['base']
     if qty > 0 and base is not None and base > 0:
         return (base / qty).quantize(Decimal('0.01'))
-    if item.selling_price and item.selling_price > 0:
-        return item.selling_price.quantize(Decimal('0.01'))
+    purchase = item.purchase_price or Decimal('0')
+    if purchase > 0:
+        return purchase.quantize(Decimal('0.01'))
     return Decimal('0.00')
 
 

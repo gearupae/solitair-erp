@@ -782,10 +782,22 @@ class EstimateItem(models.Model):
 
     @property
     def line_profit_amount(self) -> Decimal:
+        """Profit AED for this line from stored profit type/value × qty."""
         qty = self.quantity or Decimal('0')
-        unit = self.unit_price or Decimal('0')
-        selling = self.effective_selling_unit
-        return (qty * (selling - unit)).quantize(Decimal('0.01'))
+        if qty <= 0:
+            return Decimal('0.00')
+        if self.profit_type == 'percent':
+            unit = self.unit_price or Decimal('0')
+            pct = self.profit_value or Decimal('0')
+            if unit <= 0 or pct <= 0:
+                return Decimal('0.00')
+            return (qty * unit * pct / Decimal('100')).quantize(Decimal('0.01'))
+        if self.profit_type == 'amount':
+            per_unit = self.profit_value or Decimal('0')
+            if per_unit <= 0:
+                return Decimal('0.00')
+            return (qty * per_unit).quantize(Decimal('0.01'))
+        return Decimal('0.00')
 
     @property
     def line_net_excl_vat(self) -> Decimal:

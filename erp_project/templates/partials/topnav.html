@@ -179,6 +179,28 @@
                                 <i class="fas fa-user-clock me-2"></i>Operations
                             </a>
                         </li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li class="dropdown-header">Reports</li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'reports:project_report_actual_invoice' %}">
+                                <i class="fas fa-file-invoice me-2"></i>Project Actual Invoice Report
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'reports:project_report_actual_value' %}">
+                                <i class="fas fa-coins me-2"></i>Actual Project Value Report
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'reports:project_report_period' %}">
+                                <i class="fas fa-calendar-alt me-2"></i>Period Wise Report
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'reports:project_report_internal' %}">
+                                <i class="fas fa-hard-hat me-2"></i>Project Profit and Loss Report
+                            </a>
+                        </li>
                     </ul>
                 </li>
                 {% endif %}{% endif %}
@@ -660,6 +682,16 @@
                         <li>
                             <a class="dropdown-item" href="{% url 'reports:project_report_period' %}">
                                 <i class="fas fa-calendar-alt me-2"></i>Period Wise Report
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'reports:project_report_actual_invoice' %}">
+                                <i class="fas fa-file-invoice me-2"></i>Project Actual Invoice Report
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'reports:project_report_actual_value' %}">
+                                <i class="fas fa-coins me-2"></i>Actual Project Value Report
                             </a>
                         </li>
                         {% if is_superuser or 'projects' in user_permissions %}

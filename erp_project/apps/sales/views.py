@@ -85,6 +85,7 @@ def _inventory_item_estimate_json(item):
         'id': item.id,
         'item_code': item.item_code,
         'name': item.name,
+        'item_type': item.item_type,
         'brand': item.brand or '',
         'description': item.description or '',
         'selling_price': item.selling_price,
@@ -124,6 +125,7 @@ def _estimate_form_inventory_groups_context():
     Item groups with active items for estimate line-item bulk add + group name datalist.
     """
     from apps.inventory.models import ItemGroup, ItemGroupMembership
+    from .estimate_pdf_groups import get_service_item_expense_type_meta, get_untyped_group_expense_type_meta
 
     groups = []
     for g in ItemGroup.objects.select_related('base_group', 'expense_type').order_by('name'):
@@ -157,6 +159,14 @@ def _estimate_form_inventory_groups_context():
     return {
         'inventory_groups_json': json.dumps(groups, cls=DjangoJSONEncoder),
         'inventory_group_names': [entry['name'] for entry in groups],
+        'service_expense_type_json': json.dumps(
+            get_service_item_expense_type_meta(),
+            cls=DjangoJSONEncoder,
+        ),
+        'untyped_group_expense_type_json': json.dumps(
+            get_untyped_group_expense_type_meta(),
+            cls=DjangoJSONEncoder,
+        ),
     }
 
 
@@ -1442,11 +1452,11 @@ class EstimateDetailView(PermissionRequiredMixin, DetailView):
             self.object.proforma_invoices.select_related('created_by').all()[:20]
         )
         from .estimate_pdf_groups import (
+            build_detail_item_groups,
             build_estimate_profit_summary,
             build_expense_type_totals_for_estimate,
-            build_pdf_item_groups,
         )
-        item_groups = build_pdf_item_groups(self.object)
+        item_groups = build_detail_item_groups(self.object)
         expense_type_totals = build_expense_type_totals_for_estimate(self.object)
         context['item_groups'] = item_groups
         context['expense_type_totals'] = expense_type_totals

@@ -615,6 +615,11 @@ const inventoryItems = {{ inventory_items_json|safe }};
 const inventoryBrands = {{ inventory_brands_json|safe }};
 const inventoryItemEditUrl = (id) => '{% url "inventory:item_edit" 0 %}'.replace('/0/edit/', `/${id}/edit/`);
 const inventoryGroups = {{ inventory_groups_json|safe }};
+const serviceExpenseTypeMeta = {{ service_expense_type_json|safe }};
+const untypedGroupExpenseTypeMeta = {{ untyped_group_expense_type_json|safe }};
+const inventoryGroupNameKeys = new Set(
+    (inventoryGroups || []).map(g => normalizeGroupName(g.name).toLowerCase()).filter(Boolean)
+);
 const estimateClientNoteTemplates = {{ estimate_client_note_templates_json|safe }};
 const estimateTermsTemplates = {{ estimate_terms_templates_json|safe }};
 const defaultTaxCodeId = {% if default_tax_code %}{{ default_tax_code.id }}{% else %}null{% endif %};
@@ -1754,6 +1759,31 @@ inventoryGroups.forEach(g => {
     };
 });
 
+function getRowExpenseTypeMeta(row) {
+    if (!row || !isEstimateRowFilled(row)) return null;
+
+    const invId = row.querySelector('.item-inventory')?.value;
+    const invMeta = invId ? getInventoryMeta(invId) : null;
+    if (invMeta && invMeta.item_type === 'service' && serviceExpenseTypeMeta) {
+        return {
+            expenseTypeName: serviceExpenseTypeMeta.expense_type_name,
+            expenseTypeOrder: serviceExpenseTypeMeta.expense_type_sort_order || 0,
+        };
+    }
+
+    const groupName = getRowGroupName(row);
+    if (!groupName) return null;
+    const meta = groupExpenseMetaByName[groupName.toLowerCase()];
+    if (meta) return meta;
+    if (inventoryGroupNameKeys.has(groupName.toLowerCase()) && untypedGroupExpenseTypeMeta) {
+        return {
+            expenseTypeName: untypedGroupExpenseTypeMeta.expense_type_name,
+            expenseTypeOrder: untypedGroupExpenseTypeMeta.expense_type_sort_order || 0,
+        };
+    }
+    return null;
+}
+
 function updateExpenseTypeTotals() {
     const card = document.getElementById('estimateExpensesCard');
     const list = document.getElementById('estimateExpensesList');
@@ -1772,9 +1802,8 @@ function updateExpenseTypeTotals() {
             installNet += netInst;
             installGross += netInst + netInst * (vatRate / 100);
         }
-        const groupName = getRowGroupName(row);
-        if (!groupName) return;
-        const meta = groupExpenseMetaByName[groupName.toLowerCase()];
+        if (!isEstimateRowFilled(row)) return;
+        const meta = getRowExpenseTypeMeta(row);
         if (!meta) return;
 
         const net = computeLineNet(row);

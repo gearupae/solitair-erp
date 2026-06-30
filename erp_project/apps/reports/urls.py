@@ -24,6 +24,8 @@ urlpatterns = [
     path('projects/internal/', views.project_report_internal, name='project_report_internal'),
     path('projects/customer/', views.project_report_customer, name='project_report_customer'),
     path('projects/period/', views.project_report_period, name='project_report_period'),
+    path('projects/actual-invoice/', views.project_report_actual_invoice, name='project_report_actual_invoice'),
+    path('projects/actual-value/', views.project_report_actual_value, name='project_report_actual_value'),
     path('project-forecasting/', views.ProjectForecastingView.as_view(), name='project_forecasting'),
     path(
         'project-forecasting/regenerate-brief/',

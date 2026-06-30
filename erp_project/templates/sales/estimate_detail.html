@@ -688,7 +688,7 @@
                     <span class="fw-bold">AED {{ estimate.total_amount|floatformat:2 }}</span>
                 </div>
 
-                {% if expense_type_totals or profit_summary.profit_total %}
+                {% if expense_type_totals or profit_summary %}
                 <hr class="my-3">
                 {% if expense_type_totals %}
                 <p class="text-muted small text-uppercase fw-semibold mb-2">By expense type</p>
@@ -702,20 +702,10 @@
                         <span class="text-muted small">Cost subtotal (excl. VAT)</span>
                         <span class="text-muted small">AED {{ row.pre_profit_subtotal|floatformat:2 }}</span>
                     </div>
-                    <div class="d-flex justify-content-between mb-1 ps-2">
+                    <div class="d-flex justify-content-between ps-2">
                         <span class="text-muted small">Net (excl. VAT)</span>
                         <span class="text-muted small">AED {{ row.line_subtotal|floatformat:2 }}</span>
                     </div>
-                    {% if row.profit_amount and row.profit_amount > 0 %}
-                    <div class="d-flex justify-content-between mb-1 ps-2">
-                        <span class="text-muted small">Profit</span>
-                        <span class="text-muted small">AED {{ row.profit_amount|floatformat:2 }}</span>
-                    </div>
-                    <div class="d-flex justify-content-between ps-2">
-                        <span class="text-muted small">Profit %</span>
-                        <span class="text-muted small">{{ row.profit_percent|floatformat:2 }}%</span>
-                    </div>
-                    {% endif %}
                 </div>
                 {% endfor %}
                 {% if expense_type_totals|length > 1 %}
@@ -726,19 +716,14 @@
                 {% endif %}
                 {% endif %}
 
-                {% if profit_summary.profit_total and profit_summary.profit_total > 0 %}
+                {% if profit_summary %}
                 {% if expense_type_totals %}<hr class="my-3">{% endif %}
-                <p class="text-muted small text-uppercase fw-semibold mb-2">Overall profit</p>
                 <div class="d-flex justify-content-between mb-2">
-                    <span>Cost subtotal (excl. VAT)</span>
-                    <span>AED {{ profit_summary.pre_profit_subtotal|floatformat:2 }}</span>
-                </div>
-                <div class="d-flex justify-content-between mb-2">
-                    <span>Total profit</span>
-                    <span class="fw-medium">AED {{ profit_summary.profit_total|floatformat:2 }}</span>
+                    <span class="fw-semibold">Profit</span>
+                    <span class="fw-semibold">AED {{ profit_summary.profit_total|floatformat:2 }}</span>
                 </div>
                 <div class="d-flex justify-content-between mb-0">
-                    <span class="text-muted small">Profit % on cost subtotal</span>
+                    <span class="text-muted small">Profit % <span class="fw-normal">(of net selling excl. VAT)</span></span>
                     <span class="text-muted small">{{ profit_summary.profit_percent|floatformat:2 }}%</span>
                 </div>
                 {% endif %}

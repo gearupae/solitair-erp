@@ -4,11 +4,13 @@ Full enterprise-grade accounting module.
 """
 from django.urls import path
 from . import views
+from .accounting_dashboard_view import AccountingDashboardView
 
 app_name = 'finance'
 
 urlpatterns = [
     # ============ CHART OF ACCOUNTS ============
+    path('dashboard/', AccountingDashboardView.as_view(), name='accounting_dashboard'),
     path('accounts/', views.AccountListView.as_view(), name='account_list'),
     path('accounts/<int:pk>/edit/', views.AccountUpdateView.as_view(), name='account_edit'),
     path('accounts/<int:pk>/delete/', views.account_delete, name='account_delete'),

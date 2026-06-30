@@ -17,6 +17,7 @@ urlpatterns = [
     path('inspection/<int:pk>/checklist/add/', inspection_views.inspection_checklist_add, name='inspection_checklist_add'),
     path('inspection/<int:pk>/checklist/delete/', inspection_views.inspection_checklist_delete, name='inspection_checklist_delete'),
     # Projects
+    path('dashboard/', views.ProjectDashboardView.as_view(), name='project_dashboard'),
     path('', views.ProjectListView.as_view(), name='project_list'),
     path('create/', views.ProjectCreateView.as_view(), name='project_create'),
     path('tasks/', views.TaskListView.as_view(), name='task_list'),

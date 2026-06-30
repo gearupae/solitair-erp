@@ -1,0 +1,696 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block extra_css %}
+<style>
+.proj-dash-kpi {
+    border: none;
+    border-radius: 0.75rem;
+    box-shadow: 0 1px 3px rgba(15,23,42,.06);
+    height: 100%;
+}
+.proj-dash-kpi__label {
+    font-size: .72rem;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: #64748b;
+    margin-bottom: .35rem;
+}
+.proj-dash-kpi__value {
+    font-size: 1.35rem;
+    font-weight: 700;
+    color: #0f172a;
+}
+.proj-dash-section-title {
+    font-size: .75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: #64748b;
+    margin-bottom: 1rem;
+}
+.proj-dash-chart-wrap { position: relative; height: 220px; }
+.proj-dash-lifecycle-bar {
+    display: flex;
+    height: 1.25rem;
+    border-radius: 0.375rem;
+    overflow: hidden;
+    background: #f1f5f9;
+}
+.proj-dash-lifecycle-seg { min-width: 2px; transition: width .2s; }
+.proj-dash-gantt-row {
+    display: grid;
+    grid-template-columns: 9rem 1fr;
+    gap: 0.5rem;
+    align-items: center;
+    margin-bottom: 0.35rem;
+    font-size: 0.78rem;
+}
+.proj-dash-gantt-label {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: #334155;
+}
+.proj-dash-gantt-track {
+    position: relative;
+    height: 1.1rem;
+    background: #f1f5f9;
+    border-radius: 0.25rem;
+}
+.proj-dash-gantt-bar {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    border-radius: 0.25rem;
+    min-width: 4px;
+}
+.proj-dash-gantt-bar--on_track { background: #22c55e; }
+.proj-dash-gantt-bar--delayed { background: #ef4444; }
+.proj-dash-gantt-bar--at_risk { background: #f59e0b; }
+.proj-dash-attention-panel {
+    border: 1px solid #e2e8f0;
+    border-radius: 0.5rem;
+    background: #fff;
+    margin-bottom: 1rem;
+}
+.proj-dash-attention-panel__head {
+    padding: 0.65rem 0.85rem;
+    border-bottom: 1px solid #e2e8f0;
+    background: #f8fafc;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.5rem;
+}
+.proj-dash-attention-panel__body {
+    max-height: 220px;
+    overflow-y: auto;
+}
+.proj-dash-attention-panel__body .table { margin-bottom: 0; }
+.proj-dash-card-table { font-size: 0.8125rem; }
+.proj-dash-card-table th { white-space: nowrap; font-weight: 600; }
+.proj-dash-mini-stats { font-size: 0.75rem; color: #64748b; }
+.ops-status-scheduled { color: #059669; font-weight: 600; }
+.ops-status-paused { color: #d97706; font-weight: 600; }
+.ops-status-cancelled { color: #64748b; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+    <div>
+        <h4 class="mb-1 fw-bold">{{ title }}</h4>
+        <p class="text-muted mb-0">Integrated project &amp; operations overview</p>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+        <a href="{% url 'projects:project_list' %}" class="btn btn-sm btn-outline-secondary"><i class="fas fa-list me-1"></i>Projects</a>
+    </div>
+</div>
+
+<!-- Top filters -->
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-body py-3">
+        <form method="get" class="row g-2 align-items-end">
+            <div class="col-md-2">
+                <label class="form-label small mb-1">From</label>
+                <input type="date" name="date_from" value="{{ date_from_iso }}" class="form-control form-control-sm">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small mb-1">To</label>
+                <input type="date" name="date_to" value="{{ date_to_iso }}" class="form-control form-control-sm">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small mb-1">Department</label>
+                <select name="department" class="form-select form-select-sm">
+                    <option value="">All departments</option>
+                    {% for dept in departments %}
+                    <option value="{{ dept.pk }}" {% if filters.department == dept.pk|stringformat:"s" %}selected{% endif %}>{{ dept.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small mb-1">Project status</label>
+                <select name="status" class="form-select form-select-sm">
+                    <option value="">All statuses</option>
+                    {% for value, label in status_choices %}
+                    <option value="{{ value }}" {% if filters.status == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-auto">
+                <button type="submit" class="btn btn-sm btn-primary"><i class="fas fa-filter me-1"></i>Apply</button>
+                <a href="{% url 'projects:project_dashboard' %}" class="btn btn-sm btn-light">Reset</a>
+            </div>
+            <div class="col-12">
+                <p class="text-muted small mb-0">Leave dates empty for all-time data (same as module lists). Needs Attention is always live and not date-filtered.</p>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- TOP ROW: Projects Overview + Contracts -->
+<div class="row g-3 mb-4">
+    <!-- Projects Overview -->
+    <div class="col-lg-7">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h6 class="fw-semibold mb-0">Projects Overview</h6>
+                    <a href="{% url 'projects:project_list' %}" class="btn btn-sm btn-link">View all</a>
+                </div>
+                <div class="row g-2 mb-3">
+                    <div class="col-6 col-md-3">
+                        <div class="proj-dash-kpi card"><div class="card-body py-2 px-3">
+                            <div class="proj-dash-kpi__label">Total Projects</div>
+                            <div class="proj-dash-kpi__value">{{ projects_overview.total_projects }}</div>
+                        </div></div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <div class="proj-dash-kpi card"><div class="card-body py-2 px-3">
+                            <div class="proj-dash-kpi__label">On Track</div>
+                            <div class="proj-dash-kpi__value text-success">{{ projects_overview.on_track }}</div>
+                        </div></div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <div class="proj-dash-kpi card"><div class="card-body py-2 px-3">
+                            <div class="proj-dash-kpi__label">Delayed</div>
+                            <div class="proj-dash-kpi__value text-danger">{{ projects_overview.delayed }}</div>
+                        </div></div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <div class="proj-dash-kpi card"><div class="card-body py-2 px-3">
+                            <div class="proj-dash-kpi__label">At Risk</div>
+                            <div class="proj-dash-kpi__value text-warning">{{ projects_overview.at_risk }}</div>
+                        </div></div>
+                    </div>
+                </div>
+                <p class="proj-dash-section-title mb-2">Project Status Lifecycle</p>
+                <div class="proj-dash-lifecycle-bar mb-1">
+                    {% for seg in projects_overview.lifecycle %}
+                    {% if seg.count %}
+                    <div class="proj-dash-lifecycle-seg bg-primary bg-opacity-{% cycle '75' '50' '25' '10' %}" style="width:{% widthratio seg.count projects_overview.lifecycle_total 100 %}%" title="{{ seg.label }}: {{ seg.count }}"></div>
+                    {% endif %}
+                    {% endfor %}
+                </div>
+                <div class="d-flex flex-wrap gap-3 mb-3 proj-dash-mini-stats">
+                    {% for seg in projects_overview.lifecycle %}
+                    <span><span class="badge bg-primary bg-opacity-25 text-primary">&nbsp;</span> {{ seg.label }} ({{ seg.count }})</span>
+                    {% endfor %}
+                </div>
+                <p class="proj-dash-section-title mb-2">Active Project Timelines</p>
+                {% if projects_overview.gantt_projects %}
+                <div class="proj-dash-mini-stats mb-2">{{ projects_overview.gantt_range_start|date:"d M Y" }} — {{ projects_overview.gantt_range_end|date:"d M Y" }}</div>
+                {% for row in projects_overview.gantt_projects %}
+                <div class="proj-dash-gantt-row">
+                    <div class="proj-dash-gantt-label" title="{{ row.project.name }}">{{ row.project.project_code }}</div>
+                    <div class="proj-dash-gantt-track">
+                        <div class="proj-dash-gantt-bar proj-dash-gantt-bar--{{ row.health }}" style="left:{{ row.left_pct }}%;width:{{ row.width_pct }}%;"></div>
+                    </div>
+                </div>
+                {% endfor %}
+                {% else %}
+                <p class="text-muted small mb-0">No active projects with dates in scope.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Contracts (AMC) -->
+    <div class="col-lg-5">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h6 class="fw-semibold mb-0">Contracts (AMC)</h6>
+                    {% if can_view_contracts %}<a href="{% url 'contracts:contract_list' %}" class="btn btn-sm btn-link">View all</a>{% endif %}
+                </div>
+                {% if contracts %}
+                <div class="row g-2 mb-3">
+                    <div class="col-6">
+                        <div class="proj-dash-kpi card"><div class="card-body py-2 px-3">
+                            <div class="proj-dash-kpi__label">Active</div>
+                            <div class="proj-dash-kpi__value">{{ contracts.metric_active }}</div>
+                        </div></div>
+                    </div>
+                    <div class="col-6">
+                        <div class="proj-dash-kpi card"><div class="card-body py-2 px-3">
+                            <div class="proj-dash-kpi__label">Expired</div>
+                            <div class="proj-dash-kpi__value">{{ contracts.metric_expired }}</div>
+                        </div></div>
+                    </div>
+                    <div class="col-6">
+                        <div class="proj-dash-kpi card"><div class="card-body py-2 px-3">
+                            <div class="proj-dash-kpi__label">Ending in 30d</div>
+                            <div class="proj-dash-kpi__value">{{ contracts.metric_expiring }}</div>
+                        </div></div>
+                    </div>
+                    <div class="col-6">
+                        <div class="proj-dash-kpi card"><div class="card-body py-2 px-3">
+                            <div class="proj-dash-kpi__label">Added (7d)</div>
+                            <div class="proj-dash-kpi__value">{{ contracts.metric_recent }}</div>
+                        </div></div>
+                    </div>
+                </div>
+                <div class="row g-2 mb-3">
+                    <div class="col-6">
+                        <div class="proj-dash-chart-wrap"><canvas id="chartContractCount"></canvas></div>
+                    </div>
+                    <div class="col-6">
+                        <div class="proj-dash-chart-wrap"><canvas id="chartContractValue"></canvas></div>
+                    </div>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0 proj-dash-card-table">
+                        <thead>
+                            <tr>
+                                <th>Number</th><th>Name</th><th>Value</th><th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        {% for row in contracts.preview %}
+                        <tr>
+                            <td><a href="{% url 'contracts:contract_detail' row.contract.pk %}">{{ row.contract.contract_number }}</a></td>
+                            <td>{{ row.contract.name|truncatechars:22 }}</td>
+                            <td>AED {{ row.contract.contract_value|floatformat:0|intcomma }}</td>
+                            <td>{{ row.lifecycle }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="4" class="text-muted">No contracts in scope.</td></tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-muted small mb-0">You do not have permission to view contracts.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- BOTTOM ROW: Support, Inspections, Operations -->
+<div class="row g-3 mb-4">
+    <!-- Support -->
+    <div class="col-lg-4">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h6 class="fw-semibold mb-0">Support</h6>
+                    {% if can_view_support %}<a href="{% url 'support:ticket_list' %}" class="btn btn-sm btn-link">View all</a>{% endif %}
+                </div>
+                {% if support %}
+                <div class="row g-2 mb-3">
+                    <div class="col-6">
+                        <div class="proj-dash-kpi card"><div class="card-body py-2 px-3">
+                            <div class="proj-dash-kpi__label">Total</div>
+                            <div class="proj-dash-kpi__value">{{ support.total_tickets }}</div>
+                        </div></div>
+                    </div>
+                    <div class="col-6">
+                        <div class="proj-dash-kpi card"><div class="card-body py-2 px-3">
+                            <div class="proj-dash-kpi__label">Open</div>
+                            <div class="proj-dash-kpi__value">{{ support.open_tickets }}</div>
+                        </div></div>
+                    </div>
+                    <div class="col-6">
+                        <div class="proj-dash-kpi card"><div class="card-body py-2 px-3">
+                            <div class="proj-dash-kpi__label">Urgent</div>
+                            <div class="proj-dash-kpi__value text-danger">{{ support.urgent_tickets }}</div>
+                        </div></div>
+                    </div>
+                    <div class="col-6">
+                        <div class="proj-dash-kpi card"><div class="card-body py-2 px-3">
+                            <div class="proj-dash-kpi__label">Unassigned</div>
+                            <div class="proj-dash-kpi__value">{{ support.unassigned_tickets }}</div>
+                        </div></div>
+                    </div>
+                </div>
+                <form method="get" class="row g-1 mb-2">
+                    <input type="hidden" name="date_from" value="{{ date_from_iso }}">
+                    <input type="hidden" name="date_to" value="{{ date_to_iso }}">
+                    {% if filters.department %}<input type="hidden" name="department" value="{{ filters.department }}">{% endif %}
+                    {% if filters.status %}<input type="hidden" name="status" value="{{ filters.status }}">{% endif %}
+                    <div class="col-4">
+                        <select name="support_priority" class="form-select form-select-sm" onchange="this.form.submit()">
+                            <option value="">Priority</option>
+                            {% for val, lbl in support.priority_choices %}
+                            <option value="{{ val }}" {% if filters.support_priority == val %}selected{% endif %}>{{ lbl }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-4">
+                        <select name="support_stage" class="form-select form-select-sm" onchange="this.form.submit()">
+                            <option value="">Stage</option>
+                            <option value="unassigned" {% if filters.support_stage == 'unassigned' %}selected{% endif %}>Unassigned</option>
+                            {% for st in support.stages %}
+                            <option value="{{ st.pk }}" {% if filters.support_stage == st.pk|stringformat:"s" %}selected{% endif %}>{{ st.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </form>
+                <div class="proj-dash-mini-stats mb-2">
+                    {% for row in support.priority_breakdown %}
+                    {{ row.label }}: {{ row.count }}{% if not forloop.last %} · {% endif %}
+                    {% endfor %}
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0 proj-dash-card-table">
+                        <thead><tr><th>Ticket #</th><th>Subject</th><th>Priority</th><th>Stage</th></tr></thead>
+                        <tbody>
+                        {% for ticket in support.preview %}
+                        <tr>
+                            <td><a href="{% url 'support:ticket_detail' ticket.pk %}">{{ ticket.ticket_number }}</a></td>
+                            <td>{{ ticket.subject|truncatechars:20 }}</td>
+                            <td>
+                                {% if ticket.priority == 'urgent' %}<span class="badge bg-danger">Urgent</span>
+                                {% elif ticket.priority == 'high' %}<span class="badge bg-warning text-dark">High</span>
+                                {% else %}<span class="badge bg-secondary">{{ ticket.get_priority_display }}</span>{% endif %}
+                            </td>
+                            <td>{{ ticket.kanban_stage.name|default:"New" }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="4" class="text-muted">No tickets in scope.</td></tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-muted small mb-0">You do not have permission to view support tickets.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Inspections -->
+    <div class="col-lg-4">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h6 class="fw-semibold mb-0">Inspections</h6>
+                    <a href="{% url 'projects:inspection_list' %}" class="btn btn-sm btn-link">View all</a>
+                </div>
+                <div class="row g-2 mb-3">
+                    <div class="col-4">
+                        <div class="proj-dash-kpi card"><div class="card-body py-2 px-3">
+                            <div class="proj-dash-kpi__label">Total</div>
+                            <div class="proj-dash-kpi__value">{{ inspections.total_inspections }}</div>
+                        </div></div>
+                    </div>
+                    <div class="col-4">
+                        <div class="proj-dash-kpi card"><div class="card-body py-2 px-3">
+                            <div class="proj-dash-kpi__label">Completed</div>
+                            <div class="proj-dash-kpi__value text-success">{{ inspections.completed_checklists }}</div>
+                        </div></div>
+                    </div>
+                    <div class="col-4">
+                        <div class="proj-dash-kpi card"><div class="card-body py-2 px-3">
+                            <div class="proj-dash-kpi__label">In Progress</div>
+                            <div class="proj-dash-kpi__value">{{ inspections.in_progress }}</div>
+                        </div></div>
+                    </div>
+                </div>
+                <form method="get" class="mb-2">
+                    <input type="hidden" name="date_from" value="{{ date_from_iso }}">
+                    <input type="hidden" name="date_to" value="{{ date_to_iso }}">
+                    {% if filters.department %}<input type="hidden" name="department" value="{{ filters.department }}">{% endif %}
+                    {% if filters.status %}<input type="hidden" name="status" value="{{ filters.status }}">{% endif %}
+                    <select name="inspection_type" class="form-select form-select-sm" onchange="this.form.submit()">
+                        <option value="">All types</option>
+                        <option value="project" {% if filters.inspection_type == 'project' %}selected{% endif %}>Project</option>
+                        <option value="amc" {% if filters.inspection_type == 'amc' %}selected{% endif %}>AMC</option>
+                    </select>
+                </form>
+                <div class="proj-dash-mini-stats mb-2">Project: {{ inspections.type_breakdown.project }} · AMC: {{ inspections.type_breakdown.amc }}</div>
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0 proj-dash-card-table">
+                        <thead><tr><th>Number</th><th>Title</th><th>Type</th><th>Progress</th></tr></thead>
+                        <tbody>
+                        {% for insp in inspections.preview %}
+                        <tr>
+                            <td><a href="{% url 'projects:inspection_detail' insp.pk %}">{{ insp.inspection_number }}</a></td>
+                            <td>{{ insp.name|truncatechars:18 }}</td>
+                            <td>{% include 'projects/partials/inspection_link_type_badge.html' with inspection=insp %}</td>
+                            <td>
+                                {% if insp.item_count %}
+                                {% if insp.done_count >= insp.item_count %}
+                                <span class="badge bg-success bg-opacity-10 text-success">{{ insp.done_count }}/{{ insp.item_count }} done</span>
+                                {% else %}
+                                <span class="badge bg-warning bg-opacity-10 text-warning">{{ insp.done_count }}/{{ insp.item_count }} done</span>
+                                {% endif %}
+                                {% else %}—{% endif %}
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="4" class="text-muted">No inspections in scope.</td></tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Operations — Staff Duty -->
+    <div class="col-lg-4">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h6 class="fw-semibold mb-0">Operations — Staff Duty</h6>
+                    <div class="d-flex gap-1">
+                        <a href="{% url 'operations:schedule_calendar' %}" class="btn btn-sm btn-outline-secondary">Calendar</a>
+                        <a href="{% url 'operations:schedule_list' %}" class="btn btn-sm btn-link">View all</a>
+                    </div>
+                </div>
+                <div class="row g-2 mb-3">
+                    <div class="col-4">
+                        <div class="proj-dash-kpi card"><div class="card-body py-2 px-3">
+                            <div class="proj-dash-kpi__label">Scheduled</div>
+                            <div class="proj-dash-kpi__value">{{ operations.total_scheduled }}</div>
+                        </div></div>
+                    </div>
+                    <div class="col-4">
+                        <div class="proj-dash-kpi card"><div class="card-body py-2 px-3">
+                            <div class="proj-dash-kpi__label">On duty today</div>
+                            <div class="proj-dash-kpi__value text-success">{{ operations.on_duty_today }}</div>
+                        </div></div>
+                    </div>
+                    <div class="col-4">
+                        <div class="proj-dash-kpi card"><div class="card-body py-2 px-3">
+                            <div class="proj-dash-kpi__label">Paused</div>
+                            <div class="proj-dash-kpi__value">{{ operations.status_counts.paused|default:0 }}</div>
+                        </div></div>
+                    </div>
+                </div>
+                <form method="get" class="row g-1 mb-2">
+                    <input type="hidden" name="date_from" value="{{ date_from_iso }}">
+                    <input type="hidden" name="date_to" value="{{ date_to_iso }}">
+                    {% if filters.department %}<input type="hidden" name="department" value="{{ filters.department }}">{% endif %}
+                    {% if filters.status %}<input type="hidden" name="status" value="{{ filters.status }}">{% endif %}
+                    <div class="col-6">
+                        <select name="duty_staff" class="form-select form-select-sm" onchange="this.form.submit()">
+                            <option value="">All staff</option>
+                            {% for emp in filter_employees %}
+                            <option value="{{ emp.pk }}" {% if filters.duty_staff == emp.pk|stringformat:"s" %}selected{% endif %}>{{ emp.full_name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-6">
+                        <select name="duty_status" class="form-select form-select-sm" onchange="this.form.submit()">
+                            <option value="">All status</option>
+                            <option value="scheduled" {% if filters.duty_status == 'scheduled' %}selected{% endif %}>Scheduled</option>
+                            <option value="paused" {% if filters.duty_status == 'paused' %}selected{% endif %}>Paused</option>
+                            <option value="cancelled" {% if filters.duty_status == 'cancelled' %}selected{% endif %}>Cancelled</option>
+                        </select>
+                    </div>
+                </form>
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0 proj-dash-card-table">
+                        <thead><tr><th>Date</th><th>Staff</th><th>Link</th><th>Status</th></tr></thead>
+                        <tbody>
+                        {% for s in operations.preview %}
+                        <tr>
+                            <td>{{ s.duty_date|date:"d M" }}</td>
+                            <td>{{ s.employee.full_name|truncatechars:14 }}</td>
+                            <td>
+                                <span class="badge bg-light text-dark border">{{ s.get_link_type_display|slice:":3" }}</span>
+                                {% if s.project %}{{ s.project.project_code|truncatechars:8 }}
+                                {% elif s.amc_contract %}{{ s.amc_contract.contract_number|truncatechars:10 }}{% endif %}
+                            </td>
+                            <td><span class="ops-status-{{ s.status }}">{{ s.get_status_display }}</span></td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="4" class="text-muted">No duties in scope.</td></tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                <div class="mt-2">
+                    <a href="{% url 'operations:schedule_create' %}" class="btn btn-sm btn-primary"><i class="fas fa-plus me-1"></i>Schedule Duty</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Needs Attention (bottom — always expanded, scrollable lists) -->
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+            <h6 class="fw-semibold mb-0"><i class="fas fa-exclamation-triangle text-warning me-2"></i>Needs Attention</h6>
+            <span class="text-muted small">{{ needs_attention.total_count }} open item{{ needs_attention.total_count|pluralize }}</span>
+        </div>
+        {% for alert in needs_attention.alerts %}
+        <div class="proj-dash-attention-panel">
+            <div class="proj-dash-attention-panel__head">
+                <span class="fw-semibold small">{{ alert.label }}</span>
+                <span class="badge {% if alert.count %}bg-danger{% else %}bg-secondary{% endif %}">{{ alert.count }}</span>
+            </div>
+            <div class="proj-dash-attention-panel__body">
+                {% if alert.key == 'overdue_projects' %}
+                    {% if alert.items %}
+                    <table class="table table-sm table-hover proj-dash-card-table">
+                        <thead><tr><th>Code</th><th>Name</th><th>End date</th><th>Completion</th></tr></thead>
+                        <tbody>
+                        {% for row in alert.items %}
+                        <tr>
+                            <td><a href="{% url 'projects:project_detail' row.project.pk %}">{{ row.project.project_code }}</a></td>
+                            <td>{{ row.project.name|truncatechars:40 }}</td>
+                            <td>{{ row.project.end_date|date:"d M Y"|default:"—" }}</td>
+                            <td>{{ row.completion_pct|floatformat:1 }}%</td>
+                        </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                    {% else %}<p class="text-muted small p-3 mb-0">No overdue projects.</p>{% endif %}
+                {% elif alert.key == 'unattended_tickets' %}
+                    {% if alert.items %}
+                    <table class="table table-sm table-hover proj-dash-card-table">
+                        <thead><tr><th>Ticket #</th><th>Subject</th><th>Priority</th><th>Opened</th><th>Linked To</th></tr></thead>
+                        <tbody>
+                        {% for ticket in alert.items %}
+                        <tr>
+                            <td><a href="{% url 'support:ticket_detail' ticket.pk %}">{{ ticket.ticket_number }}</a></td>
+                            <td>{{ ticket.subject|truncatechars:35 }}</td>
+                            <td>
+                                {% if ticket.priority == 'urgent' %}<span class="badge bg-danger">Urgent</span>
+                                {% elif ticket.priority == 'high' %}<span class="badge bg-warning text-dark">High</span>
+                                {% elif ticket.priority == 'medium' %}<span class="badge bg-info">Medium</span>
+                                {% else %}<span class="badge bg-secondary">Low</span>{% endif %}
+                            </td>
+                            <td>{{ ticket.opened_date|date:"d M Y" }}</td>
+                            <td><span class="badge bg-light text-dark">{{ ticket.get_link_type_display }}</span> {{ ticket.link_label|truncatechars:25 }}</td>
+                        </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                    {% else %}<p class="text-muted small p-3 mb-0">No unattended tickets.</p>{% endif %}
+                {% elif alert.key == 'pending_inspections' %}
+                    {% if alert.items %}
+                    <table class="table table-sm table-hover proj-dash-card-table">
+                        <thead><tr><th>Inspection #</th><th>Title</th><th>Linked To</th><th>Remaining</th></tr></thead>
+                        <tbody>
+                        {% for row in alert.items %}
+                        <tr>
+                            <td><a href="{% url 'projects:inspection_detail' row.inspection.pk %}">{{ row.inspection.inspection_number }}</a></td>
+                            <td>{{ row.inspection.name|truncatechars:35 }}</td>
+                            <td>
+                                {% include 'projects/partials/inspection_link_type_badge.html' with inspection=row.inspection %}
+                                {% if row.inspection.link_type == 'project' and row.inspection.project %}{{ row.inspection.project.project_code }}
+                                {% elif row.inspection.link_type == 'amc' and row.inspection.amc_contract %}{{ row.inspection.amc_contract.contract_number }}{% endif %}
+                            </td>
+                            <td>{{ row.items_remaining }} pending</td>
+                        </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                    {% else %}<p class="text-muted small p-3 mb-0">No pending checklist items.</p>{% endif %}
+                {% elif alert.key == 'missed_duty' %}
+                    {% if alert.items %}
+                    <table class="table table-sm table-hover proj-dash-card-table">
+                        <thead><tr><th>Date</th><th>Staff</th><th>Project / AMC</th><th>Status</th></tr></thead>
+                        <tbody>
+                        {% for s in alert.items %}
+                        <tr>
+                            <td>{{ s.duty_date|date:"d M Y" }}</td>
+                            <td>{{ s.employee.full_name }}</td>
+                            <td>
+                                <span class="badge bg-light text-dark border">{{ s.get_link_type_display }}</span>
+                                {% if s.link_type == 'project' and s.project %}{{ s.project.project_code }}
+                                {% elif s.link_type == 'amc' and s.amc_contract %}{{ s.amc_contract.contract_number }}{% endif %}
+                            </td>
+                            <td><span class="ops-status-{{ s.status }}">{{ s.get_status_display }}</span></td>
+                        </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                    {% else %}<p class="text-muted small p-3 mb-0">No missed duties.</p>{% endif %}
+                {% elif alert.key == 'amc_expiries' %}
+                    {% if alert.items %}
+                    <table class="table table-sm table-hover proj-dash-card-table">
+                        <thead><tr><th>Contract #</th><th>Name</th><th>Customer</th><th>End date</th><th>Status</th></tr></thead>
+                        <tbody>
+                        {% for row in alert.items %}
+                        <tr>
+                            <td><a href="{% url 'contracts:contract_detail' row.contract.pk %}">{{ row.contract.contract_number }}</a></td>
+                            <td>{{ row.contract.name|truncatechars:30 }}</td>
+                            <td>{{ row.contract.customer.name|default:"—" }}</td>
+                            <td>{{ row.contract.end_date|date:"d M Y" }}</td>
+                            <td>{{ row.lifecycle }}</td>
+                        </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                    {% else %}<p class="text-muted small p-3 mb-0">No upcoming or expired AMC contracts.</p>{% endif %}
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{% if contracts and contracts.type_chart_data %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+(function () {
+    if (typeof Chart === 'undefined') return;
+    var data = {{ contracts.type_chart_json|safe }};
+    var labels = data.map(function (d) { return d.name; });
+    var counts = data.map(function (d) { return d.count; });
+    var values = data.map(function (d) { return d.value; });
+    var colors = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6'];
+
+    new Chart(document.getElementById('chartContractCount'), {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{ label: 'Contracts', data: counts, backgroundColor: colors }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false }, title: { display: true, text: 'Contracts per Type', font: { size: 11 } } },
+            scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+        }
+    });
+
+    new Chart(document.getElementById('chartContractValue'), {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{ label: 'AED', data: values, backgroundColor: colors }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false }, title: { display: true, text: 'Value by Type (AED)', font: { size: 11 } } },
+            scales: { y: { beginAtZero: true } }
+        }
+    });
+})();
+</script>
+{% endif %}
+{% endblock %}

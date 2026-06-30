@@ -204,25 +204,15 @@ def run_employee_compliance(employee, *, full_run: bool = True) -> dict:
 
 
 def _project_expense_context(project):
-    from decimal import Decimal
-
-    from django.db.models import Count, Sum
-
-    from apps.projects.item_delivery import project_inventory_spend_total
-
-    pe = project.project_expenses.filter(is_active=True).exclude(status='rejected').exclude(
-        vendor_bill__isnull=False
+    from apps.projects.project_spend import (
+        project_actual_spend_ex_vat,
+        project_budget_pct_used,
+        project_proposed_budget_ex_vat,
     )
-    manual_total = pe.aggregate(s=Sum('total_amount'))['s'] or Decimal('0.00')
-    bills_total = (
-        project.vendor_bills.filter(is_active=True).exclude(status='cancelled')
-        .aggregate(s=Sum('total_amount'))['s'] or Decimal('0.00')
-    )
-    inventory_spend = project_inventory_spend_total(project)
-    recorded = manual_total + bills_total + inventory_spend
-    budget_pct_used = None
-    if project.budget and project.budget > 0:
-        budget_pct_used = (recorded / project.budget * Decimal('100')).quantize(Decimal('0.1'))
+
+    spend = project_actual_spend_ex_vat(project)
+    recorded = spend['recorded_expenses_total']
+    budget_pct_used = project_budget_pct_used(project_proposed_budget_ex_vat(project), recorded)
     return recorded, budget_pct_used
 
 

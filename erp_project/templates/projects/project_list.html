@@ -1,4 +1,17 @@
 {% extends 'base.html' %}
+{% block extra_css %}
+<style>
+.project-list-sort-th { white-space: nowrap; }
+.project-list-sort-link {
+    color: inherit;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+}
+.project-list-sort-link:hover { color: var(--bs-primary); }
+.project-list-fin-col { font-variant-numeric: tabular-nums; }
+</style>
+{% endblock %}
 {% block content %}
 <div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-3">
     <div>
@@ -6,6 +19,9 @@
         <p class="text-muted mb-0">Manage your projects</p>
     </div>
     <div class="d-flex flex-wrap gap-2 justify-content-end align-items-center">
+        <a href="{% url 'projects:project_dashboard' %}" class="btn btn-outline-primary">
+            <i class="fas fa-chart-pie me-2"></i>Dashboard
+        </a>
         <a href="{% url 'projects:public_upload' %}" class="btn btn-outline-secondary" target="_blank" rel="noopener" title="Opens a page anyone can use to upload photos and files into a project">
             <i class="fas fa-link me-2"></i>Public upload
         </a>
@@ -51,8 +67,23 @@
                         <i class="fas fa-project-diagram text-primary"></i>
                     </div>
                     <div>
-                        <p class="text-muted mb-0 small">Total Projects</p>
-                        <h5 class="mb-0 fw-bold">{{ total_projects|default:0 }}</h5>
+                        <p class="text-muted mb-0 small">Active Projects</p>
+                        <h5 class="mb-0 fw-bold">{{ metric_active_projects|default:0 }}</h5>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="bg-success bg-opacity-10 rounded p-3 me-3">
+                        <i class="fas fa-chart-line text-success"></i>
+                    </div>
+                    <div>
+                        <p class="text-muted mb-0 small">Avg. Profit Margin</p>
+                        <h5 class="mb-0 fw-bold">{% if metric_avg_profit_margin is not None %}{{ metric_avg_profit_margin|floatformat:1 }}%{% else %}—{% endif %}</h5>
                     </div>
                 </div>
             </div>
@@ -66,23 +97,8 @@
                         <i class="fas fa-tasks text-info"></i>
                     </div>
                     <div>
-                        <p class="text-muted mb-0 small">Ongoing</p>
-                        <h5 class="mb-0 fw-bold">{{ in_progress_projects|default:0 }}</h5>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-4">
-        <div class="card">
-            <div class="card-body">
-                <div class="d-flex align-items-center">
-                    <div class="bg-success bg-opacity-10 rounded p-3 me-3">
-                        <i class="fas fa-check-circle text-success"></i>
-                    </div>
-                    <div>
-                        <p class="text-muted mb-0 small">Completed</p>
-                        <h5 class="mb-0 fw-bold">{{ completed_projects|default:0 }}</h5>
+                        <p class="text-muted mb-0 small">Avg. Completion</p>
+                        <h5 class="mb-0 fw-bold">{{ metric_avg_completion|floatformat:1 }}%</h5>
                     </div>
                 </div>
             </div>
@@ -93,6 +109,8 @@
 <div class="card mb-4">
     <div class="card-body py-3">
         <form method="get" class="row g-3 align-items-end">
+            {% if sort_field %}<input type="hidden" name="sort" value="{{ sort_field }}">{% endif %}
+            {% if sort_order %}<input type="hidden" name="order" value="{{ sort_order }}">{% endif %}
             <div class="col-md-4">
                 <input type="text" name="search" class="form-control" placeholder="Search..." value="{{ request.GET.search }}">
             </div>
@@ -199,10 +217,28 @@
 <div class="card">
     <div class="card-body p-0">
         <div class="table-responsive">
-            <table class="table table-hover mb-0">
-                <thead><tr><th>Code</th><th>Name</th><th>Customer</th><th>Manager</th><th>Status</th><th>Progress</th><th class="text-end">Expense</th><th class="text-center" width="100">Actions</th></tr></thead>
+            <table class="table table-hover mb-0 table-sm">
+                <thead>
+                    <tr>
+                        <th class="project-list-sort-th"><a href="{% url 'projects:project_list' %}?{{ sort_links.code }}" class="project-list-sort-link">Code{% if sort_field == 'code' %}{% if sort_order == 'asc' %}<i class="fas fa-sort-up ms-1"></i>{% else %}<i class="fas fa-sort-down ms-1"></i>{% endif %}{% else %}<i class="fas fa-sort ms-1 text-muted opacity-50"></i>{% endif %}</a></th>
+                        <th class="project-list-sort-th"><a href="{% url 'projects:project_list' %}?{{ sort_links.name }}" class="project-list-sort-link">Name{% if sort_field == 'name' %}{% if sort_order == 'asc' %}<i class="fas fa-sort-up ms-1"></i>{% else %}<i class="fas fa-sort-down ms-1"></i>{% endif %}{% else %}<i class="fas fa-sort ms-1 text-muted opacity-50"></i>{% endif %}</a></th>
+                        <th>Customer</th>
+                        <th>Manager</th>
+                        <th class="project-list-sort-th"><a href="{% url 'projects:project_list' %}?{{ sort_links.status }}" class="project-list-sort-link">Status{% if sort_field == 'status' %}{% if sort_order == 'asc' %}<i class="fas fa-sort-up ms-1"></i>{% else %}<i class="fas fa-sort-down ms-1"></i>{% endif %}{% else %}<i class="fas fa-sort ms-1 text-muted opacity-50"></i>{% endif %}</a></th>
+                        <th>Progress</th>
+                        <th class="project-list-sort-th text-end"><a href="{% url 'projects:project_list' %}?{{ sort_links.total_actual }}" class="project-list-sort-link">Total Actual{% if sort_field == 'total_actual' %}{% if sort_order == 'asc' %}<i class="fas fa-sort-up ms-1"></i>{% else %}<i class="fas fa-sort-down ms-1"></i>{% endif %}{% else %}<i class="fas fa-sort ms-1 text-muted opacity-50"></i>{% endif %}</a></th>
+                        <th class="project-list-sort-th text-end"><a href="{% url 'projects:project_list' %}?{{ sort_links.total_estimated }}" class="project-list-sort-link">Total Est.{% if sort_field == 'total_estimated' %}{% if sort_order == 'asc' %}<i class="fas fa-sort-up ms-1"></i>{% else %}<i class="fas fa-sort-down ms-1"></i>{% endif %}{% else %}<i class="fas fa-sort ms-1 text-muted opacity-50"></i>{% endif %}</a></th>
+                        <th class="project-list-sort-th text-end"><a href="{% url 'projects:project_list' %}?{{ sort_links.actual_project_value }}" class="project-list-sort-link">Actual Proj. Value{% if sort_field == 'actual_project_value' %}{% if sort_order == 'asc' %}<i class="fas fa-sort-up ms-1"></i>{% else %}<i class="fas fa-sort-down ms-1"></i>{% endif %}{% else %}<i class="fas fa-sort ms-1 text-muted opacity-50"></i>{% endif %}</a></th>
+                        <th class="project-list-sort-th text-end"><a href="{% url 'projects:project_list' %}?{{ sort_links.project_actual_value }}" class="project-list-sort-link">Proj. Actual Value{% if sort_field == 'project_actual_value' %}{% if sort_order == 'asc' %}<i class="fas fa-sort-up ms-1"></i>{% else %}<i class="fas fa-sort-down ms-1"></i>{% endif %}{% else %}<i class="fas fa-sort ms-1 text-muted opacity-50"></i>{% endif %}</a></th>
+                        <th class="project-list-sort-th text-end"><a href="{% url 'projects:project_list' %}?{{ sort_links.profit_aed }}" class="project-list-sort-link">Profit (AED){% if sort_field == 'profit_aed' %}{% if sort_order == 'asc' %}<i class="fas fa-sort-up ms-1"></i>{% else %}<i class="fas fa-sort-down ms-1"></i>{% endif %}{% else %}<i class="fas fa-sort ms-1 text-muted opacity-50"></i>{% endif %}</a></th>
+                        <th class="project-list-sort-th text-end"><a href="{% url 'projects:project_list' %}?{{ sort_links.profit_pct }}" class="project-list-sort-link">Profit %{% if sort_field == 'profit_pct' %}{% if sort_order == 'asc' %}<i class="fas fa-sort-up ms-1"></i>{% else %}<i class="fas fa-sort-down ms-1"></i>{% endif %}{% else %}<i class="fas fa-sort ms-1 text-muted opacity-50"></i>{% endif %}</a></th>
+                        <th class="project-list-sort-th text-end"><a href="{% url 'projects:project_list' %}?{{ sort_links.project_completion_pct }}" class="project-list-sort-link">Completion %{% if sort_field == 'project_completion_pct' %}{% if sort_order == 'asc' %}<i class="fas fa-sort-up ms-1"></i>{% else %}<i class="fas fa-sort-down ms-1"></i>{% endif %}{% else %}<i class="fas fa-sort ms-1 text-muted opacity-50"></i>{% endif %}</a></th>
+                        <th class="text-center" width="100">Actions</th>
+                    </tr>
+                </thead>
                 <tbody>
                     {% for project in projects %}
+                    {% with fin=project.list_financials %}
                     <tr>
                         <td><a href="{% url 'projects:project_detail' project.pk %}" class="fw-medium text-decoration-none">{{ project.project_code }}</a></td>
                         <td>{{ project.name }}</td>
@@ -221,30 +257,20 @@
                             {% endif %}
                         </td>
                         <td>{{ project.completed_tasks }}/{{ project.total_tasks }} tasks</td>
-                        <td class="text-end text-nowrap">
-                            {% if project.budget > 0 %}
-                                {% with total_exp=project.manual_expenses_sum|add:project.vendor_bills_sum %}
-                                {% widthratio total_exp project.budget 100 as exp_pct %}
-                                {% with p=exp_pct|add:0 %}
-                                {% if p < 50 %}
-                                <span class="badge badge-active">{{ exp_pct }}% of budget</span>
-                                {% elif p <= 80 %}
-                                <span class="badge" style="background:#fef3c7;color:#92400e;">{{ exp_pct }}% of budget</span>
-                                {% else %}
-                                <span class="badge badge-inactive">{{ exp_pct }}% of budget</span>
-                                {% endif %}
-                                {% endwith %}
-                                {% endwith %}
-                            {% else %}
-                                <span class="text-muted">—</span>
-                            {% endif %}
-                        </td>
+                        <td class="text-end text-nowrap project-list-fin-col">{{ fin.total_actual_expense|floatformat:2 }}</td>
+                        <td class="text-end text-nowrap project-list-fin-col">{{ fin.total_estimated_value|floatformat:2 }}</td>
+                        <td class="text-end text-nowrap project-list-fin-col">{{ fin.actual_project_value|floatformat:2 }}</td>
+                        <td class="text-end text-nowrap project-list-fin-col">{{ fin.project_actual_value|floatformat:2 }}</td>
+                        <td class="text-end text-nowrap project-list-fin-col {% if fin.profit_aed > 0 %}text-success{% elif fin.profit_aed < 0 %}text-danger{% endif %}">{{ fin.profit_aed|floatformat:2 }}</td>
+                        <td class="text-end text-nowrap project-list-fin-col {% if fin.profit_pct > 0 %}text-success{% elif fin.profit_pct < 0 %}text-danger{% endif %}">{{ fin.profit_pct|floatformat:1 }}%</td>
+                        <td class="text-end text-nowrap project-list-fin-col">{{ fin.project_completion_pct|floatformat:1 }}%</td>
                         <td class="text-center">
                             <a href="{% url 'projects:project_detail' project.pk %}" class="btn btn-action btn-outline-info"><i class="fas fa-eye"></i></a>
                             {% if can_edit %}<a href="{% url 'projects:project_edit' project.pk %}" class="btn btn-action btn-outline-primary"><i class="fas fa-edit"></i></a>{% endif %}
                         </td>
                     </tr>
-                    {% empty %}<tr><td colspan="8" class="text-center py-5 text-muted"><i class="fas fa-project-diagram fa-3x mb-3 d-block"></i>No projects found</td></tr>{% endfor %}
+                    {% endwith %}
+                    {% empty %}<tr><td colspan="14" class="text-center py-5 text-muted"><i class="fas fa-project-diagram fa-3x mb-3 d-block"></i>No projects found</td></tr>{% endfor %}
                 </tbody>
             </table>
         </div>
