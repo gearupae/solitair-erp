@@ -160,9 +160,9 @@ $(function () {
                     {% for err in form.lead_kanban_stage.errors %}<div class="text-danger small">{{ err }}</div>{% endfor %}
                 </div>
                 <div class="col-md-4">
-                    <label class="form-label" for="{{ form.lead_source.id_for_label }}">Source</label>
-                    {{ form.lead_source }}
-                    {% for err in form.lead_source.errors %}<div class="text-danger small">{{ err }}</div>{% endfor %}
+                    <label class="form-label" for="{{ form.source_of_lead.id_for_label }}">Source of lead</label>
+                    {{ form.source_of_lead }}
+                    {% for err in form.source_of_lead.errors %}<div class="text-danger small">{{ err }}</div>{% endfor %}
                 </div>
                 <div class="col-md-4">
                     <label class="form-label" for="{{ form.assigned_salesperson.id_for_label }}">{{ form.assigned_salesperson.label }} <span class="text-danger">*</span></label>

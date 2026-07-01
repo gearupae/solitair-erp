@@ -4,7 +4,7 @@ CRM Forms
 from django import forms
 from django.core.exceptions import ValidationError
 
-from .models import Customer, CrmLeadKanbanStage
+from .models import Customer, CrmLeadKanbanStage, SiteVisitLog
 from .utils import (
     get_crm_project_queryset,
     get_sales_employee_for_user,
@@ -15,10 +15,21 @@ from .utils import (
 )
 
 
+class JobTypeChoiceField(forms.MultipleChoiceField):
+    """Stores job types as a list; accepts single-select or multi-select widgets."""
+
+    def to_python(self, value):
+        if not value:
+            return []
+        if isinstance(value, str):
+            value = [value]
+        return [v for v in value if v]
+
+
 class CustomerForm(forms.ModelForm):
     """Form for creating/editing customers."""
 
-    job_type = forms.MultipleChoiceField(
+    job_type = JobTypeChoiceField(
         choices=Customer.JOB_TYPE_CHOICES,
         required=False,
         widget=forms.SelectMultiple(
@@ -35,7 +46,7 @@ class CustomerForm(forms.ModelForm):
         fields = [
             'name', 'email', 'phone', 'company', 'address',
             'trn', 'website', 'scope', 'job_type', 'primary_project',
-            'assigned_salesperson', 'lead_source',
+            'assigned_salesperson', 'source_of_lead',
             'status', 'customer_type', 'lead_kanban_stage', 'business_segment',
             'trn_document', 'trade_license_document',
             'notes',
@@ -64,12 +75,12 @@ class CustomerForm(forms.ModelForm):
             self.fields['lead_kanban_stage'].empty_label = '— Unassigned —'
             self.fields['lead_kanban_stage'].label = 'Pipeline stage'
             self.fields['lead_kanban_stage'].widget.attrs['class'] = 'form-select'
-            self.fields['lead_source'].required = False
-            self.fields['lead_source'].label = 'Source'
-            self.fields['lead_source'].widget.attrs['class'] = 'form-select'
+            self.fields['source_of_lead'].required = False
+            self.fields['source_of_lead'].label = 'Source of lead'
+            self.fields['source_of_lead'].widget.attrs['class'] = 'form-select'
         else:
             self.fields.pop('lead_kanban_stage', None)
-            self.fields.pop('lead_source', None)
+            self.fields.pop('source_of_lead', None)
 
         qs = projects_queryset if projects_queryset is not None else get_crm_project_queryset()
         if self.instance.pk:
@@ -115,7 +126,7 @@ class CustomerForm(forms.ModelForm):
             self.initial['job_type'] = list(self.instance.job_type or [])
 
         for field_name, field in self.fields.items():
-            if field_name in ('job_type', 'primary_project', 'business_segment', 'assigned_salesperson', 'scope', 'lead_source'):
+            if field_name in ('job_type', 'primary_project', 'business_segment', 'assigned_salesperson', 'scope', 'source_of_lead'):
                 continue
             if field_name in ('trn_document', 'trade_license_document'):
                 field.widget = forms.FileInput(
@@ -223,3 +234,22 @@ class CustomerForm(forms.ModelForm):
                 cleaned['trn_document'] = False
 
         return cleaned
+
+
+class SiteVisitLogForm(forms.ModelForm):
+    """Quick log visit form on lead detail."""
+
+    class Meta:
+        model = SiteVisitLog
+        fields = ['visit_date', 'location', 'outcome', 'notes']
+        widgets = {
+            'visit_date': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
+            'location': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Visit location'}),
+            'outcome': forms.Select(attrs={'class': 'form-select'}),
+            'notes': forms.Textarea(attrs={'class': 'form-control', 'rows': 3, 'placeholder': 'Visit notes…'}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['visit_date'].label = 'Date'
+        self.fields['outcome'].label = 'Outcome'

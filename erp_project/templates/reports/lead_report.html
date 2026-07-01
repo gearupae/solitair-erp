@@ -135,9 +135,17 @@
         <h4 class="mb-0 fw-bold">{{ title }}</h4>
         <p class="text-muted small mb-0">Leads created {{ start_date|date:"d/m/Y" }} – {{ end_date|date:"d/m/Y" }}</p>
     </div>
-    <button class="btn btn-outline-secondary btn-sm" onclick="window.print()">
-        <i class="fas fa-print me-1"></i>Print
-    </button>
+    <div class="d-flex gap-2 flex-wrap">
+        <a href="?start_date={{ start_date|date:'Y-m-d' }}&end_date={{ end_date|date:'Y-m-d' }}{% if filter_stage %}&stage={{ filter_stage }}{% endif %}{% if filter_status %}&status={{ filter_status }}{% endif %}{% if filter_salesperson %}&salesperson={{ filter_salesperson }}{% endif %}{% if filter_source %}&source={{ filter_source|urlencode }}{% endif %}&export=xlsx" class="btn btn-outline-success btn-sm">
+            <i class="fas fa-file-excel me-1"></i>Export Excel
+        </a>
+        <a href="?start_date={{ start_date|date:'Y-m-d' }}&end_date={{ end_date|date:'Y-m-d' }}{% if filter_stage %}&stage={{ filter_stage }}{% endif %}{% if filter_status %}&status={{ filter_status }}{% endif %}{% if filter_salesperson %}&salesperson={{ filter_salesperson }}{% endif %}{% if filter_source %}&source={{ filter_source|urlencode }}{% endif %}&export=csv" class="btn btn-outline-secondary btn-sm">
+            <i class="fas fa-file-csv me-1"></i>Export CSV
+        </a>
+        <button class="btn btn-outline-secondary btn-sm" onclick="window.print()">
+            <i class="fas fa-print me-1"></i>Print
+        </button>
+    </div>
 </div>
 
 <div class="card mb-3 border-0 shadow-sm">
@@ -177,6 +185,16 @@
                     <option value="none" {% if filter_salesperson == 'none' %}selected{% endif %}>Unassigned</option>
                     {% for sp in filter_salespeople %}
                     <option value="{{ sp.id }}" {% if filter_salesperson == sp.id|stringformat:'s' %}selected{% endif %}>{{ sp.label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-sm-6 col-md-2">
+                <label class="form-label small mb-1">Source</label>
+                <select name="source" class="form-select form-select-sm">
+                    <option value="">All sources</option>
+                    <option value="none" {% if filter_source == 'none' %}selected{% endif %}>Unassigned</option>
+                    {% for value, label in filter_source_choices %}
+                    <option value="{{ value }}" {% if filter_source == value %}selected{% endif %}>{{ label }}</option>
                     {% endfor %}
                 </select>
             </div>
@@ -224,6 +242,29 @@
 
 <div class="row g-3 mb-3">
     <div class="col-lg-8">
+        <div class="card border-0 shadow-sm h-100 mb-3">
+            <div class="card-body py-3 px-3">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h6 class="mb-0 fw-bold">Leads by source</h6>
+                    <span class="small text-muted">Count &amp; pipeline value</span>
+                </div>
+                <div class="lead-stage-grid">
+                    {% for row in source_rows %}
+                    <div class="lead-stage-chip{% if row.count %} is-active{% endif %}">
+                        <div class="lead-stage-chip__label" title="{{ row.label }}">{{ row.label }}</div>
+                        <div class="lead-stage-chip__count">{{ row.count|intcomma }}</div>
+                        <div class="small text-muted">AED {{ row.pipeline_value|floatformat:0|intcomma }}</div>
+                        <div class="lead-stage-bar">
+                            <div class="lead-stage-bar__fill lead-stage-bar__fill--{{ row.slug|default:'stage' }}"
+                                 style="width: {% widthratio row.count source_max_count 100 %}%;"></div>
+                        </div>
+                    </div>
+                    {% empty %}
+                    <div class="text-muted small py-1">No source data.</div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
         <div class="card border-0 shadow-sm h-100">
             <div class="card-body py-3 px-3">
                 <div class="d-flex justify-content-between align-items-center mb-2">
@@ -293,6 +334,7 @@
                     <th>Created</th>
                     <th>Status</th>
                     <th>Stage</th>
+                    <th>Source</th>
                     <th>Job type</th>
                     <th class="text-end">Estimate</th>
                 </tr>
@@ -325,6 +367,7 @@
                             {{ row.stage_name }}
                         </span>
                     </td>
+                    <td>{{ row.source_label|default:"—" }}</td>
                     <td>{{ row.job_type|default:"—" }}</td>
                     <td class="text-end text-nowrap">
                         {% if row.latest_estimate_value %}
@@ -335,7 +378,7 @@
                     </td>
                 </tr>
                 {% empty %}
-                <tr><td colspan="8" class="text-muted text-center py-3">No leads match the selected filters.</td></tr>
+                <tr><td colspan="9" class="text-muted text-center py-3">No leads match the selected filters.</td></tr>
                 {% endfor %}
             </tbody>
         </table>

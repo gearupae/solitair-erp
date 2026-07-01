@@ -1,4 +1,4 @@
-{% load humanize %}
+{% load humanize crm_extras %}
 <div class="kanban-card-title text-truncate">
     {% if link_detail %}
     <a href="{% url 'crm:customer_detail' record.pk %}" class="text-decoration-none">{{ record.name }}</a>
@@ -21,9 +21,9 @@
     <i class="fas fa-phone fa-xs me-1 text-muted"></i>{{ record.phone }}
 </div>
 {% endif %}
-{% if record.lead_source_display_label %}
-<div class="kanban-card-meta text-truncate" title="{{ record.lead_source_display_label }}">
-    <i class="fas fa-bullhorn fa-xs me-1 text-muted"></i>{{ record.lead_source_display_label }}
+{% if record.source_of_lead_display_label %}
+<div class="kanban-card-meta text-truncate" title="{{ record.source_of_lead_display_label }}">
+    <span class="badge fw-normal {{ record.source_of_lead|source_of_lead_class }}">{{ record.source_of_lead_display_label }}</span>
 </div>
 {% endif %}
 {% if record.latest_estimate_value and record.latest_estimate_value > 0 %}

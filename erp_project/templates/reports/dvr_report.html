@@ -1,0 +1,109 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+    <div>
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-1 small">
+                <li class="breadcrumb-item"><a href="{% url 'reports:index' %}">Reports</a></li>
+                <li class="breadcrumb-item active">Daily Visit Record</li>
+            </ol>
+        </nav>
+        <h4 class="mb-0 fw-bold">{{ title }}</h4>
+        <p class="text-muted small mb-0">Site visits {{ start_date|date:"d/m/Y" }} – {{ end_date|date:"d/m/Y" }}</p>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
+        <a href="?start_date={{ start_date|date:'Y-m-d' }}&end_date={{ end_date|date:'Y-m-d' }}{% if filter_salesman %}&salesman={{ filter_salesman }}{% endif %}&export=xlsx" class="btn btn-outline-success btn-sm">
+            <i class="fas fa-file-excel me-1"></i>Export Excel
+        </a>
+        <a href="?start_date={{ start_date|date:'Y-m-d' }}&end_date={{ end_date|date:'Y-m-d' }}{% if filter_salesman %}&salesman={{ filter_salesman }}{% endif %}&export=csv" class="btn btn-outline-secondary btn-sm">
+            <i class="fas fa-file-csv me-1"></i>Export CSV
+        </a>
+        <button class="btn btn-outline-secondary btn-sm" onclick="window.print()">
+            <i class="fas fa-print me-1"></i>Print
+        </button>
+    </div>
+</div>
+
+<div class="card mb-3 border-0 shadow-sm">
+    <div class="card-body py-2 px-3">
+        <form method="get" class="row g-2 align-items-end">
+            <div class="col-sm-6 col-md-3">
+                <label class="form-label small mb-1">Start Date</label>
+                <input type="date" name="start_date" class="form-control form-control-sm" value="{{ start_date|date:'Y-m-d' }}">
+            </div>
+            <div class="col-sm-6 col-md-3">
+                <label class="form-label small mb-1">End Date</label>
+                <input type="date" name="end_date" class="form-control form-control-sm" value="{{ end_date|date:'Y-m-d' }}">
+            </div>
+            <div class="col-sm-6 col-md-3">
+                <label class="form-label small mb-1">Salesman</label>
+                <select name="salesman" class="form-select form-select-sm">
+                    <option value="">All salespeople</option>
+                    <option value="none" {% if filter_salesman == 'none' %}selected{% endif %}>Unassigned</option>
+                    {% for sp in filter_salespeople %}
+                    <option value="{{ sp.id }}" {% if filter_salesman == sp.id|stringformat:'s' %}selected{% endif %}>{{ sp.label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-sm-6 col-md-3">
+                <button type="submit" class="btn btn-primary btn-sm w-100"><i class="fas fa-filter me-1"></i>Apply</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="row g-2 mb-3">
+    <div class="col-6 col-md-4">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body py-2 px-3">
+                <div class="text-muted small">Total visits</div>
+                <div class="fs-4 fw-bold lh-sm">{{ total_visits|intcomma }}</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-header bg-white py-2 px-3 d-flex justify-content-between align-items-center">
+        <h6 class="mb-0 fw-bold small text-uppercase text-muted">Visit log</h6>
+        <span class="small text-muted">{{ visit_rows|length }} shown</span>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle mb-0">
+            <thead class="table-light">
+                <tr class="small">
+                    <th>Date</th>
+                    <th>Lead</th>
+                    <th>Salesman</th>
+                    <th>Location</th>
+                    <th>Outcome</th>
+                    <th>Notes</th>
+                </tr>
+            </thead>
+            <tbody class="small">
+                {% for row in visit_rows %}
+                <tr>
+                    <td class="text-nowrap">{{ row.visit_date|date:"d/m/Y" }}</td>
+                    <td>
+                        {% if row.lead_pk %}
+                        <a href="{% url 'crm:customer_detail' row.lead_pk %}" class="fw-medium text-decoration-none">{{ row.lead_label }}</a>
+                        {% if row.lead_number %}<div class="text-muted">{{ row.lead_number }}</div>{% endif %}
+                        {% else %}
+                        {{ row.lead_label }}
+                        {% endif %}
+                    </td>
+                    <td>{{ row.salesman_name }}</td>
+                    <td>{{ row.location|default:"—" }}</td>
+                    <td>{{ row.outcome }}</td>
+                    <td class="text-muted">{{ row.notes|default:"—"|truncatechars:80 }}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="6" class="text-muted text-center py-3">No site visits match the selected filters.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

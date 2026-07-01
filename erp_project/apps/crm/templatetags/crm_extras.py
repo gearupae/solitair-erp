@@ -1,6 +1,6 @@
 from django import template
 
-from apps.crm.utils import kanban_stage_inline_class
+from apps.crm.utils import kanban_stage_inline_class, source_of_lead_inline_class
 
 register = template.Library()
 
@@ -18,3 +18,9 @@ def file_basename(file_field):
 def pipeline_stage_class(stage):
     """Colored CSS class for a CRM pipeline stage (or unassigned when empty)."""
     return kanban_stage_inline_class(stage)
+
+
+@register.filter
+def source_of_lead_class(source_code):
+    """Colored CSS class for a lead source value (pipeline-style badges)."""
+    return source_of_lead_inline_class(source_code)

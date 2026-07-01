@@ -13,8 +13,8 @@ from django.views.decorators.http import require_http_methods, require_POST
 from django.db.models import Q, Count
 import json
 
-from .models import Customer, CustomerPublicUpload, CrmLeadKanbanStage
-from .forms import CustomerForm
+from .models import Customer, CustomerPublicUpload, CrmLeadKanbanStage, SiteVisitLog
+from .forms import CustomerForm, SiteVisitLogForm
 from apps.core.visibility import crm_show_my_leads_label, filter_customers_for_user
 from .utils import (
     annotate_latest_estimate_value,
@@ -128,7 +128,7 @@ def apply_customer_list_filters(queryset, params, *, apply_type=True):
 
     source = (params.get('source') or '').strip()
     if source and source in dict(Customer.LEAD_SOURCE_CHOICES):
-        queryset = queryset.filter(lead_source=source)
+        queryset = queryset.filter(source_of_lead=source)
 
     date_from, date_to = parse_customer_date_range(params)
     if date_from:
@@ -634,12 +634,12 @@ def customer_inline_update(request, pk):
                     )
                 updated = True
 
-    if 'lead_source' in request.POST and customer.customer_type == 'lead':
-        val = (request.POST.get('lead_source') or '').strip()
-        if val in dict(Customer.LEAD_SOURCE_CHOICES) and customer.lead_source != val:
-            customer.lead_source = val
-            customer.save(update_fields=['lead_source'])
-            log_action(request.user, 'update', 'Customer', customer.id, {'lead_source': val})
+    if 'source_of_lead' in request.POST and customer.customer_type == 'lead':
+        val = (request.POST.get('source_of_lead') or '').strip()
+        if val in dict(Customer.LEAD_SOURCE_CHOICES) and customer.source_of_lead != val:
+            customer.source_of_lead = val
+            customer.save(update_fields=['source_of_lead'])
+            log_action(request.user, 'update', 'Customer', customer.id, {'source_of_lead': val})
             updated = True
 
     if updated:
@@ -675,8 +675,43 @@ class CustomerDetailView(PermissionRequiredMixin, DetailView):
         )
 
     def post(self, request, *args, **kwargs):
-        if request.POST.get('action') != 'create_task':
-            return HttpResponseNotAllowed(['GET'])
+        self.object = self.get_object()
+        action = (request.POST.get('action') or 'create_task').strip()
+
+        if action == 'log_site_visit':
+            if self.object.customer_type != 'lead':
+                messages.error(request, 'Site visits can only be logged for leads.')
+                return redirect('crm:customer_detail', pk=self.object.pk)
+            if not (
+                request.user.is_superuser
+                or PermissionChecker.has_permission(request.user, 'crm', 'edit')
+            ):
+                messages.error(request, 'Permission denied.')
+                return redirect('crm:customer_detail', pk=self.object.pk)
+
+            form = SiteVisitLogForm(request.POST)
+            if form.is_valid():
+                visit = form.save(commit=False)
+                visit.lead = self.object
+                visit.salesman = request.user
+                visit.created_by = request.user
+                visit.save()
+                log_action(
+                    request.user,
+                    'create',
+                    'SiteVisitLog',
+                    visit.pk,
+                    {'lead': self.object.customer_number, 'outcome': visit.outcome},
+                )
+                messages.success(request, 'Site visit logged.')
+            else:
+                messages.error(request, 'Please correct the visit form errors.')
+                context = self.get_context_data(site_visit_form=form)
+                return self.render_to_response(context)
+            return redirect('crm:customer_detail', pk=self.object.pk)
+
+        if action != 'create_task':
+            return HttpResponseNotAllowed(['GET', 'POST'])
 
         self.object = self.get_object()
         if not (
@@ -769,6 +804,21 @@ class CustomerDetailView(PermissionRequiredMixin, DetailView):
         from apps.sales.project_retention import customer_retention_invoice_rows
 
         context['retention_invoices'] = customer_retention_invoice_rows(self.object)
+        from django.utils import timezone
+
+        context['site_visits'] = (
+            SiteVisitLog.objects.filter(lead=self.object, is_active=True)
+            .select_related('salesman')
+            .order_by('-visit_date', '-created_at')
+        )
+        context['site_visit_form'] = kwargs.get(
+            'site_visit_form',
+            SiteVisitLogForm(initial={'visit_date': timezone.localdate()}),
+        )
+        context['can_log_visit'] = (
+            self.object.customer_type == 'lead'
+            and context['can_edit']
+        )
         return context
 
 

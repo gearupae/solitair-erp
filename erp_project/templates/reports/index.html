@@ -31,6 +31,42 @@
             </div>
         </div>
     </div>
+    <div class="col-md-6">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body d-flex flex-column">
+                <div class="mb-3">
+                    <span class="badge bg-primary-subtle text-primary mb-2">CRM</span>
+                    <h5 class="fw-bold mb-2">Daily Visit Record</h5>
+                    <p class="text-muted mb-0">
+                        Field sales site visits by date and salesman — location, outcome, and notes.
+                    </p>
+                </div>
+                <div class="mt-auto">
+                    <a href="{% url 'reports:dvr_report' %}" class="btn btn-primary">
+                        <i class="fas fa-map-marker-alt me-2"></i>Open Daily Visit Record
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body d-flex flex-column">
+                <div class="mb-3">
+                    <span class="badge bg-primary-subtle text-primary mb-2">CRM</span>
+                    <h5 class="fw-bold mb-2">Salesman Lead Performance</h5>
+                    <p class="text-muted mb-0">
+                        Leads created, open/won/lost counts, pipeline value, and conversion rate per salesperson.
+                    </p>
+                </div>
+                <div class="mt-auto">
+                    <a href="{% url 'reports:salesman_lead_performance' %}" class="btn btn-primary">
+                        <i class="fas fa-user-tie me-2"></i>Open Salesman Performance
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
     {% if is_superuser or 'crm' in user_permissions %}
     <div class="col-md-6">
         <div class="card border-0 shadow-sm h-100">

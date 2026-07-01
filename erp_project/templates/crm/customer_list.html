@@ -349,7 +349,7 @@
             {% if crm_list_kind == 'lead' %}
             <div class="col-md-3">
                 <label class="form-label">Source</label>
-                <select name="lead_source" class="form-select">
+                <select name="source_of_lead" class="form-select">
                     <option value="">— Select source —</option>
                     {% for value, label in crm_lead_source_choices %}
                     <option value="{{ value }}">{{ label }}</option>
@@ -357,29 +357,21 @@
                 </select>
             </div>
             {% endif %}
-            <div class="col-12">
-                <label class="form-label">Address</label>
-                <textarea name="address" class="form-control" rows="2" placeholder="Full Address"></textarea>
-            </div>
-            <div class="col-md-3" id="crmInlineTrnWrap" style="display:none;">
-                <label class="form-label">VAT (TRN)</label>
-                <input type="text" name="trn" id="crmInlineTrn" class="form-control" placeholder="VAT / TRN">
-            </div>
-            <div class="col-md-3">
+            <div class="col-md-{% if crm_list_kind == 'lead' %}3{% else %}4{% endif %}">
                 <label class="form-label">Website</label>
                 <input type="text" name="website" class="form-control" placeholder="gear-up.ae, www.gear-up.ae, or https://gear-up.ae">
             </div>
-            <div class="col-md-3">
+            <div class="col-md-{% if crm_list_kind == 'lead' %}3{% else %}4{% endif %}">
                 <label class="form-label">Job type</label>
-                <select name="job_type" class="form-select" multiple size="4">
+                <select name="job_type" class="form-select">
+                    <option value="">— Select job type —</option>
                     <option value="fire_protection_system">Fire Protection System</option>
                     <option value="gas_protection_system">Gas Protection System</option>
                     <option value="cctv">CCTV</option>
                     <option value="smoke_management_system">Smoke Management System</option>
                 </select>
-                <div class="form-text small">Hold Ctrl/Cmd to select multiple.</div>
             </div>
-            <div class="col-md-3">
+            <div class="col-md-{% if crm_list_kind == 'lead' %}3{% else %}4{% endif %}">
                 <label class="form-label">Scope</label>
                 <select name="scope" class="form-select">
                     <option value="">—</option>
@@ -394,6 +386,14 @@
                     <option value="drawing_approvals">Drawing Approvals</option>
                     <option value="rectification">Rectification</option>
                 </select>
+            </div>
+            <div class="col-12">
+                <label class="form-label">Address</label>
+                <textarea name="address" class="form-control" rows="2" placeholder="Full Address"></textarea>
+            </div>
+            <div class="col-md-3" id="crmInlineTrnWrap" style="display:none;">
+                <label class="form-label">VAT (TRN)</label>
+                <input type="text" name="trn" id="crmInlineTrn" class="form-control" placeholder="VAT / TRN">
             </div>
             <div class="col-md-3" id="crmB2bTrnDocWrap" style="display:none;">
                 <label class="form-label">TRN certificate <span class="text-muted small">(optional)</span></label>
@@ -749,16 +749,16 @@
                             <form method="post" action="{% url 'crm:customer_inline_update' customer.pk %}" class="crm-inline-field-form">
                                 {% csrf_token %}
                                 <input type="hidden" name="next" value="{{ request.get_full_path }}">
-                                <select name="lead_source" class="form-select form-select-sm crm-inline-select" aria-label="Source" onchange="this.form.submit()">
-                                    <option value="" {% if not customer.lead_source %}selected{% endif %}>—</option>
+                                <select name="source_of_lead" class="form-select form-select-sm crm-inline-select {{ customer.source_of_lead|source_of_lead_class }}" aria-label="Source" onchange="this.form.submit()">
+                                    <option value="" {% if not customer.source_of_lead %}selected{% endif %}>—</option>
                                     {% for value, label in crm_lead_source_choices %}
-                                    <option value="{{ value }}" {% if customer.lead_source == value %}selected{% endif %}>{{ label }}</option>
+                                    <option value="{{ value }}" {% if customer.source_of_lead == value %}selected{% endif %}>{{ label }}</option>
                                     {% endfor %}
                                 </select>
                             </form>
                             {% else %}
-                            {% if customer.lead_source_display_label %}
-                                <span class="badge bg-light text-dark border fw-normal">{{ customer.lead_source_display_label }}</span>
+                            {% if customer.source_of_lead_display_label %}
+                                <span class="badge fw-normal {{ customer.source_of_lead|source_of_lead_class }}">{{ customer.source_of_lead_display_label }}</span>
                             {% else %}
                                 <span class="text-muted">—</span>
                             {% endif %}

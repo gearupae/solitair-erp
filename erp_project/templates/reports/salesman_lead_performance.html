@@ -1,0 +1,159 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block extra_css %}
+<style>
+.slp-kpi { border-left: 3px solid var(--kpi-accent, #dee2e6); }
+.slp-kpi--success { --kpi-accent: #198754; }
+.slp-kpi--primary { --kpi-accent: #0d6efd; }
+.slp-kpi--danger { --kpi-accent: #dc3545; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+    <div>
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-1 small">
+                <li class="breadcrumb-item"><a href="{% url 'reports:index' %}">Reports</a></li>
+                <li class="breadcrumb-item active">Salesman Lead Performance</li>
+            </ol>
+        </nav>
+        <h4 class="mb-0 fw-bold">{{ title }}</h4>
+        <p class="text-muted small mb-0">Leads created {{ start_date|date:"d/m/Y" }} – {{ end_date|date:"d/m/Y" }}</p>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
+        <a href="?start_date={{ start_date|date:'Y-m-d' }}&end_date={{ end_date|date:'Y-m-d' }}{% if filter_salesperson %}&salesperson={{ filter_salesperson }}{% endif %}&export=xlsx" class="btn btn-outline-success btn-sm">
+            <i class="fas fa-file-excel me-1"></i>Export Excel
+        </a>
+        <a href="?start_date={{ start_date|date:'Y-m-d' }}&end_date={{ end_date|date:'Y-m-d' }}{% if filter_salesperson %}&salesperson={{ filter_salesperson }}{% endif %}&export=csv" class="btn btn-outline-secondary btn-sm">
+            <i class="fas fa-file-csv me-1"></i>Export CSV
+        </a>
+        <button class="btn btn-outline-secondary btn-sm" onclick="window.print()">
+            <i class="fas fa-print me-1"></i>Print
+        </button>
+    </div>
+</div>
+
+<div class="card mb-3 border-0 shadow-sm">
+    <div class="card-body py-2 px-3">
+        <form method="get" class="row g-2 align-items-end">
+            <div class="col-sm-6 col-md-3">
+                <label class="form-label small mb-1">Start Date</label>
+                <input type="date" name="start_date" class="form-control form-control-sm" value="{{ start_date|date:'Y-m-d' }}">
+            </div>
+            <div class="col-sm-6 col-md-3">
+                <label class="form-label small mb-1">End Date</label>
+                <input type="date" name="end_date" class="form-control form-control-sm" value="{{ end_date|date:'Y-m-d' }}">
+            </div>
+            <div class="col-sm-6 col-md-3">
+                <label class="form-label small mb-1">Salesperson</label>
+                <select name="salesperson" class="form-select form-select-sm">
+                    <option value="">All salespeople</option>
+                    <option value="none" {% if filter_salesperson == 'none' %}selected{% endif %}>Unassigned</option>
+                    {% for sp in filter_salespeople %}
+                    <option value="{{ sp.id }}" {% if filter_salesperson == sp.id|stringformat:'s' %}selected{% endif %}>{{ sp.label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-sm-6 col-md-3">
+                <button type="submit" class="btn btn-primary btn-sm w-100"><i class="fas fa-filter me-1"></i>Apply</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% if single_salesperson and performance_rows %}
+{% with row=performance_rows.0 %}
+<div class="row g-2 mb-3">
+    <div class="col-6 col-lg">
+        <div class="card border-0 shadow-sm slp-kpi h-100">
+            <div class="card-body py-2 px-3">
+                <div class="text-muted small">Leads created</div>
+                <div class="fs-4 fw-bold">{{ row.leads_created|intcomma }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg">
+        <div class="card border-0 shadow-sm slp-kpi slp-kpi--primary h-100">
+            <div class="card-body py-2 px-3">
+                <div class="text-muted small">Open leads</div>
+                <div class="fs-4 fw-bold">{{ row.open_leads|intcomma }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg">
+        <div class="card border-0 shadow-sm slp-kpi slp-kpi--success h-100">
+            <div class="card-body py-2 px-3">
+                <div class="text-muted small">Won</div>
+                <div class="fs-4 fw-bold text-success">{{ row.won|intcomma }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg">
+        <div class="card border-0 shadow-sm slp-kpi slp-kpi--danger h-100">
+            <div class="card-body py-2 px-3">
+                <div class="text-muted small">Lost</div>
+                <div class="fs-4 fw-bold text-danger">{{ row.lost|intcomma }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg">
+        <div class="card border-0 shadow-sm slp-kpi h-100">
+            <div class="card-body py-2 px-3">
+                <div class="text-muted small">Pipeline value</div>
+                <div class="fs-5 fw-bold">AED {{ row.pipeline_value|floatformat:2|intcomma }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg">
+        <div class="card border-0 shadow-sm slp-kpi h-100">
+            <div class="card-body py-2 px-3">
+                <div class="text-muted small">Conversion rate</div>
+                <div class="fs-4 fw-bold">{{ row.conversion_rate }}%</div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endwith %}
+{% endif %}
+
+<div class="card border-0 shadow-sm">
+    <div class="card-header bg-white py-2 px-3 d-flex justify-content-between align-items-center">
+        <h6 class="mb-0 fw-bold small text-uppercase text-muted">
+            {% if single_salesperson %}Performance detail{% else %}Performance by salesperson{% endif %}
+        </h6>
+        <span class="small text-muted">{{ performance_rows|length }} row{{ performance_rows|length|pluralize }}</span>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle mb-0">
+            <thead class="table-light">
+                <tr class="small">
+                    <th>Salesperson</th>
+                    <th class="text-end">Leads created</th>
+                    <th class="text-end">Open leads</th>
+                    <th class="text-end">Won</th>
+                    <th class="text-end">Lost</th>
+                    <th class="text-end">Pipeline value</th>
+                    <th class="text-end">Conversion rate</th>
+                </tr>
+            </thead>
+            <tbody class="small">
+                {% for row in performance_rows %}
+                <tr>
+                    <td class="fw-medium">{{ row.salesperson_name }}</td>
+                    <td class="text-end">{{ row.leads_created|intcomma }}</td>
+                    <td class="text-end">{{ row.open_leads|intcomma }}</td>
+                    <td class="text-end text-success">{{ row.won|intcomma }}</td>
+                    <td class="text-end text-danger">{{ row.lost|intcomma }}</td>
+                    <td class="text-end text-nowrap">AED {{ row.pipeline_value|floatformat:2|intcomma }}</td>
+                    <td class="text-end">{{ row.conversion_rate }}%</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="7" class="text-muted text-center py-3">No leads match the selected filters.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

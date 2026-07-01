@@ -216,6 +216,23 @@ CRM_PIPELINE_STAGE_SLUG_CLASSES = {
     'site_visit': 'crm-pipeline-stage-active',
 }
 
+SOURCE_OF_LEAD_CLASSES = {
+    'facebook': 'crm-pipeline-stage-theme-0',
+    'whatsapp': 'crm-pipeline-stage-theme-3',
+    'google': 'crm-pipeline-stage-theme-4',
+    'sales': 'crm-pipeline-stage-theme-1',
+    'reference': 'crm-pipeline-stage-theme-2',
+    'other': 'crm-pipeline-stage-theme-5',
+}
+
+
+def source_of_lead_inline_class(source_code: str) -> str:
+    """CSS class for lead source badges / inline selects (matches pipeline palette)."""
+    code = (source_code or '').strip().lower()
+    if not code:
+        return 'crm-pipeline-stage-unassigned'
+    return SOURCE_OF_LEAD_CLASSES.get(code, 'crm-pipeline-stage-unassigned')
+
 
 def kanban_stage_inline_class(stage, *, index=None) -> str:
     """CSS class for pipeline stage labels (list badges / inline selects)."""

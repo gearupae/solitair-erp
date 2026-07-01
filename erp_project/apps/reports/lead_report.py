@@ -15,8 +15,14 @@ from apps.crm.utils import (
 from apps.sales.models import Estimate
 from apps.settings_app.models import AuditLog
 
+ZERO = Decimal('0.00')
 
-def _apply_lead_filters(qs, *, stage='', salesperson='', lead_status=''):
+SOURCE_FILTER_CHOICES = [
+    (value, label) for value, label in Customer.LEAD_SOURCE_CHOICES if value
+]
+
+
+def _apply_lead_filters(qs, *, stage='', salesperson='', lead_status='', source=''):
     if lead_status:
         qs = qs.filter(status=lead_status)
     if salesperson == 'none':
@@ -33,7 +39,54 @@ def _apply_lead_filters(qs, *, stage='', salesperson='', lead_status=''):
             qs = qs.filter(lead_kanban_stage_id=int(stage))
         except (TypeError, ValueError):
             pass
+    if source == 'none':
+        qs = qs.filter(source_of_lead='')
+    elif source and source in dict(Customer.LEAD_SOURCE_CHOICES):
+        qs = qs.filter(source_of_lead=source)
     return qs
+
+
+def _latest_estimate_subquery():
+    return (
+        Estimate.objects.filter(
+            customer=OuterRef('pk'),
+            is_active=True,
+        )
+        .order_by('-date', '-id')
+        .values('total_amount')[:1]
+    )
+
+
+def _source_rows(leads_with_value) -> list[dict]:
+    rows: list[dict] = []
+    for value, label in SOURCE_FILTER_CHOICES:
+        bucket = leads_with_value.filter(source_of_lead=value)
+        count = bucket.count()
+        pipeline_value = (
+            bucket.aggregate(total=Coalesce(Sum('latest_estimate_value'), ZERO))['total']
+            or ZERO
+        )
+        rows.append({
+            'value': value,
+            'label': label,
+            'slug': value.replace('_', '-'),
+            'count': count,
+            'pipeline_value': pipeline_value,
+        })
+    unassigned = leads_with_value.filter(source_of_lead='')
+    unassigned_count = unassigned.count()
+    unassigned_value = (
+        unassigned.aggregate(total=Coalesce(Sum('latest_estimate_value'), ZERO))['total']
+        or ZERO
+    )
+    rows.append({
+        'value': '',
+        'label': 'Unassigned',
+        'slug': 'unassigned',
+        'count': unassigned_count,
+        'pipeline_value': unassigned_value,
+    })
+    return rows
 
 
 def build_lead_report(
@@ -43,11 +96,10 @@ def build_lead_report(
     stage='',
     salesperson='',
     lead_status='',
+    source='',
     user=None,
 ):
-    """
-    Period-wise lead metrics with optional stage / status / salesperson filters.
-    """
+    """Period-wise lead metrics with optional filters."""
     leads_created = Customer.objects.filter(
         is_active=True,
         created_at__date__gte=start_date,
@@ -62,25 +114,18 @@ def build_lead_report(
         stage=stage,
         salesperson=salesperson,
         lead_status=lead_status,
+        source=source,
     )
 
-    latest_estimate_subq = (
-        Estimate.objects.filter(
-            customer=OuterRef('pk'),
-            is_active=True,
-        )
-        .order_by('-date', '-id')
-        .values('total_amount')[:1]
-    )
-
+    latest_estimate_subq = _latest_estimate_subquery()
     leads_with_value = active_leads.annotate(
         latest_estimate_value=Subquery(latest_estimate_subq),
     )
     pipeline_value = (
         leads_with_value.aggregate(
-            total=Coalesce(Sum('latest_estimate_value'), Decimal('0.00')),
+            total=Coalesce(Sum('latest_estimate_value'), ZERO),
         )['total']
-        or Decimal('0.00')
+        or ZERO
     )
 
     estimate_value_in_period = (
@@ -89,8 +134,8 @@ def build_lead_report(
             customer__in=active_leads,
             date__gte=start_date,
             date__lte=end_date,
-        ).aggregate(total=Coalesce(Sum('total_amount'), Decimal('0.00')))['total']
-        or Decimal('0.00')
+        ).aggregate(total=Coalesce(Sum('total_amount'), ZERO))['total']
+        or ZERO
     )
 
     stage_rows = []
@@ -109,6 +154,7 @@ def build_lead_report(
         })
 
     unassigned_count = active_leads.filter(lead_kanban_stage__isnull=True).count()
+    source_rows = _source_rows(leads_with_value)
 
     converted_logs = AuditLog.objects.filter(
         model='Customer',
@@ -146,11 +192,14 @@ def build_lead_report(
             'stage_name': lead.lead_kanban_stage.name if lead.lead_kanban_stage_id else 'Unassigned',
             'stage_slug': lead.lead_kanban_stage.slug if lead.lead_kanban_stage_id else 'unassigned',
             'salesperson_name': salesperson_display_name(lead.assigned_salesperson),
+            'source_label': lead.source_of_lead_display_label or '—',
             'latest_estimate_value': lead.latest_estimate_value,
         })
 
     all_stage_counts = [row['count'] for row in stage_rows] + [unassigned_count]
     stage_max_count = max(all_stage_counts) if any(all_stage_counts) else 1
+    all_source_counts = [row['count'] for row in source_rows]
+    source_max_count = max(all_source_counts) if any(all_source_counts) else 1
 
     salespeople = [
         {'id': emp.pk, 'label': salesperson_display_name(emp)}
@@ -163,15 +212,18 @@ def build_lead_report(
         'filter_stage': stage,
         'filter_salesperson': salesperson,
         'filter_status': lead_status,
+        'filter_source': source,
         'filter_stages': stage_rows,
         'filter_salespeople': salespeople,
         'filter_status_choices': Customer.STATUS_CHOICES,
+        'filter_source_choices': SOURCE_FILTER_CHOICES,
         'total_leads_created': leads_created.filter(customer_type='lead').count(),
         'active_leads_count': active_leads.count(),
         'converted_count': converted_count,
         'pipeline_value': pipeline_value,
         'estimate_value_in_period': estimate_value_in_period,
         'stage_rows': stage_rows,
+        'source_rows': source_rows,
         'unassigned_count': unassigned_count,
         'lead_details': lead_details,
         'lost_count': next(
@@ -187,4 +239,5 @@ def build_lead_report(
             0,
         ),
         'stage_max_count': stage_max_count,
+        'source_max_count': source_max_count,
     }

@@ -16,6 +16,8 @@ from apps.core.utils import PermissionChecker
 from apps.projects.models import Project
 
 from .lead_report import build_lead_report
+from .dvr_report import build_dvr_report
+from .salesman_lead_performance import build_salesman_lead_performance_report
 from .project_report_actual_invoice import build_project_actual_invoice_report
 from .project_report_actual_value import build_project_actual_value_report
 from .project_report_customer import build_project_report_customer, project_choices_for_report as customer_project_choices
@@ -25,6 +27,7 @@ from .sales_report import build_sales_report
 from .services.lead_forecasting import build_lead_forecast_report_context
 from .services.project_forecasting import build_forecast_report_context
 from .services.sales_forecasting import build_sales_forecast_report_context
+from .utils.crm_report_export import export_report_csv, export_report_xlsx
 from .utils.lead_forecasting_export import export_lead_forecast_pdf, export_lead_forecast_xlsx
 from .utils.project_forecasting_export import export_forecast_pdf, export_forecast_xlsx
 from .utils.sales_forecasting_export import export_sales_forecast_pdf, export_sales_forecast_xlsx
@@ -112,6 +115,26 @@ def reports_index(request):
     return render(request, 'reports/index.html')
 
 
+def _report_export_response(request, context, *, report_kind: str, filename_stem: str):
+    export_fmt = (request.GET.get('export') or '').strip().lower()
+    if export_fmt not in ('xlsx', 'csv'):
+        return None
+    generated_by = request.user.get_full_name() or request.user.get_username()
+    if export_fmt == 'xlsx':
+        content = export_report_xlsx(context, report_kind=report_kind, generated_by=generated_by)
+        response = HttpResponse(
+            content,
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+        response['Content-Disposition'] = f'attachment; filename="{filename_stem}.xlsx"'
+    else:
+        content = export_report_csv(context, report_kind=report_kind)
+        response = HttpResponse(content, content_type='text/csv; charset=utf-8')
+        response['Content-Disposition'] = f'attachment; filename="{filename_stem}.csv"'
+    log_audit(request.user, 'export', 'Report', report_kind, {'format': export_fmt})
+    return response
+
+
 @login_required
 def lead_report(request):
     if not _reports_permission(request):
@@ -122,6 +145,7 @@ def lead_report(request):
     stage = (request.GET.get('stage') or '').strip()
     salesperson = (request.GET.get('salesperson') or '').strip()
     lead_status = (request.GET.get('status') or '').strip()
+    source = (request.GET.get('source') or '').strip()
 
     context = build_lead_report(
         start_date=start_date,
@@ -129,10 +153,61 @@ def lead_report(request):
         stage=stage,
         salesperson=salesperson,
         lead_status=lead_status,
+        source=source,
         user=request.user,
     )
     context['title'] = 'Lead Report'
+
+    export_resp = _report_export_response(request, context, report_kind='lead', filename_stem='lead_report')
+    if export_resp:
+        return export_resp
     return render(request, 'reports/lead_report.html', context)
+
+
+@login_required
+def dvr_report(request):
+    if not _reports_permission(request):
+        messages.error(request, 'Permission denied.')
+        return redirect('dashboard')
+
+    start_date, end_date = _parse_period(request)
+    salesman = (request.GET.get('salesman') or '').strip()
+    context = build_dvr_report(
+        start_date=start_date,
+        end_date=end_date,
+        salesman_user_id=salesman,
+        user=request.user,
+    )
+    context['title'] = 'Daily Visit Record'
+
+    export_resp = _report_export_response(request, context, report_kind='dvr', filename_stem='daily_visit_record')
+    if export_resp:
+        return export_resp
+    return render(request, 'reports/dvr_report.html', context)
+
+
+@login_required
+def salesman_lead_performance_report(request):
+    if not _reports_permission(request):
+        messages.error(request, 'Permission denied.')
+        return redirect('dashboard')
+
+    start_date, end_date = _parse_period(request)
+    salesperson = (request.GET.get('salesperson') or '').strip()
+    context = build_salesman_lead_performance_report(
+        start_date=start_date,
+        end_date=end_date,
+        salesperson_id=salesperson,
+        user=request.user,
+    )
+    context['title'] = 'Salesman Lead Performance'
+
+    export_resp = _report_export_response(
+        request, context, report_kind='salesman', filename_stem='salesman_lead_performance',
+    )
+    if export_resp:
+        return export_resp
+    return render(request, 'reports/salesman_lead_performance.html', context)
 
 
 @login_required

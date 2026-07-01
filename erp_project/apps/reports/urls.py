@@ -8,6 +8,8 @@ app_name = 'reports'
 urlpatterns = [
     path('', views.reports_index, name='index'),
     path('leads/', views.lead_report, name='lead_report'),
+    path('daily-visit-record/', views.dvr_report, name='dvr_report'),
+    path('salesman-lead-performance/', views.salesman_lead_performance_report, name='salesman_lead_performance'),
     path('lead-forecasting/', views.LeadForecastingView.as_view(), name='lead_forecasting'),
     path(
         'lead-forecasting/regenerate-brief/',

@@ -91,16 +91,14 @@ class Customer(BaseModel):
     LEAD_SOURCE_CHOICES = [
         ('', '—'),
         ('facebook', 'Facebook'),
-        ('instagram', 'Instagram'),
-        ('tiktok', 'TikTok'),
+        ('whatsapp', 'WhatsApp'),
         ('google', 'Google'),
-        ('seo', 'SEO'),
+        ('sales', 'Sales'),
         ('reference', 'Reference'),
-        ('direct_enquiry', 'Direct Enquiry'),
-        ('linkedin', 'LinkedIn'),
-        ('outdoor_sales', 'Outdoor Sales'),
-        ('tele_calling', 'Tele Calling'),
+        ('other', 'Other'),
     ]
+    # Alias for reports / API naming
+    SOURCE_OF_LEAD_CHOICES = LEAD_SOURCE_CHOICES
     customer_number = models.CharField(max_length=50, unique=True, editable=False)
     name = models.CharField(max_length=200, blank=True, default='')
     email = models.EmailField(blank=True)
@@ -150,13 +148,13 @@ class Customer(BaseModel):
         limit_choices_to={'converts_to_customer': False},
         help_text='Pipeline column for leads (customers do not use this).',
     )
-    lead_source = models.CharField(
+    source_of_lead = models.CharField(
         max_length=30,
         blank=True,
         default='',
         choices=LEAD_SOURCE_CHOICES,
-        verbose_name='Source',
-        help_text='Where this lead came from (Facebook, Google, referral, etc.).',
+        verbose_name='Source of lead',
+        help_text='Where this lead came from (Facebook, WhatsApp, Google, etc.).',
     )
     assigned_salesperson = models.ForeignKey(
         'hr.Employee',
@@ -257,10 +255,19 @@ class Customer(BaseModel):
         return [label] if label else []
 
     @property
+    def lead_source(self):
+        """Backward-compatible alias."""
+        return self.source_of_lead
+
+    @property
+    def source_of_lead_display_label(self):
+        return self.lead_source_display_label
+
+    @property
     def lead_source_display_label(self):
-        if not self.lead_source:
+        if not self.source_of_lead:
             return ''
-        return dict(self.LEAD_SOURCE_CHOICES).get(self.lead_source, self.lead_source)
+        return dict(self.LEAD_SOURCE_CHOICES).get(self.source_of_lead, self.source_of_lead)
 
     @property
     def assigned_salesman_label(self):
@@ -290,6 +297,48 @@ class CustomerPublicUpload(BaseModel):
 
     def __str__(self):
         return f'{self.customer.customer_number}: {self.original_filename or self.file.name}'
+
+
+class SiteVisitLog(BaseModel):
+    """Daily visit record (DVR) for field sales — one row per site visit."""
+
+    OUTCOME_INTERESTED = 'interested'
+    OUTCOME_NOT_INTERESTED = 'not_interested'
+    OUTCOME_FOLLOW_UP = 'follow_up'
+    OUTCOME_CONVERTED = 'converted'
+    OUTCOME_OTHER = 'other'
+    OUTCOME_CHOICES = [
+        (OUTCOME_INTERESTED, 'Interested'),
+        (OUTCOME_NOT_INTERESTED, 'Not Interested'),
+        (OUTCOME_FOLLOW_UP, 'Follow-up Needed'),
+        (OUTCOME_CONVERTED, 'Converted'),
+        (OUTCOME_OTHER, 'Other'),
+    ]
+
+    visit_date = models.DateField(db_column='date')
+    lead = models.ForeignKey(
+        Customer,
+        on_delete=models.CASCADE,
+        related_name='site_visits',
+    )
+    salesman = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='crm_site_visits',
+    )
+    location = models.CharField(max_length=500, blank=True)
+    notes = models.TextField(blank=True)
+    outcome = models.CharField(max_length=30, choices=OUTCOME_CHOICES, default=OUTCOME_FOLLOW_UP)
+
+    class Meta:
+        ordering = ['-visit_date', '-created_at']
+        verbose_name = 'Site visit log'
+        verbose_name_plural = 'Site visit logs'
+
+    def __str__(self):
+        return f'{self.visit_date} — {self.lead_id} ({self.get_outcome_display()})'
 
     @property
     def is_probably_image(self):
