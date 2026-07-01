@@ -1,0 +1,386 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-start flex-wrap gap-2">
+    <div>
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-2">
+                <li class="breadcrumb-item"><a href="{% url 'mes:index' %}">Manufacturing</a></li>
+                <li class="breadcrumb-item"><a href="{% url 'mes:production_order_list' %}">Production Orders</a></li>
+                <li class="breadcrumb-item active">{{ order.po_number }}</li>
+            </ol>
+        </nav>
+        <div class="d-flex align-items-center gap-2 flex-wrap">
+            <h4 class="mb-0 fw-bold">{{ order.po_number }}</h4>
+            {% if order.status == 'draft' %}
+            <span class="badge bg-secondary">Draft</span>
+            {% elif order.status == 'released' %}
+            <span class="badge bg-primary">Released</span>
+            {% elif order.status == 'in_production' or order.status == 'in_progress' %}
+            <span class="badge bg-info text-dark">In Production</span>
+            {% elif order.status == 'on_hold' %}
+            <span class="badge bg-warning text-dark">On Hold</span>
+            {% elif order.status == 'finished' or order.status == 'done' %}
+            <span class="badge bg-success">Finished</span>
+            {% elif order.status == 'cancelled' %}
+            <span class="badge bg-dark">Cancelled</span>
+            {% endif %}
+        </div>
+        <p class="text-muted mb-0 mt-1">Ref: {{ order.reference|default:"—" }}{% if source_template %} · Template: {{ source_template }}{% endif %}</p>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
+        {% if can_edit_po %}
+        <a href="{% url 'mes:production_order_edit' order.pk %}" class="btn btn-outline-secondary">
+            <i class="fas fa-edit me-1"></i>Edit
+        </a>
+        {% endif %}
+        {% if can_generate_parts %}
+        <form method="post" action="{% url 'mes:production_order_generate_parts' order.pk %}" class="d-inline">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-outline-primary">
+                <i class="fas fa-cubes me-1"></i>Generate parts
+            </button>
+        </form>
+        {% endif %}
+        {% if can_release %}
+        <form method="post" action="{% url 'mes:production_order_release' order.pk %}" class="d-inline">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-success">
+                <i class="fas fa-play me-1"></i>Release to floor
+            </button>
+        </form>
+        {% endif %}
+        {% if can_edit_po %}
+        <button type="button" class="btn btn-outline-danger"
+                data-bs-toggle="modal" data-bs-target="#mesDeleteModal"
+                onclick="mesOpenDeleteModal('{% url 'mes:production_order_delete' order.pk %}', '{{ order.po_number|escapejs }}')">
+            <i class="fas fa-trash me-1"></i>Delete
+        </button>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-body">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+            {% for stage, stage_label in pipeline_stages %}
+            <div class="text-center flex-fill">
+                <div class="rounded-circle d-inline-flex align-items-center justify-content-center mb-1 {% if order.status == stage %}bg-primary text-white{% elif order.pipeline_index > forloop.counter0 %}bg-success text-white{% else %}bg-light text-muted{% endif %}" style="width:2rem;height:2rem;font-size:0.75rem;">{{ forloop.counter }}</div>
+                <div class="small {% if order.status == stage %}fw-semibold{% else %}text-muted{% endif %}">{{ stage_label }}</div>
+            </div>
+            {% if not forloop.last %}<div class="flex-grow-0 text-muted">→</div>{% endif %}
+            {% endfor %}
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+            {% if prev_status %}
+            <form method="post" action="{% url 'mes:production_order_pipeline' order.pk %}" class="d-inline">{% csrf_token %}
+                <input type="hidden" name="target_status" value="{{ prev_status }}">
+                <button type="submit" class="btn btn-sm btn-outline-secondary">← Back</button>
+            </form>
+            {% endif %}
+            {% if next_status %}
+            <form method="post" action="{% url 'mes:production_order_pipeline' order.pk %}" class="d-inline">{% csrf_token %}
+                <input type="hidden" name="target_status" value="{{ next_status }}">
+                <button type="submit" class="btn btn-sm btn-primary">Advance → {{ next_status_label }}</button>
+            </form>
+            {% endif %}
+            {% if order.status != 'on_hold' and order.status != 'finished' and order.status != 'cancelled' and order.status != 'draft' %}
+            <form method="post" action="{% url 'mes:production_order_pipeline' order.pk %}" class="d-inline">{% csrf_token %}
+                <input type="hidden" name="target_status" value="on_hold">
+                <button type="submit" class="btn btn-sm btn-outline-warning">On Hold</button>
+            </form>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-4">
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-transparent"><h6 class="mb-0 fw-semibold">Order details</h6></div>
+            <div class="card-body">
+                <dl class="row mb-0 small">
+                    <dt class="col-5 text-muted">Status</dt><dd class="col-7">{{ order.get_status_display }}</dd>
+                    <dt class="col-5 text-muted">Quantity</dt><dd class="col-7">{{ order.quantity }}</dd>
+                    <dt class="col-5 text-muted">Due date</dt><dd class="col-7">{{ order.due_date|date:"d/m/Y"|default:"—" }}</dd>
+                    <dt class="col-5 text-muted">Parts</dt><dd class="col-7">{{ parts_count }}</dd>
+                    <dt class="col-5 text-muted">Total WIP</dt><dd class="col-7 fw-semibold">AED {{ order.wip_value|floatformat:2 }}</dd>
+                    <dt class="col-5 text-muted">Overhead rate</dt><dd class="col-7">{{ order.overhead_percent|floatformat:1 }}%</dd>
+                    <dt class="col-5 text-muted">Released</dt>
+                    <dd class="col-7">{{ order.released_at|date:"d/m/Y H:i"|default:"—" }}</dd>
+                    <dt class="col-5 text-muted">Finished</dt>
+                    <dd class="col-7">{{ order.finished_at|date:"d/m/Y H:i"|default:"—" }}</dd>
+                </dl>
+            </div>
+        </div>
+        {% if status_logs %}
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-transparent"><h6 class="mb-0 fw-semibold">Status history</h6></div>
+            <div class="card-body small p-0">
+                <table class="table table-sm mb-0">
+                    <thead class="table-light"><tr><th>When</th><th>Change</th><th>By</th></tr></thead>
+                    <tbody>
+                        {% for log in status_logs %}
+                        <tr>
+                            <td>{{ log.changed_at|date:"d/m/Y H:i" }}</td>
+                            <td>{{ log.from_status_label }} → {{ log.to_status_label }}</td>
+                            <td>{{ log.changed_by.get_full_name|default:"—" }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-transparent"><h6 class="mb-0 fw-semibold">Total production cost</h6></div>
+            <div class="card-body small">
+                {% if cost_breakdown.is_frozen %}
+                <p class="text-muted mb-2">Cost frozen at finish.</p>
+                {% endif %}
+                <dl class="row mb-0">
+                    <dt class="col-7 text-muted">Material (inventory)</dt>
+                    <dd class="col-5 text-end">AED {{ cost_breakdown.material|floatformat:2 }}</dd>
+                    <dt class="col-7 text-muted">Labour (team × HR rate)</dt>
+                    <dd class="col-5 text-end">AED {{ cost_breakdown.labour|floatformat:2 }}</dd>
+                    <dt class="col-7 text-muted">Machine (time × wc rate)</dt>
+                    <dd class="col-5 text-end">AED {{ cost_breakdown.machine|floatformat:2 }}</dd>
+                    <dt class="col-7 text-muted">Overhead</dt>
+                    <dd class="col-5 text-end">AED {{ cost_breakdown.overhead|floatformat:2 }}</dd>
+                    <dt class="col-7 fw-semibold">Total</dt>
+                    <dd class="col-5 text-end fw-semibold">AED {{ cost_breakdown.total|floatformat:2 }}</dd>
+                    <dt class="col-7 text-muted">Per unit (÷ {{ order.quantity }})</dt>
+                    <dd class="col-5 text-end">AED {{ cost_breakdown.per_unit|floatformat:2 }}</dd>
+                </dl>
+            </div>
+        </div>
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-transparent"><h6 class="mb-0 fw-semibold">Team labour</h6></div>
+            <div class="card-body small">
+                {% if can_assign_team %}
+                <form method="post" action="{% url 'mes:production_order_team' order.pk %}">
+                    {% csrf_token %}
+                    {{ team_form.assigned_employees }}
+                    <button type="submit" class="btn btn-sm btn-outline-primary mt-2">Save team</button>
+                </form>
+                {% else %}
+                <p class="text-muted mb-0">Team locked — order is finished or cancelled.</p>
+                {% endif %}
+                {% if cost_breakdown.labour_lines %}
+                <table class="table table-sm mt-3 mb-0">
+                    <thead><tr><th>Member</th><th class="text-end">Hrs</th><th class="text-end">Rate</th><th class="text-end">Cost</th></tr></thead>
+                    <tbody>
+                        {% for row in cost_breakdown.labour_lines %}
+                        <tr>
+                            <td>{{ row.display_name }}</td>
+                            <td class="text-end">{{ row.hours|floatformat:2 }}</td>
+                            <td class="text-end">{{ row.hourly_rate|floatformat:2 }}</td>
+                            <td class="text-end">{{ row.labour_cost|floatformat:2 }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                <p class="text-muted mb-0 mt-2">Hours from HR check-in/out tagged to this production order (both in and out required).</p>
+                {% else %}
+                <p class="text-muted mb-0 mt-2">Assign team members; hours appear when they punch in/out with this PO in HR.</p>
+                {% endif %}
+            </div>
+        </div>
+        {% if is_on_floor %}
+        <div class="alert alert-info small mb-0">
+            <i class="fas fa-tablet-alt me-1"></i>
+            This order is on the floor — parts are scannable on the tablet.
+        </div>
+        {% elif parts_count %}
+        <div class="alert alert-warning small mb-0">
+            <i class="fas fa-lock me-1"></i>
+            Parts generated but not released — tablet scans will be rejected until you release.
+        </div>
+        {% else %}
+        <div class="alert alert-secondary small mb-0">
+            Add BOM lines, then <strong>Generate parts</strong>, then <strong>Release to floor</strong>.
+        </div>
+        {% endif %}
+    </div>
+    <div class="col-lg-8">
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-transparent d-flex justify-content-between align-items-center">
+                <h6 class="mb-0 fw-semibold">Routing (operations)</h6>
+                {% if can_edit_routing %}
+                <a href="{% url 'mes:routing_operation_create' order.pk %}" class="btn btn-sm btn-primary">
+                    <i class="fas fa-plus me-1"></i>Add operation
+                </a>
+                {% endif %}
+            </div>
+            <div class="table-responsive">
+                <table class="table mb-0 table-sm align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width: 3rem;">Seq</th>
+                            <th>Work center</th>
+                            <th>Team</th>
+                            <th class="text-end">Std time</th>
+                            <th class="text-end">Rate (AED/hr)</th>
+                            <th>Status</th>
+                            <th class="text-end">Planned cost</th>
+                            {% if can_edit_routing %}<th class="text-end" style="width: 140px;">Actions</th>{% endif %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for op in routing_ops %}
+                        <tr>
+                            <td>{{ op.sequence }}</td>
+                            <td>{{ op.work_center.code }} — {{ op.work_center.name }}</td>
+                            <td class="small">
+                                {% for emp in op.assigned_employees.all %}
+                                {{ emp.full_name }}{% if not forloop.last %}, {% endif %}
+                                {% empty %}
+                                <span class="text-muted">—</span>
+                                {% endfor %}
+                            </td>
+                            <td class="text-end">{{ op.std_time_minutes }} min</td>
+                            <td class="text-end">{{ op.rate_per_hour|floatformat:2 }}</td>
+                            <td>
+                                {% if op.status == 'done' %}
+                                <span class="badge bg-success">Done</span>
+                                {% elif op.status == 'in_progress' %}
+                                <span class="badge bg-info text-dark">In Progress</span>
+                                {% else %}
+                                <span class="badge bg-secondary">Pending</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-end text-muted">AED {{ op.planned_labour_cost|floatformat:2 }}</td>
+                            {% if can_edit_routing or can_assign_team %}
+                            <td class="text-end">
+                                <div class="d-inline-flex gap-1">
+                                    {% if can_edit_routing %}
+                                    <form method="post" action="{% url 'mes:routing_operation_reorder' order.pk op.pk 'up' %}" class="d-inline">
+                                        {% csrf_token %}
+                                        <button type="submit" class="btn btn-sm btn-outline-secondary py-0" title="Move up">↑</button>
+                                    </form>
+                                    <form method="post" action="{% url 'mes:routing_operation_reorder' order.pk op.pk 'down' %}" class="d-inline">
+                                        {% csrf_token %}
+                                        <button type="submit" class="btn btn-sm btn-outline-secondary py-0" title="Move down">↓</button>
+                                    </form>
+                                    <a href="{% url 'mes:routing_operation_edit' order.pk op.pk %}" class="btn btn-sm btn-outline-secondary py-0">Edit</a>
+                                    <button type="button" class="btn btn-sm btn-outline-danger py-0"
+                                            data-bs-toggle="modal" data-bs-target="#mesDeleteModal"
+                                            onclick="mesOpenDeleteModal('{% url 'mes:routing_operation_delete' order.pk op.pk %}', '{{ op.work_center.code|escapejs }}')">
+                                        Del
+                                    </button>
+                                    {% elif can_assign_team %}
+                                    <a href="{% url 'mes:routing_operation_team_page' order.pk op.pk %}" class="btn btn-sm btn-outline-secondary py-0">Team</a>
+                                    {% endif %}
+                                </div>
+                            </td>
+                            {% endif %}
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="{% if can_edit_routing or can_assign_team %}8{% else %}7{% endif %}" class="text-center py-3 text-muted">
+                                No routing yet —
+                                {% if can_edit_routing %}
+                                <a href="{% url 'mes:routing_operation_create' order.pk %}">add an operation</a>
+                                or save the order to auto-seed from work centers.
+                                {% else %}
+                                routing is seeded when the order is created.
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-transparent d-flex justify-content-between align-items-center">
+                <h6 class="mb-0 fw-semibold">Bill of Materials</h6>
+                {% if can_edit_bom %}
+                <a href="{% url 'mes:bom_item_create' order.pk %}" class="btn btn-sm btn-primary">
+                    <i class="fas fa-plus me-1"></i>Add BOM line
+                </a>
+                {% endif %}
+            </div>
+            <div class="table-responsive">
+                <table class="table mb-0 table-sm align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Part name</th>
+                            <th>Material</th>
+                            <th class="text-end">Unit cost</th>
+                            <th class="text-end">Qty</th>
+                            {% if can_edit_bom %}<th class="text-end" style="width: 120px;">Actions</th>{% endif %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item, depth in bom_tree %}
+                        <tr>
+                            <td class="fw-medium" style="padding-left: {{ depth|add:1 }}rem;">
+                                {% if depth %}<span class="text-muted">└</span> {% endif %}{{ item.part_name }}
+                            </td>
+                            <td>{{ item.get_material_type_display }}</td>
+                            <td class="text-end">{{ item.unit_cost|floatformat:2 }}</td>
+                            <td class="text-end">{{ item.quantity }} {{ item.unit }}</td>
+                            {% if can_edit_bom %}
+                            <td class="text-end">
+                                <a href="{% url 'mes:bom_item_edit' order.pk item.pk %}" class="btn btn-sm btn-outline-secondary py-0">Edit</a>
+                                <button type="button" class="btn btn-sm btn-outline-danger py-0"
+                                        data-bs-toggle="modal" data-bs-target="#mesDeleteModal"
+                                        onclick="mesOpenDeleteModal('{% url 'mes:bom_item_delete' order.pk item.pk %}', '{{ item.part_name|escapejs }}')">
+                                    Del
+                                </button>
+                            </td>
+                            {% endif %}
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="{% if can_edit_bom %}5{% else %}4{% endif %}" class="text-center py-3 text-muted">No BOM lines — add lines to define the assembly.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-transparent d-flex justify-content-between align-items-center">
+                <h6 class="mb-0 fw-semibold">Parts ({{ parts_count }})</h6>
+                {% if can_edit_bom %}
+                <a href="{% url 'mes:part_create' order.pk %}" class="btn btn-sm btn-outline-secondary">
+                    <i class="fas fa-plus me-1"></i>Add part manually
+                </a>
+                {% endif %}
+            </div>
+            <div class="table-responsive">
+                <table class="table mb-0 table-sm align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Barcode</th>
+                            <th>Item</th>
+                            <th>Station</th>
+                            <th>Status</th>
+                            <th class="text-end" style="width: 100px;">Label</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for part in parts %}
+                        <tr>
+                            <td class="font-monospace small">{{ part.barcode }}</td>
+                            <td>{{ part.bom_item.part_name }}</td>
+                            <td>{{ part.current_work_center.code|default:"—" }}</td>
+                            <td>{{ part.get_status_display }}</td>
+                            <td class="text-end">
+                                <a href="{% url 'mes:part_label' part.pk %}" class="btn btn-sm btn-outline-secondary py-0" target="_blank" title="Print label">
+                                    <i class="fas fa-print"></i>
+                                </a>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="5" class="text-center py-3 text-muted">No parts yet — use Generate parts after defining the BOM.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% include 'mes/partials/delete_modal.html' %}
+{% endblock %}

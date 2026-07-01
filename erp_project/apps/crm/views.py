@@ -730,6 +730,9 @@ class CustomerDetailView(PermissionRequiredMixin, DetailView):
         context['can_create_tasks'] = self.request.user.is_superuser or PermissionChecker.has_permission(
             self.request.user, 'projects', 'create'
         )
+        context['can_create_estimate'] = self.request.user.is_superuser or PermissionChecker.has_permission(
+            self.request.user, 'sales', 'create'
+        )
         from apps.projects.forms import CustomerTaskCreateForm
         context['customer_task_form'] = kwargs.get('customer_task_form', CustomerTaskCreateForm())
         # Inject customer advances for the advances tab

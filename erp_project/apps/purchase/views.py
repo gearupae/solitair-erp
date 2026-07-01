@@ -88,6 +88,30 @@ def _pr_inventory_items_json():
     return _active_inventory_items_json()
 
 
+def _pr_inventory_stock_notices(pr):
+    """PR lines linked to inventory items that already have stock on hand."""
+    from apps.inventory.serial_stock import item_available_qty
+
+    notices = []
+    for line in pr.items.select_related('inventory_item').all():
+        if not line.inventory_item_id:
+            continue
+        inv = line.inventory_item
+        if not inv.is_active or inv.status != 'active':
+            continue
+        available = item_available_qty(inv)
+        if available <= 0:
+            continue
+        notices.append({
+            'name': inv.name,
+            'item_code': inv.item_code,
+            'requested_qty': line.quantity,
+            'available_qty': available,
+            'covers_request': available >= line.quantity,
+        })
+    return notices
+
+
 def _save_vendor_bill_attachments(request, bill):
     """Persist uploaded files from `attachments` multi-file input."""
     uploaded = request.FILES.getlist('attachments')
@@ -366,7 +390,7 @@ class PurchaseRequestDetailView(PermissionRequiredMixin, DetailView):
         qs = (
             PurchaseRequest.objects.filter(is_active=True)
             .select_related('requested_by', 'department', 'created_by')
-            .prefetch_related('items', 'attachments')
+            .prefetch_related('items__inventory_item', 'attachments')
         )
         from apps.core.visibility import filter_purchase_requests_for_user
 
@@ -375,6 +399,7 @@ class PurchaseRequestDetailView(PermissionRequiredMixin, DetailView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['title'] = f'PR: {self.object.pr_number}'
+        context['pr_inventory_stock_notices'] = _pr_inventory_stock_notices(self.object)
         context['can_edit'] = (
             (self.request.user.is_superuser or
              PermissionChecker.has_permission(self.request.user, 'purchase', 'edit'))

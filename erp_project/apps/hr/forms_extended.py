@@ -433,7 +433,10 @@ class HolidayForm(forms.ModelForm):
 class AttendanceMarkForm(forms.ModelForm):
     class Meta:
         model = AttendanceRecord
-        fields = ['employee', 'date', 'check_in', 'check_out', 'status', 'overtime_type', 'notes', 'source', 'project']
+        fields = [
+            'employee', 'date', 'check_in', 'check_out', 'status',
+            'overtime_type', 'notes', 'source', 'project', 'production_order',
+        ]
         widgets = {
             'date': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
             'check_in': forms.TimeInput(attrs={'type': 'time', 'class': 'form-control'}),
@@ -447,11 +450,31 @@ class AttendanceMarkForm(forms.ModelForm):
         self.fields['project'].queryset = Project.objects.filter(is_active=True).order_by('project_code', 'name')
         self.fields['project'].required = False
         self.fields['project'].label = 'Project (labour / site)'
+        from apps.mes.models import ProductionOrder
+        labour_po_statuses = (
+            ProductionOrder.STATUS_DRAFT,
+            ProductionOrder.STATUS_RELEASED,
+            ProductionOrder.STATUS_IN_PRODUCTION,
+            ProductionOrder.STATUS_ON_HOLD,
+        )
+        po_qs = ProductionOrder.objects.filter(
+            is_active=True,
+            status__in=labour_po_statuses,
+        ).order_by('-created_at')
+        if self.instance and self.instance.employee_id:
+            emp = self.instance.employee
+            if emp.company_id:
+                po_qs = po_qs.filter(company_id=emp.company_id)
+        self.fields['production_order'].queryset = po_qs
+        self.fields['production_order'].required = False
+        self.fields['production_order'].label = 'Production order (MES labour)'
         for name, field in self.fields.items():
             if name not in self.Meta.widgets:
                 field.widget.attrs.setdefault(
                     'class',
-                    'form-select' if name in ('employee', 'status', 'source', 'overtime_type', 'project') else 'form-control',
+                    'form-select' if name in (
+                        'employee', 'status', 'source', 'overtime_type', 'project', 'production_order',
+                    ) else 'form-control',
                 )
 
     def clean(self):

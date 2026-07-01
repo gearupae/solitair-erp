@@ -1,0 +1,492 @@
+{% extends 'base.html' %}
+
+{% block extra_css %}
+<style>
+    body { background: #1a1d21; }
+    .tablet-app {
+        max-width: 960px;
+        margin: 0 auto;
+        color: #f8f9fa;
+    }
+    .tablet-app .form-control,
+    .tablet-app .form-select {
+        font-size: 1.25rem;
+        min-height: 3.25rem;
+        border-width: 2px;
+    }
+    .tablet-app .scan-input {
+        font-size: 1.75rem;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        font-family: ui-monospace, monospace;
+    }
+    .tablet-banner {
+        font-size: 1.35rem;
+        font-weight: 600;
+        border-radius: 0.75rem;
+        padding: 1rem 1.25rem;
+        display: none;
+    }
+    .tablet-banner.show { display: block; }
+    .tablet-banner.success { background: #198754; color: #fff; }
+    .tablet-banner.error { background: #dc3545; color: #fff; }
+    .tablet-card {
+        background: #2b3035;
+        border: 1px solid #495057;
+        border-radius: 0.75rem;
+        color: #f8f9fa;
+    }
+    .tablet-card .card-header {
+        background: #343a40;
+        border-bottom: 1px solid #495057;
+        font-size: 1.1rem;
+        font-weight: 600;
+    }
+    .tablet-btn {
+        min-height: 3.5rem;
+        font-size: 1.15rem;
+        font-weight: 600;
+        border-width: 2px;
+    }
+    .tablet-btn-scan-type.active {
+        background: #0d6efd;
+        border-color: #0d6efd;
+        color: #fff;
+    }
+    .checklist-row {
+        background: #343a40;
+        border: 2px solid #495057;
+        border-radius: 0.5rem;
+        padding: 1rem;
+        margin-bottom: 0.75rem;
+    }
+    .checklist-row.done {
+        border-color: #198754;
+        background: #1e3a2f;
+    }
+    .checklist-row .form-check-input {
+        width: 1.75rem;
+        height: 1.75rem;
+        margin-top: 0;
+    }
+    .part-hero {
+        font-size: 1.5rem;
+        font-weight: 700;
+    }
+    .part-hero .barcode {
+        font-family: ui-monospace, monospace;
+        font-size: 2rem;
+        letter-spacing: 0.06em;
+    }
+    .drawing-link {
+        display: block;
+        padding: 1rem;
+        background: #212529;
+        border: 2px solid #495057;
+        border-radius: 0.5rem;
+        color: #9ec5fe;
+        text-decoration: none;
+        font-size: 1.1rem;
+        margin-bottom: 0.5rem;
+    }
+    .drawing-link:hover { color: #cfe2ff; border-color: #0d6efd; }
+    .drawing-preview {
+        max-width: 100%;
+        max-height: 280px;
+        border-radius: 0.5rem;
+        border: 1px solid #495057;
+    }
+    #scanResults { display: none; }
+    #scanResults.visible { display: block; }
+    .queue-row {
+        background: #343a40;
+        border: 2px solid #495057;
+        border-radius: 0.5rem;
+        padding: 1rem 1.15rem;
+        margin-bottom: 0.65rem;
+        cursor: pointer;
+        transition: border-color 0.15s, background 0.15s;
+    }
+    .queue-row:active,
+    .queue-row:hover {
+        border-color: #0d6efd;
+        background: #3d4449;
+    }
+    .queue-row .queue-po {
+        font-size: 1.2rem;
+        font-weight: 700;
+    }
+    .queue-row .queue-item {
+        font-size: 1.05rem;
+        color: #dee2e6;
+    }
+    .queue-row .queue-meta {
+        font-size: 0.95rem;
+        color: #adb5bd;
+    }
+    .queue-badge-pending { background: #6c757d; }
+    .queue-badge-wip { background: #0dcaf0; color: #000; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="tablet-app py-3">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h3 class="fw-bold mb-0"><i class="fas fa-tablet-alt me-2"></i>Floor Tablet</h3>
+        <a href="{% url 'mes:index' %}" class="btn btn-outline-light btn-sm">Exit</a>
+    </div>
+
+    <div id="tabletBanner" class="tablet-banner mb-3" role="alert"></div>
+
+    {% if not company %}
+    <div class="alert alert-danger">No active company configured.</div>
+    {% else %}
+
+    <div class="tablet-card card mb-3">
+        <div class="card-body">
+            <div class="row g-3 mb-3">
+                <div class="col-md-7">
+                    <label class="form-label text-light fw-semibold">Station</label>
+                    <select id="workCenterSelect" class="form-select">
+                        <optgroup label="Production line">
+                            {% for wc in production_steps %}
+                            <option value="{{ wc.pk }}">{{ wc.sequence_order }}. {{ wc.code }} — {{ wc.name }}</option>
+                            {% endfor %}
+                        </optgroup>
+                        {% if location_centers %}
+                        <optgroup label="Locations (not on line)">
+                            {% for wc in location_centers %}
+                            <option value="{{ wc.pk }}">{{ wc.code }} — {{ wc.name }}</option>
+                            {% endfor %}
+                        </optgroup>
+                        {% endif %}
+                    </select>
+                </div>
+                <div class="col-md-5">
+                    <label class="form-label text-light fw-semibold">Scan type</label>
+                    <div class="btn-group w-100" role="group">
+                        <button type="button" class="btn btn-outline-light tablet-btn tablet-btn-scan-type active" data-scan-type="in">Scan IN</button>
+                        <button type="button" class="btn btn-outline-light tablet-btn tablet-btn-scan-type" data-scan-type="out">Scan OUT</button>
+                    </div>
+                </div>
+            </div>
+            <label class="form-label text-light fw-semibold">Barcode</label>
+            <input type="text" id="barcodeInput" class="form-control scan-input mb-2" placeholder="Scan or type barcode…" autocomplete="off" autofocus>
+            <button type="button" id="submitScanBtn" class="btn btn-primary tablet-btn w-100">
+                <i class="fas fa-barcode me-2"></i>Submit scan
+            </button>
+        </div>
+    </div>
+
+    <div class="tablet-card card mb-3" id="stationQueueCard">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span id="queueTitle">Work queue</span>
+            <span class="badge bg-secondary fs-6" id="queueCount">0</span>
+        </div>
+        <div class="card-body p-3" id="queuePanel">
+            <p class="text-secondary mb-0">Select a station to load the queue.</p>
+        </div>
+    </div>
+
+    <div id="scanResults">
+        <div class="tablet-card card mb-3">
+            <div class="card-body part-hero">
+                <div class="barcode" id="resBarcode">—</div>
+                <div id="resPartName" class="mt-1">—</div>
+                <div class="text-secondary mt-2 fs-5">
+                    PO <span id="resPo">—</span> ·
+                    <span id="resStation">—</span> ·
+                    <span id="resStatus">—</span>
+                </div>
+                <div class="text-info mt-1 fs-6">WIP: AED <span id="resWip">0.00</span></div>
+            </div>
+        </div>
+
+        <div class="tablet-card card mb-3">
+            <div class="card-header">Released drawings</div>
+            <div class="card-body" id="drawingsPanel">
+                <p class="text-secondary mb-0">No released drawings for this part.</p>
+            </div>
+        </div>
+
+        <div class="tablet-card card mb-3">
+            <div class="card-header">Station checklist — <span id="checklistName">—</span></div>
+            <div class="card-body" id="checklistPanel">
+                <p class="text-secondary mb-0">No checklist for this station.</p>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    const csrfToken = '{{ csrf_token }}';
+    const scanUrl = '{% url "mes:api_scan" %}';
+    const checklistUrl = '{% url "mes:api_checklist_complete" %}';
+    const queueUrl = '{% url "mes:api_station_queue" %}';
+    let scanType = 'in';
+    let lastScan = null;
+
+    const banner = document.getElementById('tabletBanner');
+    const barcodeInput = document.getElementById('barcodeInput');
+    const workCenterSelect = document.getElementById('workCenterSelect');
+    const scanResults = document.getElementById('scanResults');
+    const queuePanel = document.getElementById('queuePanel');
+    const queueTitle = document.getElementById('queueTitle');
+    const queueCount = document.getElementById('queueCount');
+
+    function showBanner(type, message) {
+        banner.textContent = message;
+        banner.className = 'tablet-banner show mb-3 ' + (type === 'success' ? 'success' : 'error');
+    }
+
+    function hideBanner() {
+        banner.className = 'tablet-banner mb-3';
+    }
+
+    document.querySelectorAll('.tablet-btn-scan-type').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            document.querySelectorAll('.tablet-btn-scan-type').forEach(function (b) {
+                b.classList.remove('active');
+            });
+            btn.classList.add('active');
+            scanType = btn.dataset.scanType;
+            barcodeInput.focus();
+        });
+    });
+
+    const savedWc = sessionStorage.getItem('mes_tablet_work_center');
+    if (savedWc && workCenterSelect) {
+        workCenterSelect.value = savedWc;
+    }
+    workCenterSelect?.addEventListener('change', function () {
+        sessionStorage.setItem('mes_tablet_work_center', workCenterSelect.value);
+        loadStationQueue();
+    });
+
+    function selectedStationLabel() {
+        if (!workCenterSelect || workCenterSelect.selectedIndex < 0) return 'Station';
+        return workCenterSelect.options[workCenterSelect.selectedIndex].text.trim();
+    }
+
+    function formatDueDate(iso) {
+        if (!iso) return '—';
+        const parts = iso.split('-');
+        if (parts.length !== 3) return iso;
+        return parts[2] + '/' + parts[1] + '/' + parts[0];
+    }
+
+    function queueStatusBadge(status, label) {
+        const cls = status === 'in_wip' ? 'queue-badge-wip' : 'queue-badge-pending';
+        return '<span class="badge ' + cls + ' fs-6">' + (label || status) + '</span>';
+    }
+
+    function renderQueue(data) {
+        const wc = data.work_center || {};
+        const items = data.items || [];
+        const stationName = wc.name || wc.code || selectedStationLabel();
+        queueTitle.textContent = 'Work queue — ' + stationName;
+        queueCount.textContent = String(data.count != null ? data.count : items.length);
+
+        if (!items.length) {
+            queuePanel.innerHTML = '<p class="text-secondary mb-0 fs-5">No parts waiting at this station.</p>';
+            return;
+        }
+
+        queuePanel.innerHTML = items.map(function (row) {
+            const ref = row.reference ? ' · ' + row.reference : '';
+            return '<div class="queue-row" data-barcode="' + row.barcode + '" tabindex="0" role="button">' +
+                '<div class="d-flex justify-content-between align-items-start gap-2">' +
+                '<div class="flex-grow-1 min-w-0">' +
+                '<div class="queue-po">' + row.po_number + ref + '</div>' +
+                '<div class="queue-item text-truncate">' + row.item_name + '</div>' +
+                '<div class="queue-meta mt-1">' +
+                '<span class="font-monospace">' + row.barcode + '</span>' +
+                ' · Due ' + formatDueDate(row.due_date) +
+                '</div></div>' +
+                '<div class="flex-shrink-0">' + queueStatusBadge(row.part_status, row.part_status_display) + '</div>' +
+                '</div></div>';
+        }).join('');
+
+        queuePanel.querySelectorAll('.queue-row').forEach(function (el) {
+            function pickRow() {
+                const code = el.dataset.barcode;
+                if (!code) return;
+                barcodeInput.value = code;
+                barcodeInput.focus();
+                barcodeInput.select();
+            }
+            el.addEventListener('click', pickRow);
+            el.addEventListener('keydown', function (e) {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    pickRow();
+                }
+            });
+        });
+    }
+
+    async function loadStationQueue() {
+        if (!workCenterSelect || !queuePanel) return;
+        const workCenterId = workCenterSelect.value;
+        if (!workCenterId) {
+            queuePanel.innerHTML = '<p class="text-secondary mb-0">Select a station to load the queue.</p>';
+            return;
+        }
+        queuePanel.innerHTML = '<p class="text-secondary mb-0">Loading queue…</p>';
+        try {
+            const resp = await fetch(queueUrl + '?work_center_id=' + encodeURIComponent(workCenterId), {
+                credentials: 'same-origin',
+                headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            });
+            const data = await resp.json();
+            if (!data.success) {
+                queuePanel.innerHTML = '<p class="text-danger mb-0">' + (data.message || 'Could not load queue.') + '</p>';
+                return;
+            }
+            renderQueue(data);
+        } catch (err) {
+            queuePanel.innerHTML = '<p class="text-danger mb-0">Network error — could not load queue.</p>';
+        }
+    }
+
+    function renderDrawings(drawings) {
+        const panel = document.getElementById('drawingsPanel');
+        if (!drawings || !drawings.length) {
+            panel.innerHTML = '<p class="text-secondary mb-0">No released drawings for this part.</p>';
+            return;
+        }
+        panel.innerHTML = drawings.map(function (d) {
+            const isImage = /\.(png|jpe?g|gif|webp|svg)$/i.test(d.filename || d.url);
+            const preview = isImage
+                ? '<img src="' + d.url + '" alt="Drawing" class="drawing-preview mt-2 d-block">'
+                : '';
+            return '<a href="' + d.url + '" target="_blank" rel="noopener" class="drawing-link">' +
+                '<i class="fas fa-file-alt me-2"></i>Drawing v' + d.version + ' — ' + (d.filename || 'Open') +
+                '</a>' + preview;
+        }).join('');
+    }
+
+    function renderChecklist(checklist) {
+        const panel = document.getElementById('checklistPanel');
+        const nameEl = document.getElementById('checklistName');
+        if (!checklist || !checklist.items || !checklist.items.length) {
+            nameEl.textContent = '—';
+            panel.innerHTML = '<p class="text-secondary mb-0">No checklist for this station.</p>';
+            return;
+        }
+        nameEl.textContent = checklist.name;
+        panel.innerHTML = checklist.items.map(function (item) {
+            const done = item.completed;
+            return '<div class="checklist-row ' + (done ? 'done' : '') + '" data-item-id="' + item.id + '">' +
+                '<div class="d-flex align-items-center gap-3">' +
+                '<input type="checkbox" class="form-check-input flex-shrink-0" ' + (done ? 'checked disabled' : '') + ' id="chk-' + item.id + '">' +
+                '<label class="flex-grow-1 mb-0 fs-5" for="chk-' + item.id + '">' + item.label + '</label>' +
+                (done ? '<span class="badge bg-success fs-6">Done</span>' :
+                    '<button type="button" class="btn btn-success tablet-btn btn-complete" data-item-id="' + item.id + '">Complete</button>') +
+                '</div></div>';
+        }).join('');
+
+        panel.querySelectorAll('.btn-complete').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                completeItem(parseInt(btn.dataset.itemId, 10));
+            });
+        });
+    }
+
+    function renderScan(data) {
+        lastScan = data;
+        scanResults.classList.add('visible');
+        document.getElementById('resBarcode').textContent = data.part.barcode;
+        document.getElementById('resPartName').textContent = data.part.name;
+        document.getElementById('resPo').textContent = data.part.production_order;
+        document.getElementById('resStation').textContent = data.work_center.name;
+        document.getElementById('resStatus').textContent = data.part.status_display;
+        document.getElementById('resWip').textContent = parseFloat(data.wip_value || 0).toFixed(2);
+        renderDrawings(data.drawings);
+        renderChecklist(data.checklist);
+    }
+
+    async function submitScan() {
+        hideBanner();
+        const barcode = barcodeInput.value.trim();
+        if (!barcode) {
+            showBanner('error', 'Enter or scan a barcode.');
+            barcodeInput.focus();
+            return;
+        }
+        const workCenterId = workCenterSelect.value;
+        try {
+            const resp = await fetch(scanUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken,
+                },
+                body: JSON.stringify({
+                    barcode: barcode,
+                    work_center_id: parseInt(workCenterId, 10),
+                    scan_type: scanType,
+                }),
+            });
+            const data = await resp.json();
+            if (!data.success) {
+                showBanner('error', data.message || 'Scan failed.');
+                return;
+            }
+            showBanner('success', data.message);
+            renderScan(data);
+            barcodeInput.value = '';
+            barcodeInput.focus();
+            loadStationQueue();
+        } catch (err) {
+            showBanner('error', 'Network error — could not reach scan API.');
+        }
+    }
+
+    async function completeItem(itemId) {
+        if (!lastScan) return;
+        try {
+            const resp = await fetch(checklistUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken,
+                },
+                body: JSON.stringify({
+                    part_id: lastScan.part.id,
+                    checklist_item_id: itemId,
+                    work_center_id: lastScan.work_center.id,
+                }),
+            });
+            const data = await resp.json();
+            if (!data.success) {
+                showBanner('error', data.message || 'Could not complete checklist item.');
+                return;
+            }
+            showBanner('success', data.message);
+            if (data.checklist) {
+                renderChecklist(data.checklist);
+            }
+        } catch (err) {
+            showBanner('error', 'Network error — checklist not saved.');
+        }
+    }
+
+    document.getElementById('submitScanBtn')?.addEventListener('click', submitScan);
+    barcodeInput?.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            submitScan();
+        }
+    });
+
+    if (workCenterSelect && workCenterSelect.value) {
+        loadStationQueue();
+    }
+})();
+</script>
+{% endblock %}

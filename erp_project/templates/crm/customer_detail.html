@@ -102,6 +102,11 @@
             <span class="text-muted">{{ customer.customer_number }}</span>
         </div>
         <div>
+            {% if can_create_estimate %}
+            <a href="{% url 'sales:estimate_create' %}?customer={{ customer.pk }}" class="btn btn-outline-primary">
+                <i class="fas fa-file-invoice me-2"></i>Create Estimate
+            </a>
+            {% endif %}
             {% if can_edit %}
             <a href="{% url 'crm:customer_edit' customer.pk %}" class="btn btn-primary">
                 <i class="fas fa-edit me-2"></i>Edit

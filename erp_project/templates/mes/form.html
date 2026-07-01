@@ -1,0 +1,56 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="page-header">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb mb-2">
+            {% block form_breadcrumb %}{% endblock %}
+        </ol>
+    </nav>
+    <h4 class="mb-0 fw-bold">{{ title }}</h4>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-body">
+        <form method="post" novalidate>
+            {% csrf_token %}
+            {% if form.errors %}
+            <div class="alert alert-danger mb-3">
+                <h6 class="alert-heading mb-2">Please correct the errors below:</h6>
+                {% for field in form %}
+                    {% if field.errors %}<div><strong>{{ field.label }}:</strong> {{ field.errors|join:", " }}</div>{% endif %}
+                {% endfor %}
+                {% for error in form.non_field_errors %}<div>{{ error }}</div>{% endfor %}
+            </div>
+            {% endif %}
+
+            <div class="row g-3">
+                {% for field in form %}
+                {% if field.is_hidden %}
+                    {{ field }}
+                {% elif field.field.widget.input_type == 'checkbox' %}
+                <div class="col-12">
+                    <div class="form-check">
+                        {{ field }}
+                        <label class="form-check-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                    </div>
+                    {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+                </div>
+                {% else %}
+                <div class="col-md-6">
+                    <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %} <span class="text-danger">*</span>{% endif %}</label>
+                    {{ field }}
+                    {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+                </div>
+                {% endif %}
+                {% endfor %}
+            </div>
+
+            <div class="mt-4 d-flex gap-2">
+                <button type="submit" class="btn btn-primary"><i class="fas fa-save me-1"></i>Save</button>
+                {% block form_cancel %}{% endblock %}
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

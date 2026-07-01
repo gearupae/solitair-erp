@@ -1,0 +1,378 @@
+{% extends 'base.html' %}
+
+{% block extra_css %}
+<style>
+.mes-agent-card {
+    border: 1px solid #e2e8f0;
+    background: linear-gradient(135deg, #f8fafc 0%, #ffffff 45%, #f0f9ff 100%);
+}
+.mes-agent-badge-live {
+    background: linear-gradient(90deg, #059669, #10b981);
+    color: #fff;
+    font-size: 0.7rem;
+    letter-spacing: 0.04em;
+}
+.mes-agent-nav .nav-link {
+    font-size: 0.82rem;
+    color: #64748b;
+    border-radius: 0.5rem;
+    padding: 0.45rem 0.75rem;
+}
+.mes-agent-nav .nav-link.active {
+    background: #0d6efd;
+    color: #fff;
+    font-weight: 600;
+}
+.mes-agent-alert {
+    border-left: 4px solid #f59e0b;
+    background: #fffbeb;
+    border-radius: 0.375rem;
+    padding: 0.65rem 0.85rem;
+    margin-bottom: 0.5rem;
+}
+.mes-agent-alert.danger { border-left-color: #dc3545; background: #fef2f2; }
+.mes-agent-alert.info { border-left-color: #0d6efd; background: #eff6ff; }
+.mes-agent-capability-desc {
+    font-size: 0.85rem;
+    color: #64748b;
+}
+.mes-agent-output {
+    min-height: 4rem;
+    font-size: 0.95rem;
+}
+.mes-agent-prediction {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.5rem;
+    padding: 0.75rem;
+    margin-bottom: 0.5rem;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h4 class="mb-1 fw-bold"><i class="fas fa-industry me-2 text-primary"></i>Manufacturing</h4>
+    <p class="text-muted mb-0">MES — engineer-to-order production floor</p>
+</div>
+
+{% if not company %}
+<div class="alert alert-warning">
+    No company configured. Add a company under Settings → Companies, then run
+    <code>python manage.py seed_mes_demo</code>.
+</div>
+{% else %}
+<div class="row g-4 mb-4">
+    <div class="col-md-4">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <p class="text-muted small mb-1">Work centers</p>
+                <h3 class="fw-bold mb-0">{{ work_center_count }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <p class="text-muted small mb-1">Open production orders</p>
+                <h3 class="fw-bold mb-0">{{ open_order_count }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body d-flex flex-column">
+                <p class="text-muted small mb-2">Floor tablet</p>
+                <a href="{% url 'mes:tablet' %}" class="btn btn-outline-primary btn-sm mt-auto align-self-start">
+                    Open tablet UI
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm mb-4 mes-agent-card" id="gearupAgentCard">
+    <div class="card-header bg-transparent border-0 pb-0 pt-3 px-3">
+        <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
+            <div>
+                <h5 class="mb-1 fw-bold">
+                    <i class="fas fa-robot me-2 text-primary"></i>Gearup Agent
+                </h5>
+                <p class="mes-agent-capability-desc mb-0">AI over live MES — queues, scans, routing std-times, and costs</p>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+                {% if openai_configured %}
+                <span class="badge mes-agent-badge-live rounded-pill px-3 py-2">
+                    <i class="fas fa-circle me-1" style="font-size:0.45rem;vertical-align:middle;"></i>OpenAI connected
+                </span>
+                {% else %}
+                <span class="badge bg-secondary rounded-pill">Rule-based fallback</span>
+                {% endif %}
+                <button type="button" class="btn btn-sm btn-outline-primary" id="agentRefreshBtn" title="Refresh analysis">
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+            </div>
+        </div>
+        <ul class="nav mes-agent-nav flex-wrap gap-1 mt-3" id="agentTabs" role="tablist">
+            <li class="nav-item"><button class="nav-link active" data-agent-tab="delays" type="button">1. Delay prediction</button></li>
+            <li class="nav-item"><button class="nav-link" data-agent-tab="classify" type="button">2. Delay reasons</button></li>
+            <li class="nav-item"><button class="nav-link" data-agent-tab="draft" type="button">3. BOM + routing draft</button></li>
+            <li class="nav-item"><button class="nav-link" data-agent-tab="estimate" type="button">4. Cost estimate</button></li>
+            <li class="nav-item"><button class="nav-link" data-agent-tab="ask" type="button">5. Ask the floor</button></li>
+        </ul>
+    </div>
+    <div class="card-body pt-3">
+        <div class="agent-panel" id="panel-delays">
+            <p class="small text-muted mb-2">Reads live progress vs plan and flags orders at risk and station bottlenecks.</p>
+            <div id="delaySummary" class="fw-semibold mes-agent-output text-primary mb-2">
+                <span class="text-muted fw-normal"><span class="spinner-border spinner-border-sm me-1"></span>Analysing floor data…</span>
+            </div>
+            <div id="delayPredictions"></div>
+            <div id="delayAlerts"></div>
+        </div>
+
+        <div class="agent-panel d-none" id="panel-classify">
+            <p class="small text-muted mb-2">When an operation runs over std-time, AI suggests likely causes from scan patterns.</p>
+            <button type="button" class="btn btn-sm btn-primary mb-3" id="classifyBtn">Classify slow operations</button>
+            <div id="classifySummary" class="mb-2 fw-medium"></div>
+            <div id="classifyResults"></div>
+        </div>
+
+        <div class="agent-panel d-none" id="panel-draft">
+            <p class="small text-muted mb-2">Describe a product — AI drafts BOM lines and routing steps for a new product template.</p>
+            <textarea class="form-control mb-2" id="draftInput" rows="2" placeholder="e.g. walnut veneer reception desk, 2.4m wide, soft-close drawers"></textarea>
+            <button type="button" class="btn btn-sm btn-primary" id="draftBtn">Draft template</button>
+            <div id="draftResults" class="mt-3"></div>
+        </div>
+
+        <div class="agent-panel d-none" id="panel-estimate">
+            <p class="small text-muted mb-2">Rough spec → estimated material + labour + machine cost using your work-center rates.</p>
+            <textarea class="form-control mb-2" id="estimateInput" rows="2" placeholder="e.g. 12 linear metres of kitchen base units, laminate, 8 doors"></textarea>
+            <button type="button" class="btn btn-sm btn-primary" id="estimateBtn">Estimate cost</button>
+            <div id="estimateResults" class="mt-3"></div>
+        </div>
+
+        <div class="agent-panel d-none" id="panel-ask">
+            <p class="small text-muted mb-2">Natural-language questions over live MES data.</p>
+            <div class="input-group mb-2">
+                <input type="text" class="form-control" id="askInput" placeholder="Which orders are behind today? What's stuck at CUT?">
+                <button type="button" class="btn btn-primary" id="askBtn">Ask</button>
+            </div>
+            <div class="d-flex flex-wrap gap-1 mb-2">
+                <button type="button" class="btn btn-sm btn-outline-secondary agent-quick-ask" data-q="Which orders are behind today?">Behind today?</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary agent-quick-ask" data-q="What station is the bottleneck right now?">Bottleneck?</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary agent-quick-ask" data-q="Which production orders are due this week?">Due this week?</button>
+            </div>
+            <div id="askAnswer" class="mes-agent-output p-3 bg-white border rounded"></div>
+        </div>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-header bg-transparent d-flex justify-content-between align-items-center">
+        <h6 class="mb-0 fw-semibold">Recent production orders</h6>
+        <a href="{% url 'mes:production_order_list' %}" class="btn btn-sm btn-light">View all</a>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>PO #</th>
+                        <th>Reference</th>
+                        <th>Status</th>
+                        <th class="text-end">WIP (AED)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for order in production_orders %}
+                    <tr>
+                        <td>
+                            <a href="{% url 'mes:production_order_detail' order.pk %}" class="text-decoration-none fw-medium">
+                                {{ order.po_number }}
+                            </a>
+                        </td>
+                        <td class="text-muted">{{ order.reference|default:"—" }}</td>
+                        <td>{{ order.get_status_display }}</td>
+                        <td class="text-end">{{ order.wip_value|floatformat:2 }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="4" class="text-center py-4 text-muted">No production orders yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+{% if company %}
+<script>
+(function () {
+    const AGENT_URL = '{% url "mes:api_gearup_agent" %}';
+    const CSRF = '{{ csrf_token }}';
+    const TEMPLATE_CREATE_URL = '{% url "mes:product_template_create" %}';
+
+    function postAgent(action, text) {
+        return fetch(AGENT_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+            credentials: 'same-origin',
+            body: JSON.stringify({ action: action, text: text || '' }),
+        }).then(function (r) { return r.json(); });
+    }
+
+    function escapeHtml(s) {
+        return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function renderAlerts(containerId, alerts) {
+        const el = document.getElementById(containerId);
+        if (!el) return;
+        if (!alerts || !alerts.length) {
+            el.innerHTML = '<p class="text-muted small mb-0">No alerts right now.</p>';
+            return;
+        }
+        el.innerHTML = alerts.map(function (a) {
+            const sev = (a.severity || 'warning').toLowerCase();
+            return '<div class="mes-agent-alert ' + (sev === 'danger' ? 'danger' : sev === 'info' ? 'info' : '') + '">' +
+                '<div class="fw-semibold small">' + escapeHtml(a.title) + '</div>' +
+                '<div class="small text-muted">' + escapeHtml(a.detail) + '</div></div>';
+        }).join('');
+    }
+
+    function renderPredictions(items) {
+        const el = document.getElementById('delayPredictions');
+        if (!el) return;
+        if (!items || !items.length) {
+            el.innerHTML = '';
+            return;
+        }
+        el.innerHTML = items.map(function (p) {
+            return '<div class="mes-agent-prediction">' +
+                '<div class="fw-semibold">' + escapeHtml(p.po_number) +
+                (p.bottleneck_station ? ' · <span class="text-danger">' + escapeHtml(p.bottleneck_station) + '</span>' : '') +
+                '</div><div class="small">' + escapeHtml(p.message) + '</div></div>';
+        }).join('');
+    }
+
+    function loadDelayPrediction() {
+        const summary = document.getElementById('delaySummary');
+        if (summary) summary.innerHTML = '<span class="text-muted"><span class="spinner-border spinner-border-sm me-1"></span>Analysing…</span>';
+        postAgent('delay_prediction').then(function (data) {
+            if (!data.ok) {
+                if (summary) summary.textContent = data.message || 'Analysis failed.';
+                return;
+            }
+            if (summary) {
+                summary.textContent = data.summary || 'Analysis complete.';
+                if (data.ai_used) summary.insertAdjacentHTML('beforeend', ' <span class="badge bg-primary-subtle text-primary ms-1">AI</span>');
+            }
+            renderPredictions(data.predictions);
+            renderAlerts('delayAlerts', data.alerts);
+        }).catch(function () {
+            if (summary) summary.textContent = 'Could not reach Gearup Agent.';
+        });
+    }
+
+    document.querySelectorAll('[data-agent-tab]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            document.querySelectorAll('[data-agent-tab]').forEach(function (b) { b.classList.remove('active'); });
+            btn.classList.add('active');
+            document.querySelectorAll('.agent-panel').forEach(function (p) { p.classList.add('d-none'); });
+            const panel = document.getElementById('panel-' + btn.dataset.agentTab);
+            if (panel) panel.classList.remove('d-none');
+        });
+    });
+
+    document.getElementById('agentRefreshBtn')?.addEventListener('click', loadDelayPrediction);
+    document.getElementById('classifyBtn')?.addEventListener('click', function () {
+        const out = document.getElementById('classifyResults');
+        const sum = document.getElementById('classifySummary');
+        if (out) out.innerHTML = '<span class="text-muted small">Classifying…</span>';
+        postAgent('classify_delays').then(function (data) {
+            if (sum) sum.textContent = data.summary || '';
+            if (!out) return;
+            if (!data.classifications || !data.classifications.length) {
+                out.innerHTML = '<p class="text-muted small mb-0">No slow operations to classify.</p>';
+                return;
+            }
+            out.innerHTML = '<table class="table table-sm mb-0"><thead><tr><th>PO</th><th>Station</th><th>Reason</th><th>Detail</th></tr></thead><tbody>' +
+                data.classifications.map(function (c) {
+                    return '<tr><td>' + escapeHtml(c.po_number) + '</td><td>' + escapeHtml(c.station) +
+                        '</td><td><span class="badge bg-secondary">' + escapeHtml(c.likely_reason) + '</span></td><td class="small">' +
+                        escapeHtml(c.detail) + '</td></tr>';
+                }).join('') + '</tbody></table>';
+        });
+    });
+
+    document.getElementById('draftBtn')?.addEventListener('click', function () {
+        const text = document.getElementById('draftInput')?.value?.trim();
+        const out = document.getElementById('draftResults');
+        if (!text) { alert('Enter a product description.'); return; }
+        if (out) out.innerHTML = '<span class="text-muted small">Drafting…</span>';
+        postAgent('draft_template', text).then(function (data) {
+            if (!out) return;
+            if (!data.ok) { out.innerHTML = '<p class="text-danger small">' + escapeHtml(data.message) + '</p>'; return; }
+            let html = '<div class="p-3 bg-white border rounded"><h6 class="fw-bold">' + escapeHtml(data.template_name) + '</h6>';
+            if (data.notes) html += '<p class="small text-muted">' + escapeHtml(data.notes) + '</p>';
+            html += '<p class="small fw-semibold mb-1">BOM lines</p><ul class="small">';
+            (data.bom_lines || []).forEach(function (l) {
+                html += '<li>' + escapeHtml(l.part_name) + ' — ' + escapeHtml(l.quantity) + ' ' + escapeHtml(l.unit || 'pcs') + '</li>';
+            });
+            html += '</ul><p class="small fw-semibold mb-1">Routing</p><ul class="small">';
+            (data.routing_steps || []).forEach(function (s) {
+                html += '<li>' + escapeHtml(s.work_center_code) + ' · ' + escapeHtml(String(s.std_time_minutes)) + ' min</li>';
+            });
+            html += '</ul><a href="' + TEMPLATE_CREATE_URL + '" class="btn btn-sm btn-outline-primary">Create template in MES</a></div>';
+            out.innerHTML = html;
+        });
+    });
+
+    document.getElementById('estimateBtn')?.addEventListener('click', function () {
+        const text = document.getElementById('estimateInput')?.value?.trim();
+        const out = document.getElementById('estimateResults');
+        if (!text) { alert('Enter a rough spec.'); return; }
+        if (out) out.innerHTML = '<span class="text-muted small">Estimating…</span>';
+        postAgent('estimate_cost', text).then(function (data) {
+            if (!out) return;
+            if (!data.ok) { out.innerHTML = '<p class="text-danger small">' + escapeHtml(data.message) + '</p>'; return; }
+            out.innerHTML = '<div class="p-3 bg-white border rounded">' +
+                '<p class="mb-2">' + escapeHtml(data.summary) + '</p>' +
+                '<dl class="row small mb-0">' +
+                '<dt class="col-6">Material</dt><dd class="col-6 text-end">AED ' + escapeHtml(data.material_cost || '—') + '</dd>' +
+                '<dt class="col-6">Labour</dt><dd class="col-6 text-end">AED ' + escapeHtml(data.labour_cost || '—') + '</dd>' +
+                '<dt class="col-6">Machine</dt><dd class="col-6 text-end">AED ' + escapeHtml(data.machine_cost || '—') + '</dd>' +
+                '<dt class="col-6">Overhead</dt><dd class="col-6 text-end">AED ' + escapeHtml(data.overhead_cost || '—') + '</dd>' +
+                '<dt class="col-6 fw-bold">Total</dt><dd class="col-6 text-end fw-bold">AED ' + escapeHtml(data.total_cost || '—') + '</dd>' +
+                '</dl></div>';
+        });
+    });
+
+    function runAsk(q) {
+        const input = document.getElementById('askInput');
+        const answer = document.getElementById('askAnswer');
+        const question = q || input?.value?.trim();
+        if (!question) return;
+        if (input) input.value = question;
+        if (answer) answer.innerHTML = '<span class="text-muted"><span class="spinner-border spinner-border-sm me-1"></span>Thinking…</span>';
+        postAgent('ask', question).then(function (data) {
+            if (answer) answer.textContent = data.answer || data.message || 'No answer.';
+        });
+    }
+
+    document.getElementById('askBtn')?.addEventListener('click', function () { runAsk(); });
+    document.getElementById('askInput')?.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); runAsk(); }
+    });
+    document.querySelectorAll('.agent-quick-ask').forEach(function (btn) {
+        btn.addEventListener('click', function () { runAsk(btn.dataset.q); });
+    });
+
+    loadDelayPrediction();
+})();
+</script>
+{% endif %}
+{% endblock %}

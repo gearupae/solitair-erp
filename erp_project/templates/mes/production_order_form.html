@@ -1,0 +1,28 @@
+{% extends 'mes/form.html' %}
+
+{% block form_breadcrumb %}
+<li class="breadcrumb-item"><a href="{% url 'mes:index' %}">Manufacturing</a></li>
+<li class="breadcrumb-item"><a href="{% url 'mes:production_order_list' %}">Production Orders</a></li>
+<li class="breadcrumb-item active">{{ title }}</li>
+{% endblock %}
+
+{% block form_cancel %}
+<a href="{% url 'mes:production_order_list' %}" class="btn btn-light">Cancel</a>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb mb-2">
+            <li class="breadcrumb-item"><a href="{% url 'mes:index' %}">Manufacturing</a></li>
+            <li class="breadcrumb-item"><a href="{% url 'mes:production_order_list' %}">Production Orders</a></li>
+            <li class="breadcrumb-item active">{{ title }}</li>
+        </ol>
+    </nav>
+    <h4 class="mb-0 fw-bold">{{ title }}</h4>
+    {% if is_create %}
+    <p class="text-muted small mb-0 mt-1">PO number is assigned automatically when you save.</p>
+    {% endif %}
+</div>
+{{ block.super }}
+{% endblock %}

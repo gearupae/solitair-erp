@@ -1,0 +1,12 @@
+{% extends 'mes/form.html' %}
+
+{% block form_breadcrumb %}
+<li class="breadcrumb-item"><a href="{% url 'mes:index' %}">Manufacturing</a></li>
+<li class="breadcrumb-item"><a href="{% url 'mes:production_order_list' %}">Production Orders</a></li>
+<li class="breadcrumb-item"><a href="{% url 'mes:production_order_detail' production_order.pk %}">{{ production_order.po_number }}</a></li>
+<li class="breadcrumb-item active">{{ title }}</li>
+{% endblock %}
+
+{% block form_cancel %}
+<a href="{% url 'mes:production_order_detail' production_order.pk %}" class="btn btn-light">Cancel</a>
+{% endblock %}

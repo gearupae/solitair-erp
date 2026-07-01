@@ -254,6 +254,7 @@ class AttendanceMarkView(CreatePermissionMixin, FormView):
     def form_valid(self, form):
         form.instance.source = form.cleaned_data.get('source') or 'manual'
         form.save()
+        _link_attendance_to_mes_po(form.instance)
         recalculate_summary_for_employee_month(form.instance.employee, form.instance.date.year, form.instance.date.month)
         messages.success(self.request, 'Attendance saved.')
         return super().form_valid(form)
@@ -321,6 +322,7 @@ def attendance_record_lookup(request):
             'notes': rec.notes,
             'source': rec.source,
             'project_id': rec.project_id,
+            'production_order_id': rec.production_order_id,
         }
     return JsonResponse(data)
 
@@ -747,7 +749,45 @@ def _punch_record_json(rec: AttendanceRecord, action: str):
     }
 
 
-def _perform_attendance_punch(*, employee: Employee, action: str, when, lat, lng, source: str, project=None):
+def _resolve_production_order_for_punch(employee, raw_po_id):
+    """Validate optional MES production order for clock-in."""
+    if raw_po_id in (None, '', 0, '0'):
+        return None, None
+    from apps.mes.models import ProductionOrder
+
+    try:
+        po_id = int(raw_po_id)
+    except (TypeError, ValueError):
+        return None, 'Invalid production order.'
+    po = ProductionOrder.objects.filter(pk=po_id, is_active=True).first()
+    if not po:
+        return None, 'Production order not found.'
+    if po.status not in (
+        ProductionOrder.STATUS_DRAFT,
+        ProductionOrder.STATUS_RELEASED,
+        ProductionOrder.STATUS_IN_PRODUCTION,
+        ProductionOrder.STATUS_ON_HOLD,
+    ):
+        return None, 'That production order is not open for labour tracking.'
+    if employee.company_id and po.company_id != employee.company_id:
+        return None, 'Production order is not in your company.'
+    return po, None
+
+
+def _link_attendance_to_mes_po(record: AttendanceRecord):
+    """Tag crew on PO and refresh WIP when attendance is linked to manufacturing."""
+    if not record.production_order_id or not record.employee_id:
+        return
+    po = record.production_order
+    po.assigned_employees.add(record.employee)
+    try:
+        from apps.mes.services.costing import recalculate_wip
+        recalculate_wip(po)
+    except Exception:
+        pass
+
+
+def _perform_attendance_punch(*, employee: Employee, action: str, when, lat, lng, source: str, project=None, production_order=None):
     if action not in ('check_in', 'check_out'):
         return False, 'Invalid action.'
     la, lo = _coerce_lat_lng(lat, lng)
@@ -772,8 +812,11 @@ def _perform_attendance_punch(*, employee: Employee, action: str, when, lat, lng
             check_in_latitude=la,
             check_in_longitude=lo,
             project=project,
+            production_order=production_order,
         )
         rec.save()
+        if production_order:
+            _link_attendance_to_mes_po(rec)
         recalculate_summary_for_employee_month(employee, d.year, d.month)
         return True, rec
 
@@ -795,6 +838,8 @@ def _perform_attendance_punch(*, employee: Employee, action: str, when, lat, lng
     open_sess.check_out_latitude = la
     open_sess.check_out_longitude = lo
     open_sess.save()
+    if open_sess.production_order_id:
+        _link_attendance_to_mes_po(open_sess)
     recalculate_summary_for_employee_month(employee, d.year, d.month)
     return True, open_sess
 
@@ -819,6 +864,35 @@ def attendance_technician_projects(request):
         .values('id', 'project_code', 'name')
     )
     return JsonResponse({'ok': True, 'projects': list(rows)})
+
+
+@require_GET
+def attendance_mes_production_orders(request):
+    """JSON: open production orders for employee (for punch / MES labour picker)."""
+    from apps.mes.models import ProductionOrder
+
+    code = (request.GET.get('code') or '').strip()
+    emp = None
+    if code:
+        emp = Employee.objects.filter(employee_code__iexact=code, is_active=True).first()
+        if not emp:
+            return JsonResponse({'ok': False, 'error': 'Employee not found.'}, status=404)
+    elif request.user.is_authenticated:
+        emp = employee_for_user(request.user)
+    if not emp:
+        return JsonResponse({'ok': False, 'error': 'Employee code is required.'}, status=400)
+
+    open_statuses = (
+        ProductionOrder.STATUS_DRAFT,
+        ProductionOrder.STATUS_RELEASED,
+        ProductionOrder.STATUS_IN_PRODUCTION,
+        ProductionOrder.STATUS_ON_HOLD,
+    )
+    qs = ProductionOrder.objects.filter(is_active=True, status__in=open_statuses)
+    if emp.company_id:
+        qs = qs.filter(company_id=emp.company_id)
+    rows = qs.order_by('-created_at').values('id', 'po_number', 'reference')
+    return JsonResponse({'ok': True, 'production_orders': list(rows)})
 
 
 @method_decorator(ensure_csrf_cookie, name='dispatch')
@@ -855,6 +929,9 @@ def attendance_public_punch(request):
     project, err = _resolve_technician_project_for_punch(emp, data.get('project_id'))
     if err:
         return JsonResponse({'ok': False, 'error': err}, status=400)
+    production_order, po_err = _resolve_production_order_for_punch(emp, data.get('production_order_id'))
+    if po_err:
+        return JsonResponse({'ok': False, 'error': po_err}, status=400)
 
     when = _parse_client_datetime(data.get('client_time'))
     ok, result = _perform_attendance_punch(
@@ -865,6 +942,7 @@ def attendance_public_punch(request):
         lng=data.get('longitude'),
         source='public_link',
         project=project if action == 'check_in' else None,
+        production_order=production_order if action == 'check_in' else None,
     )
     if not ok:
         return JsonResponse({'ok': False, 'error': result}, status=400)
@@ -886,6 +964,9 @@ def attendance_self_punch(request):
     project, err = _resolve_technician_project_for_punch(emp, data.get('project_id'))
     if err:
         return JsonResponse({'ok': False, 'error': err}, status=400)
+    production_order, po_err = _resolve_production_order_for_punch(emp, data.get('production_order_id'))
+    if po_err:
+        return JsonResponse({'ok': False, 'error': po_err}, status=400)
     ok, result = _perform_attendance_punch(
         employee=emp,
         action=action,
@@ -894,6 +975,7 @@ def attendance_self_punch(request):
         lng=data.get('longitude'),
         source='self_service',
         project=project if action == 'check_in' else None,
+        production_order=production_order if action == 'check_in' else None,
     )
     if not ok:
         return JsonResponse({'ok': False, 'error': result}, status=400)

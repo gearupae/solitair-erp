@@ -120,6 +120,34 @@ def _inventory_items_for_estimate_json(limit=2000):
     ]
 
 
+def _invoice_inventory_items_data():
+    """Active inventory items for invoice line dropdowns."""
+    from apps.inventory.models import Item
+
+    rows = Item.objects.filter(is_active=True, status='active').order_by('name')
+    return [
+        {
+            'id': r.pk,
+            'label': str(r),
+            'selling_price': str(r.selling_price),
+            'tax_code_id': r.tax_code_id,
+        }
+        for r in rows
+    ]
+
+
+def _invoice_form_use_inventory_mode(request, instance=None):
+    if request.method == 'POST':
+        total = int(request.POST.get('items-TOTAL_FORMS', 0) or 0)
+        for i in range(total):
+            if (request.POST.get(f'items-{i}-inventory_item') or '').strip():
+                return True
+        return False
+    if instance is not None:
+        return any(line.inventory_item_id for line in instance.items.all())
+    return False
+
+
 def _estimate_form_inventory_groups_context():
     """
     Item groups with active items for estimate line-item bulk add + group name datalist.
@@ -857,6 +885,20 @@ class EstimateCreateView(CreatePermissionMixin, CreateView):
         terms = EstimateTextTemplate.get_default_body(EstimateTextTemplate.TERMS)
         if terms:
             initial['terms_and_conditions'] = terms
+        customer_pk = self.request.GET.get('customer')
+        if customer_pk:
+            try:
+                from apps.crm.models import Customer
+                from apps.crm.utils import filter_customers_for_user
+
+                pk = int(customer_pk)
+                if filter_customers_for_user(
+                    Customer.objects.filter(is_active=True),
+                    self.request.user,
+                ).filter(pk=pk).exists():
+                    initial['customer'] = pk
+            except (ValueError, TypeError):
+                pass
         return initial
 
     def get_form(self, form_class=None):
@@ -1897,6 +1939,7 @@ def estimate_convert_to_invoice(request, pk):
     for item in estimate.items.all():
         InvoiceItem.objects.create(
             invoice=invoice,
+            inventory_item=item.inventory_item,
             description=item.description,
             quantity=item.quantity,
             unit_price=item.rate,
@@ -2982,6 +3025,10 @@ class InvoiceCreateView(CreatePermissionMixin, CreateView):
         # Tax Codes for VAT selection (SAP/Oracle Standard)
         context['tax_codes'] = TaxCode.objects.filter(is_active=True).order_by('code')
         context['default_tax_code'] = get_default_estimate_csv_tax_code()
+        context['invoice_inventory_items_data'] = _invoice_inventory_items_data()
+        context['invoice_use_inventory_mode'] = _invoice_form_use_inventory_mode(
+            self.request, instance=getattr(self, 'object', None),
+        )
         if 'items_formset' not in kwargs:
             if self.request.POST:
                 context['items_formset'] = InvoiceItemFormSet(self.request.POST)
@@ -3060,6 +3107,10 @@ class InvoiceUpdateView(UpdatePermissionMixin, UpdateView):
         # Tax Codes for VAT selection (SAP/Oracle Standard)
         context['tax_codes'] = TaxCode.objects.filter(is_active=True).order_by('code')
         context['default_tax_code'] = get_default_estimate_csv_tax_code()
+        context['invoice_inventory_items_data'] = _invoice_inventory_items_data()
+        context['invoice_use_inventory_mode'] = _invoice_form_use_inventory_mode(
+            self.request, instance=self.object,
+        )
         if 'items_formset' not in kwargs:
             if self.request.POST:
                 context['items_formset'] = InvoiceItemFormSet(self.request.POST, instance=self.object)

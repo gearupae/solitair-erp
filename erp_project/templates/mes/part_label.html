@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>{{ title }}</title>
+    <style>
+        @media print {
+            @page { size: 80mm 50mm; margin: 4mm; }
+            body { margin: 0; }
+            .no-print { display: none !important; }
+        }
+        body {
+            font-family: system-ui, sans-serif;
+            text-align: center;
+            padding: 1rem;
+        }
+        .label-box {
+            border: 2px solid #000;
+            padding: 12px;
+            max-width: 320px;
+            margin: 0 auto;
+        }
+        .part-name { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+        .po { font-size: 12px; color: #444; margin-bottom: 8px; }
+        .barcode-text {
+            font-family: ui-monospace, monospace;
+            font-size: 16px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            margin-top: 8px;
+        }
+        img { max-width: 180px; height: auto; }
+    </style>
+</head>
+<body>
+    <p class="no-print"><button onclick="window.print()">Print label</button></p>
+    <div class="label-box">
+        <div class="part-name">{{ part.bom_item.part_name }}</div>
+        <div class="po">{{ part.production_order.po_number }}</div>
+        {% if part.barcode_image %}
+        <img src="{{ part.barcode_image.url }}" alt="QR {{ part.barcode }}">
+        {% endif %}
+        <div class="barcode-text">{{ part.barcode }}</div>
+    </div>
+</body>
+</html>

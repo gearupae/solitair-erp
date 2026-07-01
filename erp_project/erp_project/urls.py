@@ -40,6 +40,8 @@ urlpatterns = [
     path('reports/', include('apps.reports.urls')),
     path('support/', include('apps.support.urls')),
     path('operations/', include('apps.operations.urls')),
+    path('mes/', include('apps.mes.urls')),
+    path('oracle-mock/', include('apps.oracle_mock.urls')),
 ]
 
 if settings.DEBUG:

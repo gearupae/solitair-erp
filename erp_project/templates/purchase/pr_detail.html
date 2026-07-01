@@ -140,6 +140,46 @@
     </div>
 
     <div class="col-lg-4">
+        {% if pr_inventory_stock_notices %}
+        <div class="card mb-4 border-warning border-opacity-50">
+            <div class="card-header bg-warning bg-opacity-10">
+                <h6 class="mb-0 fw-semibold">
+                    <i class="fas fa-boxes me-1 text-warning"></i>Already in inventory
+                </h6>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm mb-0 align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Item</th>
+                                <th class="text-end">In stock</th>
+                                <th class="text-end">Requested</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for notice in pr_inventory_stock_notices %}
+                            <tr>
+                                <td>
+                                    <div class="fw-semibold small">{{ notice.item_code }}</div>
+                                    <div class="text-muted small">{{ notice.name }}</div>
+                                </td>
+                                <td class="text-end">{{ notice.available_qty|floatformat:2 }}</td>
+                                <td class="text-end">
+                                    {{ notice.requested_qty|floatformat:2 }}
+                                    {% if notice.covers_request %}
+                                    <div class="small text-success">Covers request</div>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
         <div class="card mb-4 border-primary border-opacity-25">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <h6 class="mb-0 fw-semibold">Vendor quotes &amp; files</h6>

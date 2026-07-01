@@ -1,0 +1,71 @@
+"""Copy product template BOM + routing into a production order snapshot."""
+
+from __future__ import annotations
+
+from apps.mes.models import (
+    BOMItem,
+    ProductTemplate,
+    ProductionOrder,
+    RoutingOperation,
+    TemplateBOMItem,
+    TemplateRoutingOp,
+)
+
+
+def copy_template_to_production_order(
+    template: ProductTemplate,
+    production_order: ProductionOrder,
+) -> tuple[int, int]:
+    """
+    Deep-copy template BOM tree and routing into the PO.
+    Returns (bom_lines_created, routing_ops_created).
+    """
+    production_order.source_template_name = template.name
+    production_order.product_template = template
+    production_order.save(update_fields=['source_template_name', 'product_template', 'updated_at'])
+
+    parent_map: dict[int, BOMItem] = {}
+    bom_count = 0
+    template_bom = TemplateBOMItem.objects.filter(
+        template=template,
+        company=template.company,
+        is_active=True,
+    ).select_related('inventory_item', 'parent').order_by('id')
+
+    for line in template_bom:
+        new_parent = parent_map.get(line.parent_id) if line.parent_id else None
+        inv = line.inventory_item
+        unit_cost = inv.purchase_price if inv else 0
+        bom = BOMItem.objects.create(
+            company=production_order.company,
+            production_order=production_order,
+            parent=new_parent,
+            part_name=line.part_name,
+            material_type=line.material_type,
+            quantity=line.quantity,
+            unit=line.unit,
+            item_code=line.item_code or (inv.item_code if inv else ''),
+            inventory_item=inv,
+            unit_cost=unit_cost,
+        )
+        parent_map[line.pk] = bom
+        bom_count += 1
+
+    routing_count = 0
+    for op in TemplateRoutingOp.objects.filter(
+        template=template,
+        company=template.company,
+        is_active=True,
+    ).select_related('work_center').order_by('sequence', 'id'):
+        RoutingOperation.objects.create(
+            company=production_order.company,
+            production_order=production_order,
+            work_center=op.work_center,
+            sequence=op.sequence,
+            std_time_minutes=op.std_time_minutes,
+            rate_per_hour=op.work_center.cost_per_hour,
+            status=RoutingOperation.STATUS_PENDING,
+        )
+        routing_count += 1
+
+    return bom_count, routing_count

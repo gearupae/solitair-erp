@@ -1,0 +1,82 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-start flex-wrap gap-2">
+    <div>
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-2">
+                <li class="breadcrumb-item"><a href="{% url 'mes:index' %}">Manufacturing</a></li>
+                <li class="breadcrumb-item"><a href="{% url 'mes:product_template_list' %}">Product Templates</a></li>
+                <li class="breadcrumb-item active">{{ template.code }}</li>
+            </ol>
+        </nav>
+        <h4 class="mb-0 fw-bold">{{ template.name }}</h4>
+        <p class="text-muted mb-0">{{ template.description|default:"No description" }}</p>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="{% url 'mes:product_template_edit' template.pk %}" class="btn btn-outline-secondary btn-sm">Edit</a>
+        <button type="button" class="btn btn-outline-danger btn-sm" data-bs-toggle="modal" data-bs-target="#mesDeleteModal"
+                onclick="mesOpenDeleteModal('{% url 'mes:product_template_delete' template.pk %}', '{{ template.name|escapejs }}')">Delete</button>
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-6">
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-transparent d-flex justify-content-between">
+                <h6 class="mb-0 fw-semibold">Template BOM</h6>
+                <a href="{% url 'mes:template_bom_create' template.pk %}" class="btn btn-sm btn-primary">Add line</a>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-sm mb-0">
+                    <thead class="table-light"><tr><th>Part</th><th>Qty</th><th>Inventory item</th><th></th></tr></thead>
+                    <tbody>
+                        {% for item, depth in bom_tree %}
+                        <tr>
+                            <td style="padding-left: {{ depth|add:1 }}rem;">{{ item.part_name }}</td>
+                            <td>{{ item.quantity }} {{ item.unit }}</td>
+                            <td class="text-muted small">{{ item.inventory_item.item_code|default:"—" }}</td>
+                            <td class="text-end">
+                                <a href="{% url 'mes:template_bom_edit' template.pk item.pk %}" class="btn btn-sm btn-outline-secondary py-0">Edit</a>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="4" class="text-center py-3 text-muted">No BOM lines.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-transparent d-flex justify-content-between">
+                <h6 class="mb-0 fw-semibold">Template routing</h6>
+                <a href="{% url 'mes:template_routing_create' template.pk %}" class="btn btn-sm btn-primary">Add step</a>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-sm mb-0">
+                    <thead class="table-light"><tr><th>Seq</th><th>Work center</th><th class="text-end">Std min</th><th></th></tr></thead>
+                    <tbody>
+                        {% for op in routing_ops %}
+                        <tr>
+                            <td>{{ op.sequence }}</td>
+                            <td>{{ op.work_center.code }}</td>
+                            <td class="text-end">{{ op.std_time_minutes }}</td>
+                            <td class="text-end">
+                                <form method="post" action="{% url 'mes:template_routing_delete' template.pk op.pk %}" class="d-inline">{% csrf_token %}
+                                    <button class="btn btn-sm btn-outline-danger py-0">Del</button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="4" class="text-center py-3 text-muted">No routing steps.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% include 'mes/partials/delete_modal.html' %}
+{% endblock %}

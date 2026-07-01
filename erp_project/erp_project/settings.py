@@ -99,6 +99,8 @@ INSTALLED_APPS = [
     'apps.reports',
     'apps.support',
     'apps.operations',
+    'apps.mes',
+    'apps.oracle_mock',
 ]
 
 MIDDLEWARE = [
@@ -259,4 +261,10 @@ EMAIL_HOST_USER = config('EMAIL_HOST_USER', default='')
 EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='')
 EMAIL_USE_TLS = config('EMAIL_USE_TLS', default=True, cast=bool)
 DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='')
+
+# Oracle ERP integration — disabled until ORACLE_SYNC_ENABLED=True and ORACLE_BASE_URL is set.
+# apps.oracle_mock remains installed for local testing; nothing calls it automatically.
+ORACLE_SYNC_ENABLED = config('ORACLE_SYNC_ENABLED', default=False, cast=bool)
+ORACLE_BASE_URL = config('ORACLE_BASE_URL', default='')
+ORACLE_AUTH_TOKEN = config('ORACLE_AUTH_TOKEN', default='')
 

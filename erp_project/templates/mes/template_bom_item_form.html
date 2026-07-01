@@ -1,0 +1,6 @@
+{% extends 'mes/form.html' %}
+{% block form_breadcrumb %}
+<li class="breadcrumb-item"><a href="{% url 'mes:product_template_detail' template_obj.pk %}">{{ template_obj.code }}</a></li>
+<li class="breadcrumb-item active">{{ title }}</li>
+{% endblock %}
+{% block form_cancel %}<a href="{% url 'mes:product_template_detail' template_obj.pk %}" class="btn btn-light">Cancel</a>{% endblock %}

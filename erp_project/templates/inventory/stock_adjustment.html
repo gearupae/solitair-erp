@@ -26,49 +26,34 @@
             {% csrf_token %}
             <div class="row g-3">
                 <div class="col-md-6">
-                    <label class="form-label">Item <span class="text-danger">*</span></label>
-                    <select name="item" id="id_item" class="form-select" required>
-                        <option value="">Select an item...</option>
-                        {% for item in items %}
-                        <option value="{{ item.pk }}" {% if form.item.value == item.pk|stringformat:"s" %}selected{% endif %}>
-                            {% if item.item_code %}{{ item.item_code }} - {% endif %}{{ item.name }}
-                        </option>
-                        {% endfor %}
-                    </select>
+                    <label class="form-label" for="id_item">Item <span class="text-danger">*</span></label>
+                    {{ form.item }}
                     {% if form.item.errors %}<div class="text-danger small mt-1">{{ form.item.errors|join:", " }}</div>{% endif %}
-                    {% if items.count == 0 %}
-                    <div class="alert alert-warning mt-2">
+                    {% if not form.item.field.queryset %}
+                    <div class="alert alert-warning mt-2 mb-0">
                         <i class="fas fa-exclamation-triangle me-2"></i>
-                        <strong>No items available.</strong> 
-                        Please <a href="{% url 'inventory:item_create' %}" class="alert-link">create items</a> first. 
-                        Items must be active to appear in this list.
+                        <strong>No items available.</strong>
+                        Please <a href="{% url 'inventory:item_create' %}" class="alert-link">create items</a> first.
                     </div>
                     {% else %}
                     <small class="text-muted d-block mt-1">
-                        <i class="fas fa-info-circle me-1"></i>{{ items.count }} item(s) available
+                        <i class="fas fa-info-circle me-1"></i>{{ form.item.field.queryset.count }} item(s) available
                     </small>
                     {% endif %}
                 </div>
                 <div class="col-md-6">
-                    <label class="form-label">Warehouse <span class="text-danger">*</span></label>
-                    <select name="warehouse" id="id_warehouse" class="form-select" required>
-                        <option value="">Select a warehouse...</option>
-                        {% for warehouse in warehouses %}
-                        <option value="{{ warehouse.pk }}" {% if form.warehouse.value == warehouse.pk %}selected{% endif %}>
-                            {{ warehouse.name }}
-                        </option>
-                        {% endfor %}
-                    </select>
+                    <label class="form-label" for="id_warehouse">Warehouse <span class="text-danger">*</span></label>
+                    {{ form.warehouse }}
                     {% if form.warehouse.errors %}<div class="text-danger small mt-1">{{ form.warehouse.errors|join:", " }}</div>{% endif %}
-                    {% if warehouses.count == 0 %}
-                    <div class="alert alert-warning mt-2">
+                    {% if not form.warehouse.field.queryset %}
+                    <div class="alert alert-warning mt-2 mb-0">
                         <i class="fas fa-exclamation-triangle me-2"></i>
-                        <strong>No warehouses available.</strong> 
+                        <strong>No warehouses available.</strong>
                         Please <a href="{% url 'inventory:warehouse_list' %}" class="alert-link">create warehouses</a> first.
                     </div>
                     {% else %}
                     <small class="text-muted d-block mt-1">
-                        <i class="fas fa-info-circle me-1"></i>{{ warehouses.count }} warehouse(s) available
+                        <i class="fas fa-info-circle me-1"></i>{{ form.warehouse.field.queryset.count }} warehouse(s) available
                     </small>
                     {% endif %}
                 </div>
@@ -120,56 +105,6 @@ document.addEventListener('DOMContentLoaded', function() {
         movementType.addEventListener('change', toggleReason);
         toggleReason();
     }
-
-    const itemSelect = document.getElementById('id_item');
-    const warehouseSelect = document.getElementById('id_warehouse');
-    
-    // Check if dropdowns have options
-    if (itemSelect) {
-        console.log('Item select found. Total options:', itemSelect.options.length);
-        console.log('Item options:', Array.from(itemSelect.options).map(opt => ({value: opt.value, text: opt.text})));
-        if (itemSelect.options.length <= 1) {
-            console.log('No items available in dropdown');
-        }
-    }
-    
-    if (warehouseSelect) {
-        console.log('Warehouse select found. Total options:', warehouseSelect.options.length);
-        console.log('Warehouse options:', Array.from(warehouseSelect.options).map(opt => ({value: opt.value, text: opt.text})));
-        if (warehouseSelect.options.length <= 1) {
-            console.log('No warehouses available in dropdown');
-        }
-    }
-    
-    // Don't use Select2 if there's only one option - use native select for better compatibility
-    if (typeof $ !== 'undefined' && $.fn.select2 && itemSelect && itemSelect.options.length > 2) {
-        // Only initialize Select2 if there are multiple options (more than placeholder + 1 item)
-        $('#id_item').select2({
-            theme: 'bootstrap-5',
-            placeholder: 'Select an item...',
-            allowClear: true,
-            width: '100%',
-            minimumResultsForSearch: 0
-        });
-    } else if (itemSelect) {
-        // For single option or no Select2, ensure native select is visible and functional
-        itemSelect.style.display = 'block';
-        console.log('Using native select for items. Options:', itemSelect.options.length);
-    }
-    
-    if (typeof $ !== 'undefined' && $.fn.select2 && warehouseSelect && warehouseSelect.options.length > 2) {
-        $('#id_warehouse').select2({
-            theme: 'bootstrap-5',
-            placeholder: 'Select a warehouse...',
-            allowClear: true,
-            width: '100%',
-            minimumResultsForSearch: 0
-        });
-    } else if (warehouseSelect) {
-        warehouseSelect.style.display = 'block';
-        console.log('Using native select for warehouses. Options:', warehouseSelect.options.length);
-    }
 });
 </script>
 {% endblock %}
-

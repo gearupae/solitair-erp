@@ -987,13 +987,9 @@ def stock_adjustment(request):
                         available = stock_record.quantity if stock_record else Decimal('0.00')
                         if available < quantity:
                             messages.error(request, f'Insufficient stock. Available: {available}, Requested: {quantity}')
-                            items = Item.objects.filter(is_active=True).order_by('name')
-                            warehouses = Warehouse.objects.filter(is_active=True, status='active').order_by('name')
                             return render(request, 'inventory/stock_adjustment.html', {
                                 'title': 'Stock Adjustment',
                                 'form': form,
-                                'items': items,
-                                'warehouses': warehouses,
                             })
 
                     old_quantity = Stock.objects.filter(
@@ -1026,26 +1022,16 @@ def stock_adjustment(request):
                     
             except Exception as e:
                 messages.error(request, f'Error updating stock: {str(e)}')
-                items = Item.objects.filter(is_active=True).order_by('name')
-                warehouses = Warehouse.objects.filter(is_active=True, status='active').order_by('name')
                 return render(request, 'inventory/stock_adjustment.html', {
                     'title': 'Stock Adjustment',
                     'form': form,
-                    'items': items,
-                    'warehouses': warehouses,
                 })
     else:
         form = StockAdjustmentForm()
-    
-    # Get items and warehouses for template context
-    items = Item.objects.filter(is_active=True).order_by('name')
-    warehouses = Warehouse.objects.filter(is_active=True, status='active').order_by('name')
-    
+
     return render(request, 'inventory/stock_adjustment.html', {
         'title': 'Stock Adjustment',
         'form': form,
-        'items': items,
-        'warehouses': warehouses,
     })
 
 

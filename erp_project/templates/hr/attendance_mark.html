@@ -60,6 +60,7 @@
           var src = document.getElementById('id_source');
           var ott = document.getElementById('id_overtime_type');
           var prj = document.getElementById('id_project');
+          var po = document.getElementById('id_production_order');
           if (cin && data.record.check_in) cin.value = data.record.check_in.slice(0, 5);
           if (cout && data.record.check_out) cout.value = data.record.check_out.slice(0, 5);
           if (st) st.value = data.record.status;
@@ -67,6 +68,7 @@
           if (notes) notes.value = data.record.notes || '';
           if (src) src.value = data.record.source || 'manual';
           if (prj) prj.value = data.record.project_id ? String(data.record.project_id) : '';
+          if (po) po.value = data.record.production_order_id ? String(data.record.production_order_id) : '';
         }
       }).catch(function () {});
   }

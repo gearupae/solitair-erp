@@ -16,10 +16,17 @@
     {% endif %}
 </div>
 {% else %}
-<p class="text-muted small mb-3">Allow location when your browser asks. Records appear in HR attendance with source <span class="badge bg-primary">self-service</span>.</p>
+<p class="text-muted small mb-3">Allow location when your browser asks. Records appear in HR attendance with source <span class="badge bg-primary">self-service</span>. Choose a production order before clock in if you are on the factory floor.</p>
 
 <div class="card shadow-sm mb-4">
     <div class="card-body p-4">
+        <div class="mb-3">
+            <label class="form-label" for="svc-po-select">Production order <span class="text-muted fw-normal small">(optional)</span></label>
+            <select class="form-select" id="svc-po-select" disabled>
+                <option value="">— Loading… —</option>
+            </select>
+            <p class="form-text small mb-0" id="svc-po-help">Open orders for your company appear here.</p>
+        </div>
         <p class="small text-muted mb-2">Today · <span id="svc-today-date"></span></p>
         <div id="svc-complete-msg" class="alert alert-success d-none mb-3 py-2" role="status"></div>
 
@@ -51,6 +58,9 @@
 <script>
 (function () {
   const punchUrl = "{% url 'hr:attendance_self_punch' %}";
+  const poUrl = "{% url 'hr:attendance_mes_production_orders' %}";
+  const poSelect = document.getElementById('svc-po-select');
+  const poHelp = document.getElementById('svc-po-help');
   const ta = {
     openSession: {{ today_attendance.open_session|yesno:"true,false" }},
     inDisplay: "{{ today_attendance.check_in_display|escapejs }}",
@@ -65,6 +75,34 @@
   const elToday = document.getElementById('svc-today-date');
   if (elToday) {
     elToday.textContent = new Date().toLocaleDateString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
+  }
+
+  if (poSelect) {
+    fetch(poUrl, { credentials: 'same-origin' })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        poSelect.innerHTML = '<option value="">— No production order —</option>';
+        if (data.ok && data.production_orders && data.production_orders.length) {
+          data.production_orders.forEach(function (po) {
+            var o = document.createElement('option');
+            o.value = po.id;
+            o.textContent = po.po_number + (po.reference ? ' — ' + po.reference : '');
+            poSelect.appendChild(o);
+          });
+          if (data.production_orders.length === 1) {
+            poSelect.selectedIndex = 1;
+          }
+          poSelect.disabled = false;
+          if (poHelp) poHelp.textContent = 'Select the job you are working on so hours count on that production order.';
+        } else {
+          poSelect.disabled = false;
+          if (poHelp) poHelp.textContent = 'No open production orders — you can still clock in without one.';
+        }
+      })
+      .catch(function () {
+        poSelect.innerHTML = '<option value="">— No production order —</option>';
+        poSelect.disabled = false;
+      });
   }
 
   function getCsrf() {
@@ -112,18 +150,22 @@
 
   function geoThenPunch(action) {
     const finish = function (lat, lng) {
+      var body = {
+          action: action,
+          latitude: lat,
+          longitude: lng,
+          client_time: new Date().toISOString(),
+        };
+      if (action === 'check_in' && poSelect && poSelect.value) {
+        body.production_order_id = parseInt(poSelect.value, 10);
+      }
       fetch(punchUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'X-CSRFToken': getCsrf(),
         },
-        body: JSON.stringify({
-          action: action,
-          latitude: lat,
-          longitude: lng,
-          client_time: new Date().toISOString(),
-        }),
+        body: JSON.stringify(body),
       })
         .then(function (r) { return r.json().then(function (data) { return { okHttp: r.ok, data: data }; }); })
         .then(function (_ref) {

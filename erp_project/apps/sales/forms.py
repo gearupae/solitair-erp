@@ -416,23 +416,50 @@ class InvoiceItemForm(forms.ModelForm):
     
     class Meta:
         model = InvoiceItem
-        fields = ['description', 'quantity', 'unit_price', 'tax_code', 'is_vat_inclusive']
+        fields = ['inventory_item', 'description', 'quantity', 'unit_price', 'tax_code', 'is_vat_inclusive']
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        from apps.inventory.models import Item
+
+        self.fields['inventory_item'].queryset = Item.objects.filter(
+            is_active=True, status='active',
+        ).order_by('name')
+        self.fields['inventory_item'].required = False
+        self.fields['inventory_item'].empty_label = '— Select inventory item —'
+        self.fields['inventory_item'].widget.attrs['class'] = (
+            'form-select form-select-sm item-inventory-select'
+        )
+
         self.fields['description'].required = False
         self.fields['unit_price'].required = False
         for field_name, field in self.fields.items():
-            if field_name in ['tax_code']:
-                field.widget.attrs['class'] = 'form-select'
+            if field_name in ['tax_code', 'inventory_item']:
+                if 'class' not in field.widget.attrs:
+                    field.widget.attrs['class'] = 'form-select form-select-sm'
             elif field_name == 'is_vat_inclusive':
-                field.widget.attrs['class'] = 'form-check-input'
-            else:
-                field.widget.attrs['class'] = 'form-control'
+                field.widget = forms.HiddenInput()
+                field.initial = False
+            elif field_name == 'description':
+                field.widget.attrs['class'] = 'form-control form-control-sm item-description'
+                field.widget.attrs['placeholder'] = 'Item description'
+            elif field_name == 'quantity':
+                field.widget.attrs.update({
+                    'class': 'form-control form-control-sm item-qty',
+                    'step': '0.01',
+                    'min': '0.01',
+                })
+            elif field_name == 'unit_price':
+                field.widget.attrs.update({
+                    'class': 'form-control form-control-sm item-price',
+                    'step': '0.01',
+                    'min': '0',
+                })
         
         self.fields['tax_code'].queryset = TaxCode.objects.filter(is_active=True)
         self.fields['tax_code'].required = False
         self.fields['tax_code'].empty_label = "-- No Tax (Out of Scope) --"
+        self.fields['tax_code'].widget.attrs['class'] = 'form-select form-select-sm item-tax-code'
         
         if not self.instance.pk:
             default_tax_code = get_default_estimate_csv_tax_code()
@@ -441,13 +468,27 @@ class InvoiceItemForm(forms.ModelForm):
 
     def clean(self):
         cleaned_data = super().clean()
+        if cleaned_data.get('DELETE'):
+            return cleaned_data
+
+        inv = cleaned_data.get('inventory_item')
         description = (cleaned_data.get('description') or '').strip()
         unit_price = cleaned_data.get('unit_price')
+        quantity = cleaned_data.get('quantity')
+
+        if inv:
+            if quantity is None or quantity <= 0:
+                self.add_error('quantity', 'Enter a quantity greater than zero.')
+            if unit_price is None:
+                self.add_error('unit_price', 'Unit price is required.')
+            cleaned_data['description'] = f"{inv.item_code} - {inv.name}"[:500]
+            return cleaned_data
+
         if not description and not unit_price:
             return cleaned_data
         if not description:
             self.add_error('description', 'Description is required.')
-        if not unit_price and unit_price != 0:
+        if unit_price is None:
             self.add_error('unit_price', 'Unit price is required.')
         return cleaned_data
 

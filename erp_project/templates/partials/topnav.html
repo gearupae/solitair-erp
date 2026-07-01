@@ -179,28 +179,6 @@
                                 <i class="fas fa-user-clock me-2"></i>Operations
                             </a>
                         </li>
-                        <li><hr class="dropdown-divider"></li>
-                        <li class="dropdown-header">Reports</li>
-                        <li>
-                            <a class="dropdown-item" href="{% url 'reports:project_report_actual_invoice' %}">
-                                <i class="fas fa-file-invoice me-2"></i>Project Actual Invoice Report
-                            </a>
-                        </li>
-                        <li>
-                            <a class="dropdown-item" href="{% url 'reports:project_report_actual_value' %}">
-                                <i class="fas fa-coins me-2"></i>Actual Project Value Report
-                            </a>
-                        </li>
-                        <li>
-                            <a class="dropdown-item" href="{% url 'reports:project_report_period' %}">
-                                <i class="fas fa-calendar-alt me-2"></i>Period Wise Report
-                            </a>
-                        </li>
-                        <li>
-                            <a class="dropdown-item" href="{% url 'reports:project_report_internal' %}">
-                                <i class="fas fa-hard-hat me-2"></i>Project Profit and Loss Report
-                            </a>
-                        </li>
                     </ul>
                 </li>
                 {% endif %}{% endif %}
@@ -774,7 +752,7 @@
                 <!-- Settings Dropdown (Icon only to save space) -->
                 {% if is_superuser or 'settings' in user_permissions %}
                 <li class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle {% if 'settings' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown" title="Settings">
+                    <a class="nav-link dropdown-toggle {% if 'settings' in request.path or '/mes/' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown" title="Settings">
                         <i class="fas fa-cog"></i>
                     </a>
                     <ul class="dropdown-menu dropdown-menu-dark dropdown-menu-end">
@@ -813,6 +791,33 @@
                         <li>
                             <a class="dropdown-item" href="{% url 'settings:company_list' %}">
                                 <i class="fas fa-city me-2"></i>Companies
+                            </a>
+                        </li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li class="dropdown-header">Manufacturing</li>
+                        <li>
+                            <a class="dropdown-item {% if request.path == '/mes/' or request.path == '/mes' %}active{% endif %}" href="{% url 'mes:index' %}">
+                                <i class="fas fa-industry me-2"></i>Overview
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item {% if '/mes/work-centers/' in request.path %}active{% endif %}" href="{% url 'mes:work_center_list' %}">
+                                <i class="fas fa-stream me-2"></i>Work Centers
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item {% if '/mes/product-templates/' in request.path %}active{% endif %}" href="{% url 'mes:product_template_list' %}">
+                                <i class="fas fa-copy me-2"></i>Product Templates
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item {% if '/mes/production-orders/' in request.path %}active{% endif %}" href="{% url 'mes:production_order_list' %}">
+                                <i class="fas fa-clipboard-list me-2"></i>Production Orders
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item {% if '/mes/tablet/' in request.path %}active{% endif %}" href="{% url 'mes:tablet' %}">
+                                <i class="fas fa-tablet-alt me-2"></i>Floor Tablet
                             </a>
                         </li>
                         <li><hr class="dropdown-divider"></li>

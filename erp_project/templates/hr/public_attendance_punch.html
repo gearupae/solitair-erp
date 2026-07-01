@@ -17,7 +17,8 @@
             <div class="card-body p-4">
                 <p class="text-muted small mb-3">
                     Enter your employee code (for example <code>EMP-2026-0002</code>), allow location when prompted.
-                    If you work on a project as a <strong>technician</strong>, choose that project before <strong>Clock in</strong> so your hours count on that job.
+                    If you work on a <strong>project</strong> as a technician, choose that project before clock in.
+                    If you work on the <strong>factory floor</strong>, choose the production order so hours count on that job.
                 </p>
                 <div class="mb-3">
                     <label class="form-label" for="emp-code">Employee code</label>
@@ -33,6 +34,16 @@
                         <option value="">— Select project —</option>
                     </select>
                     <p class="form-text small mb-0" id="project-help">Enter your full employee code above (e.g. EMP-2026-0002) — projects load when the code is complete.</p>
+                </div>
+                <div class="mb-3 project-lookup-wrap" id="po-wrap">
+                    <label class="form-label mb-1" for="po-select">
+                        Production order
+                        <span class="text-muted fw-normal small" id="po-label-hint"></span>
+                    </label>
+                    <select class="form-select form-select-lg project-lookup-field d-none" id="po-select" disabled>
+                        <option value="">— No production order —</option>
+                    </select>
+                    <p class="form-text small mb-0" id="po-help">Open factory orders load with your employee code — optional unless you are on the floor today.</p>
                 </div>
                 <div class="d-grid gap-2 mb-3">
                     <button type="button" class="btn btn-success btn-lg" id="btn-check-in">
@@ -57,8 +68,10 @@
 (function () {
   const punchUrl = "{% url 'hr:attendance_public_punch' %}";
   const projectsUrl = "{% url 'hr:attendance_technician_projects' %}";
+  const poUrl = "{% url 'hr:attendance_mes_production_orders' %}";
   const codeInput = document.getElementById('emp-code');
   const projectSelect = document.getElementById('project-select');
+  const poSelect = document.getElementById('po-select');
   const btnIn = document.getElementById('btn-check-in');
   const btnOut = document.getElementById('btn-check-out');
   const feedback = document.getElementById('punch-feedback');
@@ -83,6 +96,7 @@
   }
 
   let technicianProjectCount = 0;
+  let mesPoCount = 0;
   let projectLoadTimer = null;
   let projectLoadSeq = 0;
   let lastLoadedCode = '';
@@ -90,6 +104,8 @@
 
   const projectHelp = document.getElementById('project-help');
   const projectLabelHint = document.getElementById('project-label-hint');
+  const poHelp = document.getElementById('po-help');
+  const poLabelHint = document.getElementById('po-label-hint');
 
   function normalizeCode(value) {
     return (value || '').trim().toUpperCase();
@@ -97,6 +113,60 @@
 
   function isCompleteEmployeeCode(code) {
     return /^EMP-\d{4}-\d{4}$/.test(code);
+  }
+
+  function setPoUiState(state) {
+    if (!poSelect) return;
+    poSelect.classList.toggle('d-none', state !== 'ready');
+    poSelect.disabled = state !== 'ready';
+    poSelect.classList.remove('is-fetching');
+    if (state === 'idle') {
+      poLabelHint.textContent = '';
+      poHelp.textContent = 'Open factory orders load with your employee code — optional unless you are on the floor today.';
+    } else if (state === 'ready') {
+      poHelp.textContent = mesPoCount
+        ? 'Choose the production order you are working on (recommended for factory labour costing).'
+        : 'No open production orders right now.';
+    }
+  }
+
+  function populateProductionOrders(orders) {
+    if (!poSelect) return;
+    poSelect.innerHTML = '<option value="">— No production order —</option>';
+    mesPoCount = orders.length;
+    orders.forEach((po) => {
+      const o = document.createElement('option');
+      o.value = po.id;
+      o.textContent = po.po_number + (po.reference ? ' — ' + po.reference : '');
+      poSelect.appendChild(o);
+    });
+    if (mesPoCount === 1) {
+      poSelect.selectedIndex = 1;
+    }
+    poLabelHint.textContent = mesPoCount ? '(optional)' : '';
+    setPoUiState('ready');
+  }
+
+  function loadMesProductionOrders(code, seq) {
+    if (!poSelect) return Promise.resolve();
+    return fetch(poUrl + '?code=' + encodeURIComponent(code), { credentials: 'same-origin' })
+      .then((r) => r.json().then((data) => ({ data })))
+      .then(({ data }) => {
+        if (seq !== projectLoadSeq) return;
+        poSelect.classList.remove('is-fetching');
+        if (!data.ok || !data.production_orders || !data.production_orders.length) {
+          mesPoCount = 0;
+          poSelect.innerHTML = '<option value="">— No production order —</option>';
+          setPoUiState('ready');
+          return;
+        }
+        populateProductionOrders(data.production_orders);
+      })
+      .catch(() => {
+        if (seq !== projectLoadSeq) return;
+        mesPoCount = 0;
+        setPoUiState('idle');
+      });
   }
 
   function setProjectUiState(state) {
@@ -141,14 +211,18 @@
     if (!code) {
       lastLoadedCode = '';
       technicianProjectCount = 0;
+      mesPoCount = 0;
       projectSelect.innerHTML = '<option value="">— Select project —</option>';
+      if (poSelect) poSelect.innerHTML = '<option value="">— No production order —</option>';
       setProjectUiState('idle');
+      setPoUiState('idle');
       return Promise.resolve();
     }
 
     if (!force && !isCompleteEmployeeCode(code)) {
       if (projectUiState !== 'ready' && projectUiState !== 'none') {
         setProjectUiState('idle');
+        setPoUiState('idle');
         projectHelp.textContent = 'Keep typing your full employee code (e.g. EMP-2026-0002)…';
       }
       return Promise.resolve();
@@ -162,41 +236,63 @@
     if (projectUiState === 'ready') {
       projectSelect.classList.add('is-fetching');
     }
+    if (poSelect) {
+      poSelect.classList.add('is-fetching');
+    }
 
-    return fetch(projectsUrl + '?code=' + encodeURIComponent(code), { credentials: 'same-origin' })
-      .then((r) => r.json().then((data) => ({ status: r.status, data })))
-      .then(({ status, data }) => {
+    return Promise.all([
+      fetch(projectsUrl + '?code=' + encodeURIComponent(code), { credentials: 'same-origin' })
+        .then((r) => r.json().then((data) => ({ status: r.status, data }))),
+      fetch(poUrl + '?code=' + encodeURIComponent(code), { credentials: 'same-origin' })
+        .then((r) => r.json().then((data) => ({ status: r.status, data }))),
+    ]).then(([projRes, poRes]) => {
         if (seq !== projectLoadSeq) return;
 
         projectSelect.classList.remove('is-fetching');
+        if (poSelect) poSelect.classList.remove('is-fetching');
         projectSelect.innerHTML = '<option value="">— Select project —</option>';
         technicianProjectCount = 0;
 
+        const data = projRes.data;
         if (!data.ok) {
           lastLoadedCode = '';
           projectLabelHint.textContent = '';
           setProjectUiState('idle');
-          projectHelp.textContent = status === 404
+          setPoUiState('idle');
+          projectHelp.textContent = projRes.status === 404
             ? 'Employee code not found — check the code and try again.'
             : (data.error || 'Could not load projects.');
-          return;
+        } else {
+          lastLoadedCode = code;
+          if (data.projects && data.projects.length) {
+            populateProjects(data.projects);
+          } else {
+            setProjectUiState('none');
+          }
         }
 
-        lastLoadedCode = code;
-        if (data.projects && data.projects.length) {
-          populateProjects(data.projects);
+        const poData = poRes.data;
+        if (poData.ok && poData.production_orders && poData.production_orders.length) {
+          populateProductionOrders(poData.production_orders);
         } else {
-          setProjectUiState('none');
+          mesPoCount = 0;
+          if (poSelect) {
+            poSelect.innerHTML = '<option value="">— No production order —</option>';
+            setPoUiState('ready');
+          }
         }
       })
       .catch(() => {
         if (seq !== projectLoadSeq) return;
         lastLoadedCode = '';
         projectSelect.classList.remove('is-fetching');
+        if (poSelect) poSelect.classList.remove('is-fetching');
         technicianProjectCount = 0;
+        mesPoCount = 0;
         projectLabelHint.textContent = '';
         setProjectUiState('idle');
-        projectHelp.textContent = 'Network error while loading projects. Try again.';
+        setPoUiState('idle');
+        projectHelp.textContent = 'Network error while loading. Try again.';
       });
   }
 
@@ -211,8 +307,11 @@
       if (lastLoadedCode && code !== lastLoadedCode) {
         lastLoadedCode = '';
         technicianProjectCount = 0;
+        mesPoCount = 0;
         projectSelect.innerHTML = '<option value="">— Select project —</option>';
+        if (poSelect) poSelect.innerHTML = '<option value="">— No production order —</option>';
         setProjectUiState('idle');
+        setPoUiState('idle');
         projectHelp.textContent = 'Keep typing your full employee code (e.g. EMP-2026-0002)…';
       }
       return;
@@ -245,6 +344,9 @@
       };
       if (action === 'check_in' && projectSelect && projectSelect.value) {
         body.project_id = parseInt(projectSelect.value, 10);
+      }
+      if (action === 'check_in' && poSelect && poSelect.value) {
+        body.production_order_id = parseInt(poSelect.value, 10);
       }
       fetch(punchUrl, {
         method: 'POST',
@@ -306,6 +408,7 @@
   btnOut.addEventListener('click', () => geoThenPunch('check_out'));
 
   setProjectUiState('idle');
+  setPoUiState('idle');
   if ((codeInput.value || '').trim()) {
     loadTechnicianProjects();
   }

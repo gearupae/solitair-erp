@@ -225,6 +225,22 @@ class AttendanceRecord(BaseModel):
         related_name='attendance_records',
         help_text='Optional job / site — use for technician labour on a project.',
     )
+    production_order = models.ForeignKey(
+        'mes.ProductionOrder',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='attendance_records',
+        help_text='Optional MES production order — use for factory labour costing.',
+    )
+    routing_operation = models.ForeignKey(
+        'mes.RoutingOperation',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='attendance_records',
+        help_text='Optional routing step for operation-level labour.',
+    )
 
     working_hours = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
     late_minutes = models.PositiveIntegerField(default=0)

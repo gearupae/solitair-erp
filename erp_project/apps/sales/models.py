@@ -1101,6 +1101,13 @@ class InvoiceItem(models.Model):
         on_delete=models.CASCADE, 
         related_name='items'
     )
+    inventory_item = models.ForeignKey(
+        'inventory.Item',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='invoice_lines',
+    )
     description = models.CharField(max_length=500)
     quantity = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('1.00'))
     unit_price = models.DecimalField(max_digits=15, decimal_places=2)
@@ -1130,6 +1137,9 @@ class InvoiceItem(models.Model):
         return f"{self.description} - {self.quantity}"
     
     def save(self, *args, **kwargs):
+        if self.inventory_item_id:
+            inv = self.inventory_item
+            self.description = f"{inv.item_code} - {inv.name}"[:500]
         # Derive VAT rate from Tax Code (No Tax Code = 0%)
         if self.tax_code:
             self.vat_rate = self.tax_code.rate

@@ -273,31 +273,29 @@ class StockAdjustmentForm(forms.Form):
     """Form for stock adjustments."""
     item = forms.ModelChoiceField(
         queryset=Item.objects.none(),  # Set in __init__ to avoid queryset caching
-        widget=forms.Select(attrs={'class': 'form-select', 'id': 'id_item'}),
+        widget=forms.Select(attrs={'class': 'form-select select2', 'id': 'id_item'}),
         required=True,
-        empty_label="Select an item..."
+        empty_label="Select an item...",
     )
     warehouse = forms.ModelChoiceField(
         queryset=Warehouse.objects.none(),  # Set in __init__ to avoid queryset caching
-        widget=forms.Select(attrs={'class': 'form-select', 'id': 'id_warehouse'}),
+        widget=forms.Select(attrs={'class': 'form-select select2', 'id': 'id_warehouse'}),
         required=True,
-        empty_label="Select a warehouse..."
+        empty_label="Select a warehouse...",
     )
-    
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        # Set querysets fresh each time form is instantiated
-        # Show all active items - user can adjust stock for any item
-        self.fields['item'].queryset = Item.objects.filter(is_active=True).order_by('name')
-        self.fields['warehouse'].queryset = Warehouse.objects.filter(is_active=True, status='active').order_by('name')
     quantity = forms.DecimalField(
         max_digits=15,
         decimal_places=2,
-        widget=forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01'})
+        widget=forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01'}),
     )
     movement_type = forms.ChoiceField(
-        choices=[('in', 'Stock In'), ('out', 'Stock Out'), ('adjustment_plus', 'Adjustment (+)'), ('adjustment_minus', 'Adjustment (-)')],
-        widget=forms.Select(attrs={'class': 'form-select', 'id': 'id_movement_type'})
+        choices=[
+            ('in', 'Stock In'),
+            ('out', 'Stock Out'),
+            ('adjustment_plus', 'Adjustment (+)'),
+            ('adjustment_minus', 'Adjustment (-)'),
+        ],
+        widget=forms.Select(attrs={'class': 'form-select', 'id': 'id_movement_type'}),
     )
     adjustment_reason = forms.ChoiceField(
         choices=[('', '-- Select reason --')] + list(StockMovement.ADJUSTMENT_REASON_CHOICES),
@@ -307,12 +305,23 @@ class StockAdjustmentForm(forms.Form):
     reference = forms.CharField(
         max_length=200,
         required=False,
-        widget=forms.TextInput(attrs={'class': 'form-control'})
+        widget=forms.TextInput(attrs={'class': 'form-control'}),
     )
     notes = forms.CharField(
         required=False,
-        widget=forms.Textarea(attrs={'class': 'form-control', 'rows': 2})
+        widget=forms.Textarea(attrs={'class': 'form-control', 'rows': 2}),
     )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['item'].queryset = Item.objects.filter(
+            is_active=True,
+            status='active',
+        ).order_by('name')
+        self.fields['warehouse'].queryset = Warehouse.objects.filter(
+            is_active=True,
+            status='active',
+        ).order_by('name')
 
     def clean(self):
         cleaned = super().clean()
