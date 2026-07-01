@@ -39,6 +39,17 @@ def _match_count_to_config(raw_name: str, configured: list[str]) -> str | None:
     return None
 
 
+def _count_schema(item_names: list[str]) -> dict:
+    """Strict schema: label -> integer count only (no extra fields)."""
+    properties = {name: {'type': 'integer', 'minimum': 0} for name in item_names}
+    return {
+        'type': 'object',
+        'properties': properties,
+        'required': list(item_names),
+        'additionalProperties': False,
+    }
+
+
 def _counts_from_ai_payload(payload: dict | list, configured: list[str]) -> dict[str, int]:
     result: dict[str, int] = {name: 0 for name in configured}
     if not isinstance(payload, dict):
@@ -95,11 +106,17 @@ def count_objects_in_image(
         image_url = f'data:image/jpeg;base64,{b64}'
 
     example = json.dumps({name: 0 for name in items}, ensure_ascii=False)
+    label_list = ', '.join(f'"{name}"' for name in items)
     system = (
-        'Count visible objects in the camera image. Reply with JSON only: each item label '
-        'maps to a non-negative integer count. Use 0 if none visible. No notes or extra keys.'
+        'You count physical objects in a live camera image. Return json only. '
+        'For each label, count every separate visible instance — identical items '
+        'each count as 1 (e.g. 5 bottles on screen = 5). Use 0 when none are visible. '
+        'Integer counts only; no notes or extra json keys.'
     )
-    user_text = f'Labels: {", ".join(items)}. Example shape: {example}'
+    user_text = (
+        f'Count how many of each item are visible right now: {label_list}. '
+        f'Return json like: {example}'
+    )
 
     payload = call_openai_json_with_images(
         system=system,
@@ -109,17 +126,34 @@ def count_objects_in_image(
         feature='mes_actual_count',
         model=ACTUAL_COUNT_MODEL,
         reasoning_effort='none',
+        json_schema=_count_schema(items),
+        json_schema_name='actual_count',
+        json_schema_strict=True,
     )
     return _counts_from_ai_payload(payload, items)
 
 
 def _compute_deltas(new_counts: dict[str, int], last_counts: dict[str, int]) -> dict[str, int]:
+    """
+    Add to daily total when more items appear in frame than last scan.
+    First scan after reset logs the full visible count (last is empty → full delta).
+    """
     added: dict[str, int] = {}
     for item, new_val in new_counts.items():
         old_val = int(last_counts.get(item, 0) or 0)
         if new_val > old_val:
             added[item] = new_val - old_val
     return added
+
+
+def get_today_totals(company) -> dict[str, int]:
+    today = timezone.localdate()
+    return {
+        row.item_name: row.count
+        for row in ActualCountDailyLog.objects.filter(
+            company=company, log_date=today, is_active=True,
+        )
+    }
 
 
 @transaction.atomic
@@ -177,6 +211,7 @@ def process_capture(
         'raw_counts': raw_counts,
         'added_counts': added_counts,
         'daily_totals': daily_totals,
+        'today_totals': get_today_totals(company),
     }
 
 
