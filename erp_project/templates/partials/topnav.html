@@ -1252,7 +1252,8 @@ document.addEventListener('DOMContentLoaded', function() {
 .nav-reports-panel.show,
 #reportsPanel.show,
 #pdcReportsPanel.show,
-#inventoryReportsPanel.show {
+#inventoryReportsPanel.show,
+#manufacturingPanel.show {
     display: block;
     animation: fadeInRight 0.15s ease-out;
 }
@@ -1269,32 +1270,37 @@ document.addEventListener('DOMContentLoaded', function() {
 .nav-reports-panel::-webkit-scrollbar,
 #reportsPanel::-webkit-scrollbar,
 #pdcReportsPanel::-webkit-scrollbar,
-#inventoryReportsPanel::-webkit-scrollbar {
+#inventoryReportsPanel::-webkit-scrollbar,
+#manufacturingPanel::-webkit-scrollbar {
     width: 5px;
 }
 .nav-reports-panel::-webkit-scrollbar-track,
 #reportsPanel::-webkit-scrollbar-track,
 #pdcReportsPanel::-webkit-scrollbar-track,
-#inventoryReportsPanel::-webkit-scrollbar-track {
+#inventoryReportsPanel::-webkit-scrollbar-track,
+#manufacturingPanel::-webkit-scrollbar-track {
     background: transparent;
 }
 .nav-reports-panel::-webkit-scrollbar-thumb,
 #reportsPanel::-webkit-scrollbar-thumb,
 #pdcReportsPanel::-webkit-scrollbar-thumb,
-#inventoryReportsPanel::-webkit-scrollbar-thumb {
+#inventoryReportsPanel::-webkit-scrollbar-thumb,
+#manufacturingPanel::-webkit-scrollbar-thumb {
     background: #495057;
     border-radius: 3px;
 }
 .nav-reports-panel::-webkit-scrollbar-thumb:hover,
 #reportsPanel::-webkit-scrollbar-thumb:hover,
 #pdcReportsPanel::-webkit-scrollbar-thumb:hover,
-#inventoryReportsPanel::-webkit-scrollbar-thumb:hover {
+#inventoryReportsPanel::-webkit-scrollbar-thumb:hover,
+#manufacturingPanel::-webkit-scrollbar-thumb:hover {
     background: #6c757d;
 }
 .nav-reports-panel .dropdown-header,
 #reportsPanel .dropdown-header,
 #pdcReportsPanel .dropdown-header,
-#inventoryReportsPanel .dropdown-header {
+#inventoryReportsPanel .dropdown-header,
+#manufacturingPanel .dropdown-header {
     color: #6c757d;
     font-size: 0.875rem;
     font-weight: 600;
@@ -1306,13 +1312,15 @@ document.addEventListener('DOMContentLoaded', function() {
 .nav-reports-panel .dropdown-header:first-child,
 #reportsPanel .dropdown-header:first-child,
 #pdcReportsPanel .dropdown-header:first-child,
-#inventoryReportsPanel .dropdown-header:first-child {
+#inventoryReportsPanel .dropdown-header:first-child,
+#manufacturingPanel .dropdown-header:first-child {
     margin-top: 0;
 }
 .nav-reports-panel .dropdown-item,
 #reportsPanel .dropdown-item,
 #pdcReportsPanel .dropdown-item,
-#inventoryReportsPanel .dropdown-item {
+#inventoryReportsPanel .dropdown-item,
+#manufacturingPanel .dropdown-item {
     color: #dee2e6;
     padding: 0.45rem 1rem;
     font-size: 1.042rem;
@@ -1324,7 +1332,8 @@ document.addEventListener('DOMContentLoaded', function() {
 .nav-reports-panel .dropdown-item i,
 #reportsPanel .dropdown-item i,
 #pdcReportsPanel .dropdown-item i,
-#inventoryReportsPanel .dropdown-item i {
+#inventoryReportsPanel .dropdown-item i,
+#manufacturingPanel .dropdown-item i {
     width: 20px;
     text-align: center;
     opacity: 0.7;
@@ -1332,7 +1341,8 @@ document.addEventListener('DOMContentLoaded', function() {
 .nav-reports-panel .dropdown-item:hover,
 #reportsPanel .dropdown-item:hover,
 #pdcReportsPanel .dropdown-item:hover,
-#inventoryReportsPanel .dropdown-item:hover {
+#inventoryReportsPanel .dropdown-item:hover,
+#manufacturingPanel .dropdown-item:hover {
     background: #495057;
     color: #fff;
     padding-left: 1.15rem;
@@ -1340,10 +1350,14 @@ document.addEventListener('DOMContentLoaded', function() {
 .nav-reports-panel .dropdown-item:hover i,
 #reportsPanel .dropdown-item:hover i,
 #pdcReportsPanel .dropdown-item:hover i,
-#inventoryReportsPanel .dropdown-item:hover i {
+#inventoryReportsPanel .dropdown-item:hover i,
+#manufacturingPanel .dropdown-item:hover i {
     opacity: 1;
 }
 .nav-reports-panel .dropdown-item.active,
+#reportsPanel .dropdown-item.active,
+#pdcReportsPanel .dropdown-item.active,
+#inventoryReportsPanel .dropdown-item.active,
 #manufacturingPanel .dropdown-item.active {
     background-color: rgba(255, 255, 255, 0.12);
     color: #fff;
@@ -1351,7 +1365,8 @@ document.addEventListener('DOMContentLoaded', function() {
 .nav-reports-panel .dropdown-divider,
 #reportsPanel .dropdown-divider,
 #pdcReportsPanel .dropdown-divider,
-#inventoryReportsPanel .dropdown-divider {
+#inventoryReportsPanel .dropdown-divider,
+#manufacturingPanel .dropdown-divider {
     border-color: rgba(255,255,255,0.08);
     margin: 0.35rem 0;
 }
