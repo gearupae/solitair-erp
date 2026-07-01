@@ -90,6 +90,7 @@ INSTALLED_APPS = [
     'apps.finance',
     'apps.projects',
     'apps.hr',
+    'apps.recruitment',
     'apps.documents',
     'apps.assets',
     'apps.property',

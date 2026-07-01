@@ -5,7 +5,7 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.core.exceptions import ValidationError
-from django.views.generic import ListView, CreateView, UpdateView, DetailView
+from django.views.generic import ListView, CreateView, UpdateView, DetailView, TemplateView
 from django.urls import reverse, reverse_lazy
 from django.db.models import Q, Sum, F, Value, DecimalField, DateField, Count, Avg, Prefetch
 from django.db import models as db_models
@@ -294,6 +294,31 @@ class ItemListView(PermissionRequiredMixin, ListView):
         context['filter_querystring'] = q.urlencode()
         
         return context
+
+
+class InventoryDashboardView(PermissionRequiredMixin, TemplateView):
+    template_name = 'inventory/dashboard.html'
+    module_name = 'inventory'
+    permission_type = 'view'
+
+    def get_context_data(self, **kwargs):
+        from datetime import date
+
+        from .inventory_dashboard import build_inventory_dashboard_context
+
+        ctx = super().get_context_data(**kwargs)
+        req = self.request.GET
+        month = None
+        year_raw = (req.get('year') or '').strip()
+        month_raw = (req.get('month') or '').strip()
+        if year_raw.isdigit() and month_raw.isdigit():
+            try:
+                month = date(int(year_raw), int(month_raw), 1)
+            except ValueError:
+                month = None
+        ctx['title'] = 'Inventory Dashboard'
+        ctx.update(build_inventory_dashboard_context(self.request.user, month=month))
+        return ctx
 
 
 @login_required

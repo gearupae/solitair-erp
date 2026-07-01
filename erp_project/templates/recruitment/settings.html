@@ -1,0 +1,84 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <div>
+        <h4 class="mb-1 fw-bold">{{ title }}</h4>
+        <p class="text-muted mb-0">Positions and departments used in recruitment</p>
+    </div>
+    <a href="{% url 'hr:department_list' %}" class="btn btn-outline-secondary btn-sm">HR Departments</a>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-6">
+        <div class="card h-100">
+            <div class="card-header fw-semibold">Positions</div>
+            <div class="card-body">
+                {% if can_edit %}
+                <form method="post" class="mb-4 border rounded p-3 bg-light">{% csrf_token %}
+                    <input type="hidden" name="save_position" value="1">
+                    <div class="row g-2">
+                        <div class="col-md-6"><label class="form-label small">Title</label>{{ position_form.title }}</div>
+                        <div class="col-md-6"><label class="form-label small">Department</label>{{ position_form.department }}</div>
+                    </div>
+                    <button type="submit" class="btn btn-sm btn-primary mt-2">Add position</button>
+                </form>
+                {% endif %}
+                <div class="table-responsive">
+                    <table class="table table-sm mb-0">
+                        <thead><tr><th>Title</th><th>Department</th>{% if can_edit %}<th></th>{% endif %}</tr></thead>
+                        <tbody>
+                        {% for pos in positions %}
+                        <tr>
+                            <td>{{ pos.title }}</td>
+                            <td>{{ pos.department.name }}</td>
+                            {% if can_edit %}
+                            <td class="text-end">
+                                <form method="post" class="d-inline" onsubmit="return confirm('Remove this position?');">{% csrf_token %}
+                                    <input type="hidden" name="delete_position" value="1">
+                                    <input type="hidden" name="position_id" value="{{ pos.pk }}">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger">Remove</button>
+                                </form>
+                            </td>
+                            {% endif %}
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="3" class="text-muted">No positions defined.</td></tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="card h-100">
+            <div class="card-header fw-semibold">Departments</div>
+            <div class="card-body">
+                {% if can_edit %}
+                <form method="post" class="mb-4 border rounded p-3 bg-light">{% csrf_token %}
+                    <input type="hidden" name="save_department" value="1">
+                    <div class="row g-2">
+                        <div class="col-md-5"><label class="form-label small">Name</label>{{ dept_form.name }}</div>
+                        <div class="col-md-4"><label class="form-label small">Code</label>{{ dept_form.code }}</div>
+                        <div class="col-md-3"><label class="form-label small">Manager</label>{{ dept_form.manager }}</div>
+                    </div>
+                    <button type="submit" class="btn btn-sm btn-primary mt-2">Add department</button>
+                </form>
+                {% endif %}
+                <div class="table-responsive">
+                    <table class="table table-sm mb-0">
+                        <thead><tr><th>Code</th><th>Name</th></tr></thead>
+                        <tbody>
+                        {% for dept in departments %}
+                        <tr><td>{{ dept.code }}</td><td>{{ dept.name }}</td></tr>
+                        {% empty %}
+                        <tr><td colspan="2" class="text-muted">No departments.</td></tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

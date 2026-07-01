@@ -51,12 +51,111 @@
                     <div class="col-md-4"><h6 class="text-muted mb-2">Email</h6><p class="mb-0">{{ employee.email }}</p></div>
                     <div class="col-md-4"><h6 class="text-muted mb-2">Phone</h6><p class="mb-0">{{ employee.phone|default:"-" }}</p></div>
                     <div class="col-md-4"><h6 class="text-muted mb-2">Date of Birth</h6><p class="mb-0">{{ employee.date_of_birth|date:"d/m/Y"|default:"-" }}</p></div>
+                    {% if employee.additional_contact_name or employee.additional_contact_phone or employee.additional_contact_email or employee.additional_contact_location %}
+                    <div class="col-12"><hr class="my-2"></div>
+                    <div class="col-12"><h6 class="text-muted mb-2">Additional contact</h6></div>
+                    <div class="col-md-3"><h6 class="text-muted mb-2">Name</h6><p class="mb-0">{{ employee.additional_contact_name|default:"-" }}</p></div>
+                    <div class="col-md-3"><h6 class="text-muted mb-2">Phone</h6><p class="mb-0">{{ employee.additional_contact_phone|default:"-" }}</p></div>
+                    <div class="col-md-3"><h6 class="text-muted mb-2">Email</h6><p class="mb-0">{{ employee.additional_contact_email|default:"-" }}</p></div>
+                    <div class="col-md-3"><h6 class="text-muted mb-2">Location</h6><p class="mb-0">{{ employee.additional_contact_location|default:"-" }}</p></div>
+                    {% endif %}
                     <div class="col-md-4"><h6 class="text-muted mb-2">Company</h6><p class="mb-0">{{ employee.company.name|default:"-" }}</p></div>
                     <div class="col-md-4"><h6 class="text-muted mb-2">Location</h6><p class="mb-0">{{ employee.get_location_display }}</p></div>
                     <div class="col-md-4"><h6 class="text-muted mb-2">Department</h6><p class="mb-0">{{ employee.department.name|default:"-" }}</p></div>
                     <div class="col-md-4"><h6 class="text-muted mb-2">Designation</h6><p class="mb-0">{{ employee.designation.name|default:"-" }}</p></div>
                     <div class="col-md-4"><h6 class="text-muted mb-2">Joining Date</h6><p class="mb-0">{{ employee.date_of_joining|date:"d/m/Y"|default:"-" }}</p></div>
                 </div>
+            </div>
+        </div>
+
+        <div class="card mb-4" id="employee-projects">
+            <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <h6 class="mb-0 fw-semibold"><i class="fas fa-project-diagram me-2 text-muted"></i>Projects</h6>
+                {% if employee_project_rows %}
+                <span class="badge bg-light text-dark">{{ employee_project_rows|length }} project{{ employee_project_rows|length|pluralize }}</span>
+                {% endif %}
+            </div>
+            <div class="card-body">
+                {% if not employee_has_login %}
+                <p class="text-muted small mb-0">
+                    No ERP login linked to this employee.
+                    {% if can_edit %}
+                    <a href="{% url 'hr:employee_edit' employee.pk %}">Edit employee</a> to assign a user account, then add projects here.
+                    {% else %}
+                    An ERP login must be linked before projects can be assigned.
+                    {% endif %}
+                </p>
+                {% else %}
+                {% if can_edit and employee_available_projects %}
+                <form method="post" action="{% url 'hr:employee_project_assign' employee.pk %}" class="row g-2 align-items-end mb-3">
+                    {% csrf_token %}
+                    <div class="col-md-9">
+                        <label class="form-label small mb-1" for="employeeProjectSelect">Add to project</label>
+                        <select name="project_id" id="employeeProjectSelect" class="form-select form-select-sm" required>
+                            <option value="">Select project…</option>
+                            {% for project in employee_available_projects %}
+                            <option value="{{ project.pk }}">{{ project.project_code }} — {{ project.name }}{% if project.customer %} ({{ project.customer.name }}){% endif %}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <button type="submit" class="btn btn-primary btn-sm w-100">
+                            <i class="fas fa-plus me-1"></i>Add
+                        </button>
+                    </div>
+                </form>
+                {% elif can_edit %}
+                <p class="text-muted small mb-3">All visible projects are already assigned, or no active projects exist.</p>
+                {% endif %}
+
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Code</th>
+                                <th>Project</th>
+                                <th>Status</th>
+                                <th>Role</th>
+                                <th class="text-end" style="min-width:6rem;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in employee_project_rows %}
+                            <tr>
+                                <td>
+                                    <a href="{% url 'projects:project_detail' row.project.pk %}" class="fw-medium text-decoration-none">{{ row.project.project_code }}</a>
+                                </td>
+                                <td>
+                                    <a href="{% url 'projects:project_detail' row.project.pk %}" class="text-decoration-none">{{ row.project.name }}</a>
+                                    {% if row.project.customer %}
+                                    <div class="small text-muted">{{ row.project.customer.name }}</div>
+                                    {% endif %}
+                                </td>
+                                <td><span class="badge bg-secondary">{{ row.project.get_status_display }}</span></td>
+                                <td>{{ row.role_label }}</td>
+                                <td class="text-end">
+                                    <a href="{% url 'projects:project_detail' row.project.pk %}" class="btn btn-sm btn-outline-secondary">View</a>
+                                    {% if can_edit and row.can_remove %}
+                                    <form method="post" action="{% url 'hr:employee_project_remove' employee.pk %}" class="d-inline"
+                                          onsubmit="return confirm('Remove this employee from {{ row.project.project_code|escapejs }}?');">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="project_id" value="{{ row.project.pk }}">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger" title="Remove from project">
+                                            <i class="fas fa-times"></i>
+                                        </button>
+                                    </form>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="5" class="text-center text-muted py-3">Not assigned to any projects yet.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% endif %}
             </div>
         </div>
 

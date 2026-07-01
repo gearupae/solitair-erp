@@ -157,7 +157,10 @@ class PayrollAdmin(admin.ModelAdmin):
 
 @admin.register(PayrollSettings)
 class PayrollSettingsAdmin(admin.ModelAdmin):
-    list_display = ['pk', 'late_deduction_amount', 'working_days_in_month', 'iloe_deduct_via_payroll', 'hr_notification_email']
+    list_display = [
+        'pk', 'late_deduction_amount', 'working_days_in_month', 'iloe_deduct_via_payroll',
+        'hr_notification_email', 'birthday_email_enabled',
+    ]
 
 
 @admin.register(EmployeeHRProfile)

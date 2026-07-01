@@ -1,10 +1,24 @@
 {% extends 'base.html' %}
 {% block content %}
-<div class="page-header mb-4"><h4 class="mb-1 fw-bold">{{ title }}</h4><p class="text-muted mb-0">Attendance deductions &amp; payroll defaults</p></div>
-<div class="card"><div class="card-body">
-    <form method="post">{% csrf_token %}
+<div class="page-header mb-4">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb mb-2">
+            <li class="breadcrumb-item"><a href="{% url 'hr:dashboard' %}">HR</a></li>
+            <li class="breadcrumb-item active">Settings</li>
+        </ol>
+    </nav>
+    <h4 class="mb-1 fw-bold">{{ title }}</h4>
+    <p class="text-muted mb-0">Payroll defaults, HR notifications, and birthday email</p>
+</div>
+
+<form method="post">{% csrf_token %}
+
+<div class="card mb-4">
+    <div class="card-header"><h6 class="mb-0 fw-semibold">Payroll defaults</h6></div>
+    <div class="card-body">
         <div class="row g-3">
             {% for field in form %}
+            {% if field.name != 'birthday_email_enabled' and field.name != 'birthday_email_subject' and field.name != 'birthday_email_body' %}
             <div class="{% if field.name == 'iloe_deduct_via_payroll' %}col-12{% else %}col-md-6{% endif %}">
                 {% if field.name == 'iloe_deduct_via_payroll' %}
                 <div class="form-check mt-2">
@@ -14,13 +28,54 @@
                     {{ field.errors }}
                 </div>
                 {% else %}
-                {{ field.label_tag }} {{ field.errors }} {{ field }}
+                <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                {{ field }}
+                {% if field.help_text %}<div class="form-text small text-muted">{{ field.help_text }}</div>{% endif %}
+                {{ field.errors }}
                 {% endif %}
             </div>
+            {% endif %}
             {% endfor %}
         </div>
-        <button class="btn btn-primary mt-3" type="submit">Save</button>
-        <a href="{% url 'hr:dashboard' %}" class="btn btn-light mt-3">Cancel</a>
-    </form>
-</div></div>
+    </div>
+</div>
+
+<div class="card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <h6 class="mb-0 fw-semibold"><i class="fas fa-birthday-cake me-2 text-muted"></i>Birthday mail</h6>
+        <span class="badge bg-light text-dark">Daily cron: <code>send_birthday_emails</code></span>
+    </div>
+    <div class="card-body">
+        <p class="text-muted small">
+            On each employee's date of birth, an email is sent to their work email address using the template below.
+            Configure company SMTP under Settings → Company. Each employee receives at most one birthday email per calendar year.
+        </p>
+        <div class="row g-3">
+            <div class="col-12">
+                <div class="form-check">
+                    {{ form.birthday_email_enabled }}
+                    <label class="form-check-label" for="{{ form.birthday_email_enabled.id_for_label }}">{{ form.birthday_email_enabled.label }}</label>
+                    {% if form.birthday_email_enabled.help_text %}<div class="form-text small text-muted">{{ form.birthday_email_enabled.help_text }}</div>{% endif %}
+                    {{ form.birthday_email_enabled.errors }}
+                </div>
+            </div>
+            <div class="col-12">
+                <label class="form-label" for="{{ form.birthday_email_subject.id_for_label }}">{{ form.birthday_email_subject.label }}</label>
+                {{ form.birthday_email_subject }}
+                {% if form.birthday_email_subject.help_text %}<div class="form-text small text-muted">{{ form.birthday_email_subject.help_text }}</div>{% endif %}
+                {{ form.birthday_email_subject.errors }}
+            </div>
+            <div class="col-12">
+                <label class="form-label" for="{{ form.birthday_email_body.id_for_label }}">{{ form.birthday_email_body.label }}</label>
+                {{ form.birthday_email_body }}
+                {% if form.birthday_email_body.help_text %}<div class="form-text small text-muted">{{ form.birthday_email_body.help_text }}</div>{% endif %}
+                {{ form.birthday_email_body.errors }}
+            </div>
+        </div>
+    </div>
+</div>
+
+<button class="btn btn-primary" type="submit">Save settings</button>
+<a href="{% url 'hr:dashboard' %}" class="btn btn-light">Cancel</a>
+</form>
 {% endblock %}

@@ -36,15 +36,24 @@ class PayrollSettingsForm(forms.ModelForm):
             'overtime_rate_multiplier',
             'hr_notification_email',
             'iloe_deduct_via_payroll',
+            'birthday_email_enabled',
+            'birthday_email_subject',
+            'birthday_email_body',
         ]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         for name, field in self.fields.items():
-            if name == 'iloe_deduct_via_payroll':
+            if name in ('iloe_deduct_via_payroll', 'birthday_email_enabled'):
                 field.widget.attrs['class'] = 'form-check-input'
+            elif name == 'birthday_email_body':
+                field.widget = forms.Textarea(attrs={'class': 'form-control', 'rows': 8})
             else:
                 field.widget.attrs['class'] = 'form-control'
+        from apps.hr.birthday_email import PLACEHOLDER_HELP
+
+        self.fields['birthday_email_subject'].help_text = f'Placeholders: {PLACEHOLDER_HELP}'
+        self.fields['birthday_email_body'].help_text = f'Plain text. Placeholders: {PLACEHOLDER_HELP}'
 
 
 class PayrollTemplateForm(forms.ModelForm):

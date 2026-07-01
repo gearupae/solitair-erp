@@ -16,6 +16,13 @@
     <nav aria-label="breadcrumb"><ol class="breadcrumb mb-2"><li class="breadcrumb-item"><a href="{% url 'hr:employee_list' %}">Employees</a></li><li class="breadcrumb-item active">{{ title }}</li></ol></nav>
     <h4 class="mb-0 fw-bold">{{ title }}</h4>
 </div>
+{% if from_candidate and candidate %}
+<div class="alert alert-info">
+    <i class="fas fa-user-plus me-2"></i>Converting candidate <strong>{{ candidate.name }}</strong> to employee.
+    {% if candidate.resume %} Resume will be attached to the employee record.{% endif %}
+    <a href="{% url 'recruitment:candidate_detail' candidate.pk %}" class="alert-link ms-1">Back to candidate</a>
+</div>
+{% endif %}
 {% if object %}
 <a href="{% url 'hr:employee_detail' object.pk %}" class="btn btn-sm btn-outline-secondary mb-2">View profile</a>
 {% endif %}
@@ -98,6 +105,31 @@
                 <div class="col-md-3"><label class="form-label" for="{{ form.gender.id_for_label }}">Gender</label>{{ form.gender }}{% if form.gender.errors %}<div class="text-danger small mt-1">{{ form.gender.errors|join:", " }}</div>{% endif %}</div>
                 <div class="col-md-3"><label class="form-label" for="{{ form.date_of_birth.id_for_label }}">Date of Birth</label>{{ form.date_of_birth }}{% if form.date_of_birth.errors %}<div class="text-danger small mt-1">{{ form.date_of_birth.errors|join:", " }}</div>{% endif %}</div>
                 <div class="col-md-3"><label class="form-label" for="{{ form.status.id_for_label }}">Status</label>{{ form.status }}{% if form.status.errors %}<div class="text-danger small mt-1">{{ form.status.errors|join:", " }}</div>{% endif %}</div>
+            </div>
+            <hr class="my-3">
+            <h6 class="text-muted fw-semibold mb-3">Additional contact</h6>
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <label class="form-label" for="{{ form.additional_contact_name.id_for_label }}">Contact name</label>
+                    {{ form.additional_contact_name }}
+                    {% if form.additional_contact_name.errors %}<div class="text-danger small mt-1">{{ form.additional_contact_name.errors|join:", " }}</div>{% endif %}
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label" for="{{ form.additional_contact_phone.id_for_label }}">Phone</label>
+                    {{ form.additional_contact_phone }}
+                    {% if form.additional_contact_phone.errors %}<div class="text-danger small mt-1">{{ form.additional_contact_phone.errors|join:", " }}</div>{% endif %}
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label" for="{{ form.additional_contact_email.id_for_label }}">Email</label>
+                    {{ form.additional_contact_email }}
+                    {% if form.additional_contact_email.errors %}<div class="text-danger small mt-1">{{ form.additional_contact_email.errors|join:", " }}</div>{% endif %}
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label" for="{{ form.additional_contact_location.id_for_label }}">Location</label>
+                    {{ form.additional_contact_location }}
+                    {% if form.additional_contact_location.help_text %}<small class="text-muted d-block mt-1">{{ form.additional_contact_location.help_text }}</small>{% endif %}
+                    {% if form.additional_contact_location.errors %}<div class="text-danger small mt-1">{{ form.additional_contact_location.errors|join:", " }}</div>{% endif %}
+                </div>
             </div>
         </div>
     </div>

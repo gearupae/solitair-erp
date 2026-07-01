@@ -643,6 +643,7 @@ class ApprovalConfiguration(BaseModel):
         ('project', 'Project'),
         ('project_conversion', 'Project from estimate (draft)'),
         ('leave', 'Leave Request'),
+        ('recruitment_request', 'Recruitment Request'),
     ]
     
     module = models.CharField(max_length=50, choices=MODULE_CHOICES, unique=True)
@@ -696,11 +697,18 @@ class ApprovalConfiguration(BaseModel):
     @classmethod
     def notify_approver(cls, request_obj, module):
         """Create in-app notification for approver when action is needed."""
-        amount = getattr(request_obj, 'total_amount', 0) or getattr(request_obj, 'total_cost', 0) or getattr(request_obj, 'contract_value', 0) or 0
+        amount = (
+            getattr(request_obj, 'total_amount', 0)
+            or getattr(request_obj, 'total_cost', 0)
+            or getattr(request_obj, 'contract_value', 0)
+            or getattr(request_obj, 'openings', 0)
+            or 0
+        )
         approver = cls.get_approver_for_amount(module, amount)
         if approver:
             ref = (
                 getattr(request_obj, 'reference_number', None)
+                or getattr(request_obj, 'display_reference', None)
                 or getattr(request_obj, 'estimate_number', None)
                 or getattr(request_obj, 'project_code', None)
                 or getattr(request_obj, 'sr_number', None)
@@ -717,6 +725,7 @@ class ApprovalConfiguration(BaseModel):
                 'project': f'/projects/{pk}/' if pk else '',
                 'project_conversion': f'/projects/{pk}/' if pk else '',
                 'leave': f'/hr/leave/{pk}/' if pk else '',
+                'recruitment_request': f'/recruitment/requests/{pk}/' if pk else '',
             }
             link = link_map.get(module, str(pk) if pk else '')
             title = f'Approval Required: {module.replace("_", " ").title()}'
@@ -728,6 +737,8 @@ class ApprovalConfiguration(BaseModel):
                 msg = f'{ref} was created from a quotation and needs your approval to leave Draft status.'
             elif module == 'leave':
                 msg = f'Leave request {ref} requires your approval.'
+            elif module == 'recruitment_request':
+                msg = f'Recruitment request {ref} requires your approval.'
             else:
                 msg = f'{ref} requires your approval. Amount: AED {amount:,.2f}'
             Notification.create(

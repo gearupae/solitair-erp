@@ -39,6 +39,14 @@ class Employee(BaseModel):
     last_name = models.CharField(max_length=100)
     email = models.EmailField()
     phone = models.CharField(max_length=20, blank=True)
+    additional_contact_name = models.CharField(max_length=200, blank=True)
+    additional_contact_phone = models.CharField(max_length=20, blank=True)
+    additional_contact_email = models.EmailField(blank=True)
+    additional_contact_location = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text='City, address, or region for the additional contact.',
+    )
     gender = models.CharField(max_length=10, choices=GENDER_CHOICES, blank=True)
     department = models.ForeignKey(Department, on_delete=models.SET_NULL, null=True, related_name='employees')
     designation = models.ForeignKey(Designation, on_delete=models.SET_NULL, null=True, related_name='employees')

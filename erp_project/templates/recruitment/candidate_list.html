@@ -1,0 +1,91 @@
+{% extends 'base.html' %}
+{% block extra_css %}
+<style>
+.rec-candidate-table .col-actions {
+    min-width: 9rem;
+}
+.rec-candidate-table .col-actions .btn-action {
+    width: 30px;
+    height: 30px;
+    font-size: 0.85rem;
+}
+</style>
+{% endblock %}
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+    <div>
+        <h4 class="mb-1 fw-bold">{{ title }}</h4>
+        <p class="text-muted mb-0">Recruitment candidates</p>
+    </div>
+    {% if can_create %}
+    <a href="{% url 'recruitment:candidate_create' %}" class="btn btn-primary"><i class="fas fa-plus me-1"></i>Add Candidate</a>
+    {% endif %}
+</div>
+
+<div class="card mb-3"><div class="card-body py-3">
+    <form method="get" class="row g-2 align-items-end">
+        <div class="col-md-4"><input type="text" name="search" value="{{ request.GET.search }}" class="form-control form-control-sm" placeholder="Search name, email, phone…"></div>
+        <div class="col-md-3">
+            <select name="status" class="form-select form-select-sm">
+                <option value="">All statuses</option>
+                {% for val, lbl in status_choices %}
+                <option value="{{ val }}" {% if request.GET.status == val %}selected{% endif %}>{{ lbl }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-auto"><button type="submit" class="btn btn-sm btn-primary">Filter</button></div>
+    </form>
+</div></div>
+
+<div class="card"><div class="card-body p-0">
+    <div class="table-responsive">
+        <table class="table table-hover mb-0 rec-candidate-table">
+            <thead><tr><th>Name</th><th>Position</th><th>Source</th><th>Status</th><th>Applied</th><th class="text-center col-actions">Actions</th></tr></thead>
+            <tbody>
+            {% for c in candidates %}
+            <tr>
+                <td class="fw-medium"><a href="{% url 'recruitment:candidate_detail' c.pk %}" class="text-decoration-none">{{ c.name }}</a></td>
+                <td>{{ c.position_applied.title }}</td>
+                <td>{{ c.get_source_display }}</td>
+                <td>{{ c.get_status_display }}</td>
+                <td>{{ c.applied_date|date:"d/m/Y" }}</td>
+                <td class="text-center col-actions">
+                    <div class="d-flex flex-wrap gap-1 justify-content-center align-items-center table-actions-inner">
+                        <a href="{% url 'recruitment:candidate_detail' c.pk %}" class="btn btn-action btn-outline-info" title="View">
+                            <i class="fas fa-eye"></i>
+                        </a>
+                        {% if can_edit and not c.is_locked %}
+                        <a href="{% url 'recruitment:candidate_edit' c.pk %}" class="btn btn-action btn-outline-primary" title="Edit">
+                            <i class="fas fa-edit"></i>
+                        </a>
+                        {% endif %}
+                        {% if can_create and c.status == 'hired' and not c.converted_employee_id %}
+                        <a href="{% url 'recruitment:candidate_convert' c.pk %}" class="btn btn-action btn-outline-success" title="Convert to Employee">
+                            <i class="fas fa-user-plus"></i>
+                        </a>
+                        {% endif %}
+                    </div>
+                </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="6" class="text-center text-muted py-4">No candidates yet.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div></div>
+
+{% if page_obj.has_other_pages %}
+<nav class="mt-3 px-3 pb-3">
+    <ul class="pagination pagination-sm justify-content-center mb-0">
+        {% if page_obj.has_previous %}
+        <li class="page-item"><a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if request.GET.search %}&search={{ request.GET.search|urlencode }}{% endif %}{% if request.GET.status %}&status={{ request.GET.status|urlencode }}{% endif %}">Previous</a></li>
+        {% endif %}
+        <li class="page-item disabled"><span class="page-link">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span></li>
+        {% if page_obj.has_next %}
+        <li class="page-item"><a class="page-link" href="?page={{ page_obj.next_page_number }}{% if request.GET.search %}&search={{ request.GET.search|urlencode }}{% endif %}{% if request.GET.status %}&status={{ request.GET.status|urlencode }}{% endif %}">Next</a></li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+{% endblock %}

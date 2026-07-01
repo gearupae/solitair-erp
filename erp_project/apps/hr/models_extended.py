@@ -101,6 +101,27 @@ class PayrollSettings(BaseModel):
             'If disabled, the payslip shows the amount as a reminder only; employees typically pay via iloe.ae.'
         ),
     )
+    birthday_email_enabled = models.BooleanField(
+        default=False,
+        help_text='Send an automated birthday email to employees on their date of birth (daily cron).',
+    )
+    birthday_email_subject = models.CharField(
+        max_length=200,
+        blank=True,
+        default='Happy Birthday, {first_name}! — {company_name}',
+        help_text='Placeholders: {first_name}, {last_name}, {full_name}, {employee_code}, {company_name}, {department}, {designation}, {age}',
+    )
+    birthday_email_body = models.TextField(
+        blank=True,
+        default=(
+            'Dear {first_name},\n\n'
+            'Happy Birthday from everyone at {company_name}!\n\n'
+            'We hope your special day is filled with joy and celebration.\n\n'
+            'Warm regards,\n'
+            '{company_name} HR Team'
+        ),
+        help_text='Same placeholders as subject. Plain text email body.',
+    )
 
     class Meta:
         verbose_name = 'Payroll settings'
@@ -1097,6 +1118,27 @@ class GratuitySnapshot(BaseModel):
 
     def __str__(self):
         return f'EOSG snapshot {self.employee_id} {self.snapshot_date}'
+
+
+class EmployeeBirthdayEmailLog(models.Model):
+    """Prevents duplicate birthday emails within the same calendar year."""
+
+    employee = models.ForeignKey(
+        'hr.Employee',
+        on_delete=models.CASCADE,
+        related_name='birthday_email_logs',
+    )
+    calendar_year = models.PositiveIntegerField()
+    sent_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-sent_at']
+        unique_together = [['employee', 'calendar_year']]
+        verbose_name = 'Birthday email log'
+        verbose_name_plural = 'Birthday email logs'
+
+    def __str__(self):
+        return f'Birthday email {self.employee_id} ({self.calendar_year})'
 
 
 class GOSIRecord(BaseModel):

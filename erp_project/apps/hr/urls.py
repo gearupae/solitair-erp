@@ -5,6 +5,7 @@ from . import views
 from . import views_attendance as av
 from . import views_extended as vx
 from . import views_leave_extended as lvx
+from . import views_reports as vr
 
 app_name = 'hr'
 
@@ -33,6 +34,8 @@ urlpatterns = [
     path('employees/<int:pk>/gratuity-calculator/', views.employee_gratuity_calculator, name='employee_gratuity_calculator'),
     path('employees/<int:pk>/remarks/add/', views.employee_remark_add, name='employee_remark_add'),
     path('employees/<int:pk>/remarks/<int:remark_id>/delete/', views.employee_remark_delete, name='employee_remark_delete'),
+    path('employees/<int:pk>/projects/assign/', views.employee_project_assign, name='employee_project_assign'),
+    path('employees/<int:pk>/projects/remove/', views.employee_project_remove, name='employee_project_remove'),
     path('employees/<int:pk>/edit/', views.EmployeeUpdateView.as_view(), name='employee_edit'),
     path('departments/', views.DepartmentListView.as_view(), name='department_list'),
     path('designations/', views.DesignationListView.as_view(), name='designation_list'),
@@ -118,4 +121,12 @@ urlpatterns = [
     path('self-service/leave/', vx.self_service_leave_redirect, name='self_service_leave'),
     path('self-service/attendance/', vx.SelfServiceAttendanceView.as_view(), name='self_service_attendance'),
     path('self-service/documents/', vx.SelfServiceDocumentsView.as_view(), name='self_service_documents'),
+    path('reports/', vr.reports_index, name='reports_index'),
+    path('reports/employees/', vr.report_employees, name='report_employees'),
+    path('reports/expenses/', vr.report_expenses, name='report_expenses'),
+    path('reports/gratuity/', vr.report_gratuity, name='report_gratuity'),
+    path('reports/exit/', vr.report_exit, name='report_exit'),
+    path('reports/overtime/', vr.report_overtime, name='report_overtime'),
+    path('reports/leave/', vr.report_leave, name='report_leave'),
+    path('reports/projects/', vr.report_projects, name='report_projects'),
 ]

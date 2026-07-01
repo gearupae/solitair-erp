@@ -1,38 +1,84 @@
 {% load static %}
 <style>
-.estimate-contract-card .contract-toolbar {
+.estimate-contract-card .contract-editor-toolbar {
     border: 1px solid #dee2e6;
     border-bottom: 0;
     border-radius: 0.375rem 0.375rem 0 0;
     background: #f8fafc;
     padding: 0.35rem 0.5rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+}
+.estimate-contract-card .contract-editor-toolbar button {
+    border: 1px solid #dee2e6;
+    background: #fff;
+    border-radius: 0.25rem;
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    color: #334155;
+    line-height: 1;
+}
+.estimate-contract-card .contract-editor-toolbar button:hover {
+    background: #f1f5f9;
 }
 .estimate-contract-card .contract-editor-wrap {
     border: 1px solid #dee2e6;
     border-radius: 0 0 0.375rem 0.375rem;
     min-height: 280px;
     background: #fff;
+    overflow: auto;
 }
-.estimate-contract-card .contract-editor-wrap .ql-editor {
+.estimate-contract-card .contract-html-editor {
     min-height: 260px;
+    padding: 12px 15px;
     font-size: 0.9375rem;
     line-height: 1.6;
+    outline: none;
 }
-.estimate-contract-card .contract-readonly-body {
-    font-size: 0.9375rem;
-    line-height: 1.6;
+.estimate-contract-card .contract-html-editor:focus {
+    box-shadow: inset 0 0 0 2px rgba(13, 110, 253, 0.15);
 }
+.estimate-contract-card .contract-html-editor table,
+.estimate-contract-card .contract-readonly-body table {
+    border-collapse: collapse;
+    width: auto;
+    max-width: 100%;
+    margin: 0.75rem 0;
+}
+.estimate-contract-card .contract-html-editor td,
+.estimate-contract-card .contract-html-editor th,
+.estimate-contract-card .contract-readonly-body td,
+.estimate-contract-card .contract-readonly-body th {
+    border: 1px solid #cbd5e1;
+    padding: 4px 8px;
+    vertical-align: top;
+}
+.estimate-contract-card .contract-html-editor p,
+.estimate-contract-card .contract-readonly-body p {
+    margin-bottom: 0.75rem;
+}
+.estimate-contract-card .contract-html-editor h1,
+.estimate-contract-card .contract-html-editor h2,
+.estimate-contract-card .contract-html-editor h3,
 .estimate-contract-card .contract-readonly-body h1,
 .estimate-contract-card .contract-readonly-body h2,
 .estimate-contract-card .contract-readonly-body h3 {
     margin-top: 1rem;
     margin-bottom: 0.5rem;
 }
-.estimate-contract-card .contract-readonly-body p { margin-bottom: 0.75rem; }
+.estimate-contract-card .contract-html-editor ul,
+.estimate-contract-card .contract-html-editor ol,
 .estimate-contract-card .contract-readonly-body ul,
 .estimate-contract-card .contract-readonly-body ol {
     margin-bottom: 0.75rem;
     padding-left: 1.25rem;
+}
+.estimate-contract-card .contract-readonly-body {
+    font-size: 0.9375rem;
+    line-height: 1.6;
+    overflow-x: auto;
 }
 .estimate-contract-save-status {
     font-size: 0.8125rem;
@@ -64,8 +110,18 @@
         {% if can_edit_contract %}
         {% csrf_token %}
         <textarea id="contractInitialHtml" class="d-none">{{ estimate.contract_body }}</textarea>
-        <p class="text-muted small mb-3">Paste from Google Docs or type here. Changes save automatically.</p>
-        <div class="contract-editor-wrap" id="contractEditor"></div>
+        <p class="text-muted small mb-3">Paste from Google Docs to keep tables, colors, and formatting. Changes save automatically.</p>
+        <div class="contract-editor-toolbar" id="contractEditorToolbar" role="toolbar" aria-label="Contract formatting">
+            <button type="button" data-cmd="bold" title="Bold"><i class="fas fa-bold"></i></button>
+            <button type="button" data-cmd="italic" title="Italic"><i class="fas fa-italic"></i></button>
+            <button type="button" data-cmd="underline" title="Underline"><i class="fas fa-underline"></i></button>
+            <button type="button" data-cmd="insertUnorderedList" title="Bullet list"><i class="fas fa-list-ul"></i></button>
+            <button type="button" data-cmd="insertOrderedList" title="Numbered list"><i class="fas fa-list-ol"></i></button>
+            <button type="button" data-cmd="removeFormat" title="Clear formatting"><i class="fas fa-eraser"></i></button>
+        </div>
+        <div class="contract-editor-wrap">
+            <div id="contractHtmlEditor" class="contract-html-editor" contenteditable="true" role="textbox" aria-multiline="true" spellcheck="true"></div>
+        </div>
         {% elif estimate.contract_body %}
         <div class="contract-readonly-body">{{ estimate.contract_body|safe }}</div>
         {% else %}

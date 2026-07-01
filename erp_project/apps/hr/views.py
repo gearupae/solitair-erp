@@ -487,6 +487,15 @@ class EmployeeDetailView(PermissionRequiredMixin, DetailView):
         context['employee_remark_add_url'] = reverse('hr:employee_remark_add', args=[self.object.pk])
         context['employee_remark_score'] = EmployeeRemark.score_for_employee(self.object.pk)
 
+        from .employee_projects import available_projects_for_employee, employee_project_rows
+
+        context['employee_project_rows'] = employee_project_rows(self.object)
+        context['employee_has_login'] = bool(self.object.user_id)
+        context['employee_available_projects'] = available_projects_for_employee(
+            self.object,
+            user=self.request.user,
+        )
+
         return context
 
 
@@ -590,6 +599,62 @@ def employee_remark_delete(request, pk, remark_id):
     remark = get_object_or_404(EmployeeRemark, pk=remark_id, employee=employee)
     remark.delete()
     return JsonResponse({'ok': True, 'score': EmployeeRemark.score_for_employee(employee.pk)})
+
+
+@login_required
+@require_POST
+def employee_project_assign(request, pk):
+    """Add employee's ERP user to a project as a member."""
+    from apps.projects.models import Project
+
+    employee = get_object_or_404(Employee, pk=pk, is_active=True)
+    if not _can_manage_employee_attachments(request.user, employee):
+        messages.error(request, 'Permission denied.')
+        return redirect('hr:employee_detail', pk=pk)
+
+    if not employee.user_id:
+        messages.error(request, 'Link an ERP login to this employee before assigning projects.')
+        return redirect('hr:employee_detail', pk=pk)
+
+    try:
+        project_id = int(request.POST.get('project_id', ''))
+    except (TypeError, ValueError):
+        messages.error(request, 'Select a project to assign.')
+        return redirect('hr:employee_detail', pk=pk)
+
+    project = get_object_or_404(Project, pk=project_id, is_active=True)
+    project.members.add(employee.user)
+    messages.success(request, f'Added {employee.full_name} to project {project.project_code}.')
+    return redirect('hr:employee_detail', pk=pk)
+
+
+@login_required
+@require_POST
+def employee_project_remove(request, pk):
+    """Remove employee from project members/technicians (not as manager)."""
+    from apps.projects.models import Project
+
+    employee = get_object_or_404(Employee, pk=pk, is_active=True)
+    if not _can_manage_employee_attachments(request.user, employee):
+        messages.error(request, 'Permission denied.')
+        return redirect('hr:employee_detail', pk=pk)
+
+    if not employee.user_id:
+        messages.error(request, 'This employee has no linked ERP login.')
+        return redirect('hr:employee_detail', pk=pk)
+
+    try:
+        project_id = int(request.POST.get('project_id', ''))
+    except (TypeError, ValueError):
+        messages.error(request, 'Invalid project.')
+        return redirect('hr:employee_detail', pk=pk)
+
+    project = get_object_or_404(Project, pk=project_id, is_active=True)
+    user = employee.user
+    project.members.remove(user)
+    project.technicians.remove(user)
+    messages.success(request, f'Removed {employee.full_name} from project {project.project_code}.')
+    return redirect('hr:employee_detail', pk=pk)
 
 
 @login_required

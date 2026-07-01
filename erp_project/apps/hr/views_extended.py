@@ -291,7 +291,7 @@ class PayrollSettingsView(UpdatePermissionMixin, UpdateView):
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        ctx['title'] = 'Payroll settings'
+        ctx['title'] = 'HR settings'
         return ctx
 
 

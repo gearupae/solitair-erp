@@ -1,0 +1,367 @@
+{% extends 'base.html' %}
+
+{% block extra_css %}
+<style>
+.actual-camera-wrap {
+    position: relative;
+    background: #0f172a;
+    border-radius: 0.5rem;
+    overflow: hidden;
+    min-height: 280px;
+}
+.actual-camera-wrap video,
+.actual-camera-wrap canvas {
+    width: 100%;
+    max-height: 420px;
+    object-fit: contain;
+    display: block;
+}
+.actual-status-pill {
+    position: absolute;
+    top: 0.75rem;
+    left: 0.75rem;
+    z-index: 2;
+}
+.actual-last-scan {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: rgba(15, 23, 42, 0.85);
+    color: #e2e8f0;
+    font-size: 0.82rem;
+    padding: 0.5rem 0.75rem;
+}
+.actual-log-table th,
+.actual-log-table td {
+    font-size: 0.9rem;
+}
+.actual-item-chip {
+    display: inline-block;
+    background: #e0f2fe;
+    color: #0369a1;
+    border-radius: 999px;
+    padding: 0.15rem 0.65rem;
+    margin: 0.15rem 0.25rem 0.15rem 0;
+    font-size: 0.82rem;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header d-flex flex-wrap justify-content-between align-items-start gap-2 mb-4">
+    <div>
+        <h4 class="mb-1 fw-bold"><i class="fas fa-video me-2 text-primary"></i>Actual — Camera Count</h4>
+        <p class="text-muted mb-0">Live camera feed with OpenAI vision — counts objects per item, logged daily.</p>
+    </div>
+    <a href="{% url 'mes:index' %}" class="btn btn-outline-secondary btn-sm">
+        <i class="fas fa-arrow-left me-1"></i>Manufacturing
+    </a>
+</div>
+
+{% if not ai_available %}
+<div class="alert alert-warning">
+    <i class="fas fa-robot me-2"></i>
+    OpenAI is not configured. Add an API key under <strong>Settings → Company</strong> to enable automatic counting.
+</div>
+{% endif %}
+
+<div class="row g-4">
+    <div class="col-lg-7">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white d-flex flex-wrap justify-content-between align-items-center gap-2">
+                <h6 class="mb-0 fw-semibold"><i class="fas fa-camera me-2"></i>Camera feed</h6>
+                <div class="d-flex gap-2 flex-wrap">
+                    <button type="button" class="btn btn-success btn-sm" id="btnStartMonitor" {% if not item_names or not ai_available %}disabled{% endif %}>
+                        <i class="fas fa-play me-1"></i>Start
+                    </button>
+                    <button type="button" class="btn btn-outline-danger btn-sm" id="btnStopMonitor" disabled>
+                        <i class="fas fa-stop me-1"></i>Stop
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" id="btnCaptureOnce" {% if not item_names or not ai_available %}disabled{% endif %}>
+                        <i class="fas fa-camera me-1"></i>Capture now
+                    </button>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <div class="actual-camera-wrap">
+                    <span class="badge actual-status-pill bg-secondary" id="monitorStatus">Idle</span>
+                    <video id="cameraVideo" autoplay playsinline muted></video>
+                    <canvas id="captureCanvas" class="d-none"></canvas>
+                    <div class="actual-last-scan" id="lastScanLine">Configure items below, then start monitoring.</div>
+                </div>
+            </div>
+            <div class="card-footer bg-white small text-muted">
+                Auto-capture every <strong id="intervalLabel">{{ capture_interval }}</strong>s when monitoring.
+                Counts increase when new objects enter the frame (delta detection).
+            </div>
+        </div>
+
+        <div class="card border-0 shadow-sm mt-4">
+            <div class="card-header bg-white">
+                <h6 class="mb-0 fw-semibold"><i class="fas fa-calendar-day me-2"></i>Today</h6>
+            </div>
+            <div class="card-body">
+                {% if today_totals %}
+                <div class="row g-2">
+                    {% for name, total in today_totals.items %}
+                    <div class="col-auto">
+                        <div class="border rounded px-3 py-2 text-center">
+                            <div class="small text-muted">{{ name }}</div>
+                            <div class="fs-4 fw-bold text-primary">{{ total }}</div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                <p class="small text-muted mb-0 mt-2">Total today: <strong>{{ today_grand_total }}</strong></p>
+                {% else %}
+                <p class="text-muted mb-0 small">No counts recorded today yet.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-5">
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-white">
+                <h6 class="mb-0 fw-semibold"><i class="fas fa-list-ul me-2"></i>Items to count</h6>
+            </div>
+            <div class="card-body">
+                <form method="post" action="{% url 'mes:actual' %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="save_items">
+                    <div class="mb-3">
+                        <label for="itemNamesInput" class="form-label small fw-semibold">Item names</label>
+                        <textarea class="form-control" id="itemNamesInput" name="item_names" rows="6"
+                            placeholder="Enter one item per line, e.g.&#10;Widget A&#10;Bolt M8&#10;Carton box">{% for n in item_names %}{{ n }}{% if not forloop.last %}
+{% endif %}{% endfor %}</textarea>
+                        <div class="form-text">One name per line (or comma-separated). OpenAI will match these labels in the camera image.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="captureInterval" class="form-label small fw-semibold">Auto-capture interval (seconds)</label>
+                        <input type="number" class="form-control" id="captureInterval" name="capture_interval"
+                            min="3" max="60" value="{{ capture_interval }}">
+                    </div>
+                    <div class="d-flex gap-2 flex-wrap">
+                        <button type="submit" class="btn btn-primary btn-sm">
+                            <i class="fas fa-save me-1"></i>Save items
+                        </button>
+                    </div>
+                </form>
+                <form method="post" action="{% url 'mes:actual' %}" class="mt-2">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="reset_baseline">
+                    <button type="submit" class="btn btn-outline-warning btn-sm">
+                        <i class="fas fa-redo me-1"></i>Reset capture baseline
+                    </button>
+                </form>
+                {% if item_names %}
+                <div class="mt-3 pt-3 border-top">
+                    <span class="small text-muted d-block mb-1">Active items:</span>
+                    {% for n in item_names %}
+                    <span class="actual-item-chip">{{ n }}</span>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <h6 class="mb-0 fw-semibold"><i class="fas fa-clipboard-list me-2"></i>Count log</h6>
+                <span class="badge bg-light text-dark">Last 30 days</span>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0 actual-log-table" id="dailyLogTable">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Date</th>
+                                <th>Item</th>
+                                <th class="text-end">Count</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dailyLogBody">
+                            {% for row in daily_logs %}
+                            <tr>
+                                <td>{{ row.log_date }}</td>
+                                <td>{{ row.item_name }}</td>
+                                <td class="text-end fw-semibold">{{ row.count }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr id="emptyLogRow">
+                                <td colspan="3" class="text-muted text-center py-4">No counts logged yet.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+    const CSRF = '{{ csrf_token }}';
+    const CAPTURE_URL = '{% url "mes:api_actual_capture" %}';
+    const RESET_URL = '{% url "mes:api_actual_reset" %}';
+    const INTERVAL_SEC = {{ capture_interval|default:5 }};
+    const AI_AVAILABLE = {{ ai_available|yesno:"true,false" }};
+    const HAS_ITEMS = {{ item_names|length }} > 0;
+
+    const video = document.getElementById('cameraVideo');
+    const canvas = document.getElementById('captureCanvas');
+    const statusEl = document.getElementById('monitorStatus');
+    const lastScanEl = document.getElementById('lastScanLine');
+    const logBody = document.getElementById('dailyLogBody');
+    const btnStart = document.getElementById('btnStartMonitor');
+    const btnStop = document.getElementById('btnStopMonitor');
+    const btnOnce = document.getElementById('btnCaptureOnce');
+
+    let stream = null;
+    let monitorTimer = null;
+    let capturing = false;
+
+    function setStatus(text, variant) {
+        statusEl.textContent = text;
+        statusEl.className = 'badge actual-status-pill bg-' + (variant || 'secondary');
+    }
+
+    async function initCamera() {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            lastScanEl.textContent = 'Camera not supported in this browser.';
+            return false;
+        }
+        try {
+            stream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+                audio: false,
+            });
+            video.srcObject = stream;
+            return true;
+        } catch (err) {
+            lastScanEl.textContent = 'Camera access denied: ' + (err.message || err);
+            setStatus('No camera', 'danger');
+            return false;
+        }
+    }
+
+    function frameToBase64() {
+        const w = video.videoWidth || 640;
+        const h = video.videoHeight || 480;
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, w, h);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+        return dataUrl.split(',')[1];
+    }
+
+    function renderLogRows(rows) {
+        if (!rows || !rows.length) {
+            logBody.innerHTML = '<tr><td colspan="3" class="text-muted text-center py-4">No counts logged yet.</td></tr>';
+            return;
+        }
+        logBody.innerHTML = rows.map(function(row) {
+            return '<tr><td>' + row.log_date + '</td><td>' + escapeHtml(row.item_name) +
+                '</td><td class="text-end fw-semibold">' + row.count + '</td></tr>';
+        }).join('');
+    }
+
+    function escapeHtml(s) {
+        return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function formatCounts(obj) {
+        const parts = [];
+        Object.keys(obj || {}).forEach(function(k) {
+            parts.push(k + ': ' + obj[k]);
+        });
+        return parts.join(' · ') || 'none';
+    }
+
+    async function sendCapture() {
+        if (capturing || !video.videoWidth) return;
+        capturing = true;
+        setStatus('Analyzing…', 'info');
+        try {
+            const resp = await fetch(CAPTURE_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': CSRF,
+                },
+                body: JSON.stringify({ image: frameToBase64() }),
+            });
+            const data = await resp.json();
+            if (!data.success) {
+                lastScanEl.textContent = data.message || 'Capture failed.';
+                setStatus('Error', 'danger');
+                if (monitorTimer) stopMonitor();
+                return;
+            }
+            const added = formatCounts(data.added_counts);
+            const raw = formatCounts(data.raw_counts);
+            lastScanEl.textContent = 'Last scan: +' + added + ' (in frame: ' + raw + ')';
+            if (data.daily_logs) {
+                renderLogRows(data.daily_logs);
+            }
+            setStatus(monitorTimer ? 'Monitoring' : 'Idle', monitorTimer ? 'success' : 'secondary');
+        } catch (err) {
+            lastScanEl.textContent = 'Network error: ' + (err.message || err);
+            setStatus('Error', 'danger');
+        } finally {
+            capturing = false;
+        }
+    }
+
+    async function startMonitor() {
+        if (!AI_AVAILABLE || !HAS_ITEMS) return;
+        const ok = stream || await initCamera();
+        if (!ok) return;
+
+        await fetch(RESET_URL, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': CSRF },
+        });
+
+        btnStart.disabled = true;
+        btnStop.disabled = false;
+        btnOnce.disabled = true;
+        setStatus('Monitoring', 'success');
+        sendCapture();
+        monitorTimer = setInterval(sendCapture, INTERVAL_SEC * 1000);
+    }
+
+    function stopMonitor() {
+        if (monitorTimer) {
+            clearInterval(monitorTimer);
+            monitorTimer = null;
+        }
+        btnStart.disabled = !(AI_AVAILABLE && HAS_ITEMS);
+        btnStop.disabled = true;
+        btnOnce.disabled = !(AI_AVAILABLE && HAS_ITEMS);
+        setStatus('Idle', 'secondary');
+    }
+
+    btnStart.addEventListener('click', startMonitor);
+    btnStop.addEventListener('click', stopMonitor);
+    btnOnce.addEventListener('click', async function() {
+        const ok = stream || await initCamera();
+        if (ok) await sendCapture();
+    });
+
+    initCamera();
+
+    window.addEventListener('beforeunload', function() {
+        stopMonitor();
+        if (stream) {
+            stream.getTracks().forEach(function(t) { t.stop(); });
+        }
+    });
+})();
+</script>
+{% endblock %}

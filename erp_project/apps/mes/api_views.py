@@ -357,3 +357,53 @@ def drawing_delete_api(request, pk: int):
     drawing.updated_by = request.user
     drawing.save(update_fields=['is_active', 'updated_by', 'updated_at'])
     return JsonResponse({'success': True, 'message': 'Drawing removed.'})
+
+
+@login_required
+@require_http_methods(['POST'])
+def actual_count_capture_api(request):
+    """Analyze a camera frame with OpenAI vision and increment daily counts."""
+    company = _mes_api_guard(request)
+    if isinstance(company, JsonResponse):
+        return company
+
+    body = _parse_json_body(request)
+    image = (body.get('image') or body.get('image_base64') or '').strip()
+    if not image:
+        return JsonResponse({'success': False, 'message': 'Camera image is required.'}, status=400)
+
+    from apps.core.openai_gateway import AiQuotaExceeded
+    from .services.actual_count import get_daily_log_rows, process_capture
+
+    try:
+        result = process_capture(company=company, user=request.user, image_base64=image)
+    except AiQuotaExceeded as exc:
+        return JsonResponse({'success': False, 'message': str(exc)}, status=402)
+    except ValueError as exc:
+        return JsonResponse({'success': False, 'message': str(exc)}, status=400)
+    except RuntimeError as exc:
+        return JsonResponse({'success': False, 'message': str(exc)}, status=503)
+    except Exception as exc:
+        logger.exception('Actual count capture failed')
+        return JsonResponse({'success': False, 'message': str(exc) or 'Capture failed.'}, status=500)
+
+    return JsonResponse({
+        'success': True,
+        'message': 'Frame analyzed.',
+        **result,
+        'daily_logs': get_daily_log_rows(company, days=30),
+    })
+
+
+@login_required
+@require_http_methods(['POST'])
+def actual_count_reset_api(request):
+    """Reset delta baseline when monitoring restarts."""
+    company = _mes_api_guard(request)
+    if isinstance(company, JsonResponse):
+        return company
+
+    from .services.actual_count import reset_capture_baseline
+
+    reset_capture_baseline(company)
+    return JsonResponse({'success': True, 'message': 'Baseline reset.'})

@@ -1,0 +1,27 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-header">
+    <nav aria-label="breadcrumb"><ol class="breadcrumb mb-2"><li class="breadcrumb-item"><a href="{% url 'recruitment:request_list' %}">Requests</a></li><li class="breadcrumb-item active">{{ title }}</li></ol></nav>
+    <h4 class="mb-0 fw-bold">{{ title }}</h4>
+    {% if is_create %}
+    <p class="text-muted small mb-0 mt-1">Submitted requests go to the approver configured under Settings → Approval Configuration → Recruitment Request.</p>
+    {% endif %}
+</div>
+<div class="card">
+    <div class="card-body">
+        <form method="post">{% csrf_token %}
+            <div class="row g-3">
+                <div class="col-md-6"><label class="form-label">Position</label>{{ form.position }}{% if form.position.errors %}<div class="text-danger small mt-1">{{ form.position.errors|join:", " }}</div>{% endif %}</div>
+                <div class="col-md-3"><label class="form-label">Openings</label>{{ form.openings }}{% if form.openings.errors %}<div class="text-danger small mt-1">{{ form.openings.errors|join:", " }}</div>{% endif %}</div>
+                {% if form.status %}
+                <div class="col-md-3"><label class="form-label">Status</label>{{ form.status }}{% if form.status.errors %}<div class="text-danger small mt-1">{{ form.status.errors|join:", " }}</div>{% endif %}</div>
+                {% endif %}
+            </div>
+            <div class="mt-3">
+                <button type="submit" class="btn btn-primary">{% if is_create %}Submit for Approval{% else %}Save{% endif %}</button>
+                <a href="{% if object %}{% url 'recruitment:request_detail' object.pk %}{% else %}{% url 'recruitment:request_list' %}{% endif %}" class="btn btn-light">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

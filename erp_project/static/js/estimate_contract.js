@@ -7,8 +7,9 @@
     var canEdit = card.dataset.canEdit === 'true';
     var saveUrl = card.dataset.saveUrl || '';
     var statusEl = document.getElementById('contractSaveStatus');
-    var editorEl = document.getElementById('contractEditor');
+    var editor = document.getElementById('contractHtmlEditor');
     var initialEl = document.getElementById('contractInitialHtml');
+    var toolbar = document.getElementById('contractEditorToolbar');
 
     function csrfToken() {
         return document.querySelector('[name=csrfmiddlewaretoken]')?.value || '';
@@ -20,41 +21,60 @@
         statusEl.className = 'estimate-contract-save-status' + (cls ? ' ' + cls : '');
     }
 
-    if (!canEdit || !editorEl || typeof Quill === 'undefined') {
+    if (!canEdit || !editor) {
         return;
     }
 
-    var initialHtml = initialEl ? initialEl.value : '';
-    var quill = new Quill(editorEl, {
-        theme: 'snow',
-        modules: {
-            toolbar: [
-                [{ header: [1, 2, 3, false] }],
-                ['bold', 'italic', 'underline', 'strike'],
-                [{ list: 'ordered' }, { list: 'bullet' }],
-                [{ indent: '-1' }, { indent: '+1' }],
-                [{ align: [] }],
-                ['clean'],
-            ],
-            clipboard: { matchVisual: false },
-        },
-        placeholder: 'Enter or paste contract text…',
-    });
+    function cleanPastedHtml(html) {
+        if (!html) return '';
+        html = html.replace(/<!--[\s\S]*?-->/g, '');
+        try {
+            var doc = new DOMParser().parseFromString(html, 'text/html');
+            doc.querySelectorAll('script, meta, link').forEach(function (node) {
+                node.remove();
+            });
+            var styles = Array.prototype.map.call(doc.querySelectorAll('style'), function (node) {
+                return node.outerHTML;
+            }).join('');
+            doc.querySelectorAll('style').forEach(function (node) {
+                node.remove();
+            });
+            var bodyHtml = doc.body ? doc.body.innerHTML : html;
+            return (styles + bodyHtml).trim();
+        } catch (e) {
+            return html.trim();
+        }
+    }
 
-    if (initialHtml) {
-        quill.clipboard.dangerouslyPasteHTML(initialHtml);
+    function insertHtmlAtCursor(html) {
+        editor.focus();
+        if (document.queryCommandSupported('insertHTML')) {
+            document.execCommand('insertHTML', false, html);
+            return;
+        }
+        var sel = window.getSelection();
+        if (!sel || !sel.rangeCount) {
+            editor.insertAdjacentHTML('beforeend', html);
+            return;
+        }
+        var range = sel.getRangeAt(0);
+        range.deleteContents();
+        range.insertNode(range.createContextualFragment(html));
+        range.collapse(false);
+        sel.removeAllRanges();
+        sel.addRange(range);
+    }
+
+    function currentHtml() {
+        var html = editor.innerHTML.trim();
+        if (html === '<p><br></p>' || html === '<p></p>' || html === '<br>') return '';
+        return html;
     }
 
     var saveTimer = null;
-    var lastSaved = initialHtml;
+    var lastSaved = '';
     var saving = false;
     var pending = false;
-
-    function currentHtml() {
-        var html = quill.root.innerHTML.trim();
-        if (html === '<p><br></p>' || html === '<p></p>') return '';
-        return html;
-    }
 
     function doSave() {
         var html = currentHtml();
@@ -107,5 +127,37 @@
         saveTimer = window.setTimeout(doSave, 800);
     }
 
-    quill.on('text-change', scheduleSave);
+    var initialHtml = initialEl ? initialEl.value : '';
+    if (initialHtml) {
+        editor.innerHTML = initialHtml;
+    }
+    lastSaved = currentHtml();
+
+    editor.addEventListener('paste', function (e) {
+        var clipboard = e.clipboardData || window.clipboardData;
+        if (!clipboard) return;
+        var html = clipboard.getData('text/html');
+        if (html) {
+            e.preventDefault();
+            insertHtmlAtCursor(cleanPastedHtml(html));
+            scheduleSave();
+            return;
+        }
+        scheduleSave();
+    });
+
+    editor.addEventListener('input', scheduleSave);
+
+    if (toolbar) {
+        toolbar.addEventListener('click', function (e) {
+            var btn = e.target.closest('[data-cmd]');
+            if (!btn) return;
+            e.preventDefault();
+            var cmd = btn.getAttribute('data-cmd');
+            var val = btn.getAttribute('data-value') || null;
+            editor.focus();
+            document.execCommand(cmd, false, val);
+            scheduleSave();
+        });
+    }
 })();

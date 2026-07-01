@@ -917,3 +917,65 @@ class OracleSyncLog(TenantScopedModel):
     class Meta:
         ordering = ['-created_at']
         verbose_name = 'Oracle sync log'
+
+
+class ActualCountSetting(TenantScopedModel):
+    """Camera + OpenAI vision counting — configured item names per company."""
+
+    item_names = models.JSONField(
+        default=list,
+        blank=True,
+        help_text='Object/item labels to detect and count (e.g. ["Widget A", "Bolt M8"]).',
+    )
+    last_capture_counts = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text='Counts from the previous frame; used to increment only when new objects appear.',
+    )
+    capture_interval_seconds = models.PositiveSmallIntegerField(
+        default=5,
+        help_text='Default seconds between automatic camera captures.',
+    )
+
+    class Meta:
+        verbose_name = 'Actual count setting'
+        constraints = [
+            models.UniqueConstraint(fields=['company'], name='mes_actualcountsetting_company_uniq'),
+        ]
+
+    def __str__(self):
+        names = ', '.join(self.item_names or [])[:80]
+        return f'Actual count — {self.company} ({names or "no items"})'
+
+
+class ActualCountDailyLog(TenantScopedModel):
+    """Running total of detected objects per item per calendar day."""
+
+    item_name = models.CharField(max_length=120)
+    log_date = models.DateField()
+    count = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ['-log_date', 'item_name']
+        verbose_name = 'Actual count daily log'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['company', 'item_name', 'log_date'],
+                name='mes_actualcountdailylog_company_item_date_uniq',
+            ),
+        ]
+
+    def __str__(self):
+        return f'{self.item_name} — {self.log_date}: {self.count}'
+
+
+class ActualCountCapture(TenantScopedModel):
+    """Audit trail for each camera frame analyzed by OpenAI vision."""
+
+    captured_at = models.DateTimeField(auto_now_add=True)
+    raw_counts = models.JSONField(default=dict, blank=True)
+    added_counts = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ['-captured_at']
+        verbose_name = 'Actual count capture'

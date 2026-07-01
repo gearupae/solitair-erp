@@ -1,0 +1,98 @@
+{% extends 'base.html' %}
+
+{% block content %}
+{% include 'hr/reports/_header.html' %}
+
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-2 align-items-end">
+            <div class="col-md-2">
+                <label class="form-label small mb-1">From</label>
+                <input type="date" name="start_date" class="form-control form-control-sm" value="{{ start_date|date:'Y-m-d' }}">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small mb-1">To</label>
+                <input type="date" name="end_date" class="form-control form-control-sm" value="{{ end_date|date:'Y-m-d' }}">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label small mb-1">Department</label>
+                <select name="department" class="form-select form-select-sm">
+                    <option value="">All departments</option>
+                    {% for dept in departments %}
+                    <option value="{{ dept.pk }}" {% if department_id == dept.pk|stringformat:'s' %}selected{% endif %}>{{ dept.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-primary btn-sm w-100"><i class="fas fa-filter me-1"></i>Apply</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-4">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h6 class="mb-0 fw-semibold">Summary by employee</h6>
+                <span class="badge bg-warning text-dark">{{ grand_total_hours|floatformat:2 }} hrs</span>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm mb-0">
+                        <thead class="table-light">
+                            <tr><th>Employee</th><th class="text-end">OT hours</th><th class="text-end">Days</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for row in summary_rows %}
+                            <tr>
+                                <td>{{ row.employee_code }} — {{ row.employee_name }}</td>
+                                <td class="text-end fw-semibold">{{ row.total_overtime_hours|floatformat:2 }}</td>
+                                <td class="text-end">{{ row.record_count }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="3" class="text-center text-muted py-3">No overtime in period.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-8">
+        <div class="card h-100">
+            <div class="card-header"><h6 class="mb-0 fw-semibold">Detail</h6></div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Date</th>
+                                <th>Employee</th>
+                                <th>Department</th>
+                                <th>Type</th>
+                                <th>Project</th>
+                                <th class="text-end">Hours</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in detail_rows %}
+                            <tr>
+                                <td>{{ row.date|date:"d/m/Y" }}</td>
+                                <td>{{ row.employee_code }}</td>
+                                <td>{{ row.department }}</td>
+                                <td>{{ row.overtime_type }}</td>
+                                <td>{{ row.project }}</td>
+                                <td class="text-end">{{ row.overtime_hours|floatformat:2 }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="6" class="text-center text-muted py-4">No overtime records in this period.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

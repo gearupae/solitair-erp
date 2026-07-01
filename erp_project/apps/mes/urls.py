@@ -2,7 +2,7 @@
 
 from django.urls import path
 
-from . import api_views, views, views_templates
+from . import api_views, views, views_actual, views_templates
 
 app_name = 'mes'
 
@@ -138,4 +138,7 @@ urlpatterns = [
     path('oracle-sync-log/', views.OracleSyncLogListView.as_view(), name='oracle_sync_log'),
     path('oracle/pull/', views.OraclePullView.as_view(), name='oracle_pull'),
     path('oracle/pull/run/', views.OraclePullExecuteView.as_view(), name='oracle_pull_run'),
+    path('actual/', views_actual.ActualCountView.as_view(), name='actual'),
+    path('api/actual/capture/', api_views.actual_count_capture_api, name='api_actual_capture'),
+    path('api/actual/reset/', api_views.actual_count_reset_api, name='api_actual_reset'),
 ]

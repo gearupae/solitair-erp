@@ -21,6 +21,7 @@ urlpatterns = [
     path('warehouses/<int:pk>/delete/', views.warehouse_delete, name='warehouse_delete'),
     
     # Items
+    path('dashboard/', views.InventoryDashboardView.as_view(), name='dashboard'),
     path('items/', views.ItemListView.as_view(), name='item_list'),
     path('items/export/csv/', views.item_export_csv, name='item_export_csv'),
     path('groups/', views.item_group_manage, name='item_group_manage'),

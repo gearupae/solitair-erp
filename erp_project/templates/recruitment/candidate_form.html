@@ -1,0 +1,25 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-header">
+    <nav aria-label="breadcrumb"><ol class="breadcrumb mb-2"><li class="breadcrumb-item"><a href="{% url 'recruitment:candidate_list' %}">Candidates</a></li><li class="breadcrumb-item active">{{ title }}</li></ol></nav>
+    <h4 class="mb-0 fw-bold">{{ title }}</h4>
+</div>
+<div class="card"><div class="card-body">
+    <form method="post" enctype="multipart/form-data">{% csrf_token %}
+        <div class="row g-3">
+            <div class="col-md-6"><label class="form-label">Full name</label>{{ form.name }}</div>
+            <div class="col-md-3"><label class="form-label">Phone</label>{{ form.phone }}</div>
+            <div class="col-md-3"><label class="form-label">Email</label>{{ form.email }}</div>
+            <div class="col-md-6"><label class="form-label">Position applied</label>{{ form.position_applied }}</div>
+            <div class="col-md-3"><label class="form-label">Source</label>{{ form.source }}</div>
+            <div class="col-md-3"><label class="form-label">Applied date</label>{{ form.applied_date }}</div>
+            <div class="col-md-4"><label class="form-label">Status</label>{{ form.status }}</div>
+            <div class="col-md-8"><label class="form-label">Resume</label>{{ form.resume }}</div>
+        </div>
+        <div class="mt-3">
+            <button type="submit" class="btn btn-primary">Save</button>
+            <a href="{% url 'recruitment:candidate_list' %}" class="btn btn-light">Cancel</a>
+        </div>
+    </form>
+</div></div>
+{% endblock %}

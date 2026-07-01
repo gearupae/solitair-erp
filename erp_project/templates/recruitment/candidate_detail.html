@@ -1,0 +1,52 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-start flex-wrap gap-2">
+    <div>
+        <nav aria-label="breadcrumb"><ol class="breadcrumb mb-2"><li class="breadcrumb-item"><a href="{% url 'recruitment:candidate_list' %}">Candidates</a></li><li class="breadcrumb-item active">{{ candidate.name }}</li></ol></nav>
+        <h4 class="mb-1 fw-bold">{{ candidate.name }}</h4>
+        <p class="text-muted mb-0">{{ candidate.position_applied.title }} · {{ candidate.get_status_display }}</p>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
+        {% if can_convert %}
+        <a href="{% url 'recruitment:candidate_convert' candidate.pk %}" class="btn btn-success"><i class="fas fa-user-plus me-1"></i>Convert to Employee</a>
+        {% endif %}
+        {% if can_edit %}
+        <a href="{% url 'recruitment:candidate_edit' candidate.pk %}" class="btn btn-outline-primary">Edit</a>
+        {% endif %}
+    </div>
+</div>
+
+{% if candidate.is_locked %}
+<div class="alert alert-info"><i class="fas fa-lock me-2"></i>Converted to employee — record is read-only.
+    {% if candidate.converted_employee %}
+    <a href="{% url 'hr:employee_detail' candidate.converted_employee.pk %}" class="alert-link">View employee profile</a>
+    {% endif %}
+</div>
+{% endif %}
+
+<div class="row g-3">
+    <div class="col-lg-6">
+        <div class="card h-100"><div class="card-header fw-semibold">Contact</div><div class="card-body">
+            <dl class="row mb-0">
+                <dt class="col-sm-4">Phone</dt><dd class="col-sm-8">{{ candidate.phone|default:"—" }}</dd>
+                <dt class="col-sm-4">Email</dt><dd class="col-sm-8">{{ candidate.email|default:"—" }}</dd>
+                <dt class="col-sm-4">Source</dt><dd class="col-sm-8">{{ candidate.get_source_display }}</dd>
+                <dt class="col-sm-4">Applied</dt><dd class="col-sm-8">{{ candidate.applied_date|date:"d M Y" }}</dd>
+            </dl>
+        </div></div>
+    </div>
+    <div class="col-lg-6">
+        <div class="card h-100"><div class="card-header fw-semibold">Position &amp; status</div><div class="card-body">
+            <dl class="row mb-0">
+                <dt class="col-sm-4">Position</dt><dd class="col-sm-8">{{ candidate.position_applied.title }}</dd>
+                <dt class="col-sm-4">Department</dt><dd class="col-sm-8">{{ candidate.position_applied.department.name }}</dd>
+                <dt class="col-sm-4">Status</dt><dd class="col-sm-8">{{ candidate.get_status_display }}</dd>
+                <dt class="col-sm-4">Resume</dt><dd class="col-sm-8">{% if candidate.resume %}<a href="{{ candidate.resume.url }}" target="_blank" rel="noopener">Download</a>{% else %}—{% endif %}</dd>
+                {% if candidate.conversion_date %}
+                <dt class="col-sm-4">Converted</dt><dd class="col-sm-8">{{ candidate.conversion_date|date:"d M Y" }}</dd>
+                {% endif %}
+            </dl>
+        </div></div>
+    </div>
+</div>
+{% endblock %}

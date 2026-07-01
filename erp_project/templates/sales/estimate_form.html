@@ -218,7 +218,6 @@
     padding-top: 0.75rem;
 }
 </style>
-<link href="https://cdn.quilljs.com/1.3.7/quill.snow.css" rel="stylesheet">
 {% endblock %}
 
 {% block content %}
@@ -2147,7 +2146,6 @@ $(function() {
 });
 </script>
 {% if can_edit_contract %}
-<script src="https://cdn.quilljs.com/1.3.7/quill.min.js"></script>
-<script src="{% static 'js/estimate_contract.js' %}?v=1"></script>
+<script src="{% static 'js/estimate_contract.js' %}?v=2"></script>
 {% endif %}
 {% endblock %}

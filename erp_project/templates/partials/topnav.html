@@ -96,10 +96,10 @@
                 <!-- CRM -->
                 {% if is_superuser or 'crm' in user_permissions %}
                 <li class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle {% if 'crm' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
+                    <a class="nav-link dropdown-toggle {% if 'crm' in request.path or '/reports/leads' in request.path or '/reports/lead-forecasting' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
                         <i class="fas fa-users me-1"></i>CRM
                     </a>
-                    <ul class="dropdown-menu dropdown-menu-dark">
+                    <ul class="dropdown-menu dropdown-menu-dark crm-dropdown" data-bs-auto-close="outside">
                         <li>
                             <a class="dropdown-item {% if '/crm/leads' in request.path %}active{% endif %}" href="{% url 'crm:lead_list' %}">
                                 <i class="fas fa-user-clock me-2"></i>{% if crm_sales_rep_only %}My Leads{% else %}Leads{% endif %}
@@ -110,6 +110,13 @@
                                 <i class="fas fa-user-check me-2"></i>Customers
                             </a>
                         </li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li>
+                            <a class="dropdown-item reports-trigger" href="#" id="crmReportsTrigger">
+                                <span><i class="fas fa-chart-pie me-2"></i>Reports</span>
+                                <i class="fas fa-chevron-right ms-2 small"></i>
+                            </a>
+                        </li>
                     </ul>
                 </li>
                 {% endif %}
@@ -117,10 +124,10 @@
                 <!-- Sales -->
                 {% if is_superuser or 'sales' in user_permissions %}
                 <li class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle {% if 'sales' in request.path and '/sales/invoices' not in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
+                    <a class="nav-link dropdown-toggle {% if 'sales' in request.path and '/sales/invoices' not in request.path or '/reports/sales' in request.path or '/reports/sales-forecasting' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
                         <i class="fas fa-shopping-cart me-1"></i>Sales
                     </a>
-                    <ul class="dropdown-menu dropdown-menu-dark">
+                    <ul class="dropdown-menu dropdown-menu-dark sales-dropdown" data-bs-auto-close="outside">
                         <li>
                             <a class="dropdown-item" href="{% url 'sales:estimate_list' %}">
                                 <i class="fas fa-file-invoice me-2"></i>Estimates
@@ -136,6 +143,13 @@
                                 <i class="fas fa-clipboard-check me-2"></i>Sales Orders
                             </a>
                         </li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li>
+                            <a class="dropdown-item reports-trigger" href="#" id="salesReportsTrigger">
+                                <span><i class="fas fa-chart-pie me-2"></i>Reports</span>
+                                <i class="fas fa-chevron-right ms-2 small"></i>
+                            </a>
+                        </li>
                     </ul>
                 </li>
                 {% endif %}
@@ -143,10 +157,10 @@
                 <!-- Projects -->
                 {% if 'projects' not in nav_hidden_modules %}{% if is_superuser or 'projects' in user_permissions %}
                 <li class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle {% if 'projects' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
+                    <a class="nav-link dropdown-toggle {% if 'projects' in request.path or '/reports/projects/' in request.path or '/reports/project-forecasting' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
                         <i class="fas fa-project-diagram me-1"></i>Projects
                     </a>
-                    <ul class="dropdown-menu dropdown-menu-dark">
+                    <ul class="dropdown-menu dropdown-menu-dark projects-dropdown" data-bs-auto-close="outside">
                         <li>
                             <a class="dropdown-item" href="{% url 'projects:project_list' %}">
                                 <i class="fas fa-tasks me-2"></i>All Projects
@@ -172,6 +186,13 @@
                         <li>
                             <a class="dropdown-item {% if '/operations/' in request.path %}active{% endif %}" href="{% url 'operations:schedule_list' %}">
                                 <i class="fas fa-user-clock me-2"></i>Operations
+                            </a>
+                        </li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li>
+                            <a class="dropdown-item reports-trigger" href="#" id="projectReportsTrigger">
+                                <span><i class="fas fa-chart-pie me-2"></i>Reports</span>
+                                <i class="fas fa-chevron-right ms-2 small"></i>
                             </a>
                         </li>
                     </ul>
@@ -274,7 +295,7 @@
                 <!-- Finance (with nested Reports submenu) -->
                 {% if 'finance' not in nav_hidden_modules %}{% if is_superuser or 'finance' in user_permissions %}
                 <li class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle {% if 'finance' in request.path or '/sales/invoices' in request.path or '/property/pdc' in request.path or '/property/reconciliation' in request.path or '/property/reports/' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
+                    <a class="nav-link dropdown-toggle {% if 'finance' in request.path or '/sales/invoices' in request.path or '/property/pdc' in request.path or '/property/reconciliation' in request.path or '/property/reports/' in request.path or '/reports/ai-finance' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
                         <i class="fas fa-coins me-1"></i>Finance
                     </a>
                     <ul class="dropdown-menu dropdown-menu-dark finance-dropdown" style="min-width: 220px;">
@@ -417,7 +438,7 @@
                 <!-- HR -->
                 {% if 'hr' not in nav_hidden_modules %}{% if is_superuser or 'hr' in user_permissions %}
                 <li class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle {% if '/hr/' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
+                    <a class="nav-link dropdown-toggle {% if '/hr/' in request.path or '/recruitment/' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
                         <i class="fas fa-user-friends me-1"></i>HR
                     </a>
                     <ul class="dropdown-menu dropdown-menu-dark" data-bs-auto-close="outside">
@@ -500,6 +521,34 @@
                             <a class="dropdown-item" href="{% url 'hr:compliance_dashboard' %}">
                                 <i class="fas fa-clipboard-check me-2"></i>Compliance
                             </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item {% if '/hr/reports' in request.path %}active{% endif %}" href="{% url 'hr:reports_index' %}">
+                                <i class="fas fa-chart-pie me-2"></i>Reports
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item {% if '/hr/settings/payroll' in request.path %}active{% endif %}" href="{% url 'hr:payroll_settings' %}">
+                                <i class="fas fa-cog me-2"></i>Settings
+                            </a>
+                        </li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li class="px-0 pb-1">
+                            <button type="button" class="dropdown-item d-flex justify-content-between align-items-center w-100 text-start py-2 rounded border-0 bg-transparent" style="color: rgba(255,255,255,0.9);" data-bs-toggle="collapse" data-bs-target="#navbarHrRecruitmentSubmenu" aria-expanded="{% if '/recruitment/' in request.path %}true{% else %}false{% endif %}" aria-controls="navbarHrRecruitmentSubmenu" onclick="event.stopPropagation();">
+                                <span><i class="fas fa-user-plus me-2"></i>Recruitment</span>
+                                <i class="fas fa-chevron-down small opacity-75"></i>
+                            </button>
+                            <div class="collapse {% if '/recruitment/' in request.path %}show{% endif %}" id="navbarHrRecruitmentSubmenu">
+                                <a class="dropdown-item ps-4 py-2 {% if '/recruitment/requests' in request.path %}active{% endif %}" href="{% url 'recruitment:request_list' %}">
+                                    <i class="fas fa-clipboard-list me-2"></i>Requests
+                                </a>
+                                <a class="dropdown-item ps-4 py-2 {% if '/recruitment/candidates' in request.path %}active{% endif %}" href="{% url 'recruitment:candidate_list' %}">
+                                    <i class="fas fa-users me-2"></i>Candidates
+                                </a>
+                                <a class="dropdown-item ps-4 py-2 {% if '/recruitment/settings' in request.path %}active{% endif %}" href="{% url 'recruitment:settings' %}">
+                                    <i class="fas fa-cog me-2"></i>Settings
+                                </a>
+                            </div>
                         </li>
                     </ul>
                 </li>
@@ -661,9 +710,9 @@
                 {% endif %}
                 
                 <!-- Reports -->
-                {% if is_superuser or 'reports' in user_permissions or 'finance' in user_permissions or 'projects' in user_permissions or 'crm' in user_permissions or 'sales' in user_permissions %}
+                {% if is_superuser or 'reports' in user_permissions %}
                 <li class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle {% if 'reports' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
+                    <a class="nav-link dropdown-toggle {% if request.path == '/reports/' or request.path == '/reports' %}active{% endif %}" href="#" data-bs-toggle="dropdown">
                         <i class="fas fa-chart-line me-1"></i>Reports
                     </a>
                     <ul class="dropdown-menu dropdown-menu-dark">
@@ -672,97 +721,6 @@
                                 <i class="fas fa-th-large me-2"></i>All Reports
                             </a>
                         </li>
-                        <li><hr class="dropdown-divider"></li>
-                        <li>
-                            <a class="dropdown-item" href="{% url 'reports:lead_report' %}">
-                                <i class="fas fa-user-plus me-2"></i>Lead Report
-                            </a>
-                        </li>
-                        {% if is_superuser or 'crm' in user_permissions %}
-                        <li>
-                            <a class="dropdown-item" href="{% url 'reports:lead_forecasting' %}">
-                                <i class="fas fa-chart-line me-2"></i>Lead Forecasting
-                            </a>
-                        </li>
-                        {% endif %}
-                        <li>
-                            <a class="dropdown-item" href="{% url 'reports:sales_report' %}">
-                                <i class="fas fa-file-invoice-dollar me-2"></i>Sales Report
-                            </a>
-                        </li>
-                        {% if is_superuser or 'sales' in user_permissions %}
-                        <li>
-                            <a class="dropdown-item" href="{% url 'reports:sales_forecasting' %}">
-                                <i class="fas fa-chart-pie me-2"></i>Sales Forecasting
-                            </a>
-                        </li>
-                        {% endif %}
-                        <li>
-                            <a class="dropdown-item" href="{% url 'reports:project_report_internal' %}">
-                                <i class="fas fa-hard-hat me-2"></i>Project Profit and Loss Report
-                            </a>
-                        </li>
-                        <li>
-                            <a class="dropdown-item" href="{% url 'reports:project_report_customer' %}">
-                                <i class="fas fa-users me-2"></i>Customer Progress Report
-                            </a>
-                        </li>
-                        <li>
-                            <a class="dropdown-item" href="{% url 'reports:project_report_period' %}">
-                                <i class="fas fa-calendar-alt me-2"></i>Period Wise Report
-                            </a>
-                        </li>
-                        <li>
-                            <a class="dropdown-item" href="{% url 'reports:project_report_actual_invoice' %}">
-                                <i class="fas fa-file-invoice me-2"></i>Project Actual Invoice Report
-                            </a>
-                        </li>
-                        <li>
-                            <a class="dropdown-item" href="{% url 'reports:project_report_actual_value' %}">
-                                <i class="fas fa-coins me-2"></i>Actual Project Value Report
-                            </a>
-                        </li>
-                        {% if is_superuser or 'projects' in user_permissions %}
-                        <li>
-                            <a class="dropdown-item" href="{% url 'reports:project_forecasting' %}">
-                                <i class="fas fa-brain me-2"></i>Project Forecasting
-                            </a>
-                        </li>
-                        {% endif %}
-                        {% if is_superuser or 'finance' in user_permissions or 'reports' in user_permissions %}
-                        <li><hr class="dropdown-divider"></li>
-                        <li class="dropdown-header">AI Finance</li>
-                        <li>
-                            <a class="dropdown-item" href="{% url 'reports:ai_finance_index' %}">
-                                <i class="fas fa-robot me-2"></i>AI Finance Hub
-                            </a>
-                        </li>
-                        <li>
-                            <a class="dropdown-item" href="{% url 'reports:ai_finance_cash_flow' %}">
-                                <i class="fas fa-water me-2"></i>Cash Flow Forecast
-                            </a>
-                        </li>
-                        <li>
-                            <a class="dropdown-item" href="{% url 'reports:ai_finance_revenue' %}">
-                                <i class="fas fa-chart-line me-2"></i>Revenue Forecast
-                            </a>
-                        </li>
-                        <li>
-                            <a class="dropdown-item" href="{% url 'reports:ai_finance_expense' %}">
-                                <i class="fas fa-receipt me-2"></i>Expense Forecast
-                            </a>
-                        </li>
-                        <li>
-                            <a class="dropdown-item" href="{% url 'reports:ai_finance_receivables' %}">
-                                <i class="fas fa-user-clock me-2"></i>Receivables Forecast
-                            </a>
-                        </li>
-                        <li>
-                            <a class="dropdown-item" href="{% url 'reports:ai_finance_anomaly' %}">
-                                <i class="fas fa-exclamation-triangle me-2"></i>Anomaly Detection
-                            </a>
-                        </li>
-                        {% endif %}
                     </ul>
                 </li>
                 {% endif %}
@@ -1095,6 +1053,51 @@
     </a>
 </div>
 
+<!-- CRM Reports Panel (flyout from CRM menu) -->
+<div id="crmReportsPanel" class="nav-reports-panel">
+    <h6 class="dropdown-header">CRM Reports</h6>
+    <a class="dropdown-item" href="{% url 'reports:lead_report' %}">
+        <i class="fas fa-user-plus me-2"></i>Lead Report
+    </a>
+    <a class="dropdown-item" href="{% url 'reports:lead_forecasting' %}">
+        <i class="fas fa-chart-line me-2"></i>Lead Forecasting
+    </a>
+</div>
+
+<!-- Sales Reports Panel (flyout from Sales menu) -->
+<div id="salesReportsPanel" class="nav-reports-panel">
+    <h6 class="dropdown-header">Sales Reports</h6>
+    <a class="dropdown-item" href="{% url 'reports:sales_report' %}">
+        <i class="fas fa-file-invoice-dollar me-2"></i>Sales Report
+    </a>
+    <a class="dropdown-item" href="{% url 'reports:sales_forecasting' %}">
+        <i class="fas fa-chart-pie me-2"></i>Sales Forecasting
+    </a>
+</div>
+
+<!-- Project Reports Panel (flyout from Projects menu) -->
+<div id="projectReportsPanel" class="nav-reports-panel">
+    <h6 class="dropdown-header">Project Reports</h6>
+    <a class="dropdown-item" href="{% url 'reports:project_report_internal' %}">
+        <i class="fas fa-hard-hat me-2"></i>Project Profit and Loss
+    </a>
+    <a class="dropdown-item" href="{% url 'reports:project_report_customer' %}">
+        <i class="fas fa-users me-2"></i>Customer Progress
+    </a>
+    <a class="dropdown-item" href="{% url 'reports:project_report_period' %}">
+        <i class="fas fa-calendar-alt me-2"></i>Period Wise Report
+    </a>
+    <a class="dropdown-item" href="{% url 'reports:project_report_actual_invoice' %}">
+        <i class="fas fa-file-invoice me-2"></i>Actual Invoice Report
+    </a>
+    <a class="dropdown-item" href="{% url 'reports:project_report_actual_value' %}">
+        <i class="fas fa-coins me-2"></i>Actual Project Value
+    </a>
+    <a class="dropdown-item" href="{% url 'reports:project_forecasting' %}">
+        <i class="fas fa-brain me-2"></i>Project Forecasting
+    </a>
+</div>
+
 <!-- Manufacturing Panel (flyout from Settings menu) -->
 <div id="manufacturingPanel" class="nav-reports-panel">
     <h6 class="dropdown-header">Manufacturing</h6>
@@ -1116,12 +1119,15 @@
     <a class="dropdown-item {% if '/mes/oracle/' in request.path %}active{% endif %}" href="{% url 'mes:oracle_pull' %}">
         <i class="fas fa-cloud-download-alt me-2"></i>Pull from Oracle
     </a>
+    <a class="dropdown-item {% if '/mes/actual/' in request.path %}active{% endif %}" href="{% url 'mes:actual' %}">
+        <i class="fas fa-video me-2"></i>Actual
+    </a>
 </div>
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     function closeOtherFlyouts(exceptId) {
-        ['reportsPanel', 'pdcReportsPanel', 'inventoryReportsPanel', 'manufacturingPanel'].forEach(function(id) {
+        ['reportsPanel', 'pdcReportsPanel', 'inventoryReportsPanel', 'crmReportsPanel', 'salesReportsPanel', 'projectReportsPanel', 'manufacturingPanel'].forEach(function(id) {
             if (id !== exceptId) {
                 var el = document.getElementById(id);
                 if (el) {
@@ -1171,32 +1177,50 @@ document.addEventListener('DOMContentLoaded', function() {
     setupReportsFlyout('reportsTrigger', 'reportsPanel', '.finance-dropdown');
     setupReportsFlyout('pdcReportsTrigger', 'pdcReportsPanel', '.finance-dropdown');
     setupReportsFlyout('inventoryReportsTrigger', 'inventoryReportsPanel', '.inventory-dropdown');
+    setupReportsFlyout('crmReportsTrigger', 'crmReportsPanel', '.crm-dropdown');
+    setupReportsFlyout('salesReportsTrigger', 'salesReportsPanel', '.sales-dropdown');
+    setupReportsFlyout('projectReportsTrigger', 'projectReportsPanel', '.projects-dropdown');
     setupReportsFlyout('manufacturingTrigger', 'manufacturingPanel', '.settings-dropdown', 'left');
 });
 </script>
 
 <style>
-/* Finance & Inventory menu scrollable */
+/* Finance, Inventory, CRM & Projects menu scrollable */
 .finance-dropdown,
-.inventory-dropdown {
+.inventory-dropdown,
+.crm-dropdown,
+.sales-dropdown,
+.projects-dropdown {
     max-height: 80vh;
     overflow-y: auto;
 }
 .finance-dropdown::-webkit-scrollbar,
-.inventory-dropdown::-webkit-scrollbar {
+.inventory-dropdown::-webkit-scrollbar,
+.crm-dropdown::-webkit-scrollbar,
+.sales-dropdown::-webkit-scrollbar,
+.projects-dropdown::-webkit-scrollbar {
     width: 6px;
 }
 .finance-dropdown::-webkit-scrollbar-track,
-.inventory-dropdown::-webkit-scrollbar-track {
+.inventory-dropdown::-webkit-scrollbar-track,
+.crm-dropdown::-webkit-scrollbar-track,
+.sales-dropdown::-webkit-scrollbar-track,
+.projects-dropdown::-webkit-scrollbar-track {
     background: #343a40;
 }
 .finance-dropdown::-webkit-scrollbar-thumb,
-.inventory-dropdown::-webkit-scrollbar-thumb {
+.inventory-dropdown::-webkit-scrollbar-thumb,
+.crm-dropdown::-webkit-scrollbar-thumb,
+.sales-dropdown::-webkit-scrollbar-thumb,
+.projects-dropdown::-webkit-scrollbar-thumb {
     background: #6c757d;
     border-radius: 3px;
 }
 .finance-dropdown::-webkit-scrollbar-thumb:hover,
-.inventory-dropdown::-webkit-scrollbar-thumb:hover {
+.inventory-dropdown::-webkit-scrollbar-thumb:hover,
+.crm-dropdown::-webkit-scrollbar-thumb:hover,
+.sales-dropdown::-webkit-scrollbar-thumb:hover,
+.projects-dropdown::-webkit-scrollbar-thumb:hover {
     background: #adb5bd;
 }
 /* Reports trigger button */

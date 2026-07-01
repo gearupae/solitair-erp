@@ -33,6 +33,7 @@ urlpatterns = [
     path('assets/', include('apps.assets.urls')),
     path('property/', include('apps.property.urls')),
     path('hr/', include('apps.hr.urls')),
+    path('recruitment/', include('apps.recruitment.urls')),
     path('documents/', include('apps.documents.urls')),
     path('service-request/', include('apps.service_request.urls')),
     path('fleet/', include('apps.fleet.urls')),
