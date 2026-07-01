@@ -92,8 +92,8 @@
                 </div>
             </div>
             <div class="card-footer bg-white small text-muted">
-                Auto-capture every <strong id="intervalLabel">{{ capture_interval }}</strong>s when monitoring.
-                Counts increase when new objects enter the frame (delta detection).
+                Fast scan mode — next frame starts ~{{ capture_interval }}s after the previous finishes.
+                Only integer counts are sent to OpenAI (no notes).
             </div>
         </div>
 
@@ -138,9 +138,9 @@
                         <div class="form-text">One name per line (or comma-separated). OpenAI will match these labels in the camera image.</div>
                     </div>
                     <div class="mb-3">
-                        <label for="captureInterval" class="form-label small fw-semibold">Auto-capture interval (seconds)</label>
+                        <label for="captureInterval" class="form-label small fw-semibold">Min gap between scans (seconds)</label>
                         <input type="number" class="form-control" id="captureInterval" name="capture_interval"
-                            min="3" max="60" value="{{ capture_interval }}">
+                            min="1" max="30" value="{{ capture_interval }}">
                     </div>
                     <div class="d-flex gap-2 flex-wrap">
                         <button type="submit" class="btn btn-primary btn-sm">
@@ -208,7 +208,7 @@
     const CSRF = '{{ csrf_token }}';
     const CAPTURE_URL = '{% url "mes:api_actual_capture" %}';
     const RESET_URL = '{% url "mes:api_actual_reset" %}';
-    const INTERVAL_SEC = {{ capture_interval|default:5 }};
+    const SCAN_GAP_MS = Math.max(500, ({{ capture_interval|default:2 }} * 1000));
     const AI_AVAILABLE = {{ ai_available|yesno:"true,false" }};
     const HAS_ITEMS = {{ item_names|length }} > 0;
 
@@ -222,8 +222,9 @@
     const btnOnce = document.getElementById('btnCaptureOnce');
 
     let stream = null;
-    let monitorTimer = null;
+    let monitorActive = false;
     let capturing = false;
+    let scanTimer = null;
 
     function setStatus(text, variant) {
         statusEl.textContent = text;
@@ -237,10 +238,11 @@
         }
         try {
             stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+                video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } },
                 audio: false,
             });
             video.srcObject = stream;
+            await video.play();
             return true;
         } catch (err) {
             lastScanEl.textContent = 'Camera access denied: ' + (err.message || err);
@@ -250,14 +252,17 @@
     }
 
     function frameToBase64() {
-        const w = video.videoWidth || 640;
-        const h = video.videoHeight || 480;
+        const srcW = video.videoWidth || 640;
+        const srcH = video.videoHeight || 480;
+        const maxW = 640;
+        const scale = srcW > maxW ? maxW / srcW : 1;
+        const w = Math.round(srcW * scale);
+        const h = Math.round(srcH * scale);
         canvas.width = w;
         canvas.height = h;
         const ctx = canvas.getContext('2d');
         ctx.drawImage(video, 0, 0, w, h);
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-        return dataUrl.split(',')[1];
+        return canvas.toDataURL('image/jpeg', 0.65).split(',')[1];
     }
 
     function renderLogRows(rows) {
@@ -280,13 +285,25 @@
         Object.keys(obj || {}).forEach(function(k) {
             parts.push(k + ': ' + obj[k]);
         });
-        return parts.join(' · ') || 'none';
+        return parts.join(' · ') || '0';
+    }
+
+    function scheduleNextScan() {
+        if (!monitorActive) return;
+        if (scanTimer) clearTimeout(scanTimer);
+        scanTimer = setTimeout(scanLoop, SCAN_GAP_MS);
+    }
+
+    async function scanLoop() {
+        if (!monitorActive || capturing) return;
+        await sendCapture();
+        scheduleNextScan();
     }
 
     async function sendCapture() {
         if (capturing || !video.videoWidth) return;
         capturing = true;
-        setStatus('Analyzing…', 'info');
+        setStatus('Scanning…', 'info');
         try {
             const resp = await fetch(CAPTURE_URL, {
                 method: 'POST',
@@ -300,19 +317,24 @@
             if (!data.success) {
                 lastScanEl.textContent = data.message || 'Capture failed.';
                 setStatus('Error', 'danger');
-                if (monitorTimer) stopMonitor();
+                stopMonitor();
                 return;
             }
+            const inFrame = formatCounts(data.raw_counts);
             const added = formatCounts(data.added_counts);
-            const raw = formatCounts(data.raw_counts);
-            lastScanEl.textContent = 'Last scan: +' + added + ' (in frame: ' + raw + ')';
+            if (added !== '0' && Object.keys(data.added_counts || {}).length) {
+                lastScanEl.textContent = 'Added: ' + added + ' | In frame: ' + inFrame;
+            } else {
+                lastScanEl.textContent = 'In frame: ' + inFrame;
+            }
             if (data.daily_logs) {
                 renderLogRows(data.daily_logs);
             }
-            setStatus(monitorTimer ? 'Monitoring' : 'Idle', monitorTimer ? 'success' : 'secondary');
+            setStatus(monitorActive ? 'Live' : 'Idle', monitorActive ? 'success' : 'secondary');
         } catch (err) {
             lastScanEl.textContent = 'Network error: ' + (err.message || err);
             setStatus('Error', 'danger');
+            stopMonitor();
         } finally {
             capturing = false;
         }
@@ -328,18 +350,19 @@
             headers: { 'X-CSRFToken': CSRF },
         });
 
+        monitorActive = true;
         btnStart.disabled = true;
         btnStop.disabled = false;
         btnOnce.disabled = true;
-        setStatus('Monitoring', 'success');
-        sendCapture();
-        monitorTimer = setInterval(sendCapture, INTERVAL_SEC * 1000);
+        setStatus('Live', 'success');
+        scanLoop();
     }
 
     function stopMonitor() {
-        if (monitorTimer) {
-            clearInterval(monitorTimer);
-            monitorTimer = null;
+        monitorActive = false;
+        if (scanTimer) {
+            clearTimeout(scanTimer);
+            scanTimer = null;
         }
         btnStart.disabled = !(AI_AVAILABLE && HAS_ITEMS);
         btnStop.disabled = true;
@@ -354,7 +377,9 @@
         if (ok) await sendCapture();
     });
 
-    initCamera();
+    if (AI_AVAILABLE && HAS_ITEMS) {
+        initCamera();
+    }
 
     window.addEventListener('beforeunload', function() {
         stopMonitor();

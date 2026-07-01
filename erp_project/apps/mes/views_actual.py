@@ -30,7 +30,7 @@ class ActualCountView(MesAccessMixin, MesCompanyMixin, TemplateView):
         )
         ctx['setting'] = setting
         ctx['item_names'] = setting.item_names or []
-        ctx['capture_interval'] = setting.capture_interval_seconds or 5
+        ctx['capture_interval'] = setting.capture_interval_seconds or 2
         ctx['daily_logs'] = get_daily_log_rows(company, days=30)
 
         today = timezone.localdate()
@@ -65,8 +65,8 @@ class ActualCountView(MesAccessMixin, MesCompanyMixin, TemplateView):
         )
         setting.item_names = names
         try:
-            interval = int(request.POST.get('capture_interval') or setting.capture_interval_seconds or 5)
-            setting.capture_interval_seconds = max(3, min(interval, 60))
+            interval = int(request.POST.get('capture_interval') or setting.capture_interval_seconds or 2)
+            setting.capture_interval_seconds = max(1, min(interval, 30))
         except (TypeError, ValueError):
             pass
         setting.save(update_fields=['item_names', 'capture_interval_seconds', 'updated_at'])

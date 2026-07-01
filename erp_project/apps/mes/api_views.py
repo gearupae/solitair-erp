@@ -387,12 +387,10 @@ def actual_count_capture_api(request):
         logger.exception('Actual count capture failed')
         return JsonResponse({'success': False, 'message': str(exc) or 'Capture failed.'}, status=500)
 
-    return JsonResponse({
-        'success': True,
-        'message': 'Frame analyzed.',
-        **result,
-        'daily_logs': get_daily_log_rows(company, days=30),
-    })
+    payload = {'success': True, **result}
+    if result.get('added_counts'):
+        payload['daily_logs'] = get_daily_log_rows(company, days=30)
+    return JsonResponse(payload)
 
 
 @login_required

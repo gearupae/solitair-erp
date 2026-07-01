@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from datetime import date, timedelta
@@ -16,26 +17,8 @@ from ..models import ActualCountCapture, ActualCountDailyLog, ActualCountSetting
 
 logger = logging.getLogger(__name__)
 
-_COUNT_JSON_SCHEMA = {
-    'type': 'object',
-    'properties': {
-        'counts': {
-            'type': 'array',
-            'items': {
-                'type': 'object',
-                'properties': {
-                    'item_name': {'type': 'string'},
-                    'count': {'type': 'integer', 'minimum': 0},
-                },
-                'required': ['item_name', 'count'],
-                'additionalProperties': False,
-            },
-        },
-        'notes': {'type': 'string'},
-    },
-    'required': ['counts'],
-    'additionalProperties': False,
-}
+# Fast vision model — count integers only, no reasoning chain.
+ACTUAL_COUNT_MODEL = 'gpt-4o-mini'
 
 
 def _normalize_item_name(name: str) -> str:
@@ -43,7 +26,6 @@ def _normalize_item_name(name: str) -> str:
 
 
 def _match_count_to_config(raw_name: str, configured: list[str]) -> str | None:
-    """Map AI-returned label to a configured item name (case-insensitive)."""
     raw = _normalize_item_name(raw_name).lower()
     if not raw:
         return None
@@ -58,9 +40,27 @@ def _match_count_to_config(raw_name: str, configured: list[str]) -> str | None:
 
 
 def _counts_from_ai_payload(payload: dict | list, configured: list[str]) -> dict[str, int]:
-    if not isinstance(payload, dict):
-        return {}
     result: dict[str, int] = {name: 0 for name in configured}
+    if not isinstance(payload, dict):
+        return result
+
+    for cfg in configured:
+        if cfg in payload:
+            try:
+                result[cfg] = max(0, int(payload[cfg]))
+            except (TypeError, ValueError):
+                result[cfg] = 0
+            continue
+        for key, val in payload.items():
+            if key == 'counts':
+                continue
+            if _match_count_to_config(str(key), [cfg]):
+                try:
+                    result[cfg] = max(0, int(val))
+                except (TypeError, ValueError):
+                    result[cfg] = 0
+                break
+
     for row in payload.get('counts') or []:
         if not isinstance(row, dict):
             continue
@@ -72,6 +72,7 @@ def _counts_from_ai_payload(payload: dict | list, configured: list[str]) -> dict
         except (TypeError, ValueError):
             qty = 0
         result[matched] = max(result.get(matched, 0), qty)
+
     return result
 
 
@@ -89,34 +90,30 @@ def count_objects_in_image(
 
     b64 = image_base64.strip()
     if b64.startswith('data:'):
-        b64 = b64.split(',', 1)[-1]
+        image_url = b64
+    else:
+        image_url = f'data:image/jpeg;base64,{b64}'
 
+    example = json.dumps({name: 0 for name in items}, ensure_ascii=False)
     system = (
-        'You count physical objects visible in a factory or warehouse camera image. '
-        'Return JSON only. For each requested item label, count distinct visible instances '
-        'in the frame (not partial guesses). Match labels flexibly (synonyms, packaging text). '
-        'If none are visible, return count 0 for that item.'
+        'Count visible objects in the camera image. Reply with JSON only: each item label '
+        'maps to a non-negative integer count. Use 0 if none visible. No notes or extra keys.'
     )
-    user_text = (
-        'Count how many of each of these items are clearly visible in the image:\n'
-        + '\n'.join(f'- {name}' for name in items)
-    )
+    user_text = f'Labels: {", ".join(items)}. Example shape: {example}'
 
     payload = call_openai_json_with_images(
         system=system,
         user_text=user_text,
-        images_base64=[b64],
-        temperature=0.1,
+        images_base64=[image_url],
+        temperature=0,
         feature='mes_actual_count',
-        json_schema=_COUNT_JSON_SCHEMA,
-        json_schema_name='actual_count',
-        json_schema_strict=True,
+        model=ACTUAL_COUNT_MODEL,
+        reasoning_effort='none',
     )
     return _counts_from_ai_payload(payload, items)
 
 
 def _compute_deltas(new_counts: dict[str, int], last_counts: dict[str, int]) -> dict[str, int]:
-    """Increment only when count rises (object entered frame); reset baseline when count drops."""
     added: dict[str, int] = {}
     for item, new_val in new_counts.items():
         old_val = int(last_counts.get(item, 0) or 0)
@@ -133,9 +130,7 @@ def process_capture(
     image_base64: str,
     log_date: date | None = None,
 ) -> dict:
-    """
-    Analyze frame, apply delta logic, update daily logs, return summary for the UI.
-    """
+    """Analyze frame, apply delta logic, update daily logs, return summary for the UI."""
     setting, _ = ActualCountSetting.objects.select_for_update().get_or_create(
         company=company,
         defaults={'item_names': [], 'last_capture_counts': {}},
@@ -167,16 +162,18 @@ def process_capture(
     setting.last_capture_counts = raw_counts
     setting.save(update_fields=['last_capture_counts', 'updated_at'])
 
-    capture = ActualCountCapture.objects.create(
-        company=company,
-        created_by=user,
-        raw_counts=raw_counts,
-        added_counts=added_counts,
-    )
+    capture_id = None
+    if added_counts:
+        capture = ActualCountCapture.objects.create(
+            company=company,
+            created_by=user,
+            raw_counts=raw_counts,
+            added_counts=added_counts,
+        )
+        capture_id = capture.pk
 
     return {
-        'capture_id': capture.pk,
-        'captured_at': capture.captured_at.isoformat(),
+        'capture_id': capture_id,
         'raw_counts': raw_counts,
         'added_counts': added_counts,
         'daily_totals': daily_totals,
@@ -184,12 +181,10 @@ def process_capture(
 
 
 def reset_capture_baseline(company) -> None:
-    """Clear last-frame counts (e.g. when camera monitoring restarts)."""
     ActualCountSetting.objects.filter(company=company).update(last_capture_counts={})
 
 
 def get_daily_log_rows(company, *, days: int = 30) -> list[dict]:
-    """Grouped daily counts for the log table."""
     cutoff = timezone.localdate() - timedelta(days=max(1, days) - 1)
     qs = (
         ActualCountDailyLog.objects.filter(company=company, log_date__gte=cutoff, is_active=True)

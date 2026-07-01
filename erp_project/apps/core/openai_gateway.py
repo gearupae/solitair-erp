@@ -166,6 +166,10 @@ def _uses_responses_api(model: str) -> bool:
     return name.startswith('gpt-5') or name.startswith('o')
 
 
+def _model_supports_reasoning(model: str) -> bool:
+    return _uses_responses_api(model)
+
+
 def call_openai_raw(body: dict, *, feature: str = 'openai') -> dict:
     """POST to OpenAI chat completions; enforce quota and record usage."""
     model = body.get('model') or OPENAI_MODEL
@@ -287,11 +291,12 @@ def call_openai_json_with_images(
 
     body = {
         'model': model,
-        'reasoning': {'effort': effort},
         'instructions': system,
         'input': [{'role': 'user', 'content': content}],
         'text': {'format': text_format},
     }
+    if _model_supports_reasoning(model):
+        body['reasoning'] = {'effort': effort}
     if prompt_cache_key:
         body['prompt_cache_key'] = prompt_cache_key
 
