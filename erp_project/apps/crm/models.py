@@ -87,6 +87,20 @@ class Customer(BaseModel):
         ('cctv', 'CCTV'),
         ('smoke_management_system', 'Smoke Management System'),
     ]
+
+    LEAD_SOURCE_CHOICES = [
+        ('', '—'),
+        ('facebook', 'Facebook'),
+        ('instagram', 'Instagram'),
+        ('tiktok', 'TikTok'),
+        ('google', 'Google'),
+        ('seo', 'SEO'),
+        ('reference', 'Reference'),
+        ('direct_enquiry', 'Direct Enquiry'),
+        ('linkedin', 'LinkedIn'),
+        ('outdoor_sales', 'Outdoor Sales'),
+        ('tele_calling', 'Tele Calling'),
+    ]
     customer_number = models.CharField(max_length=50, unique=True, editable=False)
     name = models.CharField(max_length=200, blank=True, default='')
     email = models.EmailField(blank=True)
@@ -135,6 +149,14 @@ class Customer(BaseModel):
         related_name='leads',
         limit_choices_to={'converts_to_customer': False},
         help_text='Pipeline column for leads (customers do not use this).',
+    )
+    lead_source = models.CharField(
+        max_length=30,
+        blank=True,
+        default='',
+        choices=LEAD_SOURCE_CHOICES,
+        verbose_name='Source',
+        help_text='Where this lead came from (Facebook, Google, referral, etc.).',
     )
     assigned_salesperson = models.ForeignKey(
         'hr.Employee',
@@ -233,6 +255,12 @@ class Customer(BaseModel):
         """Backward-compatible alias for templates expecting a list."""
         label = self.scope_display_label
         return [label] if label else []
+
+    @property
+    def lead_source_display_label(self):
+        if not self.lead_source:
+            return ''
+        return dict(self.LEAD_SOURCE_CHOICES).get(self.lead_source, self.lead_source)
 
     @property
     def assigned_salesman_label(self):

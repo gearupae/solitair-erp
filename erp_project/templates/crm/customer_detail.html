@@ -190,6 +190,12 @@
                         </p>
                     </div>
                     {% endif %}
+                    {% if customer.customer_type == 'lead' %}
+                    <div class="col-md-6 info-field">
+                        <label class="form-label text-muted small info-label">Source</label>
+                        <p class="fw-medium info-value">{{ customer.lead_source_display_label|default:"—" }}</p>
+                    </div>
+                    {% endif %}
                     <div class="col-md-6 info-field">
                         <label class="form-label text-muted small info-label">Assigned salesman</label>
                         <p class="fw-medium info-value">

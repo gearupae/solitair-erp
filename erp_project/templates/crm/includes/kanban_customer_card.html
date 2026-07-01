@@ -21,6 +21,11 @@
     <i class="fas fa-phone fa-xs me-1 text-muted"></i>{{ record.phone }}
 </div>
 {% endif %}
+{% if record.lead_source_display_label %}
+<div class="kanban-card-meta text-truncate" title="{{ record.lead_source_display_label }}">
+    <i class="fas fa-bullhorn fa-xs me-1 text-muted"></i>{{ record.lead_source_display_label }}
+</div>
+{% endif %}
 {% if record.latest_estimate_value and record.latest_estimate_value > 0 %}
 <div class="kanban-card-estimate mt-1">
     <i class="fas fa-file-invoice-dollar fa-xs me-1"></i>Est. AED {{ record.latest_estimate_value|floatformat:2|intcomma }}

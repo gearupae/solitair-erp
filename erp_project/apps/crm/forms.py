@@ -35,7 +35,7 @@ class CustomerForm(forms.ModelForm):
         fields = [
             'name', 'email', 'phone', 'company', 'address',
             'trn', 'website', 'scope', 'job_type', 'primary_project',
-            'assigned_salesperson',
+            'assigned_salesperson', 'lead_source',
             'status', 'customer_type', 'lead_kanban_stage', 'business_segment',
             'trn_document', 'trade_license_document',
             'notes',
@@ -64,8 +64,12 @@ class CustomerForm(forms.ModelForm):
             self.fields['lead_kanban_stage'].empty_label = '— Unassigned —'
             self.fields['lead_kanban_stage'].label = 'Pipeline stage'
             self.fields['lead_kanban_stage'].widget.attrs['class'] = 'form-select'
+            self.fields['lead_source'].required = False
+            self.fields['lead_source'].label = 'Source'
+            self.fields['lead_source'].widget.attrs['class'] = 'form-select'
         else:
             self.fields.pop('lead_kanban_stage', None)
+            self.fields.pop('lead_source', None)
 
         qs = projects_queryset if projects_queryset is not None else get_crm_project_queryset()
         if self.instance.pk:
@@ -111,7 +115,7 @@ class CustomerForm(forms.ModelForm):
             self.initial['job_type'] = list(self.instance.job_type or [])
 
         for field_name, field in self.fields.items():
-            if field_name in ('job_type', 'primary_project', 'business_segment', 'assigned_salesperson', 'scope'):
+            if field_name in ('job_type', 'primary_project', 'business_segment', 'assigned_salesperson', 'scope', 'lead_source'):
                 continue
             if field_name in ('trn_document', 'trade_license_document'):
                 field.widget = forms.FileInput(

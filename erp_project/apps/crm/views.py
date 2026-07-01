@@ -126,6 +126,10 @@ def apply_customer_list_filters(queryset, params, *, apply_type=True):
         except (TypeError, ValueError):
             pass
 
+    source = (params.get('source') or '').strip()
+    if source and source in dict(Customer.LEAD_SOURCE_CHOICES):
+        queryset = queryset.filter(lead_source=source)
+
     date_from, date_to = parse_customer_date_range(params)
     if date_from:
         queryset = queryset.filter(created_at__date__gte=date_from)
@@ -217,6 +221,9 @@ class CRMRecordListView(PermissionRequiredMixin, ListView):
         context['project_choices'] = get_crm_project_queryset(self.request.user)
         context['crm_customer_type_choices'] = Customer.CUSTOMER_TYPE_CHOICES
         context['crm_status_choices'] = Customer.STATUS_CHOICES
+        context['crm_lead_source_choices'] = [
+            (value, label) for value, label in Customer.LEAD_SOURCE_CHOICES if value
+        ]
         context['crm_filter_date_range'] = customer_date_range_display(self.request.GET)
         context['dashboard_url_name'] = getattr(self, 'dashboard_url_name', '')
 
@@ -626,6 +633,14 @@ def customer_inline_update(request, pk):
                         lead=customer, stage=new_stage, actor=request.user,
                     )
                 updated = True
+
+    if 'lead_source' in request.POST and customer.customer_type == 'lead':
+        val = (request.POST.get('lead_source') or '').strip()
+        if val in dict(Customer.LEAD_SOURCE_CHOICES) and customer.lead_source != val:
+            customer.lead_source = val
+            customer.save(update_fields=['lead_source'])
+            log_action(request.user, 'update', 'Customer', customer.id, {'lead_source': val})
+            updated = True
 
     if updated:
         label = 'Lead' if customer.customer_type == 'lead' else 'Customer'

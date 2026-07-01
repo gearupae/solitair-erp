@@ -248,6 +248,8 @@ def _sales_trend(
 
 
 def infer_lead_source(lead: Customer) -> str:
+    if lead.lead_source:
+        return lead.lead_source_display_label or lead.lead_source
     blob = ' '.join(
         filter(
             None,
