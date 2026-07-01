@@ -127,6 +127,13 @@ urlpatterns = [
     path('api/station-queue/', api_views.station_queue_api, name='api_station_queue'),
     path('api/gearup-agent/', api_views.gearup_agent_api, name='api_gearup_agent'),
     path('api/checklist-complete/', api_views.checklist_complete_api, name='api_checklist_complete'),
+    path(
+        'production-orders/<int:po_pk>/bom/<int:bom_pk>/drawings/',
+        api_views.bom_drawings_api,
+        name='api_bom_drawings',
+    ),
+    path('api/drawings/<int:pk>/release/', api_views.drawing_release_api, name='api_drawing_release'),
+    path('api/drawings/<int:pk>/delete/', api_views.drawing_delete_api, name='api_drawing_delete'),
     path('parts/<int:pk>/label/', views.part_label, name='part_label'),
     path('oracle-sync-log/', views.OracleSyncLogListView.as_view(), name='oracle_sync_log'),
     path('oracle/pull/', views.OraclePullView.as_view(), name='oracle_pull'),

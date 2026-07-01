@@ -551,6 +551,7 @@ class Command(BaseCommand):
                 bom_item=bom_item,
                 version='1.0',
                 defaults={
+                    'title': title,
                     'is_released': True,
                     'created_by': admin,
                     'updated_by': admin,
@@ -558,5 +559,6 @@ class Command(BaseCommand):
             )
             if created or not drawing.file:
                 drawing.file.save(filename, ContentFile(svg.encode('utf-8')), save=True)
+                drawing.title = title
                 drawing.is_released = True
-                drawing.save(update_fields=['is_released', 'updated_at'])
+                drawing.save(update_fields=['title', 'is_released', 'updated_at'])

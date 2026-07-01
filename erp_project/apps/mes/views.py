@@ -197,6 +197,7 @@ class ProductionOrderDetailView(MesAccessMixin, DetailView):
         company = _company_or_none()
         qs = ProductionOrder.objects.filter(is_active=True).prefetch_related(
             'bom_items__children',
+            'bom_items__drawings',
             'parts__bom_item',
             'parts__current_work_center',
         )
@@ -209,6 +210,17 @@ class ProductionOrderDetailView(MesAccessMixin, DetailView):
         order = self.object
         ctx['title'] = f'Production Order {order.po_number}'
         ctx['bom_tree'] = build_bom_tree(order)
+        ctx['bom_drawing_counts'] = {}
+        for bom in order.bom_items.filter(is_active=True).prefetch_related('drawings'):
+            active = [d for d in bom.drawings.all() if d.is_active]
+            ctx['bom_drawing_counts'][bom.pk] = {
+                'total': len(active),
+                'released': sum(1 for d in active if d.is_released),
+            }
+        ctx['bom_tree'] = [
+            (item, depth, ctx['bom_drawing_counts'].get(item.pk, {'total': 0, 'released': 0}))
+            for item, depth in ctx['bom_tree']
+        ]
         ctx['parts'] = order.parts.filter(is_active=True).select_related(
             'bom_item', 'current_work_center',
         )
@@ -239,6 +251,10 @@ class ProductionOrderDetailView(MesAccessMixin, DetailView):
         ctx['status_logs'] = order.status_logs.filter(is_active=True).select_related('changed_by')[:10]
         ctx['source_template'] = order.source_template_name or (
             order.product_template.name if order.product_template_id else ''
+        )
+        ctx['can_manage_drawings'] = order.status not in (
+            ProductionOrder.STATUS_FINISHED,
+            ProductionOrder.STATUS_CANCELLED,
         )
         return ctx
 

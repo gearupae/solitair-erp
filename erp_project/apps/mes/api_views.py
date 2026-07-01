@@ -20,9 +20,33 @@ from .services.gearup_agent import (
 )
 from .services.scan import ScanError, build_scan_response, complete_checklist_item, process_scan
 from .services.station_queue import get_station_queue
+from .forms import DrawingUploadForm
+from .models import BOMItem, Drawing, ProductionOrder
 from .utils import get_default_mes_company
 
 logger = logging.getLogger(__name__)
+
+
+def _serialize_drawing(drawing: Drawing) -> dict:
+    filename = drawing.file.name.rsplit('/', 1)[-1] if drawing.file else ''
+    return {
+        'id': drawing.pk,
+        'title': drawing.display_title,
+        'version': drawing.version,
+        'is_released': drawing.is_released,
+        'url': drawing.file.url if drawing.file else '',
+        'filename': filename,
+        'created_at': drawing.created_at.isoformat() if drawing.created_at else '',
+    }
+
+
+def _get_bom_item(company, po_pk: int, bom_pk: int) -> BOMItem:
+    return BOMItem.objects.get(
+        pk=bom_pk,
+        production_order_id=po_pk,
+        production_order__company=company,
+        is_active=True,
+    )
 
 
 def _mes_api_guard(request):
@@ -204,3 +228,132 @@ def gearup_agent_api(request):
 
     status = 200 if result.get('ok', True) else 400
     return JsonResponse(result, status=status)
+
+
+@login_required
+@require_http_methods(['GET', 'POST'])
+def bom_drawings_api(request, po_pk: int, bom_pk: int):
+    company = _mes_api_guard(request)
+    if isinstance(company, JsonResponse):
+        return company
+
+    try:
+        bom_item = _get_bom_item(company, po_pk, bom_pk)
+    except BOMItem.DoesNotExist:
+        return JsonResponse({'success': False, 'message': 'BOM line not found.'}, status=404)
+
+    if request.method == 'GET':
+        drawings = Drawing.objects.filter(
+            company=company,
+            bom_item=bom_item,
+            is_active=True,
+        ).order_by('-created_at')
+        return JsonResponse({
+            'success': True,
+            'bom_item_id': bom_item.pk,
+            'part_name': bom_item.part_name,
+            'drawings': [_serialize_drawing(d) for d in drawings if d.file],
+        })
+
+    if bom_item.production_order.status in (
+        ProductionOrder.STATUS_FINISHED,
+        ProductionOrder.STATUS_CANCELLED,
+    ):
+        return JsonResponse(
+            {'success': False, 'message': 'Cannot upload drawings on a finished or cancelled order.'},
+            status=400,
+        )
+
+    form = DrawingUploadForm(request.POST, request.FILES)
+    if not form.is_valid():
+        return JsonResponse(
+            {'success': False, 'message': '; '.join(
+                f'{field}: {errs[0]}' for field, errs in form.errors.items()
+            )},
+            status=400,
+        )
+
+    drawing = Drawing.objects.create(
+        company=company,
+        bom_item=bom_item,
+        file=form.cleaned_data['file'],
+        title=(form.cleaned_data.get('title') or '').strip(),
+        version=form.cleaned_data['version'],
+        is_released=False,
+        created_by=request.user,
+        updated_by=request.user,
+    )
+    return JsonResponse({
+        'success': True,
+        'message': 'Drawing uploaded.',
+        'drawing': _serialize_drawing(drawing),
+    })
+
+
+@login_required
+@require_http_methods(['POST'])
+def drawing_release_api(request, pk: int):
+    company = _mes_api_guard(request)
+    if isinstance(company, JsonResponse):
+        return company
+
+    try:
+        drawing = Drawing.objects.select_related('bom_item__production_order').get(
+            pk=pk,
+            company=company,
+            is_active=True,
+            bom_item__isnull=False,
+        )
+    except Drawing.DoesNotExist:
+        return JsonResponse({'success': False, 'message': 'Drawing not found.'}, status=404)
+
+    po = drawing.bom_item.production_order
+    if po.status in (ProductionOrder.STATUS_FINISHED, ProductionOrder.STATUS_CANCELLED):
+        return JsonResponse(
+            {'success': False, 'message': 'Cannot change release on a finished or cancelled order.'},
+            status=400,
+        )
+
+    data = _parse_json_body(request)
+    if 'is_released' in data:
+        drawing.is_released = bool(data['is_released'])
+    else:
+        drawing.is_released = not drawing.is_released
+    drawing.updated_by = request.user
+    drawing.save(update_fields=['is_released', 'updated_by', 'updated_at'])
+
+    state = 'released' if drawing.is_released else 'unreleased'
+    return JsonResponse({
+        'success': True,
+        'message': f'Drawing {state}.',
+        'drawing': _serialize_drawing(drawing),
+    })
+
+
+@login_required
+@require_http_methods(['POST'])
+def drawing_delete_api(request, pk: int):
+    company = _mes_api_guard(request)
+    if isinstance(company, JsonResponse):
+        return company
+
+    try:
+        drawing = Drawing.objects.select_related('bom_item__production_order').get(
+            pk=pk,
+            company=company,
+            is_active=True,
+        )
+    except Drawing.DoesNotExist:
+        return JsonResponse({'success': False, 'message': 'Drawing not found.'}, status=404)
+
+    po = drawing.bom_item.production_order if drawing.bom_item_id else None
+    if po and po.status in (ProductionOrder.STATUS_FINISHED, ProductionOrder.STATUS_CANCELLED):
+        return JsonResponse(
+            {'success': False, 'message': 'Cannot delete drawings on a finished or cancelled order.'},
+            status=400,
+        )
+
+    drawing.is_active = False
+    drawing.updated_by = request.user
+    drawing.save(update_fields=['is_active', 'updated_by', 'updated_at'])
+    return JsonResponse({'success': True, 'message': 'Drawing removed.'})

@@ -148,6 +148,7 @@ def build_scan_response(result: ScanResult) -> dict[str, Any]:
         'drawings': [
             {
                 'id': d.pk,
+                'title': d.display_title,
                 'version': d.version,
                 'url': d.file.url if d.file else '',
                 'filename': d.file.name.rsplit('/', 1)[-1] if d.file else '',

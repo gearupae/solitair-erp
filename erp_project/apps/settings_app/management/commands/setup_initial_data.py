@@ -5,7 +5,7 @@ Creates default roles, permissions, and company settings.
 from django.core.management.base import BaseCommand
 from django.contrib.auth.models import User
 from apps.settings_app.models import (
-    Role, Permission, RolePermission, CompanySettings, NumberSeries
+    Role, Permission, RolePermission, Company, CompanySettings, NumberSeries
 )
 
 
@@ -23,6 +23,9 @@ class Command(BaseCommand):
         
         # Create company settings
         self.create_company_settings()
+
+        # Legal entity for HR / MES tenant scope
+        self.create_default_company()
         
         # Create number series
         self.create_number_series()
@@ -255,6 +258,25 @@ class Command(BaseCommand):
             self.stdout.write('  Created default company settings')
         else:
             self.stdout.write('  Company settings already exist')
+
+    def create_default_company(self):
+        """Create default legal entity (required for MES, HR employee company FK)."""
+        self.stdout.write('Creating default company entity...')
+
+        settings = CompanySettings.objects.filter(pk=1).first()
+        name = settings.company_name if settings else 'My Company'
+
+        company, created = Company.objects.get_or_create(
+            name=name,
+            defaults={
+                'country': 'uae',
+                'base_currency': settings.currency if settings else 'AED',
+            },
+        )
+        if created:
+            self.stdout.write(f'  Created company: {company.name}')
+        else:
+            self.stdout.write(f'  Company already exists: {company.name}')
     
     def create_number_series(self):
         """Create default number series."""

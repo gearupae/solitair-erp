@@ -10,6 +10,7 @@ from django.core.exceptions import ValidationError
 
 from .models import (
     BOMItem,
+    Drawing,
     Part,
     ProductTemplate,
     ProductionOrder,
@@ -482,6 +483,45 @@ class PartForm(MesModelForm):
         if commit:
             instance.save()
         return instance
+
+
+DRAWING_ALLOWED_EXTENSIONS = {'.pdf', '.png', '.jpg', '.jpeg', '.svg', '.dxf'}
+DRAWING_MAX_BYTES = 25 * 1024 * 1024
+
+
+class DrawingUploadForm(forms.Form):
+    file = forms.FileField(
+        widget=forms.ClearableFileInput(attrs={'class': 'form-control', 'accept': '.pdf,.png,.jpg,.jpeg,.svg,.dxf'}),
+    )
+    title = forms.CharField(
+        max_length=200,
+        required=False,
+        widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Drawing title'}),
+    )
+    version = forms.CharField(
+        max_length=20,
+        initial='1.0',
+        widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': '1.0'}),
+    )
+
+    def clean_file(self):
+        uploaded = self.cleaned_data.get('file')
+        if not uploaded:
+            raise ValidationError('File is required.')
+        if uploaded.size > DRAWING_MAX_BYTES:
+            raise ValidationError('File must be 25 MB or smaller.')
+        ext = '.' + uploaded.name.rsplit('.', 1)[-1].lower() if '.' in uploaded.name else ''
+        if ext not in DRAWING_ALLOWED_EXTENSIONS:
+            raise ValidationError(
+                'Allowed types: PDF, PNG, JPG, SVG, DXF.',
+            )
+        return uploaded
+
+    def clean_version(self):
+        version = (self.cleaned_data.get('version') or '').strip()
+        if not version:
+            raise ValidationError('Version is required.')
+        return version
 
 
 def generate_part_barcode(production_order: ProductionOrder) -> str:

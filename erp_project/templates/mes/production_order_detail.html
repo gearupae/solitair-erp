@@ -309,11 +309,12 @@
                             <th>Material</th>
                             <th class="text-end">Unit cost</th>
                             <th class="text-end">Qty</th>
+                            <th class="text-end" style="width: 160px;">Drawings</th>
                             {% if can_edit_bom %}<th class="text-end" style="width: 120px;">Actions</th>{% endif %}
                         </tr>
                     </thead>
                     <tbody>
-                        {% for item, depth in bom_tree %}
+                        {% for item, depth, drawing_counts in bom_tree %}
                         <tr>
                             <td class="fw-medium" style="padding-left: {{ depth|add:1 }}rem;">
                                 {% if depth %}<span class="text-muted">└</span> {% endif %}{{ item.part_name }}
@@ -321,6 +322,21 @@
                             <td>{{ item.get_material_type_display }}</td>
                             <td class="text-end">{{ item.unit_cost|floatformat:2 }}</td>
                             <td class="text-end">{{ item.quantity }} {{ item.unit }}</td>
+                            <td class="text-end">
+                                {% if drawing_counts.total %}
+                                <span class="badge bg-light text-dark border me-1" id="drawingBadge{{ item.pk }}">
+                                    {{ drawing_counts.total }} drawing{{ drawing_counts.total|pluralize }}, {{ drawing_counts.released }} released
+                                </span>
+                                {% else %}
+                                <span class="badge bg-light text-muted border me-1" id="drawingBadge{{ item.pk }}">0 drawings</span>
+                                {% endif %}
+                                <button type="button" class="btn btn-sm btn-outline-primary py-0 btn-bom-drawings"
+                                        data-bom-id="{{ item.pk }}"
+                                        data-part-name="{{ item.part_name|escape }}"
+                                        data-can-manage="{% if can_manage_drawings %}1{% else %}0{% endif %}">
+                                    <i class="fas fa-drafting-compass me-1"></i>Drawings
+                                </button>
+                            </td>
                             {% if can_edit_bom %}
                             <td class="text-end">
                                 <a href="{% url 'mes:bom_item_edit' order.pk item.pk %}" class="btn btn-sm btn-outline-secondary py-0">Edit</a>
@@ -333,7 +349,7 @@
                             {% endif %}
                         </tr>
                         {% empty %}
-                        <tr><td colspan="{% if can_edit_bom %}5{% else %}4{% endif %}" class="text-center py-3 text-muted">No BOM lines — add lines to define the assembly.</td></tr>
+                        <tr><td colspan="{% if can_edit_bom %}6{% else %}5{% endif %}" class="text-center py-3 text-muted">No BOM lines — add lines to define the assembly.</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>
@@ -383,4 +399,238 @@
 </div>
 
 {% include 'mes/partials/delete_modal.html' %}
+
+<div class="modal fade" id="bomDrawingsModal" tabindex="-1" aria-labelledby="bomDrawingsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="bomDrawingsModalLabel">Drawings — <span id="drawingsModalPartName"></span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="drawingsAlert" class="alert d-none" role="alert"></div>
+                <div id="drawingsUploadSection" class="card border mb-3 d-none">
+                    <div class="card-header bg-transparent py-2"><strong class="small">Upload drawing</strong></div>
+                    <div class="card-body">
+                        <form id="drawingUploadForm" enctype="multipart/form-data">
+                            <div class="row g-2">
+                                <div class="col-md-6">
+                                    <label class="form-label small">File</label>
+                                    <input type="file" name="file" class="form-control form-control-sm" accept=".pdf,.png,.jpg,.jpeg,.svg,.dxf" required>
+                                    <div class="form-text">PDF, PNG, JPG, SVG, DXF — max 25 MB</div>
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label small">Title</label>
+                                    <input type="text" name="title" class="form-control form-control-sm" placeholder="Optional">
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label small">Version</label>
+                                    <input type="text" name="version" class="form-control form-control-sm" value="1.0" required>
+                                </div>
+                            </div>
+                            <button type="submit" class="btn btn-primary btn-sm mt-2">
+                                <i class="fas fa-upload me-1"></i>Upload
+                            </button>
+                        </form>
+                    </div>
+                </div>
+                <div id="drawingsListSection">
+                    <p class="text-muted mb-0">Loading…</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    const poPk = {{ order.pk }};
+    const csrfToken = '{{ csrf_token }}';
+    const drawingsListUrl = function (bomId) {
+        return '{% url "mes:api_bom_drawings" order.pk 999999 %}'.replace('999999', String(bomId));
+    };
+    const drawingReleaseUrl = function (id) {
+        return '{% url "mes:api_drawing_release" 999999 %}'.replace('999999', String(id));
+    };
+    const drawingDeleteUrl = function (id) {
+        return '{% url "mes:api_drawing_delete" 999999 %}'.replace('999999', String(id));
+    };
+
+    let activeBomId = null;
+    let canManage = false;
+    const modalEl = document.getElementById('bomDrawingsModal');
+    const modal = modalEl ? new bootstrap.Modal(modalEl) : null;
+
+    function showDrawingsAlert(type, message) {
+        const el = document.getElementById('drawingsAlert');
+        if (!el) return;
+        el.className = 'alert alert-' + type;
+        el.textContent = message;
+        el.classList.remove('d-none');
+        setTimeout(function () { el.classList.add('d-none'); }, 4000);
+    }
+
+    function updateBadge(bomId, drawings) {
+        const badge = document.getElementById('drawingBadge' + bomId);
+        if (!badge) return;
+        const total = drawings.length;
+        const released = drawings.filter(function (d) { return d.is_released; }).length;
+        if (total === 0) {
+            badge.textContent = '0 drawings';
+            badge.className = 'badge bg-light text-muted border me-1';
+        } else {
+            badge.textContent = total + ' drawing' + (total === 1 ? '' : 's') + ', ' + released + ' released';
+            badge.className = 'badge bg-light text-dark border me-1';
+        }
+    }
+
+    function renderDrawingsList(drawings) {
+        const section = document.getElementById('drawingsListSection');
+        if (!drawings.length) {
+            section.innerHTML = '<p class="text-muted mb-0">No drawings yet. Upload a file to attach CAD / cutting drawings to this BOM line.</p>';
+            return;
+        }
+        section.innerHTML = '<table class="table table-sm align-middle mb-0">' +
+            '<thead class="table-light"><tr><th>Title</th><th>Version</th><th>Status</th><th class="text-end">Actions</th></tr></thead><tbody>' +
+            drawings.map(function (d) {
+                const status = d.is_released
+                    ? '<span class="badge bg-success">Released</span>'
+                    : '<span class="badge bg-secondary">Draft</span>';
+                const releaseBtn = canManage
+                    ? '<button type="button" class="btn btn-sm btn-outline-' + (d.is_released ? 'warning' : 'success') + ' py-0 me-1 btn-drawing-release" data-id="' + d.id + '" data-released="' + (d.is_released ? '1' : '0') + '">' +
+                      (d.is_released ? 'Unrelease' : 'Release') + '</button>'
+                    : '';
+                const deleteBtn = canManage
+                    ? '<button type="button" class="btn btn-sm btn-outline-danger py-0 btn-drawing-delete" data-id="' + d.id + '">Delete</button>'
+                    : '';
+                return '<tr data-drawing-id="' + d.id + '">' +
+                    '<td><a href="' + d.url + '" target="_blank" rel="noopener">' + (d.title || d.filename) + '</a></td>' +
+                    '<td>' + d.version + '</td>' +
+                    '<td class="drawing-status">' + status + '</td>' +
+                    '<td class="text-end">' + releaseBtn + deleteBtn + '</td></tr>';
+            }).join('') +
+            '</tbody></table>';
+    }
+
+    async function loadDrawings(bomId) {
+        const section = document.getElementById('drawingsListSection');
+        section.innerHTML = '<p class="text-muted mb-0">Loading…</p>';
+        try {
+            const resp = await fetch(drawingsListUrl(bomId), {
+                credentials: 'same-origin',
+                headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            });
+            const data = await resp.json();
+            if (!data.success) {
+                section.innerHTML = '<p class="text-danger mb-0">' + (data.message || 'Could not load drawings.') + '</p>';
+                return;
+            }
+            renderDrawingsList(data.drawings);
+            updateBadge(bomId, data.drawings);
+        } catch (err) {
+            section.innerHTML = '<p class="text-danger mb-0">Network error — could not load drawings.</p>';
+        }
+    }
+
+    function openDrawingsModal(bomId, partName, manage) {
+        activeBomId = bomId;
+        canManage = manage;
+        document.getElementById('drawingsModalPartName').textContent = partName;
+        document.getElementById('drawingsUploadSection').classList.toggle('d-none', !canManage);
+        document.getElementById('drawingUploadForm').reset();
+        document.querySelector('#drawingUploadForm input[name="version"]').value = '1.0';
+        loadDrawings(bomId);
+        if (modal) modal.show();
+    }
+
+    document.querySelectorAll('.btn-bom-drawings').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            openDrawingsModal(
+                parseInt(btn.dataset.bomId, 10),
+                btn.dataset.partName || '',
+                btn.dataset.canManage === '1',
+            );
+        });
+    });
+
+    const uploadForm = document.getElementById('drawingUploadForm');
+    if (uploadForm) {
+        uploadForm.addEventListener('submit', async function (e) {
+            e.preventDefault();
+            if (!activeBomId || !canManage) return;
+            const formData = new FormData(uploadForm);
+            try {
+                const resp = await fetch(drawingsListUrl(activeBomId), {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: { 'X-CSRFToken': csrfToken },
+                    body: formData,
+                });
+                const data = await resp.json();
+                if (!data.success) {
+                    showDrawingsAlert('danger', data.message || 'Upload failed.');
+                    return;
+                }
+                showDrawingsAlert('success', data.message || 'Uploaded.');
+                uploadForm.reset();
+                document.querySelector('#drawingUploadForm input[name="version"]').value = '1.0';
+                loadDrawings(activeBomId);
+            } catch (err) {
+                showDrawingsAlert('danger', 'Network error — upload failed.');
+            }
+        });
+    }
+
+    document.getElementById('drawingsListSection').addEventListener('click', async function (e) {
+        const releaseBtn = e.target.closest('.btn-drawing-release');
+        const deleteBtn = e.target.closest('.btn-drawing-delete');
+        if (releaseBtn && activeBomId) {
+            const id = parseInt(releaseBtn.dataset.id, 10);
+            const nextReleased = releaseBtn.dataset.released !== '1';
+            try {
+                const resp = await fetch(drawingReleaseUrl(id), {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': csrfToken,
+                    },
+                    body: JSON.stringify({ is_released: nextReleased }),
+                });
+                const data = await resp.json();
+                if (!data.success) {
+                    showDrawingsAlert('danger', data.message || 'Release toggle failed.');
+                    return;
+                }
+                showDrawingsAlert('success', data.message);
+                loadDrawings(activeBomId);
+            } catch (err) {
+                showDrawingsAlert('danger', 'Network error.');
+            }
+        }
+        if (deleteBtn && activeBomId) {
+            if (!confirm('Remove this drawing?')) return;
+            const id = parseInt(deleteBtn.dataset.id, 10);
+            try {
+                const resp = await fetch(drawingDeleteUrl(id), {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: { 'X-CSRFToken': csrfToken },
+                });
+                const data = await resp.json();
+                if (!data.success) {
+                    showDrawingsAlert('danger', data.message || 'Delete failed.');
+                    return;
+                }
+                showDrawingsAlert('success', data.message);
+                loadDrawings(activeBomId);
+            } catch (err) {
+                showDrawingsAlert('danger', 'Network error.');
+            }
+        }
+    });
+})();
+</script>
 {% endblock %}

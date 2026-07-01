@@ -645,10 +645,32 @@ class ChecklistCompletion(TenantScopedModel):
         return f'{self.part.barcode} — {self.checklist_item.label}'
 
 
+class TemplateDrawing(TenantScopedModel):
+    """Default drawing on a product-template BOM line (copied to PO on apply)."""
+
+    file = models.FileField(upload_to='mes/template-drawings/%Y/%m/')
+    template_bom_item = models.ForeignKey(
+        TemplateBOMItem,
+        on_delete=models.CASCADE,
+        related_name='drawings',
+    )
+    title = models.CharField(max_length=200, blank=True)
+    version = models.CharField(max_length=20, default='1.0')
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Template drawing'
+
+    def __str__(self):
+        label = self.title or (self.file.name.rsplit('/', 1)[-1] if self.file else 'Drawing')
+        return f'{label} v{self.version}'
+
+
 class Drawing(TenantScopedModel):
     """Released CAD / component drawing for the floor tablet."""
 
     file = models.FileField(upload_to='mes/drawings/%Y/%m/')
+    title = models.CharField(max_length=200, blank=True)
     bom_item = models.ForeignKey(
         BOMItem,
         on_delete=models.CASCADE,
@@ -676,9 +698,17 @@ class Drawing(TenantScopedModel):
         if bool(self.bom_item_id) == bool(self.part_id):
             raise ValidationError('Link the drawing to exactly one of bom_item or part.')
 
+    @property
+    def display_title(self) -> str:
+        if self.title:
+            return self.title
+        if self.file:
+            return self.file.name.rsplit('/', 1)[-1]
+        return f'Drawing v{self.version}'
+
     def __str__(self):
         target = self.bom_item or self.part
-        return f'Drawing v{self.version} — {target}'
+        return f'{self.display_title} v{self.version} — {target}'
 
 
 class Machine(TenantScopedModel):
