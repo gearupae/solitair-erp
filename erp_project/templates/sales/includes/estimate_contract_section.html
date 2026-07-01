@@ -1,0 +1,75 @@
+{% load static %}
+<style>
+.estimate-contract-card .contract-toolbar {
+    border: 1px solid #dee2e6;
+    border-bottom: 0;
+    border-radius: 0.375rem 0.375rem 0 0;
+    background: #f8fafc;
+    padding: 0.35rem 0.5rem;
+}
+.estimate-contract-card .contract-editor-wrap {
+    border: 1px solid #dee2e6;
+    border-radius: 0 0 0.375rem 0.375rem;
+    min-height: 280px;
+    background: #fff;
+}
+.estimate-contract-card .contract-editor-wrap .ql-editor {
+    min-height: 260px;
+    font-size: 0.9375rem;
+    line-height: 1.6;
+}
+.estimate-contract-card .contract-readonly-body {
+    font-size: 0.9375rem;
+    line-height: 1.6;
+}
+.estimate-contract-card .contract-readonly-body h1,
+.estimate-contract-card .contract-readonly-body h2,
+.estimate-contract-card .contract-readonly-body h3 {
+    margin-top: 1rem;
+    margin-bottom: 0.5rem;
+}
+.estimate-contract-card .contract-readonly-body p { margin-bottom: 0.75rem; }
+.estimate-contract-card .contract-readonly-body ul,
+.estimate-contract-card .contract-readonly-body ol {
+    margin-bottom: 0.75rem;
+    padding-left: 1.25rem;
+}
+.estimate-contract-save-status {
+    font-size: 0.8125rem;
+    color: #64748b;
+    min-width: 5rem;
+    text-align: right;
+}
+.estimate-contract-save-status.is-saving { color: #2563eb; }
+.estimate-contract-save-status.is-saved { color: #059669; }
+.estimate-contract-save-status.is-error { color: #dc2626; }
+</style>
+
+<div class="card mb-4 estimate-contract-card" id="estimateContractCard"
+     data-estimate-id="{{ estimate.pk }}"
+     data-save-url="{{ contract_save_url }}"
+     data-can-edit="{% if can_edit_contract %}true{% else %}false{% endif %}">
+    <div class="card-header bg-transparent py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <h6 class="mb-0 fw-semibold"><i class="fas fa-file-signature me-2 text-dark"></i>Contract</h6>
+        <div class="d-flex align-items-center gap-2">
+            {% if can_edit_contract %}
+            <span class="estimate-contract-save-status" id="contractSaveStatus" aria-live="polite"></span>
+            {% endif %}
+            <a href="{{ contract_pdf_url }}" class="btn btn-sm btn-outline-danger" target="_blank" rel="noopener">
+                <i class="fas fa-file-pdf me-1"></i>Contract PDF
+            </a>
+        </div>
+    </div>
+    <div class="card-body">
+        {% if can_edit_contract %}
+        {% csrf_token %}
+        <textarea id="contractInitialHtml" class="d-none">{{ estimate.contract_body }}</textarea>
+        <p class="text-muted small mb-3">Paste from Google Docs or type here. Changes save automatically.</p>
+        <div class="contract-editor-wrap" id="contractEditor"></div>
+        {% elif estimate.contract_body %}
+        <div class="contract-readonly-body">{{ estimate.contract_body|safe }}</div>
+        {% else %}
+        <p class="text-muted mb-0">No contract added yet.</p>
+        {% endif %}
+    </div>
+</div>

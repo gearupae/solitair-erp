@@ -33,9 +33,15 @@ class CeoDashboardView(CeoAccessMixin, TemplateView):
     def get_context_data(self, **kwargs):
         from apps.inventory.utils import is_ai_available
         from apps.settings_app.services.ceo_metrics import build_ceo_metrics
+        from apps.settings_app.services.ceo_executive_reports import (
+            build_executive_report,
+            parse_ceo_filters,
+        )
 
         context = super().get_context_data(**kwargs)
+        filters = parse_ceo_filters(self.request)
         data = build_ceo_metrics()
+        exec_report = build_executive_report(self.request.user, filters)
 
         context.update({
             'title': 'CEO',
@@ -46,6 +52,8 @@ class CeoDashboardView(CeoAccessMixin, TemplateView):
             'yesterday_deltas': data['yesterday_deltas'],
             'currency': data['metrics'].get('currency', 'AED'),
             'charts_json': json.dumps(data['charts']),
+            'exec_report': exec_report,
+            'ceo_filters': filters,
             'briefing_url': reverse('settings:ceo_api_briefing'),
             'alerts_url': reverse('settings:ceo_api_alerts'),
             'cash_forecast_url': reverse('settings:ceo_api_cash_forecast'),

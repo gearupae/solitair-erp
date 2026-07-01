@@ -1,0 +1,124 @@
+{% load humanize %}
+<section class="card ceo-mod-card{% if mod.kpis %} ceo-mod-card--dash{% endif %}">
+    <div class="card-header ceo-mod-card__header">
+        <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 w-100">
+            <div class="flex-grow-1 min-w-0">
+                <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+                    <span class="ceo-mod-card__icon"><i class="fas {{ mod.icon }}"></i></span>
+                    <h6 class="fw-bold mb-0">{{ mod.title }}</h6>
+                    <span class="ceo-flag-pill {{ mod.flag_display.class }}">
+                        <i class="fas {{ mod.flag_display.icon }} me-1"></i>{{ mod.flag_display.label }}
+                    </span>
+                </div>
+                <p class="ceo-mod-card__headline mb-0">{{ mod.headline }}</p>
+                {% if mod.period_label %}
+                <p class="ceo-mod-card__period mb-0">
+                    {{ mod.period_label }}
+                    {% if mod.total_in_scope is not None %} · {{ mod.total_in_scope|floatformat:0|intcomma }} in scope{% endif %}
+                    {% if mod.prev_period_label %} · vs {{ mod.prev_period_label }}{% endif %}
+                </p>
+                {% endif %}
+            </div>
+            <div class="d-flex flex-wrap gap-2 ceo-mod-card__actions">
+                {% if mod.dashboard_url %}
+                <a href="{{ mod.dashboard_url }}" class="btn btn-sm btn-primary ceo-mod-card__link" target="_blank" rel="noopener">
+                    Dashboard <i class="fas fa-chart-line ms-1"></i>
+                </a>
+                {% endif %}
+                <a href="{{ mod.url }}" class="btn btn-sm btn-outline-dark ceo-mod-card__link" target="_blank" rel="noopener">
+                    List <i class="fas fa-list ms-1"></i>
+                </a>
+            </div>
+        </div>
+    </div>
+    <div class="card-body">
+        {% if mod.kpis %}
+        <div class="ceo-mod-section-title">Key metrics (vs previous period)</div>
+        <div class="row g-3 mb-3">
+            {% for kpi in mod.kpis %}
+            <div class="col-6 col-md-4 col-xl">
+                <div class="card ceo-mod-kpi">
+                    <div class="card-body py-3">
+                        <div class="ceo-mod-kpi__label">{{ kpi.label }}</div>
+                        <div class="ceo-mod-kpi__value">
+                            {% if kpi.format == 'money' %}{{ currency }} {{ kpi.current|floatformat:0|intcomma }}
+                            {% elif kpi.format == 'pct' %}{{ kpi.current|floatformat:1 }}%
+                            {% else %}{{ kpi.current|floatformat:0|intcomma }}{% endif %}
+                        </div>
+                        <div class="ceo-mod-kpi__delta ceo-mod-kpi__delta--{{ kpi.direction }}">
+                            {% if kpi.direction == 'up' %}▲{% elif kpi.direction == 'down' %}▼{% else %}—{% endif %}
+                            {{ kpi.change_pct|floatformat:1 }}%
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if mod.status_counts %}
+        <div class="ceo-status-chips mb-3">
+            {% for s in mod.status_counts %}
+            <div class="ceo-status-chip ceo-status-chip--{{ s.tone }}">
+                <span class="ceo-status-chip__val">{{ s.value|floatformat:0|intcomma }}</span>
+                <span class="ceo-status-chip__lbl">{{ s.label }}</span>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if mod.watch %}
+        <div class="mb-3">
+            <h6 class="ceo-mod-subtitle">Things to watch</h6>
+            <ul class="ceo-mod-watch mb-0 ps-3">
+                {% for w in mod.watch %}
+                <li>{{ w }}</li>
+                {% empty %}
+                <li class="text-muted">No alerts</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+
+        {% if mod.metrics and not mod.kpis %}
+        <div class="ceo-mod-metrics mb-3">
+            {% for m in mod.metrics %}
+            <div class="ceo-mod-metric">
+                <div class="ceo-mod-metric__val">
+                    {% if m.2 == 'money' %}{{ currency }} {{ m.1|floatformat:0|intcomma }}
+                    {% elif m.2 == 'text' %}{{ m.1 }}
+                    {% else %}{{ m.1 }}{% endif %}
+                </div>
+                <div class="ceo-mod-metric__lbl">{{ m.0 }}</div>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if mod.columns %}
+        <div class="ceo-mod-section-title">Recent records</div>
+        <div class="ceo-table-wrap">
+            <table class="table table-sm ceo-table mb-0">
+                <thead>
+                    <tr>
+                        {% for col in mod.columns %}
+                        <th {% if forloop.first %}class="ps-3"{% elif forloop.last %}class="pe-3"{% endif %}>{{ col }}</th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                {% for row in mod.rows %}
+                <tr>
+                    {% for cell in row.cells %}
+                    <td {% if forloop.first %}class="ps-3 fw-medium"{% elif forloop.last %}class="pe-3"{% endif %}>{{ cell }}</td>
+                    {% endfor %}
+                </tr>
+                {% empty %}
+                <tr><td colspan="{{ mod.columns|length }}" class="text-muted text-center py-3">No records in this period.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+    </div>
+</section>

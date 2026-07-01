@@ -193,6 +193,10 @@ class Estimate(BaseModel):
     notes = models.TextField(blank=True, help_text='Internal notes (optional)')
     client_note = models.TextField(blank=True, help_text='Note for the client (shown on estimate)')
     terms_and_conditions = models.TextField(blank=True)
+    contract_body = models.TextField(
+        blank=True,
+        help_text='Rich-text contract body (HTML); shown on quotation/estimate and sales order.',
+    )
 
     discount_type = models.CharField(
         max_length=20, choices=DISCOUNT_TYPE_CHOICES, default='none',

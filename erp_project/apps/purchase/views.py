@@ -5,7 +5,7 @@ All purchase transactions post to accounting module as single source of truth.
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
-from django.views.generic import ListView, CreateView, UpdateView, DetailView
+from django.views.generic import ListView, CreateView, UpdateView, DetailView, TemplateView
 from django.urls import reverse, reverse_lazy
 from django.db.models import Q, Sum, Prefetch
 from django.core.exceptions import ValidationError
@@ -47,11 +47,36 @@ def _active_inventory_items_data():
         {
             'id': r.pk,
             'label': str(r),
+            'name': r.name,
+            'item_code': r.item_code,
+            'brand': (r.brand or '').strip(),
             'unit': (r.unit or 'pcs').strip(),
             'purchase_price': str(r.purchase_price),
         }
         for r in rows
     ]
+
+
+def _pr_brands_for_form_json():
+    """Distinct brands from inventory and prior PR/PO lines — for datalist / picker."""
+    from apps.inventory.models import Item
+
+    brands = set(
+        Item.objects.filter(is_active=True, status='active')
+        .exclude(brand='')
+        .values_list('brand', flat=True)
+    )
+    brands.update(
+        PurchaseRequestItem.objects.exclude(brand='')
+        .values_list('brand', flat=True)
+        .distinct()
+    )
+    brands.update(
+        PurchaseOrderItem.objects.exclude(brand='')
+        .values_list('brand', flat=True)
+        .distinct()
+    )
+    return sorted(b for b in brands if (b or '').strip())
 
 
 def _active_inventory_items_json():
@@ -200,7 +225,21 @@ class VendorListView(PermissionRequiredMixin, ListView):
             for field, errors in form.errors.items():
                 for error in errors:
                     messages.error(request, f'{field}: {error}')
-        return redirect('purchase:vendor_list')
+        return context
+
+
+class PurchaseDashboardView(PermissionRequiredMixin, TemplateView):
+    template_name = 'purchase/dashboard.html'
+    module_name = 'purchase'
+    permission_type = 'view'
+
+    def get_context_data(self, **kwargs):
+        from .purchase_dashboard import build_purchase_dashboard_context
+
+        ctx = super().get_context_data(**kwargs)
+        ctx['title'] = 'Purchase Dashboard'
+        ctx.update(build_purchase_dashboard_context(self.request.user))
+        return ctx
 
 
 class VendorUpdateView(UpdatePermissionMixin, UpdateView):
@@ -290,6 +329,7 @@ class PurchaseRequestCreateView(CreatePermissionMixin, CreateView):
             context['items_formset'] = kwargs['items_formset']
         context['pr_inventory_items_data'] = _active_inventory_items_data()
         context['pr_inventory_items_json'] = json.dumps(context['pr_inventory_items_data'])
+        context['pr_brands_json'] = json.dumps(_pr_brands_for_form_json())
         return context
     
     def post(self, request, *args, **kwargs):
@@ -345,6 +385,7 @@ class PurchaseRequestUpdateView(UpdatePermissionMixin, UpdateView):
             context['items_formset'] = kwargs['items_formset']
         context['pr_inventory_items_data'] = _active_inventory_items_data()
         context['pr_inventory_items_json'] = json.dumps(context['pr_inventory_items_data'])
+        context['pr_brands_json'] = json.dumps(_pr_brands_for_form_json())
         return context
     
     def post(self, request, *args, **kwargs):
@@ -823,7 +864,10 @@ def pr_items_json(request, pk):
     items = []
     for item in pr.items.all():
         items.append({
-            'description': item.description,
+            'description': item.formatted_line_display(),
+            'brand': item.brand or '',
+            'model': item.model or '',
+            'item_description': item.description or '',
             'quantity': str(item.quantity),
             'estimated_price': str(item.estimated_price),
             # Use estimated_price as unit_price, and default VAT to 5%
@@ -843,7 +887,10 @@ def po_items_json(request, pk):
     items = []
     for item in po.items.all():
         items.append({
-            'description': item.description,
+            'description': item.formatted_line_display(),
+            'brand': item.brand or '',
+            'model': item.model or '',
+            'item_description': item.description or '',
             'quantity': str(item.quantity),
             'unit_price': str(item.unit_price),
             'vat_rate': str(item.vat_rate),
@@ -939,6 +986,7 @@ class PurchaseOrderCreateView(CreatePermissionMixin, CreateView):
             context['items_formset'] = kwargs['items_formset']
         context['po_inventory_items_data'] = _active_inventory_items_data()
         context['po_inventory_items_json'] = json.dumps(context['po_inventory_items_data'])
+        context['po_brands_json'] = json.dumps(_pr_brands_for_form_json())
         context.update(_po_terms_templates_context())
         return context
     
@@ -997,6 +1045,7 @@ class PurchaseOrderUpdateView(UpdatePermissionMixin, UpdateView):
             context['items_formset'] = kwargs['items_formset']
         context['po_inventory_items_data'] = _active_inventory_items_data()
         context['po_inventory_items_json'] = json.dumps(context['po_inventory_items_data'])
+        context['po_brands_json'] = json.dumps(_pr_brands_for_form_json())
         context.update(_po_terms_templates_context())
         return context
     

@@ -18,8 +18,14 @@ from apps.core.mixins import (
 from apps.core.utils import PermissionChecker
 from .models import (
     AssetCategory, FixedAsset, AssetDepreciation, DepreciationBatchRun,
+    EquipmentAllocation, EquipmentMaintenanceLog,
 )
-from .forms import AssetCategoryForm, FixedAssetForm, DisposalForm
+from .forms import (
+    AssetCategoryForm, FixedAssetForm, DisposalForm,
+    AssetOperationalForm, EquipmentAllocationForm, EquipmentReturnForm,
+    EquipmentTransferForm, EquipmentMaintenanceForm,
+)
+from . import equipment_services
 
 logger = logging.getLogger(__name__)
 
@@ -179,6 +185,10 @@ class FixedAssetDetailView(PermissionRequiredMixin, DetailView):
     def get_queryset(self):
         return FixedAsset.objects.filter(is_active=True).select_related(
             'category', 'vendor', 'custodian', 'acquisition_journal', 'disposal_journal'
+        ).prefetch_related(
+            'allocations__project',
+            'movement_logs',
+            'maintenance_logs',
         )
     
     def get_context_data(self, **kwargs):
@@ -186,8 +196,18 @@ class FixedAssetDetailView(PermissionRequiredMixin, DetailView):
         context['title'] = f'Asset: {self.object.asset_number}'
         context['can_edit'] = self.request.user.is_superuser or PermissionChecker.has_permission(self.request.user, 'assets', 'edit')
         context['depreciation_records'] = self.object.depreciation_records.all()[:12]
+        context.update(equipment_services.asset_allocation_context(self.object))
+        context['operational_form'] = AssetOperationalForm(instance=self.object)
+        context['allocation_form'] = EquipmentAllocationForm()
+        context['return_form'] = EquipmentReturnForm()
+        if context.get('active_allocation'):
+            context['transfer_form'] = EquipmentTransferForm(
+                exclude_project=context['active_allocation'].project,
+            )
+        else:
+            context['transfer_form'] = EquipmentTransferForm()
+        context['maintenance_form'] = EquipmentMaintenanceForm()
         return context
-
 
 class FixedAssetCreateView(CreatePermissionMixin, CreateView):
     model = FixedAsset
@@ -579,3 +599,154 @@ def depreciation_report(request):
         'selected_category': category_id,
     }
     return render(request, 'assets/depreciation_report.html', context)
+
+
+def _require_assets_edit(user):
+    return user.is_superuser or PermissionChecker.has_permission(user, 'assets', 'edit')
+
+
+@login_required
+def asset_operational_update(request, pk):
+    asset = get_object_or_404(FixedAsset, pk=pk, is_active=True)
+    if not _require_assets_edit(request.user):
+        messages.error(request, 'Permission denied.')
+        return redirect('assets:asset_detail', pk=pk)
+
+    form = AssetOperationalForm(request.POST, instance=asset)
+    if form.is_valid():
+        form.save()
+        messages.success(request, 'Operational settings updated.')
+    else:
+        messages.error(request, 'Could not update operational settings.')
+    return redirect('assets:asset_detail', pk=pk)
+
+
+@login_required
+def asset_allocate(request, pk):
+    asset = get_object_or_404(FixedAsset, pk=pk, is_active=True)
+    if not _require_assets_edit(request.user):
+        messages.error(request, 'Permission denied.')
+        return redirect('assets:asset_detail', pk=pk)
+
+    form = EquipmentAllocationForm(request.POST)
+    if form.is_valid():
+        try:
+            allocation = equipment_services.allocate_asset_to_project(
+                asset,
+                form.cleaned_data['project'],
+                start_date=form.cleaned_data['start_date'],
+                expected_end_date=form.cleaned_data.get('expected_end_date'),
+                user=request.user,
+                notes=form.cleaned_data.get('notes', ''),
+            )
+            messages.success(
+                request,
+                f'Allocated to {allocation.project.project_code} at AED {allocation.rate_per_hour}/hr.',
+            )
+        except ValidationError as exc:
+            messages.error(request, exc.messages[0] if hasattr(exc, 'messages') else str(exc))
+    else:
+        messages.error(request, 'Invalid allocation form.')
+    return redirect('assets:asset_detail', pk=pk)
+
+
+@login_required
+def equipment_allocation_return(request, pk):
+    allocation = get_object_or_404(
+        EquipmentAllocation.objects.select_related('asset', 'project'),
+        pk=pk,
+        is_active=True,
+    )
+    if not _require_assets_edit(request.user):
+        messages.error(request, 'Permission denied.')
+        return redirect('assets:asset_detail', pk=allocation.asset_id)
+
+    form = EquipmentReturnForm(request.POST)
+    if form.is_valid():
+        try:
+            equipment_services.return_allocation(
+                allocation,
+                return_date=form.cleaned_data['return_date'],
+                hours_used=form.cleaned_data.get('hours_used'),
+                user=request.user,
+                warehouse_location=form.cleaned_data.get('warehouse_location', ''),
+            )
+            cost = allocation.display_cost()
+            messages.success(request, f'Returned to warehouse. Usage cost: AED {cost}.')
+        except ValidationError as exc:
+            messages.error(request, exc.messages[0] if hasattr(exc, 'messages') else str(exc))
+    else:
+        messages.error(request, 'Invalid return form.')
+    return redirect('assets:asset_detail', pk=allocation.asset_id)
+
+
+@login_required
+def equipment_allocation_transfer(request, pk):
+    allocation = get_object_or_404(
+        EquipmentAllocation.objects.select_related('asset', 'project'),
+        pk=pk,
+        is_active=True,
+        status='active',
+    )
+    if not _require_assets_edit(request.user):
+        messages.error(request, 'Permission denied.')
+        return redirect('assets:asset_detail', pk=allocation.asset_id)
+
+    form = EquipmentTransferForm(request.POST, exclude_project=allocation.project)
+    if form.is_valid():
+        try:
+            new_alloc = equipment_services.transfer_allocation(
+                allocation,
+                form.cleaned_data['target_project'],
+                transfer_date=form.cleaned_data['transfer_date'],
+                user=request.user,
+                notes=form.cleaned_data.get('notes', ''),
+            )
+            messages.success(
+                request,
+                f'Transferred to {new_alloc.project.project_code}.',
+            )
+        except ValidationError as exc:
+            messages.error(request, exc.messages[0] if hasattr(exc, 'messages') else str(exc))
+    else:
+        messages.error(request, 'Invalid transfer form.')
+    return redirect('assets:asset_detail', pk=allocation.asset_id)
+
+
+@login_required
+def asset_flag_maintenance(request, pk):
+    asset = get_object_or_404(FixedAsset, pk=pk, is_active=True)
+    if not _require_assets_edit(request.user):
+        messages.error(request, 'Permission denied.')
+        return redirect('assets:asset_detail', pk=pk)
+
+    form = EquipmentMaintenanceForm(request.POST)
+    if form.is_valid():
+        try:
+            equipment_services.flag_maintenance(
+                asset,
+                reason=form.cleaned_data['reason'],
+                user=request.user,
+            )
+            messages.warning(request, 'Equipment flagged for maintenance.')
+        except ValidationError as exc:
+            messages.error(request, exc.messages[0] if hasattr(exc, 'messages') else str(exc))
+    else:
+        messages.error(request, 'Please provide a maintenance reason.')
+    return redirect('assets:asset_detail', pk=pk)
+
+
+@login_required
+def asset_clear_maintenance(request, pk, log_pk):
+    asset = get_object_or_404(FixedAsset, pk=pk, is_active=True)
+    log = get_object_or_404(EquipmentMaintenanceLog, pk=log_pk, asset=asset, is_active=True)
+    if not _require_assets_edit(request.user):
+        messages.error(request, 'Permission denied.')
+        return redirect('assets:asset_detail', pk=pk)
+
+    try:
+        equipment_services.clear_maintenance(log, user=request.user)
+        messages.success(request, 'Maintenance cleared — equipment available again.')
+    except ValidationError as exc:
+        messages.error(request, exc.messages[0] if hasattr(exc, 'messages') else str(exc))
+    return redirect('assets:asset_detail', pk=pk)

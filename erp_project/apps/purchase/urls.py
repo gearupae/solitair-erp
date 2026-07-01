@@ -9,6 +9,9 @@ from . import views_expense_public
 app_name = 'purchase'
 
 urlpatterns = [
+    # Dashboard
+    path('dashboard/', views.PurchaseDashboardView.as_view(), name='dashboard'),
+
     # Vendors
     path('vendors/', views.VendorListView.as_view(), name='vendor_list'),
     path('vendors/<int:pk>/edit/', views.VendorUpdateView.as_view(), name='vendor_edit'),

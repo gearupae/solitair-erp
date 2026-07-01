@@ -117,7 +117,7 @@
                 <!-- Sales -->
                 {% if is_superuser or 'sales' in user_permissions %}
                 <li class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle {% if 'sales' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
+                    <a class="nav-link dropdown-toggle {% if 'sales' in request.path and '/sales/invoices' not in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
                         <i class="fas fa-shopping-cart me-1"></i>Sales
                     </a>
                     <ul class="dropdown-menu dropdown-menu-dark">
@@ -134,11 +134,6 @@
                         <li>
                             <a class="dropdown-item" href="{% url 'sales:sales_order_list' %}">
                                 <i class="fas fa-clipboard-check me-2"></i>Sales Orders
-                            </a>
-                        </li>
-                        <li>
-                            <a class="dropdown-item" href="{% url 'sales:invoice_list' %}">
-                                <i class="fas fa-receipt me-2"></i>Invoices
                             </a>
                         </li>
                     </ul>
@@ -279,10 +274,15 @@
                 <!-- Finance (with nested Reports submenu) -->
                 {% if 'finance' not in nav_hidden_modules %}{% if is_superuser or 'finance' in user_permissions %}
                 <li class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle {% if 'finance' in request.path or '/property/pdc' in request.path or '/property/reconciliation' in request.path or '/property/reports/' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
+                    <a class="nav-link dropdown-toggle {% if 'finance' in request.path or '/sales/invoices' in request.path or '/property/pdc' in request.path or '/property/reconciliation' in request.path or '/property/reports/' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
                         <i class="fas fa-coins me-1"></i>Finance
                     </a>
                     <ul class="dropdown-menu dropdown-menu-dark finance-dropdown" style="min-width: 220px;">
+                        <li>
+                            <a class="dropdown-item" href="{% url 'sales:invoice_list' %}">
+                                <i class="fas fa-receipt me-2"></i>Invoices
+                            </a>
+                        </li>
                         <li>
                             <a class="dropdown-item" href="{% url 'finance:account_list' %}">
                                 <i class="fas fa-sitemap me-2"></i>Chart of Accounts
@@ -613,10 +613,40 @@
                             </a>
                         </li>
                         <li><hr class="dropdown-divider"></li>
-                        <li class="dropdown-header">Medical Consumables</li>
+                        <li class="dropdown-header">Item Request</li>
                         <li>
                             <a class="dropdown-item" href="{% url 'inventory:consumable_request_list' %}">
                                 <i class="fas fa-clipboard-list me-2"></i>Request items
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'inventory:consumable_request_create' %}">
+                                <i class="fas fa-plus me-2"></i>New Request
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'inventory:consumable_dashboard' %}">
+                                <i class="fas fa-chart-line me-2"></i>Dashboard
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'inventory:consumable_inventory_reports' %}">
+                                <i class="fas fa-file-alt me-2"></i>Inventory Reports
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'inventory:consumable_monthly_request_report' %}">
+                                <i class="fas fa-users me-2"></i>Monthly Requests
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'inventory:consumable_monthly_consumption_report' %}">
+                                <i class="fas fa-chart-bar me-2"></i>Monthly Consumption
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'inventory:consumable_monthly_cost_report' %}">
+                                <i class="fas fa-coins me-2"></i>Monthly Cost
                             </a>
                         </li>
                         <li><hr class="dropdown-divider"></li>
@@ -755,7 +785,7 @@
                     <a class="nav-link dropdown-toggle {% if 'settings' in request.path or '/mes/' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown" title="Settings">
                         <i class="fas fa-cog"></i>
                     </a>
-                    <ul class="dropdown-menu dropdown-menu-dark dropdown-menu-end">
+                    <ul class="dropdown-menu dropdown-menu-dark dropdown-menu-end settings-dropdown">
                         <li>
                             <a class="dropdown-item" href="{% url 'settings:user_list' %}">
                                 <i class="fas fa-users-cog me-2"></i>Users
@@ -794,35 +824,10 @@
                             </a>
                         </li>
                         <li><hr class="dropdown-divider"></li>
-                        <li class="dropdown-header">Manufacturing</li>
                         <li>
-                            <a class="dropdown-item {% if request.path == '/mes/' or request.path == '/mes' %}active{% endif %}" href="{% url 'mes:index' %}">
-                                <i class="fas fa-industry me-2"></i>Overview
-                            </a>
-                        </li>
-                        <li>
-                            <a class="dropdown-item {% if '/mes/work-centers/' in request.path %}active{% endif %}" href="{% url 'mes:work_center_list' %}">
-                                <i class="fas fa-stream me-2"></i>Work Centers
-                            </a>
-                        </li>
-                        <li>
-                            <a class="dropdown-item {% if '/mes/product-templates/' in request.path %}active{% endif %}" href="{% url 'mes:product_template_list' %}">
-                                <i class="fas fa-copy me-2"></i>Product Templates
-                            </a>
-                        </li>
-                        <li>
-                            <a class="dropdown-item {% if '/mes/production-orders/' in request.path %}active{% endif %}" href="{% url 'mes:production_order_list' %}">
-                                <i class="fas fa-clipboard-list me-2"></i>Production Orders
-                            </a>
-                        </li>
-                        <li>
-                            <a class="dropdown-item {% if '/mes/tablet/' in request.path %}active{% endif %}" href="{% url 'mes:tablet' %}">
-                                <i class="fas fa-tablet-alt me-2"></i>Floor Tablet
-                            </a>
-                        </li>
-                        <li>
-                            <a class="dropdown-item {% if '/mes/oracle/' in request.path %}active{% endif %}" href="{% url 'mes:oracle_pull' %}">
-                                <i class="fas fa-cloud-download-alt me-2"></i>Pull from Oracle
+                            <a class="dropdown-item reports-trigger {% if '/mes/' in request.path %}active{% endif %}" href="#" id="manufacturingTrigger">
+                                <span><i class="fas fa-industry me-2"></i>Manufacturing</span>
+                                <i class="fas fa-chevron-left"></i>
                             </a>
                         </li>
                         <li><hr class="dropdown-divider"></li>
@@ -1090,9 +1095,43 @@
     </a>
 </div>
 
+<!-- Manufacturing Panel (flyout from Settings menu) -->
+<div id="manufacturingPanel" class="nav-reports-panel">
+    <h6 class="dropdown-header">Manufacturing</h6>
+    <a class="dropdown-item {% if request.path == '/mes/' or request.path == '/mes' %}active{% endif %}" href="{% url 'mes:index' %}">
+        <i class="fas fa-industry me-2"></i>Overview
+    </a>
+    <a class="dropdown-item {% if '/mes/work-centers/' in request.path %}active{% endif %}" href="{% url 'mes:work_center_list' %}">
+        <i class="fas fa-stream me-2"></i>Work Centers
+    </a>
+    <a class="dropdown-item {% if '/mes/product-templates/' in request.path %}active{% endif %}" href="{% url 'mes:product_template_list' %}">
+        <i class="fas fa-copy me-2"></i>Product Templates
+    </a>
+    <a class="dropdown-item {% if '/mes/production-orders/' in request.path %}active{% endif %}" href="{% url 'mes:production_order_list' %}">
+        <i class="fas fa-clipboard-list me-2"></i>Production Orders
+    </a>
+    <a class="dropdown-item {% if '/mes/tablet/' in request.path %}active{% endif %}" href="{% url 'mes:tablet' %}">
+        <i class="fas fa-tablet-alt me-2"></i>Floor Tablet
+    </a>
+    <a class="dropdown-item {% if '/mes/oracle/' in request.path %}active{% endif %}" href="{% url 'mes:oracle_pull' %}">
+        <i class="fas fa-cloud-download-alt me-2"></i>Pull from Oracle
+    </a>
+</div>
+
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    function setupReportsFlyout(triggerId, panelId, dropdownSelector) {
+    function closeOtherFlyouts(exceptId) {
+        ['reportsPanel', 'pdcReportsPanel', 'inventoryReportsPanel', 'manufacturingPanel'].forEach(function(id) {
+            if (id !== exceptId) {
+                var el = document.getElementById(id);
+                if (el) {
+                    el.classList.remove('show');
+                }
+            }
+        });
+    }
+
+    function setupReportsFlyout(triggerId, panelId, dropdownSelector, openDirection) {
         var trigger = document.getElementById(triggerId);
         var panel = document.getElementById(panelId);
         var anchorMenu = document.querySelector(dropdownSelector);
@@ -1103,20 +1142,18 @@ document.addEventListener('DOMContentLoaded', function() {
             e.preventDefault();
             e.stopPropagation();
             var rect = anchorMenu ? anchorMenu.getBoundingClientRect() : trigger.getBoundingClientRect();
-            panel.style.left = (rect.right + 5) + 'px';
+            if (openDirection === 'left') {
+                panel.style.left = (rect.left - 285) + 'px';
+            } else {
+                panel.style.left = (rect.right + 5) + 'px';
+            }
             panel.style.top = rect.top + 'px';
-            panel.classList.toggle('show');
-            var financePanel = document.getElementById('reportsPanel');
-            if (financePanel && panelId !== 'reportsPanel') {
-                financePanel.classList.remove('show');
-            }
-            var pdcPanel = document.getElementById('pdcReportsPanel');
-            if (pdcPanel && panelId !== 'pdcReportsPanel') {
-                pdcPanel.classList.remove('show');
-            }
-            var inventoryPanel = document.getElementById('inventoryReportsPanel');
-            if (inventoryPanel && panelId !== 'inventoryReportsPanel') {
-                inventoryPanel.classList.remove('show');
+            var willShow = !panel.classList.contains('show');
+            closeOtherFlyouts(panelId);
+            if (willShow) {
+                panel.classList.add('show');
+            } else {
+                panel.classList.remove('show');
             }
         });
         document.addEventListener('click', function(e) {
@@ -1134,6 +1171,7 @@ document.addEventListener('DOMContentLoaded', function() {
     setupReportsFlyout('reportsTrigger', 'reportsPanel', '.finance-dropdown');
     setupReportsFlyout('pdcReportsTrigger', 'pdcReportsPanel', '.finance-dropdown');
     setupReportsFlyout('inventoryReportsTrigger', 'inventoryReportsPanel', '.inventory-dropdown');
+    setupReportsFlyout('manufacturingTrigger', 'manufacturingPanel', '.settings-dropdown', 'left');
 });
 </script>
 
@@ -1172,7 +1210,8 @@ document.addEventListener('DOMContentLoaded', function() {
 .nav-reports-panel,
 #reportsPanel,
 #pdcReportsPanel,
-#inventoryReportsPanel {
+#inventoryReportsPanel,
+#manufacturingPanel {
     position: fixed;
     top: 56px;
     display: none;
@@ -1279,6 +1318,11 @@ document.addEventListener('DOMContentLoaded', function() {
 #pdcReportsPanel .dropdown-item:hover i,
 #inventoryReportsPanel .dropdown-item:hover i {
     opacity: 1;
+}
+.nav-reports-panel .dropdown-item.active,
+#manufacturingPanel .dropdown-item.active {
+    background-color: rgba(255, 255, 255, 0.12);
+    color: #fff;
 }
 .nav-reports-panel .dropdown-divider,
 #reportsPanel .dropdown-divider,

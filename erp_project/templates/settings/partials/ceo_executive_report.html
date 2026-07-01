@@ -1,0 +1,803 @@
+{% load humanize %}
+<style>
+.ceo-exec-filters {
+    background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+    border: 1px solid #e2e8f0;
+    border-radius: 1rem;
+    padding: 1.15rem 1.35rem;
+    box-shadow: 0 1px 2px rgba(15,23,42,.04);
+}
+.ceo-exec-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 0.75rem;
+}
+.ceo-exec-kpi {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.75rem;
+    padding: 0.85rem 0.95rem;
+    min-height: 4.75rem;
+    transition: box-shadow .15s ease;
+}
+.ceo-exec-kpi:hover { box-shadow: 0 4px 14px rgba(15,23,42,.06); }
+.ceo-exec-kpi__label {
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #64748b;
+    line-height: 1.2;
+    margin-bottom: 0.35rem;
+    font-weight: 600;
+}
+.ceo-exec-kpi__value {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: #0f172a;
+    line-height: 1.15;
+    font-variant-numeric: tabular-nums;
+}
+.ceo-exec-kpi__hint { font-size: 0.68rem; color: #94a3b8; margin-top: 0.25rem; }
+.ceo-exec-kpi--alert { border-color: #fecaca; background: linear-gradient(180deg, #fff 0%, #fef2f2 100%); }
+.ceo-exec-kpi--alert .ceo-exec-kpi__value { color: #b91c1c; }
+
+.ceo-mod-card {
+    border: none;
+    border-radius: 1rem;
+    box-shadow: 0 1px 3px rgba(15,23,42,.06);
+    margin-bottom: 1.25rem;
+    overflow: hidden;
+}
+.ceo-mod-card__header {
+    background: linear-gradient(180deg, #fff 0%, #f8fafc 100%);
+    border-bottom: 1px solid #e2e8f0;
+    padding: 1rem 1.25rem;
+}
+.ceo-mod-card__icon {
+    width: 2rem;
+    height: 2rem;
+    border-radius: 0.5rem;
+    background: #eef2ff;
+    color: #3730a3;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.9rem;
+}
+.ceo-mod-card__headline { font-size: 0.8125rem; color: #64748b; }
+.ceo-mod-card__period { font-size: 0.72rem; color: #94a3b8; margin-top: 0.2rem; }
+.ceo-mod-card__link { border-radius: 0.5rem; }
+.ceo-mod-card--dash .card-body { padding-top: 1rem; }
+.ceo-mod-section-title {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #64748b;
+    margin-bottom: 0.85rem;
+}
+.ceo-mod-kpi {
+    border: none;
+    border-radius: 0.75rem;
+    box-shadow: 0 1px 3px rgba(15,23,42,.06);
+    height: 100%;
+    background: #fff;
+}
+.ceo-mod-kpi__label {
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #64748b;
+    margin-bottom: 0.35rem;
+}
+.ceo-mod-kpi__value {
+    font-size: 1.35rem;
+    font-weight: 700;
+    color: #0f172a;
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+}
+.ceo-mod-kpi__delta { font-size: 0.75rem; font-weight: 600; margin-top: 0.25rem; }
+.ceo-mod-kpi__delta--up { color: #059669; }
+.ceo-mod-kpi__delta--down { color: #dc2626; }
+.ceo-mod-kpi__delta--neutral { color: #64748b; }
+.ceo-mod-subtitle {
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #94a3b8;
+    margin-bottom: 0.5rem;
+}
+.ceo-mod-watch {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.65rem;
+    padding: 0.75rem 0.9rem;
+    font-size: 0.8125rem;
+    color: #334155;
+}
+.ceo-mod-watch li { margin-bottom: 0.3rem; }
+.ceo-mod-watch li:last-child { margin-bottom: 0; }
+.ceo-mod-metrics {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(105px, 1fr));
+    gap: 0.55rem;
+}
+.ceo-mod-metric {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.6rem;
+    padding: 0.55rem 0.65rem;
+    text-align: center;
+}
+.ceo-mod-metric__val { font-weight: 700; font-size: 1rem; color: #0f172a; font-variant-numeric: tabular-nums; }
+.ceo-mod-metric__lbl { font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.04em; color: #64748b; margin-top: 0.15rem; }
+
+.ceo-flag-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.2rem 0.7rem;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.ceo-flag-pill--green { background: #dcfce7; color: #166534; }
+.ceo-flag-pill--yellow { background: #fef3c7; color: #92400e; }
+.ceo-flag-pill--red { background: #fee2e2; color: #991b1b; }
+
+.ceo-status-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+.ceo-status-chip {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-width: 78px;
+    padding: 0.45rem 0.7rem;
+    border-radius: 0.6rem;
+    border: 1px solid transparent;
+}
+.ceo-status-chip__val { font-size: 1.05rem; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.ceo-status-chip__lbl { font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.04em; margin-top: 0.15rem; text-align: center; }
+.ceo-status-chip--success { background: #ecfdf5; border-color: #a7f3d0; color: #065f46; }
+.ceo-status-chip--warning { background: #fffbeb; border-color: #fde68a; color: #92400e; }
+.ceo-status-chip--danger { background: #fef2f2; border-color: #fecaca; color: #991b1b; }
+.ceo-status-chip--info { background: #eff6ff; border-color: #bfdbfe; color: #1e40af; }
+.ceo-status-chip--secondary { background: #f8fafc; border-color: #e2e8f0; color: #475569; }
+.ceo-status-chip--primary { background: #eef2ff; border-color: #c7d2fe; color: #3730a3; }
+
+.ceo-dash-card {
+    border: none;
+    border-radius: 1rem;
+    box-shadow: 0 1px 3px rgba(15,23,42,.06);
+    margin-bottom: 1.25rem;
+}
+.ceo-dash-card__header {
+    background: linear-gradient(180deg, #fff 0%, #f8fafc 100%);
+    border-bottom: 1px solid #e2e8f0;
+    padding: 1rem 1.25rem;
+}
+.ceo-dash-card__note { font-size: 0.78rem; color: #64748b; margin: 0; }
+.ceo-exec-metric-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 0.45rem 0;
+    border-bottom: 1px solid #f1f5f9;
+    font-size: 0.875rem;
+    gap: 1rem;
+}
+.ceo-exec-metric-row:last-child { border-bottom: none; }
+.ceo-table-wrap, .ceo-exec-table-wrap { overflow-x: auto; }
+.ceo-table-wrap .table, .ceo-exec-table-wrap .table { font-size: 0.78rem; white-space: nowrap; }
+.ceo-po-chart-wrap { position: relative; height: 220px; }
+.ceo-po-bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.5rem;
+    min-height: 180px;
+    padding-top: 0.5rem;
+}
+.ceo-po-bar-col { flex: 1; min-width: 0; text-align: center; }
+.ceo-po-bar-track {
+    height: 120px;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    margin-bottom: 0.35rem;
+}
+.ceo-po-bar-fill {
+    width: 100%;
+    max-width: 2.5rem;
+    min-height: 4px;
+    background: linear-gradient(180deg, #1e3a5f 0%, #3b82f6 100%);
+    border-radius: 4px 4px 0 0;
+    transition: height .2s ease;
+}
+.ceo-po-bar-label { font-size: 0.65rem; color: #64748b; font-weight: 600; }
+.ceo-po-bar-val { font-size: 0.62rem; color: #94a3b8; margin-top: 0.15rem; font-variant-numeric: tabular-nums; }
+.ceo-bill-summary-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.55rem 0.75rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.55rem;
+    margin-bottom: 0.45rem;
+    font-size: 0.8125rem;
+}
+.ceo-bill-summary-row__status { font-weight: 600; }
+.ceo-section-heading {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #64748b;
+    margin-bottom: 0.85rem;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+</style>
+
+<!-- Filters -->
+<form method="get" class="ceo-exec-filters mb-4" id="ceo-exec-filter-form">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <div>
+            <h6 class="fw-bold mb-0"><i class="fas fa-filter me-2 text-primary"></i>Executive filters</h6>
+            <p class="text-muted small mb-0">{{ ceo_filters.period_label }} · single company · read-only reports</p>
+        </div>
+        <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-search me-1"></i>Apply</button>
+            <a href="{% url 'settings:ceo_dashboard' %}" class="btn btn-outline-secondary btn-sm">Reset</a>
+        </div>
+    </div>
+    <div class="row g-2">
+        <div class="col-md-2 col-sm-4">
+            <label class="form-label small fw-semibold mb-1">Date range</label>
+            <select name="period" class="form-select form-select-sm" id="ceo-period-select">
+                {% for val, lbl in exec_report.filter_choices.periods %}
+                <option value="{{ val }}" {% if ceo_filters.period == val %}selected{% endif %}>{{ lbl }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-2 col-sm-4 ceo-custom-dates {% if ceo_filters.period != 'custom' %}d-none{% endif %}">
+            <label class="form-label small fw-semibold mb-1">From</label>
+            <input type="date" name="date_from" class="form-control form-control-sm" value="{{ ceo_filters.date_from|date:'Y-m-d' }}">
+        </div>
+        <div class="col-md-2 col-sm-4 ceo-custom-dates {% if ceo_filters.period != 'custom' %}d-none{% endif %}">
+            <label class="form-label small fw-semibold mb-1">To</label>
+            <input type="date" name="date_to" class="form-control form-control-sm" value="{{ ceo_filters.date_to|date:'Y-m-d' }}">
+        </div>
+        <div class="col-md-2 col-sm-4">
+            <label class="form-label small fw-semibold mb-1">Service line</label>
+            <select name="service_line" class="form-select form-select-sm">
+                {% for val, lbl in exec_report.filter_choices.service_lines %}
+                <option value="{{ val }}" {% if ceo_filters.service_line == val %}selected{% endif %}>{{ lbl }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-2 col-sm-4">
+            <label class="form-label small fw-semibold mb-1">Department</label>
+            <select name="department" class="form-select form-select-sm">
+                {% for val, lbl in exec_report.filter_choices.departments %}
+                <option value="{{ val }}" {% if ceo_filters.department == val %}selected{% endif %}>{{ lbl }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-2 col-sm-4">
+            <label class="form-label small fw-semibold mb-1">Salesperson</label>
+            <select name="salesperson" class="form-select form-select-sm">
+                <option value="">All</option>
+                {% for emp in exec_report.filter_choices.salespeople %}
+                <option value="{{ emp.pk }}" {% if ceo_filters.salesperson_id == emp.pk %}selected{% endif %}>{{ emp.full_name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-2 col-sm-4">
+            <label class="form-label small fw-semibold mb-1">Client type</label>
+            <select name="client_type" class="form-select form-select-sm">
+                {% for val, lbl in exec_report.filter_choices.client_types %}
+                <option value="{{ val }}" {% if ceo_filters.client_type == val %}selected{% endif %}>{{ lbl }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-2 col-sm-4">
+            <label class="form-label small fw-semibold mb-1">Project status</label>
+            <select name="project_status" class="form-select form-select-sm">
+                {% for val, lbl in exec_report.filter_choices.project_statuses %}
+                <option value="{{ val }}" {% if ceo_filters.project_status == val %}selected{% endif %}>{{ lbl }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-2 col-sm-4">
+            <label class="form-label small fw-semibold mb-1">Approval status</label>
+            <select name="approval_status" class="form-select form-select-sm">
+                {% for val, lbl in exec_report.filter_choices.approval_statuses %}
+                <option value="{{ val }}" {% if ceo_filters.approval_status == val %}selected{% endif %}>{{ lbl }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </div>
+</form>
+
+<!-- Executive summary KPIs -->
+<section class="mb-4">
+    <p class="ceo-section-heading"><i class="fas fa-th-large"></i> Executive summary</p>
+    <div class="ceo-exec-kpi-grid">
+        {% for card in exec_report.summary_cards %}
+        <div class="ceo-exec-kpi{% if card.alert %} ceo-exec-kpi--alert{% endif %}">
+            <div class="ceo-exec-kpi__label">{{ card.label }}</div>
+            <div class="ceo-exec-kpi__value">
+                {% if card.empty %}—
+                {% elif card.format == 'money' %}{{ currency }} {{ card.value|floatformat:0|intcomma }}
+                {% elif card.format == 'pct' %}{{ card.value|floatformat:1 }}%
+                {% elif card.format == 'text' %}{{ card.value }}
+                {% else %}{{ card.value|floatformat:0|intcomma }}{% endif %}
+            </div>
+            {% if card.hint %}<div class="ceo-exec-kpi__hint">{{ card.hint }}</div>{% endif %}
+        </div>
+        {% endfor %}
+    </div>
+</section>
+
+<!-- Sales (by module) -->
+<p class="ceo-section-heading"><i class="fas fa-chart-line"></i> Sales · module reports</p>
+{% for mod in exec_report.sales_modules %}
+{% include 'settings/partials/ceo_exec_module_card.html' with mod=mod %}
+{% endfor %}
+
+<!-- Salesperson performance -->
+<section class="card ceo-dash-card">
+    <div class="card-header ceo-dash-card__header">
+        <h6 class="fw-bold mb-0"><i class="fas fa-user-tie me-2 text-primary"></i>Salesperson performance</h6>
+    </div>
+    <div class="card-body p-0 ceo-exec-table-wrap">
+        <table class="table table-sm ceo-table mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th class="ps-3">Salesperson</th>
+                    <th class="text-end">Target</th>
+                    <th class="text-end">Achieved</th>
+                    <th class="text-end">%</th>
+                    <th class="text-center">Leads</th>
+                    <th class="text-center">Quotes</th>
+                    <th class="text-end">Quote value</th>
+                    <th class="text-center">Orders</th>
+                    <th class="text-end">Order value</th>
+                    <th class="text-center">AMC new</th>
+                    <th class="text-center">AMC renew</th>
+                    <th class="text-end">Collection</th>
+                    <th>Incentive</th>
+                    <th class="pe-3">CRM</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for row in exec_report.salespeople %}
+            <tr>
+                <td class="ps-3 fw-medium">{{ row.name }}</td>
+                <td class="text-end">{{ currency }} {{ row.target|floatformat:0|intcomma }}</td>
+                <td class="text-end">{{ currency }} {{ row.achieved|floatformat:0|intcomma }}</td>
+                <td class="text-end {% if row.achievement_pct >= 90 %}text-success{% elif row.achievement_pct < 70 %}text-danger{% endif %}">{{ row.achievement_pct }}%</td>
+                <td class="text-center">{{ row.leads }}</td>
+                <td class="text-center">{{ row.quotations }}</td>
+                <td class="text-end">{{ currency }} {{ row.quotation_value|floatformat:0|intcomma }}</td>
+                <td class="text-center">{{ row.orders }}</td>
+                <td class="text-end">{{ currency }} {{ row.order_value|floatformat:0|intcomma }}</td>
+                <td class="text-center">{{ row.amc_new }}</td>
+                <td class="text-center">{{ row.amc_renewed }}</td>
+                <td class="text-end">{{ currency }} {{ row.collection|floatformat:0|intcomma }}</td>
+                <td class="small">
+                    {% if row.incentive_eligible %}<span class="text-success">Eligible</span>{% else %}<span class="text-muted">—</span>{% endif %}
+                    {% if row.incentive_pending %}<span class="text-warning ms-1">Pending</span>{% endif %}
+                </td>
+                <td class="pe-3 small">{{ row.crm_updated }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="14" class="text-muted text-center py-3">No salesperson activity in this period.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<!-- Operations (by module) -->
+<p class="ceo-section-heading mt-2"><i class="fas fa-hard-hat"></i> Operations · module reports</p>
+{% for mod in exec_report.ops_modules %}
+{% include 'settings/partials/ceo_exec_module_card.html' with mod=mod %}
+{% endfor %}
+
+<!-- HR KPI performance -->
+<section class="card ceo-dash-card">
+    <div class="card-header ceo-dash-card__header">
+        <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
+            <div>
+                <h6 class="fw-bold mb-0">
+                    <i class="fas fa-users me-2 text-primary"></i>HR · KPI performance
+                    <span class="ceo-flag-pill ms-2 {{ exec_report.hr_kpi.flag_display.class }}">
+                        <i class="fas {{ exec_report.hr_kpi.flag_display.icon }} me-1"></i>{{ exec_report.hr_kpi.flag_display.label }}
+                    </span>
+                </h6>
+                <p class="ceo-dash-card__note mt-1 mb-0">{{ exec_report.hr_kpi.headline }}</p>
+            </div>
+            <a href="{{ exec_report.hr_kpi.url }}" class="btn btn-outline-secondary btn-sm" target="_blank" rel="noopener">
+                HR KPI dashboard <i class="fas fa-external-link-alt ms-1"></i>
+            </a>
+        </div>
+    </div>
+    <div class="card-body">
+        <ul class="ceo-mod-watch mb-3 ps-3">
+            {% for w in exec_report.hr_kpi.watch %}
+            <li>{{ w }}</li>
+            {% endfor %}
+        </ul>
+        {% if exec_report.hr_kpi.track_highlights %}
+        <div class="row g-3 mb-3">
+            {% for t in exec_report.hr_kpi.track_highlights %}
+            <div class="col-md-4">
+                <div class="ceo-mod-metric h-100 text-start p-2">
+                    <div class="small fw-semibold text-muted text-uppercase mb-1">{{ t.track }}</div>
+                    <div class="small"><span class="text-success fw-semibold">Best:</span> {{ t.best_name }} ({{ t.best_pct }}%)</div>
+                    <div class="small text-muted">{{ t.best_breakdown }}</div>
+                    <div class="small mt-1"><span class="text-danger fw-semibold">Lowest:</span> {{ t.worst_name }} ({{ t.worst_pct }}%)</div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+        <div class="row g-3">
+            <div class="col-lg-6">
+                <h6 class="small fw-semibold text-uppercase text-success mb-2">Top performers</h6>
+                <div class="ceo-exec-table-wrap">
+                    <table class="table table-sm ceo-table mb-0">
+                        <thead class="table-light"><tr><th class="ps-3">Employee</th><th>Dept</th><th>Score</th><th class="pe-3">Tracks</th></tr></thead>
+                        <tbody>
+                        {% for row in exec_report.hr_kpi.best %}
+                        <tr>{% for cell in row.cells %}<td {% if forloop.first %}class="ps-3 fw-medium"{% elif forloop.last %}class="pe-3 small"{% endif %}>{{ cell }}</td>{% endfor %}</tr>
+                        {% empty %}<tr><td colspan="4" class="text-muted ps-3">No KPI scores yet.</td></tr>{% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="col-lg-6">
+                <h6 class="small fw-semibold text-uppercase text-danger mb-2">Needs support</h6>
+                <div class="ceo-exec-table-wrap">
+                    <table class="table table-sm ceo-table mb-0">
+                        <thead class="table-light"><tr><th class="ps-3">Employee</th><th>Dept</th><th>Score</th><th class="pe-3">Tracks</th></tr></thead>
+                        <tbody>
+                        {% for row in exec_report.hr_kpi.worst %}
+                        <tr>{% for cell in row.cells %}<td {% if forloop.first %}class="ps-3 fw-medium"{% elif forloop.last %}class="pe-3 small"{% endif %}>{{ cell }}</td>{% endfor %}</tr>
+                        {% empty %}<tr><td colspan="4" class="text-muted ps-3">—</td></tr>{% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- AMC -->
+<section class="card ceo-dash-card">
+    <div class="card-header ceo-dash-card__header">
+        <h6 class="fw-bold mb-0"><i class="fas fa-file-contract me-2 text-primary"></i>AMC dashboard</h6>
+        <p class="ceo-dash-card__note mt-1 mb-0">Contracts · PPM inspections · support tickets</p>
+    </div>
+    <div class="card-body">
+        <div class="row g-3 mb-3">
+            {% for m in exec_report.amc.metrics %}
+            <div class="col-6 col-md-4 col-lg-3 col-xl-2">
+                <div class="ceo-exec-kpi h-100">
+                    <div class="ceo-exec-kpi__label">{{ m.0 }}</div>
+                    <div class="ceo-exec-kpi__value">
+                        {% if m.2 == 'money' %}{{ currency }} {{ m.1|floatformat:0|intcomma }}{% else %}{{ m.1 }}{% endif %}
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% if exec_report.amc.due_rows %}
+        <h6 class="small fw-semibold text-uppercase text-muted mb-2">Renewals due (90 days)</h6>
+        <div class="ceo-exec-table-wrap">
+            <table class="table table-sm ceo-table mb-0">
+                <thead><tr><th>Contract</th><th>Customer</th><th class="text-end">Value</th><th>End date</th><th class="text-end">Days left</th><th>Follow-up owner</th></tr></thead>
+                <tbody>
+                {% for r in exec_report.amc.due_rows %}
+                <tr>
+                    <td>{{ r.contract }}</td>
+                    <td>{{ r.customer|truncatechars:28 }}</td>
+                    <td class="text-end">{{ currency }} {{ r.value|floatformat:0|intcomma }}</td>
+                    <td>{{ r.end_date|date:"d/m/Y" }}</td>
+                    <td class="text-end {% if r.days_left <= 30 %}text-danger fw-semibold{% endif %}">{{ r.days_left }}</td>
+                    <td class="small">{{ r.owner|truncatechars:20 }}</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+    </div>
+</section>
+
+<!-- Finance -->
+<section class="card ceo-dash-card">
+    <div class="card-header ceo-dash-card__header">
+        <h6 class="fw-bold mb-0"><i class="fas fa-coins me-2 text-primary"></i>Finance &amp; collection</h6>
+    </div>
+    <div class="card-body">
+        <div class="row g-4">
+            <div class="col-lg-5">
+                {% for m in exec_report.finance.metrics %}
+                <div class="ceo-exec-metric-row">
+                    <span class="text-muted">{{ m.0 }}</span>
+                    <span class="fw-semibold">
+                        {% if m.2 == 'pct' %}{{ m.1|floatformat:1 }}%
+                        {% else %}{{ currency }} {{ m.1|floatformat:0|intcomma }}{% endif %}
+                    </span>
+                </div>
+                {% endfor %}
+            </div>
+            <div class="col-lg-7">
+                <h6 class="small fw-semibold text-uppercase text-muted mb-2">Top 20 outstanding clients</h6>
+                <div class="ceo-exec-table-wrap">
+                    <table class="table table-sm ceo-table mb-0">
+                        <thead><tr><th>Client</th><th class="text-end">Outstanding</th><th class="text-end">Days overdue</th><th>Follow-up owner</th><th>Promise date</th></tr></thead>
+                        <tbody>
+                        {% for c in exec_report.finance.top_outstanding %}
+                        <tr>
+                            <td>{{ c.name|truncatechars:28 }}</td>
+                            <td class="text-end">{{ currency }} {{ c.amount|floatformat:0|intcomma }}</td>
+                            <td class="text-end {% if c.days_overdue > 60 %}text-danger{% endif %}">{{ c.days_overdue }}</td>
+                            <td class="small">{{ c.owner|truncatechars:16 }}</td>
+                            <td>{{ c.promise_date }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="5" class="text-muted">No overdue receivables.</td></tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Purchase dashboard -->
+<p class="ceo-section-heading mt-2"><i class="fas fa-shopping-cart"></i> Purchase dashboard</p>
+<section class="card ceo-dash-card">
+    {% with pd=exec_report.purchase_dashboard %}
+    <div class="card-header ceo-dash-card__header">
+        <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 w-100">
+            <div>
+                <h6 class="fw-bold mb-0">
+                    Purchase orders &amp; vendor bills
+                    <span class="ceo-flag-pill ms-2 {{ pd.flag_display.class }}">
+                        <i class="fas {{ pd.flag_display.icon }} me-1"></i>{{ pd.flag_display.label }}
+                    </span>
+                </h6>
+                <p class="ceo-dash-card__note mt-1 mb-0">{{ pd.headline }}</p>
+            </div>
+            <a href="{{ pd.url }}" class="btn btn-sm btn-outline-dark" target="_blank" rel="noopener">Open purchase <i class="fas fa-arrow-up-right-from-square ms-1"></i></a>
+        </div>
+    </div>
+    <div class="card-body">
+        {% if pd.status_counts %}
+        <div class="ceo-status-chips mb-3">
+            {% for s in pd.status_counts %}
+            <div class="ceo-status-chip ceo-status-chip--{{ s.tone }}">
+                <span class="ceo-status-chip__val">{{ s.value }}</span>
+                <span class="ceo-status-chip__lbl">{{ s.label }}</span>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+        <div class="row g-3 mb-4">
+            {% for kpi in pd.kpis %}
+            <div class="col-6 col-md-3">
+                <div class="ceo-exec-kpi h-100{% if kpi.alert %} ceo-exec-kpi--alert{% endif %}">
+                    <div class="ceo-exec-kpi__label">{{ kpi.label }}</div>
+                    <div class="ceo-exec-kpi__value">
+                        {% if kpi.format == 'money' %}{{ currency }} {{ kpi.value|floatformat:0|intcomma }}
+                        {% else %}{{ kpi.value|floatformat:0|intcomma }}{% endif %}
+                    </div>
+                    {% if kpi.hint %}<div class="ceo-exec-kpi__hint">{{ kpi.hint }}</div>{% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        <div class="row g-4">
+            <div class="col-lg-5">
+                <h6 class="ceo-mod-subtitle">PO value · last 6 months</h6>
+                {% if pd.monthly_po %}
+                <div class="ceo-po-bars">
+                    {% for m in pd.monthly_po %}
+                    <div class="ceo-po-bar-col">
+                        <div class="ceo-po-bar-track">
+                            <div class="ceo-po-bar-fill" style="height: {{ m.height_pct }}%;" title="{{ currency }} {{ m.value|floatformat:0|intcomma }}"></div>
+                        </div>
+                        <div class="ceo-po-bar-label">{{ m.label }}</div>
+                        <div class="ceo-po-bar-val">{{ currency }} {{ m.value|floatformat:0|intcomma }}</div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="text-muted small mb-0">No PO data in the last 6 months.</p>
+                {% endif %}
+            </div>
+            <div class="col-lg-7">
+                <h6 class="ceo-mod-subtitle">Vendor bills summary (period)</h6>
+                {% for row in pd.vendor_bill_summary %}
+                <div class="ceo-bill-summary-row">
+                    <span class="ceo-bill-summary-row__status">{{ row.status }}</span>
+                    <span>{{ row.count }} bill(s) · {{ currency }} {{ row.value|floatformat:0|intcomma }}</span>
+                </div>
+                {% empty %}
+                <p class="text-muted small mb-0">No vendor bills in selected period.</p>
+                {% endfor %}
+            </div>
+        </div>
+        <div class="row g-4 mt-1">
+            <div class="col-lg-6">
+                <h6 class="ceo-mod-subtitle">Pending purchase orders</h6>
+                <div class="ceo-table-wrap">
+                    <table class="table table-sm ceo-table mb-0">
+                        <thead><tr><th class="ps-3">PO</th><th>Vendor</th><th>Project</th><th>Status</th><th class="text-end pe-3">Amount</th></tr></thead>
+                        <tbody>
+                        {% for row in pd.pending_po_rows %}
+                        <tr>
+                            <td class="ps-3 fw-medium">{{ row.number }}</td>
+                            <td>{{ row.vendor }}</td>
+                            <td>{{ row.project }}</td>
+                            <td><span class="badge bg-warning-subtle text-warning-emphasis">{{ row.status }}</span></td>
+                            <td class="text-end pe-3">{{ currency }} {{ row.amount|floatformat:0|intcomma }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="5" class="text-muted text-center py-3">No open purchase orders.</td></tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="col-lg-6">
+                <h6 class="ceo-mod-subtitle">Pending vendor bills</h6>
+                <div class="ceo-table-wrap">
+                    <table class="table table-sm ceo-table mb-0">
+                        <thead><tr><th class="ps-3">Bill</th><th>Vendor</th><th>Status</th><th>Due</th><th class="text-end pe-3">Balance</th></tr></thead>
+                        <tbody>
+                        {% for row in pd.pending_bill_rows %}
+                        <tr>
+                            <td class="ps-3 fw-medium">{{ row.number }}</td>
+                            <td>{{ row.vendor }}</td>
+                            <td><span class="badge bg-danger-subtle text-danger-emphasis">{{ row.status }}</span></td>
+                            <td>{{ row.due_date|date:"d/m/Y" }}</td>
+                            <td class="text-end pe-3">{{ currency }} {{ row.balance|floatformat:0|intcomma }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="5" class="text-muted text-center py-3">No unpaid vendor bills.</td></tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endwith %}
+</section>
+
+<!-- Inventory dashboard -->
+<p class="ceo-section-heading"><i class="fas fa-boxes-stacked"></i> Inventory dashboard</p>
+<section class="card ceo-dash-card mb-4">
+    {% with inv=exec_report.inventory_dashboard %}
+    <div class="card-header ceo-dash-card__header">
+        <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 w-100">
+            <div>
+                <h6 class="fw-bold mb-0">
+                    Stock &amp; material requests
+                    <span class="ceo-flag-pill ms-2 {{ inv.flag_display.class }}">
+                        <i class="fas {{ inv.flag_display.icon }} me-1"></i>{{ inv.flag_display.label }}
+                    </span>
+                </h6>
+                <p class="ceo-dash-card__note mt-1 mb-0">{{ inv.headline }}</p>
+            </div>
+            <a href="{{ inv.url }}" class="btn btn-sm btn-outline-dark" target="_blank" rel="noopener">Open inventory <i class="fas fa-arrow-up-right-from-square ms-1"></i></a>
+        </div>
+    </div>
+    <div class="card-body">
+        {% if inv.status_counts %}
+        <div class="ceo-status-chips mb-3">
+            {% for s in inv.status_counts %}
+            <div class="ceo-status-chip ceo-status-chip--{{ s.tone }}">
+                <span class="ceo-status-chip__val">{{ s.value }}</span>
+                <span class="ceo-status-chip__lbl">{{ s.label }}</span>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+        <div class="row g-3">
+            {% for kpi in inv.kpis %}
+            <div class="col-6 col-md-4 col-xl">
+                <div class="ceo-exec-kpi h-100{% if kpi.alert %} ceo-exec-kpi--alert{% endif %}">
+                    <div class="ceo-exec-kpi__label">{{ kpi.label }}</div>
+                    <div class="ceo-exec-kpi__value">
+                        {% if kpi.format == 'money' %}{{ currency }} {{ kpi.value|floatformat:0|intcomma }}
+                        {% elif kpi.format == 'qty' %}{{ kpi.value|floatformat:0|intcomma }}
+                        {% else %}{{ kpi.value|floatformat:0|intcomma }}{% endif %}
+                    </div>
+                    {% if kpi.hint %}<div class="ceo-exec-kpi__hint">{{ kpi.hint }}</div>{% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endwith %}
+</section>
+
+<!-- Purchase requests detail -->
+<section class="card ceo-dash-card mb-4">
+    <div class="card-header ceo-dash-card__header">
+        <h6 class="fw-bold mb-0"><i class="fas fa-clipboard-list me-2 text-primary"></i>Purchase requests (period)</h6>
+        <p class="ceo-dash-card__note mt-1 mb-0">PR lines · stock check · PO linkage</p>
+    </div>
+    <div class="card-body p-0 ceo-exec-table-wrap">
+        <table class="table table-sm ceo-table mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th class="ps-3">PR #</th>
+                    <th>Job</th>
+                    <th>Requested by</th>
+                    <th>Category</th>
+                    <th class="text-end">Qty</th>
+                    <th>Stock</th>
+                    <th>Supplier</th>
+                    <th>LPO</th>
+                    <th class="text-end">Amount</th>
+                    <th>Approval</th>
+                    <th>Delivery</th>
+                    <th class="pe-3">Emergency</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for row in exec_report.procurement %}
+            <tr>
+                <td class="ps-3 fw-medium">{{ row.pr_number }}</td>
+                <td>{{ row.job_number }}</td>
+                <td class="small">{{ row.requested_by|truncatechars:16 }}</td>
+                <td class="small">{{ row.category|truncatechars:16 }}</td>
+                <td class="text-end">{{ row.quantity|floatformat:0 }}</td>
+                <td>{% if row.stock_available == 'Yes' %}<span class="badge bg-success-subtle text-success">Yes</span>{% else %}<span class="badge bg-danger-subtle text-danger">No</span>{% endif %}</td>
+                <td class="small">{{ row.supplier|truncatechars:14 }}</td>
+                <td>{{ row.lpo_issued }}</td>
+                <td class="text-end">{{ currency }} {{ row.amount|floatformat:0|intcomma }}</td>
+                <td>
+                    {% if row.approved_by == 'Rejected' %}<span class="badge bg-danger-subtle text-danger">Rejected</span>
+                    {% elif row.approved_by == 'Approved' %}<span class="badge bg-success-subtle text-success">Approved</span>
+                    {% elif row.approval_required == 'Yes' %}<span class="badge bg-warning-subtle text-warning">Pending</span>
+                    {% else %}<span class="badge bg-secondary-subtle text-secondary">{{ row.approved_by|truncatechars:12 }}</span>{% endif %}
+                </td>
+                <td>{{ row.delivery_expected|date:"d/m/Y"|default:"—" }}</td>
+                <td class="pe-3">{% if row.emergency == 'Yes' %}<span class="badge bg-danger">Yes</span>{% else %}—{% endif %}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="12" class="text-muted text-center py-3">No purchase requests in period.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<script>
+(function() {
+    var sel = document.getElementById('ceo-period-select');
+    if (sel) {
+        sel.addEventListener('change', function() {
+            document.querySelectorAll('.ceo-custom-dates').forEach(function(el) {
+                el.classList.toggle('d-none', sel.value !== 'custom');
+            });
+        });
+    }
+})();
+</script>

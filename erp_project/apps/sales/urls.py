@@ -34,6 +34,13 @@ urlpatterns = [
     path('estimates/<int:pk>/convert-quotation/', views.estimate_convert_to_quotation, name='estimate_convert_to_quotation'),
     path('estimates/<int:pk>/pdf/download/', views.estimate_pdf_download, name='estimate_pdf_download'),
     path('estimates/<int:pk>/pdf/', views.estimate_pdf, name='estimate_pdf'),
+    path('estimates/<int:pk>/contract/save/', views.estimate_save_contract, name='estimate_save_contract'),
+    path('estimates/<int:pk>/contract/pdf/', views.estimate_contract_pdf, name='estimate_contract_pdf'),
+    path(
+        'estimates/<int:pk>/contract/pdf/download/',
+        views.estimate_contract_pdf_download,
+        name='estimate_contract_pdf_download',
+    ),
     path(
         'estimates/<int:pk>/revisions/<int:snapshot_id>/',
         views.estimate_revision_detail,
@@ -80,6 +87,10 @@ urlpatterns = [
     path('quotations/<int:pk>/convert/', RedirectView.as_view(pattern_name='sales:estimate_convert', permanent=True)),
     path('quotations/<int:pk>/status/<str:status>/', RedirectView.as_view(pattern_name='sales:estimate_status', permanent=True)),
     path('quotations/<int:pk>/pdf/', RedirectView.as_view(pattern_name='sales:estimate_pdf', permanent=True)),
+    path(
+        'quotations/<int:pk>/contract/pdf/',
+        RedirectView.as_view(pattern_name='sales:estimate_contract_pdf', permanent=True),
+    ),
     path('quotations/<int:pk>/pdf/proforma/', RedirectView.as_view(pattern_name='sales:estimate_proforma_pdf', permanent=True)),
     
     # Invoices

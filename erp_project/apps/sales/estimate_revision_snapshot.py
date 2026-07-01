@@ -62,6 +62,7 @@ def _serialize_estimate_snapshot(estimate: Estimate) -> dict:
         'type_of_occupancy': estimate.type_of_occupancy,
         'client_note': estimate.client_note,
         'terms_and_conditions': estimate.terms_and_conditions,
+        'contract_body': estimate.contract_body,
         'items': items,
     }
 

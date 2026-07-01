@@ -173,7 +173,9 @@ class PurchaseRequestItem(models.Model):
         blank=True,
         related_name='purchase_request_lines',
     )
-    description = models.CharField(max_length=500)
+    brand = models.CharField(max_length=120, blank=True, default='')
+    model = models.CharField(max_length=120, blank=True, default='')
+    description = models.TextField(blank=True, default='')
     quantity = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('1.00'))
     unit = models.CharField(max_length=20, choices=UNIT_CHOICES, default='pcs')
     estimated_price = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
@@ -181,11 +183,28 @@ class PurchaseRequestItem(models.Model):
     
     class Meta:
         ordering = ['id']
-    
+
+    def formatted_line_display(self) -> str:
+        """Brand, model, and description for lists, PDF, and PO conversion."""
+        parts = []
+        if (self.brand or '').strip():
+            parts.append((self.brand or '').strip())
+        if (self.model or '').strip():
+            parts.append((self.model or '').strip())
+        if (self.description or '').strip():
+            parts.append((self.description or '').strip())
+        elif self.inventory_item_id:
+            inv = self.inventory_item
+            parts.append(f'{inv.item_code} — {inv.name}')
+        return ' · '.join(parts) if parts else '—'
+
     def save(self, *args, **kwargs):
         if self.inventory_item_id:
             inv = self.inventory_item
-            self.description = f"{inv.item_code} - {inv.name}"[:500]
+            if not (self.brand or '').strip() and (inv.brand or '').strip():
+                self.brand = inv.brand[:120]
+            if not (self.description or '').strip():
+                self.description = inv.name
         self.total = (self.quantity * self.estimated_price).quantize(Decimal('0.01'))
         super().save(*args, **kwargs)
 
@@ -329,7 +348,9 @@ class PurchaseOrderItem(models.Model):
         blank=True,
         related_name='purchase_order_lines',
     )
-    description = models.CharField(max_length=500)
+    brand = models.CharField(max_length=120, blank=True, default='')
+    model = models.CharField(max_length=120, blank=True, default='')
+    description = models.TextField(blank=True, default='')
     quantity = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('1.00'))
     unit_price = models.DecimalField(max_digits=15, decimal_places=2)
     
@@ -361,6 +382,19 @@ class PurchaseOrderItem(models.Model):
     class Meta:
         ordering = ['id']
 
+    def formatted_line_display(self) -> str:
+        parts = []
+        if (self.brand or '').strip():
+            parts.append((self.brand or '').strip())
+        if (self.model or '').strip():
+            parts.append((self.model or '').strip())
+        if (self.description or '').strip():
+            parts.append((self.description or '').strip())
+        elif self.inventory_item_id:
+            inv = self.inventory_item
+            parts.append(f'{inv.item_code} — {inv.name}')
+        return ' · '.join(parts) if parts else '—'
+
     @property
     def quantity_remaining(self):
         """Qty still to receive for this line."""
@@ -371,7 +405,10 @@ class PurchaseOrderItem(models.Model):
     def save(self, *args, **kwargs):
         if self.inventory_item_id:
             inv = self.inventory_item
-            self.description = f"{inv.item_code} - {inv.name}"[:500]
+            if not (self.brand or '').strip() and (inv.brand or '').strip():
+                self.brand = inv.brand[:120]
+            if not (self.description or '').strip():
+                self.description = inv.name
 
         # Derive VAT rate from Tax Code (No Tax Code = 0%)
         if self.tax_code:

@@ -28,6 +28,10 @@ from apps.core.utils import PermissionChecker
 from apps.settings_app.models import CompanySettings
 
 from .estimate_pdf_render import render_estimate_quotation_pdf_bytes
+from .estimate_contract_pdf_render import (
+    build_estimate_contract_pdf_context,
+    render_estimate_contract_pdf_bytes,
+)
 from .estimate_change_detection import estimate_form_has_changes
 from .estimate_edit_flow import apply_after_estimate_save, EstimateEditApplyResult
 from .estimate_revision_snapshot import maybe_snapshot_before_revision
@@ -463,6 +467,9 @@ QUOTATION_LIST_PAGE_LABELS = {
     'col_won_title': 'Previous quotation won for this company',
     'col_lost_title': 'Previous quotation lost for this company',
     'pdf_button_title': 'Quotation PDF',
+    'contract_col_title': 'Contract',
+    'contract_pdf_title': 'Contract PDF',
+    'contract_empty_title': 'No contract text yet',
     'proforma_ref_label': 'Quotation',
     'proforma_percent_label': 'Percentage of quotation subtotal',
     'status_overrides': {
@@ -1198,6 +1205,7 @@ class EstimateUpdateView(UpdatePermissionMixin, UpdateView):
                 context['items_formset'] = EstimateItemFormSet(instance=self.object, prefix='items')
         else:
             context['items_formset'] = kwargs['items_formset']
+        context.update(_estimate_contract_template_context(self.request, self.object))
         return context
     
     def post(self, request, *args, **kwargs):
@@ -1509,6 +1517,7 @@ class EstimateDetailView(PermissionRequiredMixin, DetailView):
                 Decimal('0.00'),
             )
         context['revision_snapshots'] = list(self.object.revision_snapshots.all())
+        context.update(_estimate_contract_template_context(self.request, self.object))
         from .estimate_public_link import (
             estimate_public_link_eligible,
             public_quotation_url,
@@ -2272,6 +2281,114 @@ def estimate_pdf_download(request, pk):
     )
 
 
+def _estimate_contract_template_context(request, estimate):
+    return {
+        'can_edit_contract': estimate.allows_edit_by(request.user),
+        'contract_save_url': reverse('sales:estimate_save_contract', args=[estimate.pk]),
+        'contract_pdf_url': reverse('sales:estimate_contract_pdf', args=[estimate.pk]),
+    }
+
+
+def _get_estimate_for_contract(request, pk, *, require_edit=False):
+    estimate = get_object_or_404(
+        Estimate.objects.filter(is_active=True).select_related('customer'),
+        pk=pk,
+    )
+    if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'sales', 'view')):
+        return None, JsonResponse({'ok': False, 'error': 'Permission denied.'}, status=403)
+    from apps.core.visibility import user_can_access_estimate
+
+    if not user_can_access_estimate(request.user, estimate):
+        return None, JsonResponse({'ok': False, 'error': 'Permission denied.'}, status=403)
+    if require_edit and not estimate.allows_edit_by(request.user):
+        return None, JsonResponse({'ok': False, 'error': 'You cannot edit this record.'}, status=403)
+    return estimate, None
+
+
+@login_required
+@require_POST
+def estimate_save_contract(request, pk):
+    """Auto-save rich-text contract body (HTML) on estimate / quotation."""
+    estimate, err = _get_estimate_for_contract(request, pk, require_edit=True)
+    if err:
+        return err
+
+    contract_body = (request.POST.get('contract_body') or '').strip()
+    if contract_body in ('<p><br></p>', '<p></p>'):
+        contract_body = ''
+
+    estimate.contract_body = contract_body
+    estimate.save(update_fields=['contract_body', 'updated_at'])
+    return JsonResponse({'ok': True, 'saved_at': estimate.updated_at.isoformat()})
+
+
+@login_required
+def estimate_contract_pdf(request, pk):
+    """Contract-only HTML preview (print / WeasyPrint source)."""
+    estimate = get_object_or_404(
+        Estimate.objects.filter(is_active=True).select_related('customer'),
+        pk=pk,
+    )
+    if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'sales', 'view')):
+        messages.error(request, 'Permission denied.')
+        return redirect('sales:estimate_list')
+    from apps.core.visibility import user_can_access_estimate
+
+    if not user_can_access_estimate(request.user, estimate):
+        messages.error(request, 'You do not have permission to view this estimate.')
+        return redirect('sales:estimate_list')
+
+    context = build_estimate_contract_pdf_context(request, estimate)
+    context['is_pdf'] = False
+    context['contract_download_url'] = reverse('sales:estimate_contract_pdf_download', args=[estimate.pk])
+    return render(request, 'sales/estimate_contract_pdf.html', context)
+
+
+@login_required
+def estimate_contract_pdf_download(request, pk):
+    """Download contract as a standalone PDF file."""
+    estimate = get_object_or_404(
+        Estimate.objects.filter(is_active=True).select_related('customer'),
+        pk=pk,
+    )
+    if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'sales', 'view')):
+        messages.error(request, 'Permission denied.')
+        return redirect('sales:estimate_list')
+    from apps.core.visibility import user_can_access_estimate
+
+    if not user_can_access_estimate(request.user, estimate):
+        messages.error(request, 'You do not have permission to view this estimate.')
+        return redirect('sales:estimate_list')
+
+    try:
+        pdf_bytes, pdf_err = render_estimate_contract_pdf_bytes(request, estimate)
+    except Exception as exc:
+        messages.error(request, f'Could not generate contract PDF: {exc}')
+        return redirect('sales:estimate_contract_pdf', pk=pk)
+
+    if not pdf_bytes:
+        messages.error(request, pdf_err or 'Could not generate contract PDF.')
+        return redirect('sales:estimate_contract_pdf', pk=pk)
+
+    doc_number = estimate.display_estimate_number
+    if estimate.status == 'quotation_won' and estimate.sales_order_number:
+        doc_number = estimate.display_sales_order_number
+    safe_name = ''.join(
+        c for c in doc_number if c.isalnum() or c in ('-', '_')
+    ) or str(estimate.pk)
+    from io import BytesIO
+
+    from django.http import FileResponse
+
+    filename = f'Contract_{safe_name}.pdf'
+    return FileResponse(
+        BytesIO(pdf_bytes),
+        as_attachment=True,
+        filename=filename,
+        content_type='application/pdf',
+    )
+
+
 def _get_estimate_revision_snapshot(request, pk, snapshot_id):
     """Load estimate + revision snapshot with view permission checks."""
     estimate = get_object_or_404(Estimate.objects.filter(is_active=True), pk=pk)
@@ -2954,6 +3071,8 @@ class SalesOrderDetailView(PermissionRequiredMixin, DetailView):
                 (row['line_total'] for row in expense_type_totals),
                 Decimal('0.00'),
             )
+        context.update(_estimate_contract_template_context(self.request, so))
+        context['can_edit_contract'] = False
         return context
 
 

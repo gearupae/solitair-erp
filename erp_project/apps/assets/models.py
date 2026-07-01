@@ -181,6 +181,45 @@ class FixedAsset(BaseModel):
         null=True, blank=True,
         related_name='asset_disposals'
     )
+
+    # Operational / project allocation
+    OPERATIONAL_STATUS_CHOICES = [
+        ('available', 'Available'),
+        ('allocated', 'Allocated'),
+        ('maintenance', 'Under Maintenance'),
+    ]
+    OWNERSHIP_TYPE_CHOICES = [
+        ('owned', 'Owned'),
+        ('rented', 'Rented'),
+    ]
+    operational_status = models.CharField(
+        max_length=20,
+        choices=OPERATIONAL_STATUS_CHOICES,
+        default='available',
+        db_index=True,
+    )
+    current_location = models.CharField(
+        max_length=200,
+        blank=True,
+        help_text='Current site or warehouse location',
+    )
+    cost_per_hour = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        help_text='Internal charge-out rate per hour for project costing',
+    )
+    ownership_type = models.CharField(
+        max_length=20,
+        choices=OWNERSHIP_TYPE_CHOICES,
+        default='owned',
+    )
+    rental_rate_per_day = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        help_text='Daily rental rate when ownership is Rented',
+    )
     
     class Meta:
         ordering = ['-acquisition_date', 'name']
@@ -243,6 +282,38 @@ class FixedAsset(BaseModel):
         months_elapsed = (date.today().year - self.depreciation_start_date.year) * 12 + \
                         (date.today().month - self.depreciation_start_date.month)
         return max(0, self.useful_life_months - months_elapsed)
+
+    @property
+    def depreciation_per_day(self):
+        """Owned equipment daily depreciation for project costing."""
+        if self.useful_life_months <= 0:
+            return Decimal('0.00')
+        return (self.depreciable_amount / (self.useful_life_months * 30)).quantize(Decimal('0.01'))
+
+    @property
+    def effective_hourly_rate(self):
+        """Rate used when allocating to a project."""
+        if self.cost_per_hour and self.cost_per_hour > 0:
+            return self.cost_per_hour
+        if self.ownership_type == 'rented' and self.rental_rate_per_day > 0:
+            return (self.rental_rate_per_day / Decimal('8')).quantize(Decimal('0.01'))
+        daily = self.depreciation_per_day
+        if daily > 0:
+            return (daily / Decimal('8')).quantize(Decimal('0.01'))
+        return Decimal('0.00')
+
+    @property
+    def active_allocation(self):
+        return self.allocations.filter(status='active', is_active=True).first()
+
+    def can_allocate(self):
+        if self.status not in ('active', 'fully_depreciated'):
+            return False
+        if self.operational_status != 'available':
+            return False
+        if self.maintenance_logs.filter(is_active=True, blocks_allocation=True, cleared_at__isnull=True).exists():
+            return False
+        return True
     
     def activate(self, user=None):
         """
@@ -680,3 +751,189 @@ class AssetDepreciation(models.Model):
         if not self.period and self.depreciation_date:
             self.period = self.depreciation_date.strftime('%Y-%m')
         super().save(*args, **kwargs)
+
+
+class EquipmentAllocation(BaseModel):
+    """Project-wise equipment / machinery allocation."""
+
+    STATUS_CHOICES = [
+        ('active', 'Active'),
+        ('returned', 'Returned'),
+        ('transferred', 'Transferred'),
+    ]
+
+    asset = models.ForeignKey(
+        FixedAsset,
+        on_delete=models.CASCADE,
+        related_name='allocations',
+    )
+    project = models.ForeignKey(
+        'projects.Project',
+        on_delete=models.PROTECT,
+        related_name='equipment_allocations',
+    )
+    start_date = models.DateField()
+    expected_end_date = models.DateField(null=True, blank=True)
+    actual_end_date = models.DateField(null=True, blank=True)
+    rate_per_hour = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
+    rate_per_day = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
+    hours_used = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text='Actual hours used; auto-estimated from days if blank',
+    )
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active', db_index=True)
+    allocated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='equipment_allocations_created',
+    )
+    returned_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='equipment_allocations_returned',
+    )
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-start_date', '-pk']
+
+    def __str__(self):
+        return f'{self.asset.asset_number} → {self.project.project_code} ({self.get_status_display()})'
+
+    @property
+    def usage_days(self):
+        end = self.actual_end_date or date.today()
+        if end < self.start_date:
+            return 0
+        return (end - self.start_date).days + 1
+
+    def effective_hours(self):
+        if self.hours_used is not None and self.hours_used >= 0:
+            return self.hours_used
+        return (Decimal(str(self.usage_days)) * Decimal('8')).quantize(Decimal('0.01'))
+
+    def display_cost(self):
+        hours = self.effective_hours()
+        if self.rate_per_hour and self.rate_per_hour > 0:
+            return (hours * self.rate_per_hour).quantize(Decimal('0.01'))
+        if self.rate_per_day and self.rate_per_day > 0:
+            return (Decimal(str(self.usage_days)) * self.rate_per_day).quantize(Decimal('0.01'))
+        return Decimal('0.00')
+
+
+class EquipmentMovementLog(models.Model):
+    """Transfer / allocation movement history."""
+
+    MOVEMENT_TYPES = [
+        ('allocate', 'Allocated to Project'),
+        ('return', 'Returned to Warehouse'),
+        ('transfer', 'Transferred Between Projects'),
+        ('maintenance', 'Sent to Maintenance'),
+        ('maintenance_clear', 'Maintenance Cleared'),
+    ]
+
+    asset = models.ForeignKey(
+        FixedAsset,
+        on_delete=models.CASCADE,
+        related_name='movement_logs',
+    )
+    allocation = models.ForeignKey(
+        EquipmentAllocation,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='movement_logs',
+    )
+    from_project = models.ForeignKey(
+        'projects.Project',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='equipment_movements_from',
+    )
+    to_project = models.ForeignKey(
+        'projects.Project',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='equipment_movements_to',
+    )
+    from_location = models.CharField(max_length=200, blank=True)
+    to_location = models.CharField(max_length=200, blank=True)
+    movement_type = models.CharField(max_length=30, choices=MOVEMENT_TYPES)
+    moved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+    )
+    notes = models.TextField(blank=True)
+    moved_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-moved_at']
+
+    def __str__(self):
+        return f'{self.asset.asset_number} — {self.get_movement_type_display()}'
+
+
+class EquipmentMaintenanceLog(BaseModel):
+    """Maintenance / damage flag — blocks re-allocation until cleared."""
+
+    asset = models.ForeignKey(
+        FixedAsset,
+        on_delete=models.CASCADE,
+        related_name='maintenance_logs',
+    )
+    reason = models.TextField()
+    blocks_allocation = models.BooleanField(default=True)
+    flagged_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='equipment_maintenance_flagged',
+    )
+    cleared_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='equipment_maintenance_cleared',
+    )
+    cleared_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.asset.asset_number} maintenance'
+
+
+class RentalCostLedger(BaseModel):
+    """Rental / usage cost snapshot per allocation (display & audit; not posted to project P&L)."""
+
+    allocation = models.OneToOneField(
+        EquipmentAllocation,
+        on_delete=models.CASCADE,
+        related_name='cost_ledger',
+    )
+    hours_used = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
+    days_used = models.IntegerField(default=0)
+    rate_per_hour = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
+    rate_per_day = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
+    total_cost = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    cost_type = models.CharField(max_length=20, default='owned')  # owned | rented
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.allocation} — AED {self.total_cost}'

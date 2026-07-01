@@ -343,6 +343,8 @@
                 </div>
             </div>
         </div>
+
+        {% include 'sales/includes/estimate_contract_section.html' with estimate=sales_order can_edit_contract=can_edit_contract contract_save_url=contract_save_url contract_pdf_url=contract_pdf_url %}
     </div>
 
     <div class="col-lg-4">

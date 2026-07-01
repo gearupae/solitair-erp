@@ -765,6 +765,50 @@
             </div>
         </div>
         {% endif %}
+
+        {% if show_equipment_card %}
+        <div class="card mb-4 border-0 shadow-sm">
+            <div class="card-header bg-transparent py-3 border-bottom">
+                <h6 class="mb-0 fw-semibold"><i class="fas fa-truck-monster me-2 text-dark"></i>Allocated machinery</h6>
+            </div>
+            <div class="card-body pt-0">
+                <div class="table-responsive">
+                    <table class="table table-sm mb-0 small">
+                        <thead>
+                            <tr>
+                                <th>Equipment</th>
+                                <th class="text-end">Hours</th>
+                                <th class="text-end">Rate/hr</th>
+                                <th class="text-end">Cost</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in equipment_allocation_rows %}
+                            <tr>
+                                <td>
+                                    <a href="{% url 'assets:asset_detail' row.asset.pk %}" class="text-decoration-none fw-medium">{{ row.asset.name }}</a>
+                                    <div class="text-muted">{{ row.asset.asset_number }}</div>
+                                    <div class="text-muted">Since {{ row.allocation.start_date|date:"d/m/Y" }}</div>
+                                </td>
+                                <td class="text-end">{{ row.hours|floatformat:1 }}</td>
+                                <td class="text-end">AED {{ row.rate_per_hour|floatformat:2 }}</td>
+                                <td class="text-end fw-medium">AED {{ row.cost|floatformat:2 }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                        <tfoot class="table-light">
+                            <tr>
+                                <td colspan="3" class="fw-semibold">Machinery usage total</td>
+                                <td class="text-end fw-bold">AED {{ equipment_allocation_total|floatformat:2 }}</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+                <p class="text-muted small mb-0 mt-2">Informational only — not included in project budget or expense totals.</p>
+            </div>
+        </div>
+        {% endif %}
+
         <div class="card mb-4">
             <div class="card-body">
                 <h6 class="mb-3 fw-semibold"><i class="fas fa-flag me-2 text-dark"></i>Status</h6>

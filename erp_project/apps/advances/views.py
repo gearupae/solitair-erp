@@ -268,6 +268,65 @@ def customer_advance_apply(request, pk):
 # MODULE 2 — Vendor Advance
 # ===========================================================================
 
+def _vendor_purchased_items(vendor, limit: int = 100) -> list[dict]:
+    """Unique line items from this vendor's purchase orders (qty rolled up)."""
+    from apps.purchase.models import PurchaseOrderItem
+
+    lines = (
+        PurchaseOrderItem.objects.filter(
+            purchase_order__vendor=vendor,
+            purchase_order__is_active=True,
+        )
+        .exclude(purchase_order__status='cancelled')
+        .select_related('purchase_order', 'inventory_item')
+        .order_by('-purchase_order__order_date', '-pk')
+    )
+
+    grouped: dict[str, dict] = {}
+    for line in lines:
+        if line.inventory_item_id:
+            key = f'inv:{line.inventory_item_id}'
+        else:
+            key = '|'.join([
+                (line.brand or '').strip().lower(),
+                (line.model or '').strip().lower(),
+                (line.description or '').strip().lower(),
+            ])
+            if key == '||':
+                continue
+
+        if key not in grouped:
+            inv = line.inventory_item
+            grouped[key] = {
+                'label': line.formatted_line_display(),
+                'brand': (line.brand or '').strip(),
+                'model': (line.model or '').strip(),
+                'description': (line.description or '').strip(),
+                'inventory_code': inv.item_code if inv else '',
+                'total_qty': Decimal('0'),
+                'order_count': 0,
+                'last_order_date': line.purchase_order.order_date,
+                'last_po_number': line.purchase_order.po_number,
+                'last_po_pk': line.purchase_order_id,
+            }
+
+        row = grouped[key]
+        row['total_qty'] += line.quantity or Decimal('0')
+        row['order_count'] += 1
+        po_date = line.purchase_order.order_date
+        if po_date and (not row['last_order_date'] or po_date >= row['last_order_date']):
+            row['last_order_date'] = po_date
+            row['last_po_number'] = line.purchase_order.po_number
+            row['last_po_pk'] = line.purchase_order_id
+
+    rows = sorted(
+        grouped.values(),
+        key=lambda r: (r['last_order_date'] or date.min, r['label']),
+        reverse=True,
+    )
+    return rows[:limit]
+
+
 @login_required
 def vendor_detail(request, pk):
     """
@@ -326,6 +385,7 @@ def vendor_detail(request, pk):
         'form': form,
         'recent_orders': recent_orders,
         'recent_bills': recent_bills,
+        'purchased_items': _vendor_purchased_items(vendor),
         'bill_retention_rows': bill_retention_summary['rows'],
         'vendor_total_retention': bill_retention_summary['total_retention'],
         'can_create': _can(request.user, 'purchase', 'create'),

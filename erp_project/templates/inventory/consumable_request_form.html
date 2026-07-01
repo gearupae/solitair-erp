@@ -4,7 +4,7 @@
 <div class="page-header">
     <nav aria-label="breadcrumb">
         <ol class="breadcrumb mb-2">
-            <li class="breadcrumb-item"><a href="{% url 'inventory:consumable_request_list' %}">Consumable Requests</a></li>
+            <li class="breadcrumb-item"><a href="{% url 'inventory:consumable_request_list' %}">Item Request</a></li>
             {% if is_edit and request_obj %}
             <li class="breadcrumb-item"><a href="{% url 'inventory:consumable_request_detail' request_obj.pk %}">{{ request_obj.request_number }}</a></li>
             <li class="breadcrumb-item active">Edit</li>

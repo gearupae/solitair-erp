@@ -107,6 +107,8 @@
                     <table class="table mb-0">
                         <thead>
                             <tr>
+                                <th>Brand</th>
+                                <th>Model</th>
                                 <th>Description</th>
                                 <th class="text-center">Qty</th>
                                 <th>Unit</th>
@@ -117,19 +119,21 @@
                         <tbody>
                             {% for item in pr.items.all %}
                             <tr>
-                                <td>{{ item.description }}</td>
+                                <td>{{ item.brand|default:"—" }}</td>
+                                <td>{{ item.model|default:"—" }}</td>
+                                <td>{{ item.description|default:"—" }}</td>
                                 <td class="text-center">{{ item.quantity }}</td>
                                 <td>{{ item.get_unit_display }}</td>
                                 <td class="text-end">{{ item.estimated_price|floatformat:2 }}</td>
                                 <td class="text-end">{{ item.total|floatformat:2 }}</td>
                             </tr>
                             {% empty %}
-                            <tr><td colspan="5" class="text-center py-3 text-muted">No items</td></tr>
+                            <tr><td colspan="7" class="text-center py-3 text-muted">No items</td></tr>
                             {% endfor %}
                         </tbody>
                         <tfoot>
                             <tr class="fw-bold">
-                                <td colspan="4" class="text-end">Total (AED)</td>
+                                <td colspan="6" class="text-end">Total (AED)</td>
                                 <td class="text-end">{{ pr.total_amount|floatformat:2 }}</td>
                             </tr>
                         </tfoot>

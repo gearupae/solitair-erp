@@ -81,10 +81,13 @@ class PurchaseRequestForm(forms.ModelForm):
 class PurchaseRequestItemForm(forms.ModelForm):
     class Meta:
         model = PurchaseRequestItem
-        fields = ['inventory_item', 'quantity', 'unit', 'estimated_price']
+        fields = ['inventory_item', 'brand', 'model', 'description', 'quantity', 'unit', 'estimated_price']
         widgets = {
             'estimated_price': forms.NumberInput(attrs={'step': '0.01', 'min': '0'}),
             'quantity': forms.NumberInput(attrs={'step': '1', 'min': '0'}),
+            'description': forms.Textarea(attrs={'rows': 2, 'placeholder': 'Specs, notes, or item details…'}),
+            'brand': forms.TextInput(attrs={'placeholder': 'Choose or type brand'}),
+            'model': forms.TextInput(attrs={'placeholder': 'Model / part no.'}),
         }
 
     def __init__(self, *args, **kwargs):
@@ -98,21 +101,41 @@ class PurchaseRequestItemForm(forms.ModelForm):
         self.fields['inventory_item'].empty_label = '— Select inventory item —'
         self.fields['inventory_item'].widget.attrs['class'] = 'form-select item-inventory-select'
 
+        self.fields['brand'].required = False
+        self.fields['model'].required = False
+        self.fields['description'].required = False
+
         self.fields['unit'].widget.attrs['class'] = 'form-select'
         for name, field in self.fields.items():
             if name in ('inventory_item', 'unit'):
                 continue
-            if field.widget.attrs.get('class') != 'form-select':
-                field.widget.attrs['class'] = 'form-control'
+            if field.widget.attrs.get('class') in ('form-select', 'form-select form-select-sm'):
+                continue
+            if 'class' not in field.widget.attrs or field.widget.attrs.get('class') == 'form-control':
+                css = 'form-control form-control-sm'
+                if name == 'brand':
+                    css += ' item-brand'
+                elif name == 'model':
+                    css += ' item-model'
+                elif name == 'description':
+                    css += ' item-description'
+                elif name == 'quantity':
+                    css += ' item-qty'
+                elif name == 'estimated_price':
+                    css += ' item-cost'
+                field.widget.attrs['class'] = css
 
         if not self.instance.pk:
             self.fields['quantity'].initial = Decimal('0')
 
         self.fields['quantity'].widget.attrs.update(
-            {'class': 'form-control item-qty', 'step': '1', 'min': '0'}
+            {'class': 'form-control form-control-sm item-qty', 'step': '1', 'min': '0'}
         )
         self.fields['estimated_price'].widget.attrs.update(
-            {'class': 'form-control item-cost', 'step': '0.01', 'min': '0'}
+            {'class': 'form-control form-control-sm item-cost', 'step': '0.01', 'min': '0'}
+        )
+        self.fields['brand'].widget.attrs.update(
+            {'class': 'form-control form-control-sm item-brand', 'list': 'pr-brand-datalist'}
         )
 
     def clean(self):
@@ -128,17 +151,31 @@ class PurchaseRequestItemForm(forms.ModelForm):
         if price is None:
             price = Decimal('0')
 
+        brand = (cleaned.get('brand') or '').strip()
+        model = (cleaned.get('model') or '').strip()
+        desc = (cleaned.get('description') or '').strip()
+        cleaned['brand'] = brand
+        cleaned['model'] = model
+        cleaned['description'] = desc
+
         if inv:
             if qty <= 0:
                 raise forms.ValidationError({'quantity': 'Enter a quantity greater than zero.'})
             return cleaned
 
-        if self.instance.pk and (self.instance.description or '').strip():
+        if brand or model or desc:
+            if qty <= 0:
+                raise forms.ValidationError({'quantity': 'Enter a quantity greater than zero.'})
+            if not desc:
+                cleaned['description'] = ' — '.join(p for p in (brand, model) if p) or 'Item'
+            return cleaned
+
+        if self.instance.pk and (self.instance.description or self.instance.brand or self.instance.model):
             return cleaned
 
         if qty > 0 or price > 0:
             raise forms.ValidationError(
-                {'inventory_item': 'Select an inventory item for each line.'}
+                'Select an inventory item or enter brand, model, or description for each line.'
             )
         return cleaned
 
@@ -150,8 +187,16 @@ class BasePurchaseRequestItemFormSet(forms.BaseInlineFormSet):
         if super()._should_delete_form(form):
             return True
         if not form.instance.pk and form.cleaned_data:
-            if not form.cleaned_data.get('inventory_item'):
-                return True
+            cd = form.cleaned_data
+            if not cd.get('inventory_item'):
+                has_detail = any(
+                    (cd.get(field) or '').strip()
+                    for field in ('brand', 'model', 'description')
+                )
+                qty = cd.get('quantity') or 0
+                price = cd.get('estimated_price') or 0
+                if not has_detail and not qty and not price:
+                    return True
         return False
 
 
@@ -235,10 +280,16 @@ class PurchaseOrderItemForm(forms.ModelForm):
     
     class Meta:
         model = PurchaseOrderItem
-        fields = ['inventory_item', 'quantity', 'unit_price', 'tax_code', 'is_vat_inclusive']
+        fields = [
+            'inventory_item', 'brand', 'model', 'description',
+            'quantity', 'unit_price', 'tax_code', 'is_vat_inclusive',
+        ]
         widgets = {
             'quantity': forms.NumberInput(attrs={'step': '1', 'min': '0'}),
             'unit_price': forms.NumberInput(attrs={'step': '0.01', 'min': '0'}),
+            'description': forms.Textarea(attrs={'rows': 2, 'placeholder': 'Specs, notes, or item details…'}),
+            'brand': forms.TextInput(attrs={'placeholder': 'Choose or type brand', 'list': 'po-brand-datalist'}),
+            'model': forms.TextInput(attrs={'placeholder': 'Model / part no.'}),
         }
     
     def __init__(self, *args, **kwargs):
@@ -253,6 +304,10 @@ class PurchaseOrderItemForm(forms.ModelForm):
         self.fields['inventory_item'].widget.attrs['class'] = (
             'form-select form-select-sm item-inventory-select'
         )
+
+        self.fields['brand'].required = False
+        self.fields['model'].required = False
+        self.fields['description'].required = False
 
         self.fields['tax_code'].queryset = TaxCode.objects.filter(is_active=True)
         self.fields['tax_code'].required = False
@@ -269,6 +324,15 @@ class PurchaseOrderItemForm(forms.ModelForm):
         )
         self.fields['unit_price'].widget.attrs.update(
             {'class': 'form-control form-control-sm item-price', 'step': '0.01', 'min': '0'}
+        )
+        self.fields['brand'].widget.attrs.update(
+            {'class': 'form-control form-control-sm item-brand', 'list': 'po-brand-datalist'}
+        )
+        self.fields['model'].widget.attrs.update(
+            {'class': 'form-control form-control-sm item-model'}
+        )
+        self.fields['description'].widget.attrs.update(
+            {'class': 'form-control form-control-sm item-description'}
         )
 
         if not self.instance.pk:
@@ -297,17 +361,31 @@ class PurchaseOrderItemForm(forms.ModelForm):
         if price is None:
             price = Decimal('0')
 
+        brand = (cleaned.get('brand') or '').strip()
+        model = (cleaned.get('model') or '').strip()
+        desc = (cleaned.get('description') or '').strip()
+        cleaned['brand'] = brand
+        cleaned['model'] = model
+        cleaned['description'] = desc
+
         if inv:
             if qty <= 0:
                 raise forms.ValidationError({'quantity': 'Enter a quantity greater than zero.'})
             return cleaned
 
-        if self.instance.pk and (self.instance.description or '').strip():
+        if brand or model or desc:
+            if qty <= 0:
+                raise forms.ValidationError({'quantity': 'Enter a quantity greater than zero.'})
+            if not desc:
+                cleaned['description'] = ' — '.join(p for p in (brand, model) if p) or 'Item'
+            return cleaned
+
+        if self.instance.pk and (self.instance.description or self.instance.brand or self.instance.model):
             return cleaned
 
         if qty > 0 or price > 0:
             raise forms.ValidationError(
-                {'inventory_item': 'Select an inventory item for each line.'}
+                'Select an inventory item or enter brand, model, or description for each line.'
             )
         return cleaned
 
@@ -319,8 +397,16 @@ class BasePurchaseOrderItemFormSet(forms.BaseInlineFormSet):
         if super()._should_delete_form(form):
             return True
         if not form.instance.pk and form.cleaned_data:
-            if not form.cleaned_data.get('inventory_item'):
-                return True
+            cd = form.cleaned_data
+            if not cd.get('inventory_item'):
+                has_detail = any(
+                    (cd.get(field) or '').strip()
+                    for field in ('brand', 'model', 'description')
+                )
+                qty = cd.get('quantity') or 0
+                price = cd.get('unit_price') or 0
+                if not has_detail and not qty and not price:
+                    return True
         return False
 
 

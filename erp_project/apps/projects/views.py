@@ -1232,6 +1232,12 @@ class ProjectDetailView(PermissionRequiredMixin, DetailView):
             link=reverse('projects:project_detail', args=[self.object.pk]),
         )
         context['project_ai_evaluation'] = evaluation
+
+        from apps.assets.equipment_services import project_equipment_summary
+        eq_rows, eq_total = project_equipment_summary(self.object)
+        context['equipment_allocation_rows'] = eq_rows
+        context['equipment_allocation_total'] = eq_total
+        context['show_equipment_card'] = len(eq_rows) > 0
         return context
 
     def post(self, request, *args, **kwargs):

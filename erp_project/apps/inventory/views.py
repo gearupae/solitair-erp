@@ -1431,7 +1431,7 @@ class ConsumableRequestListView(PermissionRequiredMixin, ListView):
         user = self.request.user
         is_admin = user.is_superuser or PermissionChecker.has_permission(user, 'inventory', 'edit')
         
-        context['title'] = 'Consumable Requests'
+        context['title'] = 'Item Request'
         context['status_choices'] = ConsumableRequest.STATUS_CHOICES
         context['is_admin'] = is_admin
         context['filter_project_id'] = self.request.GET.get('project', '')

@@ -6,7 +6,10 @@
         <h4 class="mb-1 fw-bold">{{ title }}</h4>
         <p class="text-muted mb-0">Manage your suppliers and vendors</p>
     </div>
-    <div>
+    <div class="d-flex gap-2 flex-wrap">
+        <a href="{% url 'purchase:dashboard' %}" class="btn btn-outline-primary">
+            <i class="fas fa-tachometer-alt me-2"></i>Dashboard
+        </a>
         {% if can_create %}
         <button class="btn btn-primary" onclick="toggleInlineForm('vendorForm')">
             <i class="fas fa-plus me-2"></i>Add Vendor

@@ -381,7 +381,7 @@
                 {% for item in pr.items.all %}
                 <tr>
                     <td class="item-number">{{ forloop.counter }}</td>
-                    <td class="item-description">{{ item.description }}</td>
+                    <td class="item-description">{{ item.formatted_line_display }}</td>
                     <td class="text-center">{{ item.quantity|floatformat:2 }}</td>
                     <td class="text-center">{{ item.get_unit_display }}</td>
                     <td class="text-right">{{ item.estimated_price|floatformat:2 }}</td>

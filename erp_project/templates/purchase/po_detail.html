@@ -139,6 +139,8 @@
                     <table class="table mb-0">
                         <thead>
                             <tr>
+                                <th>Brand</th>
+                                <th>Model</th>
                                 <th>Description</th>
                                 <th class="text-center text-nowrap">Ordered</th>
                                 <th class="text-center text-nowrap">Received</th>
@@ -151,8 +153,10 @@
                         <tbody>
                             {% for item in po.items.all %}
                             <tr>
+                                <td>{{ item.brand|default:"—" }}</td>
+                                <td>{{ item.model|default:"—" }}</td>
                                 <td>
-                                    {{ item.description }}
+                                    {{ item.description|default:"—" }}
                                     {% if item.inventory_item %}
                                     <div class="small text-muted">{{ item.inventory_item.item_code }}</div>
                                     {% if item.inventory_item.track_by_serial %}
