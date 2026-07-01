@@ -20,6 +20,37 @@ from apps.mes.services.station_queue import get_station_queue
 logger = logging.getLogger(__name__)
 
 MES_AGENT_MODEL = 'gpt-4o-mini'
+SLOW_OP_THRESHOLD = 1.25  # flag when dwell exceeds 125% of routing std time
+
+
+def get_agent_ai_status() -> dict:
+    """OpenAI key + quota status for Gearup Agent UI."""
+    from apps.core.openai_gateway import get_wallet, has_ai_quota
+    from apps.inventory.utils import get_openai_api_key, openai_key_status
+
+    key_configured = bool(get_openai_api_key())
+    quota_ok = has_ai_quota()
+    wallet = get_wallet()
+
+    if key_configured and quota_ok:
+        label = 'OpenAI connected'
+        mode = 'ai'
+    elif key_configured and not quota_ok:
+        label = 'AI quota exhausted'
+        mode = 'quota_exhausted'
+    else:
+        label = 'Live floor data'
+        mode = 'live_data'
+
+    return {
+        'key_configured': key_configured,
+        'has_quota': quota_ok,
+        'ai_available': key_configured and quota_ok,
+        'key_source': openai_key_status(),
+        'tokens_remaining': wallet.get('tokens_remaining', 0),
+        'status_label': label,
+        'mode': mode,
+    }
 
 
 def build_mes_snapshot(company) -> dict:
@@ -94,7 +125,7 @@ def build_mes_snapshot(company) -> dict:
         if times:
             row['std_time_minutes'] = round(sum(times) / len(times), 1)
 
-    slow_scans = _recent_slow_operations(company, limit=8)
+    slow_scans = collect_delay_signals(company, limit=12)
 
     work_centers = list(
         WorkCenter.objects.filter(company=company, is_active=True).values(
@@ -110,6 +141,20 @@ def build_mes_snapshot(company) -> dict:
         'slow_operations': slow_scans,
         'work_centers': work_centers,
     }
+
+
+def _routing_std_minutes(company, production_order_id, work_center_id) -> float:
+    std = (
+        RoutingOperation.objects.filter(
+            company=company,
+            production_order_id=production_order_id,
+            work_center_id=work_center_id,
+            is_active=True,
+        )
+        .values_list('std_time_minutes', flat=True)
+        .first()
+    )
+    return float(std or 15)
 
 
 def _recent_slow_operations(company, limit: int = 8) -> list[dict]:
@@ -146,17 +191,12 @@ def _recent_slow_operations(company, limit: int = 8) -> list[dict]:
         if not scan_in:
             continue
         dwell_min = (scan_out.timestamp - scan_in.timestamp).total_seconds() / 60
-        std = (
-            RoutingOperation.objects.filter(
-                company=company,
-                production_order=scan_out.part.production_order_id,
-                work_center=scan_out.work_center,
-                is_active=True,
-            )
-            .values_list('std_time_minutes', flat=True)
-            .first()
-        ) or 15
-        if dwell_min <= std * 1.25:
+        std = _routing_std_minutes(
+            company,
+            scan_out.part.production_order_id,
+            scan_out.work_center_id,
+        )
+        if dwell_min <= std * SLOW_OP_THRESHOLD:
             continue
         seen.add(key)
         rows.append(
@@ -167,10 +207,212 @@ def _recent_slow_operations(company, limit: int = 8) -> list[dict]:
                 'std_minutes': std,
                 'actual_minutes': round(dwell_min, 1),
                 'over_by_minutes': round(dwell_min - std, 1),
+                'signal_source': 'scan_pair',
             },
         )
         if len(rows) >= limit:
             break
+    return rows
+
+
+def _floor_dwell_signals(company, limit: int = 8) -> list[dict]:
+    """Parts still at a station whose dwell (since last IN scan) exceeds std time."""
+    now = timezone.now()
+    open_statuses = (
+        ProductionOrder.STATUS_RELEASED,
+        ProductionOrder.STATUS_IN_PRODUCTION,
+    )
+    parts = (
+        Part.objects.filter(
+            company=company,
+            is_active=True,
+            status__in=(Part.STATUS_PENDING, Part.STATUS_IN_WIP),
+            current_work_center__isnull=False,
+            production_order__is_active=True,
+            production_order__status__in=open_statuses,
+        )
+        .select_related('production_order', 'current_work_center')
+    )
+
+    rows = []
+    for part in parts:
+        wc = part.current_work_center
+        std = _routing_std_minutes(company, part.production_order_id, wc.pk)
+        last_in = (
+            PartScan.objects.filter(
+                company=company,
+                part_id=part.pk,
+                work_center_id=wc.pk,
+                scan_type=PartScan.SCAN_IN,
+            )
+            .order_by('-timestamp')
+            .first()
+        )
+        if last_in:
+            has_out_after = PartScan.objects.filter(
+                company=company,
+                part_id=part.pk,
+                work_center_id=wc.pk,
+                scan_type=PartScan.SCAN_OUT,
+                timestamp__gt=last_in.timestamp,
+            ).exists()
+            if has_out_after:
+                continue
+            anchor = last_in.timestamp
+        else:
+            anchor = part.updated_at
+
+        dwell_min = (now - anchor).total_seconds() / 60
+        if dwell_min <= std * SLOW_OP_THRESHOLD:
+            continue
+        rows.append(
+            {
+                'po_number': part.production_order.po_number,
+                'barcode': part.barcode,
+                'station': wc.code,
+                'std_minutes': std,
+                'actual_minutes': round(dwell_min, 1),
+                'over_by_minutes': round(dwell_min - std, 1),
+                'signal_source': 'floor_dwell',
+                'part_status': part.status,
+            },
+        )
+
+    rows.sort(key=lambda r: -r['over_by_minutes'])
+    return rows[:limit]
+
+
+def _queue_backlog_signals(company, limit: int = 4) -> list[dict]:
+    """Station-level delay when queue depth implies sustained over-capacity."""
+    open_statuses = (
+        ProductionOrder.STATUS_RELEASED,
+        ProductionOrder.STATUS_IN_PRODUCTION,
+    )
+    stations = WorkCenter.objects.filter(
+        company=company,
+        is_active=True,
+        is_production_step=True,
+    ).order_by('sequence_order', 'name')
+
+    rows = []
+    for wc in stations:
+        try:
+            q = get_station_queue(company, wc.pk)
+        except ValueError:
+            continue
+        waiting = q['count']
+        if waiting < 3:
+            continue
+
+        std_times = list(
+            RoutingOperation.objects.filter(
+                company=company,
+                is_active=True,
+                work_center=wc,
+                production_order__status__in=open_statuses,
+            ).values_list('std_time_minutes', flat=True),
+        )
+        avg_std = sum(std_times) / len(std_times) if std_times else 15.0
+        implied_minutes = waiting * avg_std
+        if implied_minutes <= avg_std * SLOW_OP_THRESHOLD:
+            continue
+
+        top_item = q['items'][0] if q['items'] else {}
+        rows.append(
+            {
+                'po_number': top_item.get('po_number') or f'{waiting} POs',
+                'barcode': top_item.get('barcode') or '—',
+                'station': wc.code,
+                'std_minutes': round(avg_std, 1),
+                'actual_minutes': round(implied_minutes, 1),
+                'over_by_minutes': round(implied_minutes - avg_std, 1),
+                'signal_source': 'queue_backlog',
+                'waiting_parts': waiting,
+            },
+        )
+
+    rows.sort(key=lambda r: -r.get('waiting_parts', 0))
+    return rows[:limit]
+
+
+def collect_delay_signals(company, limit: int = 12) -> list[dict]:
+    """Merge scan pairs, open floor dwell, and queue backlog into one ranked list."""
+    seen = set()
+    combined: list[dict] = []
+
+    for row in _recent_slow_operations(company, limit=limit):
+        key = (row.get('barcode'), row['station'], row['signal_source'])
+        if key in seen:
+            continue
+        seen.add(key)
+        combined.append(row)
+
+    for row in _floor_dwell_signals(company, limit=limit):
+        key = (row.get('barcode'), row['station'], 'floor_dwell')
+        if key in seen:
+            continue
+        seen.add(key)
+        combined.append(row)
+
+    for row in _queue_backlog_signals(company, limit=limit):
+        key = (row['station'], row['signal_source'])
+        if key in seen:
+            continue
+        seen.add(key)
+        combined.append(row)
+
+    combined.sort(key=lambda r: -r.get('over_by_minutes', 0))
+    return combined[:limit]
+
+
+def _heuristic_classify(signals: list[dict], snapshot: dict) -> list[dict]:
+    queue_depth = {
+        q['code']: q.get('waiting_parts', 0)
+        for q in snapshot.get('station_queues', [])
+    }
+    rows = []
+    for row in signals:
+        station = row['station']
+        source = row.get('signal_source', '')
+        if source == 'queue_backlog':
+            reason = 'capacity_queue'
+            detail = (
+                f"{row.get('waiting_parts', 0)} parts queued at {station}; "
+                f"~{row['actual_minutes']} min backlog vs {row['std_minutes']} min std per part."
+            )
+        elif queue_depth.get(station, 0) >= 5:
+            reason = 'capacity_queue'
+            detail = (
+                f"Dwell {row['actual_minutes']} min vs {row['std_minutes']} min std "
+                f"with {queue_depth[station]} parts waiting at {station}."
+            )
+        elif row.get('part_status') == Part.STATUS_PENDING:
+            reason = 'material_wait'
+            detail = (
+                f"Part waiting {row['actual_minutes']} min at {station} "
+                f"(std {row['std_minutes']} min) — not yet started."
+            )
+        elif source == 'scan_pair':
+            reason = 'rework'
+            detail = (
+                f"Scan pair: {row['actual_minutes']} min vs {row['std_minutes']} min std "
+                f"at {station}."
+            )
+        else:
+            reason = 'staffing'
+            detail = (
+                f"Open dwell {row['actual_minutes']} min vs {row['std_minutes']} min std "
+                f"at {station}."
+            )
+        rows.append(
+            {
+                'po_number': row['po_number'],
+                'station': station,
+                'likely_reason': reason,
+                'detail': detail,
+                'signal_source': source,
+            },
+        )
     return rows
 
 
@@ -370,43 +612,55 @@ def _fallback_nl_answer(question: str, snapshot: dict) -> str:
 
 def run_delay_classification(company) -> dict:
     snapshot = build_mes_snapshot(company)
-    slow = snapshot.get('slow_operations', [])
+    signals = snapshot.get('slow_operations', [])
 
-    if not slow:
+    if not signals:
+        queues = [q for q in snapshot.get('station_queues', []) if q.get('waiting_parts', 0) > 0]
+        if queues:
+            top = max(queues, key=lambda q: q.get('waiting_parts', 0))
+            return {
+                'ok': True,
+                'ai_used': False,
+                'classifications': [],
+                'summary': (
+                    f"No single operation over std-time yet — floor shows {top['waiting_parts']} "
+                    f"parts at {top['code']} ({top['name']}). Scan IN/OUT at stations for dwell tracking."
+                ),
+            }
         return {
             'ok': True,
             'ai_used': False,
             'classifications': [],
-            'summary': 'No operations significantly over standard time in the last 14 days.',
+            'summary': 'No delay signals from live queues or scans right now.',
         }
 
     if not _ai_available():
+        classified = _heuristic_classify(signals, snapshot)
         return {
             'ok': True,
             'ai_used': False,
-            'classifications': [
-                {
-                    'po_number': row['po_number'],
-                    'station': row['station'],
-                    'likely_reason': 'Capacity / queue backlog',
-                    'detail': f"Ran {row['actual_minutes']} min vs {row['std_minutes']} min std.",
-                }
-                for row in slow
-            ],
-            'summary': f'{len(slow)} slow operation(s) detected — likely queue or capacity related.',
+            'classifications': classified,
+            'summary': (
+                f'{len(classified)} delay signal(s) from live floor data '
+                '(queues, dwell, scan pairs).'
+            ),
         }
 
     from apps.core.openai_gateway import call_openai_json
 
     system = """Classify why manufacturing operations exceeded standard time.
 Likely reasons: material_wait, machine_issue, rework, capacity_queue, staffing, unknown.
-Use patterns in the data. Return JSON:
-{"summary": "...", "classifications": [{"po_number", "station", "likely_reason", "detail"}]}"""
+Use live signals: scan pairs, open dwell at stations, and queue backlog depth.
+Return JSON:
+{"summary": "...", "classifications": [{"po_number", "station", "likely_reason", "detail", "signal_source"}]}"""
 
     try:
         data = call_openai_json(
             system=system,
-            user_payload={'slow_operations': slow, 'station_queues': snapshot.get('station_queues')},
+            user_payload={
+                'delay_signals': signals,
+                'station_queues': snapshot.get('station_queues'),
+            },
             temperature=0.2,
             feature='mes_agent_classify',
             model=MES_AGENT_MODEL,
@@ -428,19 +682,12 @@ Use patterns in the data. Return JSON:
         }
     except Exception as exc:
         logger.warning('MES delay classify failed: %s', exc)
+        classified = _heuristic_classify(signals, snapshot)
         return {
             'ok': True,
             'ai_used': False,
-            'classifications': [
-                {
-                    'po_number': row['po_number'],
-                    'station': row['station'],
-                    'likely_reason': 'capacity_queue',
-                    'detail': f"Ran {row['actual_minutes']} min vs {row['std_minutes']} min std.",
-                }
-                for row in slow
-            ],
-            'summary': f'{len(slow)} slow operation(s) — rule-based classification.',
+            'classifications': classified,
+            'summary': f'{len(classified)} delay signal(s) — live floor classification.',
         }
 
 
@@ -456,18 +703,18 @@ def run_draft_template(company, description: str) -> dict:
     )
 
     if not _ai_available():
+        status = get_agent_ai_status()
         return {
-            'ok': True,
+            'ok': False,
             'ai_used': False,
-            'template_name': description[:80],
-            'bom_lines': [
-                {'part_name': 'Main panel', 'material_type': 'panel', 'quantity': '1', 'unit': 'pcs'},
-            ],
-            'routing_steps': [
-                {'work_center_code': wc['code'], 'std_time_minutes': 20}
-                for wc in work_centers[:4]
-            ],
-            'notes': 'AI draft unavailable — configure OpenAI for full BOM/routing suggestions.',
+            'message': (
+                'OpenAI is required for BOM/routing drafts. '
+                + (
+                    'Recharge AI credits in Settings → Company.'
+                    if status['key_configured'] and not status['has_quota']
+                    else 'Add your OpenAI API key in Settings → Company or OPENAI_API_KEY in .env.'
+                )
+            ),
         }
 
     from apps.core.openai_gateway import call_openai_json
@@ -528,17 +775,18 @@ def run_cost_estimate(company, spec: str) -> dict:
     }
 
     if not _ai_available():
+        status = get_agent_ai_status()
         return {
-            'ok': True,
+            'ok': False,
             'ai_used': False,
-            'material_cost': '0',
-            'labour_cost': '0',
-            'machine_cost': '0',
-            'overhead_cost': '0',
-            'total_cost': '0',
-            'per_unit_cost': '0',
-            'assumptions': ['Configure OpenAI for AI-powered estimates.'],
-            'summary': 'Heuristic estimate unavailable without AI.',
+            'message': (
+                'OpenAI is required for cost estimates. '
+                + (
+                    'Recharge AI credits in Settings → Company.'
+                    if status['key_configured'] and not status['has_quota']
+                    else 'Add your OpenAI API key in Settings → Company or OPENAI_API_KEY in .env.'
+                )
+            ),
         }
 
     from apps.core.openai_gateway import call_openai_json

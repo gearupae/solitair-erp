@@ -101,12 +101,14 @@
                 <p class="mes-agent-capability-desc mb-0">AI over live MES — queues, scans, routing std-times, and costs</p>
             </div>
             <div class="d-flex align-items-center gap-2">
-                {% if openai_configured %}
+                {% if agent_ai.ai_available %}
                 <span class="badge mes-agent-badge-live rounded-pill px-3 py-2">
                     <i class="fas fa-circle me-1" style="font-size:0.45rem;vertical-align:middle;"></i>OpenAI connected
                 </span>
+                {% elif agent_ai.key_configured %}
+                <span class="badge bg-warning text-dark rounded-pill" title="Recharge AI credits in Settings">AI quota exhausted</span>
                 {% else %}
-                <span class="badge bg-secondary rounded-pill">Rule-based fallback</span>
+                <span class="badge bg-info text-dark rounded-pill" title="Delay prediction and Ask the floor use live MES data">Live floor data</span>
                 {% endif %}
                 <button type="button" class="btn btn-sm btn-outline-primary" id="agentRefreshBtn" title="Refresh analysis">
                     <i class="fas fa-sync-alt"></i>
@@ -132,8 +134,8 @@
         </div>
 
         <div class="agent-panel d-none" id="panel-classify">
-            <p class="small text-muted mb-2">When an operation runs over std-time, AI suggests likely causes from scan patterns.</p>
-            <button type="button" class="btn btn-sm btn-primary mb-3" id="classifyBtn">Classify slow operations</button>
+            <p class="small text-muted mb-2">Uses live queue depth, part dwell at stations, and IN/OUT scan pairs to suggest delay causes.</p>
+            <button type="button" class="btn btn-sm btn-primary mb-3" id="classifyBtn">Analyse delay signals</button>
             <div id="classifySummary" class="mb-2 fw-medium"></div>
             <div id="classifyResults"></div>
         </div>
@@ -277,26 +279,15 @@
         });
     }
 
-    document.querySelectorAll('[data-agent-tab]').forEach(function (btn) {
-        btn.addEventListener('click', function () {
-            document.querySelectorAll('[data-agent-tab]').forEach(function (b) { b.classList.remove('active'); });
-            btn.classList.add('active');
-            document.querySelectorAll('.agent-panel').forEach(function (p) { p.classList.add('d-none'); });
-            const panel = document.getElementById('panel-' + btn.dataset.agentTab);
-            if (panel) panel.classList.remove('d-none');
-        });
-    });
-
-    document.getElementById('agentRefreshBtn')?.addEventListener('click', loadDelayPrediction);
-    document.getElementById('classifyBtn')?.addEventListener('click', function () {
+    function loadDelayClassification() {
         const out = document.getElementById('classifyResults');
         const sum = document.getElementById('classifySummary');
-        if (out) out.innerHTML = '<span class="text-muted small">Classifying…</span>';
+        if (out) out.innerHTML = '<span class="text-muted small">Analysing live floor signals…</span>';
         postAgent('classify_delays').then(function (data) {
             if (sum) sum.textContent = data.summary || '';
             if (!out) return;
             if (!data.classifications || !data.classifications.length) {
-                out.innerHTML = '<p class="text-muted small mb-0">No slow operations to classify.</p>';
+                out.innerHTML = '<p class="text-muted small mb-0">' + escapeHtml(data.summary || 'No delay signals right now.') + '</p>';
                 return;
             }
             out.innerHTML = '<table class="table table-sm mb-0"><thead><tr><th>PO</th><th>Station</th><th>Reason</th><th>Detail</th></tr></thead><tbody>' +
@@ -306,7 +297,21 @@
                         escapeHtml(c.detail) + '</td></tr>';
                 }).join('') + '</tbody></table>';
         });
+    }
+
+    document.querySelectorAll('[data-agent-tab]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            document.querySelectorAll('[data-agent-tab]').forEach(function (b) { b.classList.remove('active'); });
+            btn.classList.add('active');
+            document.querySelectorAll('.agent-panel').forEach(function (p) { p.classList.add('d-none'); });
+            const panel = document.getElementById('panel-' + btn.dataset.agentTab);
+            if (panel) panel.classList.remove('d-none');
+            if (btn.dataset.agentTab === 'classify') loadDelayClassification();
+        });
     });
+
+    document.getElementById('agentRefreshBtn')?.addEventListener('click', loadDelayPrediction);
+    document.getElementById('classifyBtn')?.addEventListener('click', loadDelayClassification);
 
     document.getElementById('draftBtn')?.addEventListener('click', function () {
         const text = document.getElementById('draftInput')?.value?.trim();

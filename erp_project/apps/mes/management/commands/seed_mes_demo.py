@@ -8,6 +8,7 @@ from decimal import Decimal
 from django.contrib.auth.models import User
 from django.core.management.base import BaseCommand
 from django.db import transaction
+from django.utils import timezone
 
 from apps.mes.models import (
     BOMItem,
@@ -22,7 +23,7 @@ from apps.mes.models import (
     WorkCenter,
 )
 from apps.mes.services.parts_generation import generate_parts_from_bom
-from apps.mes.services.po import release_production_order
+from apps.mes.services.po import allocate_po_number, release_production_order
 from apps.mes.services.routing import ensure_routing_for_order
 from apps.mes.services.costing import recalculate_wip
 from apps.mes.services.scan import get_next_work_center, process_scan
@@ -82,6 +83,11 @@ class Command(BaseCommand):
             action='store_true',
             help='Remove existing MES-DEMO tagged rows and re-seed.',
         )
+        parser.add_argument(
+            '--full',
+            action='store_true',
+            help='Add extra demo POs, queue spread, and backdated scans (safe to re-run).',
+        )
 
     @transaction.atomic
     def handle(self, *args, **options):
@@ -98,75 +104,96 @@ class Command(BaseCommand):
         if options['fresh']:
             self._purge_demo(company)
 
-        if ProductionOrder.objects.filter(company=company, reference=SEED_TAG).exists():
-            self.stdout.write(self.style.WARNING('MES demo already seeded. Use --fresh to rebuild.'))
-            return
-
         centers = self._seed_work_centers(company, admin)
         machines = self._seed_machines(company, centers, admin)
         self._seed_checklists(company, centers, admin)
 
-        po = ProductionOrder.objects.create(
-            company=company,
-            po_number='MES-2026-0001',
-            reference=SEED_TAG,
-            quantity=2,
-            due_date=date.today() + timedelta(days=21),
-            status=ProductionOrder.STATUS_DRAFT,
-            wip_value=Decimal('0.00'),
-            created_by=admin,
-            updated_by=admin,
-        )
-
-        bom = self._seed_bom(company, po, admin)
-        self._seed_drawings(company, bom, admin)
-        ensure_routing_for_order(po)
-        generated = generate_parts_from_bom(po)
-        release_production_order(po)
-        recalculate_wip(po)
-        parts = list(po.parts.filter(is_active=True).select_related('bom_item', 'current_work_center'))
-
-        self.stdout.write(self.style.SUCCESS('MES demo seeded successfully.'))
-        self.stdout.write(f'  Company: {company.name}')
-        self.stdout.write(f'  Work centers: {len(centers)}')
-        self.stdout.write(f'  Machines: {len(machines)}')
-        self.stdout.write(f'  Production order: {po.po_number} (id={po.pk})')
-        self.stdout.write(f'  BOM items: {po.bom_items.count()} (3 levels)')
-        self.stdout.write(f'  Generated parts: {generated}')
-        self.stdout.write('  Demo parts (scan on floor tablet):')
-        for part in parts:
-            self.stdout.write(f'    - {part.barcode} → {part.bom_item.part_name} @ {part.current_work_center.code}')
-
-        next_wc = get_next_work_center(company, centers['CUT'])
-        if not next_wc or next_wc.code != 'EDGE':
-            self.stdout.write(self.style.ERROR(
-                f'  Routing check FAILED: CUT → {next_wc.code if next_wc else "None"} (expected EDGE)',
-            ))
+        demo_exists = ProductionOrder.objects.filter(company=company, reference=SEED_TAG).exists()
+        if demo_exists and not options['fresh']:
+            self.stdout.write(self.style.WARNING('Primary MES demo PO already exists.'))
+            if not options['full']:
+                self.stdout.write('  Use --full for extra POs and floor activity, or --fresh to rebuild.')
+                return
         else:
-            self.stdout.write(self.style.SUCCESS('  Routing check: CUT → EDGE ✓'))
-            demo_part = parts[0]
-            result = process_scan(
+            po = ProductionOrder.objects.create(
                 company=company,
-                barcode=demo_part.barcode,
-                work_center_id=centers['CUT'].pk,
-                scan_type='out',
-                operator=admin,
+                po_number='MES-2026-0001',
+                reference=SEED_TAG,
+                quantity=2,
+                due_date=date.today() + timedelta(days=21),
+                status=ProductionOrder.STATUS_DRAFT,
+                wip_value=Decimal('0.00'),
+                created_by=admin,
+                updated_by=admin,
             )
-            demo_part.refresh_from_db()
-            if demo_part.current_work_center.code == 'EDGE':
-                self.stdout.write(self.style.SUCCESS(
-                    f'  Scan OUT test: {demo_part.barcode} now at {demo_part.current_work_center.code} ✓',
-                ))
-                demo_part.current_work_center = centers['CUT']
-                demo_part.status = Part.STATUS_PENDING
-                demo_part.save(update_fields=['current_work_center', 'status', 'updated_at'])
-            else:
+
+            bom = self._seed_bom(company, po, admin)
+            self._seed_drawings(company, bom, admin)
+            ensure_routing_for_order(po)
+            generated = generate_parts_from_bom(po)
+            release_production_order(po)
+            recalculate_wip(po)
+            parts = list(po.parts.filter(is_active=True).select_related('bom_item', 'current_work_center'))
+
+            self.stdout.write(self.style.SUCCESS('MES demo seeded successfully.'))
+            self.stdout.write(f'  Company: {company.name}')
+            self.stdout.write(f'  Work centers: {len(centers)}')
+            self.stdout.write(f'  Machines: {len(machines)}')
+            self.stdout.write(f'  Production order: {po.po_number} (id={po.pk})')
+            self.stdout.write(f'  BOM items: {po.bom_items.count()} (3 levels)')
+            self.stdout.write(f'  Generated parts: {generated}')
+            self.stdout.write('  Demo parts (scan on floor tablet):')
+            for part in parts[:8]:
+                self.stdout.write(
+                    f'    - {part.barcode} → {part.bom_item.part_name} @ {part.current_work_center.code}',
+                )
+            if len(parts) > 8:
+                self.stdout.write(f'    … and {len(parts) - 8} more')
+
+            next_wc = get_next_work_center(company, centers['CUT'])
+            if not next_wc or next_wc.code != 'EDGE':
                 self.stdout.write(self.style.ERROR(
-                    f'  Scan OUT test FAILED: part at {demo_part.current_work_center.code}',
+                    f'  Routing check FAILED: CUT → {next_wc.code if next_wc else "None"} (expected EDGE)',
                 ))
+            else:
+                self.stdout.write(self.style.SUCCESS('  Routing check: CUT → EDGE ✓'))
+                demo_part = parts[0]
+                process_scan(
+                    company=company,
+                    barcode=demo_part.barcode,
+                    work_center_id=centers['CUT'].pk,
+                    scan_type='out',
+                    operator=admin,
+                )
+                demo_part.refresh_from_db()
+                if demo_part.current_work_center.code == 'EDGE':
+                    self.stdout.write(self.style.SUCCESS(
+                        f'  Scan OUT test: {demo_part.barcode} now at {demo_part.current_work_center.code} ✓',
+                    ))
+                    demo_part.current_work_center = centers['CUT']
+                    demo_part.status = Part.STATUS_PENDING
+                    demo_part.save(update_fields=['current_work_center', 'status', 'updated_at'])
+                else:
+                    self.stdout.write(self.style.ERROR(
+                        f'  Scan OUT test FAILED: part at {demo_part.current_work_center.code}',
+                    ))
+
+        if options['full']:
+            extra = self._seed_extra_orders(company, admin, centers)
+            scans = self._simulate_floor_activity(company, admin, centers)
+            self.stdout.write(self.style.SUCCESS(f'  Full demo: +{extra} extra PO(s), {scans} backdated scan(s).'))
+
+        open_pos = ProductionOrder.objects.filter(
+            company=company, is_active=True, reference__startswith=SEED_TAG,
+        ).count()
+        part_count = Part.objects.filter(
+            company=company, is_active=True,
+            production_order__reference__startswith=SEED_TAG,
+        ).count()
+        self.stdout.write(f'  Totals: {open_pos} demo PO(s), {part_count} part(s).')
 
     def _purge_demo(self, company):
-        demo_pos = ProductionOrder.objects.filter(company=company, reference=SEED_TAG)
+        demo_pos = ProductionOrder.objects.filter(company=company, reference__startswith=SEED_TAG)
         demo_part_ids = list(
             Part.objects.filter(production_order__in=demo_pos).values_list('pk', flat=True),
         )
@@ -175,6 +202,145 @@ class Command(BaseCommand):
         Part.objects.filter(pk__in=demo_part_ids).delete()
         demo_pos.delete()
         self.stdout.write('Removed previous MES-DEMO production data (work centers preserved).')
+
+    def _seed_extra_orders(self, company, admin, centers) -> int:
+        """Two additional released POs for multi-order floor demo."""
+        specs = [
+            (
+                f'{SEED_TAG}-RECEPTION',
+                'Walnut reception counter',
+                1,
+                14,
+                [
+                    ('Reception counter top', BOMItem.MATERIAL_PANEL, Decimal('1'), 'pcs'),
+                    ('Counter carcass side', BOMItem.MATERIAL_PANEL, Decimal('2'), 'pcs'),
+                    ('Brushed brass handles', BOMItem.MATERIAL_HARDWARE, Decimal('4'), 'pcs'),
+                ],
+            ),
+            (
+                f'{SEED_TAG}-KITCHEN',
+                'Kitchen base unit run',
+                3,
+                7,
+                [
+                    ('Base cabinet carcass', BOMItem.MATERIAL_PANEL, Decimal('1'), 'set'),
+                    ('Shaker door panel', BOMItem.MATERIAL_PANEL, Decimal('2'), 'pcs'),
+                    ('Soft-close hinges', BOMItem.MATERIAL_HARDWARE, Decimal('4'), 'pcs'),
+                ],
+            ),
+        ]
+        created = 0
+        for ref, title, qty, days_due, bom_lines in specs:
+            if ProductionOrder.objects.filter(company=company, reference=ref).exists():
+                continue
+            po = ProductionOrder.objects.create(
+                company=company,
+                po_number=allocate_po_number(company),
+                reference=ref,
+                quantity=qty,
+                due_date=date.today() + timedelta(days=days_due),
+                status=ProductionOrder.STATUS_DRAFT,
+                wip_value=Decimal('0.00'),
+                created_by=admin,
+                updated_by=admin,
+            )
+            for idx, (name, mat_type, line_qty, unit) in enumerate(bom_lines, start=1):
+                BOMItem.objects.create(
+                    company=company,
+                    production_order=po,
+                    part_name=name,
+                    material_type=mat_type,
+                    quantity=line_qty,
+                    unit=unit,
+                    item_code=f'{ref}-{idx:02d}',
+                    unit_cost=Decimal('55.00'),
+                    created_by=admin,
+                    updated_by=admin,
+                )
+            ensure_routing_for_order(po)
+            generate_parts_from_bom(po)
+            release_production_order(po)
+            recalculate_wip(po)
+            created += 1
+            self.stdout.write(f'  Extra PO: {po.po_number} — {title} ({po.parts.filter(is_active=True).count()} parts)')
+        return created
+
+    def _simulate_floor_activity(self, company, admin, centers) -> int:
+        """Spread parts across stations and add backdated scans for Gearup Agent."""
+        now = timezone.now()
+        cut = centers['CUT']
+        edge = centers['EDGE']
+        cnc = centers['CNC']
+        paint = centers['PAINT']
+
+        demo_parts = list(
+            Part.objects.filter(
+                company=company,
+                is_active=True,
+                production_order__reference__startswith=SEED_TAG,
+                production_order__status__in=(
+                    ProductionOrder.STATUS_RELEASED,
+                    ProductionOrder.STATUS_IN_PRODUCTION,
+                ),
+            ).select_related('production_order').order_by('pk'),
+        )
+        if not demo_parts:
+            return 0
+
+        scan_count = 0
+
+        def move_part(part, wc, status=Part.STATUS_IN_WIP, hours_ago=4):
+            ts = now - timedelta(hours=hours_ago)
+            Part.objects.filter(pk=part.pk).update(
+                current_work_center_id=wc.pk,
+                status=status,
+                updated_at=ts,
+            )
+            part.refresh_from_db()
+
+        def add_scan(part, wc, scan_type, hours_ago):
+            nonlocal scan_count
+            ts = now - timedelta(hours=hours_ago)
+            scan = PartScan.objects.create(
+                company=company,
+                part=part,
+                work_center=wc,
+                operator=admin,
+                scan_type=scan_type,
+            )
+            PartScan.objects.filter(pk=scan.pk).update(timestamp=ts)
+            scan_count += 1
+
+        # Queue backlog at CUT — backdate waiting parts
+        cut_queue = demo_parts[:18]
+        for idx, part in enumerate(cut_queue):
+            move_part(part, cut, Part.STATUS_PENDING if idx % 3 == 0 else Part.STATUS_IN_WIP, hours_ago=3 + idx * 0.25)
+            if idx % 2 == 0:
+                add_scan(part, cut, PartScan.SCAN_IN, hours_ago=3.5 + idx * 0.25)
+
+        # EDGE queue — slow operation demo (IN 4h ago, OUT 45m ago = over std)
+        edge_parts = demo_parts[18:24]
+        for idx, part in enumerate(edge_parts):
+            move_part(part, edge, Part.STATUS_IN_WIP, hours_ago=2)
+            add_scan(part, edge, PartScan.SCAN_IN, hours_ago=4.0 + idx * 0.1)
+            add_scan(part, edge, PartScan.SCAN_OUT, hours_ago=0.75)
+
+        # CNC + PAINT spread
+        for part in demo_parts[24:27]:
+            move_part(part, cnc, Part.STATUS_IN_WIP, hours_ago=1.5)
+            add_scan(part, cnc, PartScan.SCAN_IN, hours_ago=2.0)
+        for part in demo_parts[27:29]:
+            move_part(part, paint, Part.STATUS_IN_WIP, hours_ago=1.0)
+            add_scan(part, paint, PartScan.SCAN_IN, hours_ago=1.5)
+
+        # Mark kitchen PO as in production for pipeline demo
+        ProductionOrder.objects.filter(
+            company=company,
+            reference=f'{SEED_TAG}-KITCHEN',
+            status=ProductionOrder.STATUS_RELEASED,
+        ).update(status=ProductionOrder.STATUS_IN_PRODUCTION)
+
+        return scan_count
 
     def _seed_work_centers(self, company, admin):
         centers = {}

@@ -820,6 +820,11 @@
                                 <i class="fas fa-tablet-alt me-2"></i>Floor Tablet
                             </a>
                         </li>
+                        <li>
+                            <a class="dropdown-item {% if '/mes/oracle/' in request.path %}active{% endif %}" href="{% url 'mes:oracle_pull' %}">
+                                <i class="fas fa-cloud-download-alt me-2"></i>Pull from Oracle
+                            </a>
+                        </li>
                         <li><hr class="dropdown-divider"></li>
                         {% if can_access_ceo_dashboard %}
                         <li>

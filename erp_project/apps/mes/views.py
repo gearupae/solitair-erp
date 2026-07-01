@@ -139,8 +139,11 @@ class MesIndexView(MesAccessMixin, ListView):
         else:
             ctx['work_center_count'] = 0
             ctx['open_order_count'] = 0
-        from apps.inventory.utils import is_ai_available
-        ctx['openai_configured'] = is_ai_available()
+        from apps.mes.services.gearup_agent import get_agent_ai_status
+
+        agent_ai = get_agent_ai_status()
+        ctx['agent_ai'] = agent_ai
+        ctx['openai_configured'] = agent_ai['ai_available']
         return ctx
 
 
