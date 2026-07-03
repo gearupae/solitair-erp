@@ -1859,7 +1859,7 @@ class ExpenseClaimListView(PermissionRequiredMixin, ListView):
                 Q(employee__last_name__icontains=search)
             )
         
-        return queryset
+        return queryset.order_by('-submitted_at', '-created_at', '-claim_date', '-pk')
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -2020,7 +2020,9 @@ def expenseclaim_submit(request, pk):
         return redirect('purchase:expenseclaim_detail', pk=pk)
     
     claim.status = 'submitted'
-    claim.save()
+    from django.utils import timezone
+    claim.submitted_at = timezone.now()
+    claim.save(update_fields=['status', 'submitted_at'])
     messages.success(request, f'Expense Claim {claim.claim_number} submitted for approval.')
     return redirect('purchase:expenseclaim_detail', pk=pk)
 

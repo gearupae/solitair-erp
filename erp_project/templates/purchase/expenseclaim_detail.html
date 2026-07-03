@@ -232,6 +232,16 @@
                         <td>{{ claim.claim_date|date:"d/m/Y" }}</td>
                     </tr>
                     <tr>
+                        <th class="text-muted">Submitted</th>
+                        <td>
+                            {% if claim.submitted_at %}
+                            {{ claim.submitted_at|date:"d/m/Y H:i" }}
+                            {% else %}
+                            <span class="text-muted">Not submitted yet</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
                         <th class="text-muted">Total Amount</th>
                         <td class="fw-bold">AED {{ claim.total_amount|floatformat:2|intcomma }}</td>
                     </tr>

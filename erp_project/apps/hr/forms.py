@@ -97,6 +97,7 @@ class EmployeeForm(forms.ModelForm):
             'emirates_id',
             'visa_number',
             'visa_expiry',
+            'photo',
         ]
         labels = {
             'user': 'ERP login',
@@ -114,6 +115,12 @@ class EmployeeForm(forms.ModelForm):
             'visa_expiry': forms.DateInput(
                 attrs={'type': 'date', 'class': 'form-control'},
                 format='%Y-%m-%d',
+            ),
+            'photo': forms.ClearableFileInput(
+                attrs={
+                    'class': 'form-control',
+                    'accept': 'image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp',
+                }
             ),
         }
     
@@ -204,8 +211,12 @@ class EmployeeForm(forms.ModelForm):
         self.fields['company'].empty_label = '-- Select Company --'
 
         self.fields['employee_code'].required = False
+        self.fields['photo'].required = False
+        self.fields['photo'].label = 'Photo'
 
         for name, field in self.fields.items():
+            if name == 'photo':
+                continue
             if name in [
                 'department',
                 'designation',
@@ -268,6 +279,19 @@ class EmployeeForm(forms.ModelForm):
 
         validate_emirates_id_format(value)
         return value
+
+    def clean_photo(self):
+        from django.core.files.uploadedfile import UploadedFile
+
+        photo = self.cleaned_data.get('photo')
+        if not photo or not isinstance(photo, UploadedFile):
+            return photo
+        if photo.size > 5 * 1024 * 1024:
+            raise forms.ValidationError('Photo must be 5 MB or smaller.')
+        name = (photo.name or '').lower()
+        if not name.endswith(('.jpg', '.jpeg', '.png', '.webp')):
+            raise forms.ValidationError('Photo must be JPEG, PNG, or WebP.')
+        return photo
 
     def save(self, commit=True):
         instance = super().save(commit=False)

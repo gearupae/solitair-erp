@@ -5,6 +5,21 @@
 #employee-form-root input[type="date"].form-control {
     min-height: calc(1.5em + 0.75rem + 2px);
 }
+.hr-emp-photo {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    object-fit: cover;
+}
+.hr-emp-photo--lg { width: 72px; height: 72px; }
+.hr-emp-photo--placeholder {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #e9ecef;
+    color: #6c757d;
+    border: 1px solid #dee2e6;
+}
 .employee-form-actions {
     top: 56px;
     z-index: 1020;
@@ -26,7 +41,7 @@
 {% if object %}
 <a href="{% url 'hr:employee_detail' object.pk %}" class="btn btn-sm btn-outline-secondary mb-2">View profile</a>
 {% endif %}
-<form method="post" id="employee-form-root">
+<form method="post" id="employee-form-root" enctype="multipart/form-data">
     {% csrf_token %}
     {% if form.errors %}
     <div class="alert alert-danger">
@@ -75,6 +90,17 @@
         <div class="card-header"><h6 class="mb-0 fw-semibold">Personal Information</h6></div>
         <div class="card-body">
             <div class="row g-3">
+                <div class="col-md-3">
+                    <label class="form-label" for="{{ form.photo.id_for_label }}">Photo</label>
+                    {% if object and object.photo %}
+                    <div class="mb-2">
+                        {% include 'hr/includes/employee_photo.html' with employee=object size='lg' %}
+                    </div>
+                    {% endif %}
+                    {{ form.photo }}
+                    <small class="text-muted d-block mt-1">JPEG, PNG, or WebP — max 5 MB.</small>
+                    {% if form.photo.errors %}<div class="text-danger small mt-1">{{ form.photo.errors|join:", " }}</div>{% endif %}
+                </div>
                 <div class="col-md-3">
                     <label class="form-label" for="{{ form.employee_code.id_for_label }}">Employee code</label>
                     {{ form.employee_code }}

@@ -115,7 +115,8 @@
                     <tr>
                         <th>Claim #</th>
                         <th>Employee</th>
-                        <th>Date</th>
+                        <th>Bill date</th>
+                        <th>Submitted</th>
                         <th class="text-end">Amount (AED)</th>
                         <th class="text-end">VAT</th>
                         <th>Status</th>
@@ -135,6 +136,13 @@
                         </td>
                         <td>{{ claim.employee.get_full_name|default:claim.employee.username }}</td>
                         <td>{{ claim.claim_date|date:"d/m/Y" }}</td>
+                        <td class="text-nowrap">
+                            {% if claim.submitted_at %}
+                            {{ claim.submitted_at|date:"d/m/Y H:i" }}
+                            {% else %}
+                            <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
                         <td class="text-end fw-bold">{{ claim.total_amount|floatformat:2|intcomma }}</td>
                         <td class="text-end">{{ claim.total_vat|floatformat:2|intcomma }}</td>
                         <td>
@@ -170,7 +178,7 @@
                     </tr>
                     {% empty %}
                     <tr>
-                        <td colspan="7" class="text-center py-5 text-muted">
+                        <td colspan="8" class="text-center py-5 text-muted">
                             <i class="fas fa-receipt fa-3x mb-3 d-block opacity-25"></i>
                             No expense claims found.
                         </td>

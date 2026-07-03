@@ -7,6 +7,7 @@ from decimal import Decimal
 from django.db import transaction
 from django.http import JsonResponse
 from django.shortcuts import redirect
+from django.utils import timezone
 from django.views.decorators.http import require_GET
 from django.views.generic import TemplateView
 
@@ -81,6 +82,7 @@ def create_public_expense_claim(employee: Employee, bill_files: list) -> tuple[E
         description=f'Public submission — {employee.full_name} ({employee.employee_code})',
         status='submitted',
         submission_source='public_link',
+        submitted_at=timezone.now(),
     )
 
     for uploaded, extracted in items_data:

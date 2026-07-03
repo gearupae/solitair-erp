@@ -1,0 +1,13 @@
+{% comment %}
+Employee avatar — sizes: sm (list), md (default), lg (detail header).
+Usage: {% include 'hr/includes/employee_photo.html' with employee=emp size='sm' %}
+{% endcomment %}
+{% with sz=size|default:'md' %}
+{% if employee.photo %}
+<img src="{{ employee.photo.url }}" alt="{{ employee.full_name }}" class="hr-emp-photo hr-emp-photo--{{ sz }}">
+{% else %}
+<span class="hr-emp-photo hr-emp-photo--placeholder hr-emp-photo--{{ sz }}" title="{{ employee.full_name }}">
+    <i class="fas fa-user{% if sz == 'lg' %} fa-lg{% elif sz == 'sm' %} fa-xs{% endif %}"></i>
+</span>
+{% endif %}
+{% endwith %}

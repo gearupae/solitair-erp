@@ -496,6 +496,28 @@ class EmployeeDetailView(PermissionRequiredMixin, DetailView):
             user=self.request.user,
         )
 
+        from apps.settings_app.models import CompanySettings
+        from apps.purchase.email_outbound import outgoing_mail_hint
+
+        co = CompanySettings.get_settings()
+        context['offer_letter_email_hint'] = outgoing_mail_hint(co)
+        context['can_send_offer_letter_email'] = context['can_edit'] and self.object.is_active
+        context['offer_letter_email_send_url'] = reverse(
+            'hr:employee_send_offer_letter_email', args=[self.object.pk]
+        )
+        context['offer_letter_email_default_subject'] = (
+            f'Offer Letter — {self.object.full_name}'
+        )
+        to_addr = (self.object.email or '').strip()
+        context['offer_letter_email_default_to'] = to_addr
+        context['offer_letter_email_missing_email'] = not to_addr
+        company_name = co.company_name if co else 'Company'
+        context['offer_letter_email_default_body'] = (
+            f'Dear {self.object.full_name},\n\n'
+            f'Please find attached your offer letter from {company_name}.\n\n'
+            f'Kind regards,\n{company_name}'
+        )
+
         return context
 
 
@@ -529,6 +551,116 @@ def employee_ai_evaluate(request, pk):
 
 def _can_manage_employee_attachments(user, employee) -> bool:
     return user.is_superuser or PermissionChecker.has_permission(user, 'hr', 'edit')
+
+
+OFFER_LETTER_ALLOWED_EXTENSIONS = {'.pdf', '.doc', '.docx'}
+OFFER_LETTER_MAX_BYTES = 10 * 1024 * 1024
+
+
+@login_required
+@require_POST
+def employee_send_offer_letter_email(request, pk):
+    """Email offer letter to employee with uploaded attachment (To/Cc like sales estimates)."""
+    from django.core.mail import EmailMessage
+
+    from apps.purchase.email_outbound import (
+        company_outgoing_from_email,
+        email_sent_via_console,
+        get_smtp_connection_or_default,
+        outgoing_mail_configured,
+        outgoing_mail_hint,
+        smtp_host_configuration_error,
+        validate_cc_addresses,
+        validate_to_addresses,
+    )
+    from apps.settings_app.models import CompanySettings
+
+    employee = get_object_or_404(Employee, pk=pk, is_active=True)
+    if not _can_manage_employee_attachments(request.user, employee):
+        return JsonResponse({'ok': False, 'error': 'Permission denied.'}, status=403)
+
+    subject = (request.POST.get('subject') or '').strip()
+    body = (request.POST.get('body') or '').strip()
+    to_raw = request.POST.get('to', '')
+    cc_raw = request.POST.get('cc', '')
+
+    if not subject:
+        return JsonResponse({'ok': False, 'error': 'Subject is required.'}, status=400)
+    if not body:
+        return JsonResponse({'ok': False, 'error': 'Message body is required.'}, status=400)
+
+    try:
+        to_list = validate_to_addresses(to_raw)
+        cc_list = validate_cc_addresses(cc_raw)
+    except ValueError as exc:
+        return JsonResponse({'ok': False, 'error': str(exc)}, status=400)
+
+    upload = request.FILES.get('attachment')
+    if not upload:
+        return JsonResponse(
+            {'ok': False, 'error': 'Attach an offer letter file (PDF or Word).'},
+            status=400,
+        )
+
+    ext = Path(upload.name).suffix.lower()
+    if ext not in OFFER_LETTER_ALLOWED_EXTENSIONS:
+        return JsonResponse(
+            {'ok': False, 'error': 'Offer letter must be PDF (.pdf) or Word (.doc, .docx).'},
+            status=400,
+        )
+    if upload.size > OFFER_LETTER_MAX_BYTES:
+        return JsonResponse({'ok': False, 'error': 'Attachment is too large (max 10 MB).'}, status=400)
+
+    company = CompanySettings.get_settings()
+    smtp_err = smtp_host_configuration_error(company)
+    if smtp_err:
+        return JsonResponse({'ok': False, 'error': smtp_err}, status=400)
+    if not outgoing_mail_configured(company):
+        return JsonResponse(
+            {'ok': False, 'error': outgoing_mail_hint(company) or 'Email is not configured.'},
+            status=400,
+        )
+
+    file_bytes = upload.read()
+    content_type = (
+        upload.content_type
+        or mimetypes.guess_type(upload.name)[0]
+        or 'application/octet-stream'
+    )
+    safe_name = ''.join(
+        c for c in (upload.name or f'Offer_Letter{ext}') if c.isalnum() or c in ('-', '_', '.')
+    ) or f'Offer_Letter{ext}'
+
+    connection = get_smtp_connection_or_default(company)
+    from_email = company_outgoing_from_email(company)
+
+    msg = EmailMessage(
+        subject=subject,
+        body=body,
+        from_email=from_email,
+        to=to_list,
+        cc=cc_list,
+        connection=connection,
+    )
+    msg.content_subtype = 'plain'
+    msg.attach(safe_name, file_bytes, content_type)
+
+    try:
+        msg.send(fail_silently=False)
+    except Exception as exc:
+        friendly = smtp_host_configuration_error(company, exc)
+        detail = friendly or f'Could not send email: {exc}'
+        return JsonResponse({'ok': False, 'error': detail}, status=502)
+
+    if email_sent_via_console(company):
+        return JsonResponse({
+            'ok': True,
+            'message': (
+                'Email logged to the server console (development). '
+                'Configure SMTP under Settings → Company for real delivery.'
+            ),
+        })
+    return JsonResponse({'ok': True, 'message': 'Offer letter email sent.'})
 
 
 def _serialize_employee_attachment(att: EmployeeAttachment) -> dict:

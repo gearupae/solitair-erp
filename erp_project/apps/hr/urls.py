@@ -19,6 +19,7 @@ urlpatterns = [
     path('employees/', views.EmployeeListView.as_view(), name='employee_list'),
     path('employees/create/', views.EmployeeCreateView.as_view(), name='employee_create'),
     path('employees/<int:pk>/', views.EmployeeDetailView.as_view(), name='employee_detail'),
+    path('employees/<int:pk>/send-offer-letter/', views.employee_send_offer_letter_email, name='employee_send_offer_letter_email'),
     path('employees/<int:pk>/ai-evaluate/', views.employee_ai_evaluate, name='employee_ai_evaluate'),
     path('employees/<int:pk>/attachments/upload/', views.employee_attachment_upload, name='employee_attachment_upload'),
     path(

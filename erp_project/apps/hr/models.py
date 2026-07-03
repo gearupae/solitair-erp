@@ -108,7 +108,14 @@ class Employee(BaseModel):
     emirates_id = models.CharField(max_length=50, blank=True)
     visa_number = models.CharField(max_length=50, blank=True)
     visa_expiry = models.DateField(null=True, blank=True)
-    
+    photo = models.ImageField(
+        upload_to='employee_photos/%Y/%m/',
+        blank=True,
+        null=True,
+        max_length=500,
+        help_text='Employee profile photo (JPEG, PNG, or WebP).',
+    )
+
     class Meta:
         ordering = ['-created_at', '-pk']
     

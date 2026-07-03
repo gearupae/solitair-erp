@@ -1163,6 +1163,11 @@ class ExpenseClaim(BaseModel):
         related_name='approved_purchase_claims'
     )
     approved_date = models.DateTimeField(null=True, blank=True)
+    submitted_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text='When the claim was submitted for approval.',
+    )
     rejection_reason = models.TextField(blank=True)
     
     # Journal entry created on approval
@@ -1194,7 +1199,7 @@ class ExpenseClaim(BaseModel):
     payment_reference = models.CharField(max_length=100, blank=True)
     
     class Meta:
-        ordering = ['-claim_date', '-created_at']
+        ordering = ['-submitted_at', '-created_at', '-claim_date', '-pk']
     
     def __str__(self):
         return f"{self.claim_number} - {self.employee.get_full_name()}"
