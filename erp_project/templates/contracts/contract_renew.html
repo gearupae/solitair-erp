@@ -1,0 +1,86 @@
+{% extends 'base.html' %}
+
+{% block extra_css %}
+<style>
+.inline-form-container { max-width: 960px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <div>
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-2">
+                <li class="breadcrumb-item"><a href="{% url 'contracts:contract_list' %}">Contracts</a></li>
+                <li class="breadcrumb-item"><a href="{% url 'contracts:contract_detail' source.pk %}">{{ source.contract_number }}</a></li>
+                <li class="breadcrumb-item active">Renew</li>
+            </ol>
+        </nav>
+        <h4 class="mb-1 fw-bold">{{ title }}</h4>
+        <p class="text-muted mb-0">Create a new AMC period from {{ source.contract_number }} — {{ source.name }}</p>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+        <a href="{% url 'contracts:contract_detail' source.pk %}" class="btn btn-outline-secondary">Back to contract</a>
+    </div>
+</div>
+
+<div class="alert alert-info border-0 shadow-sm">
+    <i class="fas fa-info-circle me-2"></i>
+    Dates are pre-filled for the next AMC period. Review all fields, upload the new signed contract, and save to create a new contract record.
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-body p-4">
+        <form method="post" enctype="multipart/form-data">
+            {% csrf_token %}
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label text-muted">Renewing from</label>
+                    <input type="text" class="form-control" value="{{ source.contract_number }} — ends {{ source.end_date|date:'d M Y' }}" disabled>
+                </div>
+                {% include 'contracts/_contract_fields.html' %}
+                {% if form.non_field_errors %}
+                <div class="col-12"><div class="alert alert-danger mb-0">{{ form.non_field_errors }}</div></div>
+                {% endif %}
+            </div>
+            <div class="mt-4 pt-3 border-top">
+                <button type="submit" class="btn btn-primary"><i class="fas fa-redo me-2"></i>Save renewed AMC</button>
+                <a href="{% url 'contracts:contract_detail' source.pk %}" class="btn btn-light">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.querySelectorAll('.btn-add-contract-type').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+        const wrap = document.getElementById('new-type-rows');
+        const inp = document.createElement('input');
+        inp.type = 'text';
+        inp.name = 'new_type_name';
+        inp.className = 'form-control mb-2';
+        inp.placeholder = 'Another type name';
+        wrap.appendChild(inp);
+    });
+});
+$(function () {
+    if ($('.select2-contract-types').length) {
+        $('.select2-contract-types').select2({
+            theme: 'bootstrap-5',
+            width: '100%',
+            placeholder: 'Select types…',
+            closeOnSelect: false,
+        });
+    }
+    if ($('.select2-contract-salesperson').length) {
+        $('.select2-contract-salesperson').select2({
+            theme: 'bootstrap-5',
+            width: '100%',
+            placeholder: 'Select salesperson…',
+        });
+    }
+});
+</script>
+{% endblock %}

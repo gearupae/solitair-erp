@@ -202,6 +202,12 @@ class Estimate(BaseModel):
         max_length=20, choices=DISCOUNT_TYPE_CHOICES, default='none',
     )
     discount_value = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    overhead_percent = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=Decimal('10.00'),
+        help_text='Default overhead % applied to line total cost when Apply OH is checked.',
+    )
 
     authorized_signature = models.ImageField(
         upload_to='estimate_signatures/', blank=True, null=True,
@@ -464,6 +470,15 @@ class Estimate(BaseModel):
         """True when the estimate may be converted to an invoice or project (quotation won only)."""
         return self.status in self.FOLLOW_ON_STATUSES
 
+    @property
+    def primary_amc_contract(self):
+        """Most recent active AMC contract created from this quotation."""
+        return self.amc_contracts.filter(is_active=True).order_by('-created_at').first()
+
+    @property
+    def has_amc_contract(self) -> bool:
+        return self.amc_contracts.filter(is_active=True).exists()
+
     def active_invoices(self):
         """Invoices created from this estimate (excluding cancelled)."""
         return self.invoices.exclude(status='cancelled')
@@ -658,18 +673,50 @@ class EstimateItem(models.Model):
         related_name='estimate_lines',
     )
     brand = models.CharField(max_length=120, blank=True, default='')
+    UOM_CHOICES = [
+        ('units', 'Units'),
+        ('ls', 'LS'),
+        ('rm', 'RM'),
+        ('litre', 'Litre'),
+        ('set', 'Set'),
+        ('mtr', 'Mtr'),
+    ]
+    uom = models.CharField(max_length=20, blank=True, default='', choices=UOM_CHOICES)
     description = models.CharField(max_length=500)
     quantity = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('1.00'))
+    apply_overhead = models.BooleanField(default=True)
     unit_price = models.DecimalField(
         max_digits=15,
         decimal_places=2,
         help_text='Unit cost per unit (before profit).',
     )
+    PROFIT_TYPE_CHOICES = [
+        ('none', 'None'),
+        ('percent', 'Percent'),
+        ('amount', 'Amount'),
+    ]
     installation_cost = models.DecimalField(
         max_digits=15,
         decimal_places=2,
         default=Decimal('0.00'),
         help_text='Unit installation cost per unit (not included in line net; consolidated in expenses).',
+    )
+    installation_selling_cost = models.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        help_text='Unit installation selling price entered by user.',
+    )
+    installation_profit_type = models.CharField(
+        max_length=10,
+        choices=PROFIT_TYPE_CHOICES,
+        default='none',
+    )
+    installation_profit_value = models.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        help_text='Auto-calculated from installation selling vs installation cost.',
     )
     selling_cost = models.DecimalField(
         max_digits=15,
@@ -677,11 +724,6 @@ class EstimateItem(models.Model):
         default=Decimal('0.00'),
         help_text='Unit selling price entered by user; profit is derived from unit cost.',
     )
-    PROFIT_TYPE_CHOICES = [
-        ('none', 'None'),
-        ('percent', 'Percent'),
-        ('amount', 'Amount'),
-    ]
     profit_type = models.CharField(max_length=20, choices=PROFIT_TYPE_CHOICES, default='none')
     profit_value = models.DecimalField(
         max_digits=15,
@@ -785,6 +827,85 @@ class EstimateItem(models.Model):
                 self.selling_cost = unit
 
     @property
+    def effective_installation_selling_unit(self) -> Decimal:
+        if self.installation_selling_cost and self.installation_selling_cost > 0:
+            return self.installation_selling_cost
+        return self.installation_cost or Decimal('0.00')
+
+    def apply_installation_profit_from_selling_cost(self):
+        """Derive installation_profit_value from install cost and install selling cost."""
+        unit = self.installation_cost or Decimal('0')
+        selling = self.effective_installation_selling_unit
+        if selling <= 0 and unit > 0:
+            selling = unit
+            self.installation_selling_cost = unit
+        diff = (selling - unit).quantize(Decimal('0.01'))
+        if self.installation_profit_type == 'percent':
+            if unit > 0:
+                self.installation_profit_value = (diff / unit * Decimal('100')).quantize(Decimal('0.01'))
+            else:
+                self.installation_profit_value = Decimal('0.00')
+        elif self.installation_profit_type == 'amount':
+            self.installation_profit_value = diff
+        else:
+            self.installation_profit_value = Decimal('0.00')
+            if self.installation_profit_type == 'none' and unit > 0:
+                self.installation_selling_cost = unit
+
+    @property
+    def total_cost(self) -> Decimal:
+        """Net product cost + net installation cost."""
+        return (self.base_line_subtotal + self.installation_line_subtotal).quantize(Decimal('0.01'))
+
+    @property
+    def overhead_amount(self) -> Decimal:
+        if not self.apply_overhead:
+            return Decimal('0.00')
+        pct = Decimal('0.00')
+        if self.estimate_id:
+            pct = self.estimate.overhead_percent or Decimal('0.00')
+        elif getattr(self, 'estimate', None) is not None:
+            pct = getattr(self.estimate, 'overhead_percent', None) or Decimal('0.00')
+        if pct <= 0:
+            return Decimal('0.00')
+        return (self.total_cost * pct / Decimal('100')).quantize(Decimal('0.01'))
+
+    @property
+    def total_cost_with_oh(self) -> Decimal:
+        return (self.total_cost + self.overhead_amount).quantize(Decimal('0.01'))
+
+    @property
+    def net_product_profit_amount(self) -> Decimal:
+        qty = self.quantity or Decimal('0')
+        unit = self.unit_price or Decimal('0')
+        selling = self.effective_selling_unit
+        return (qty * (selling - unit)).quantize(Decimal('0.01'))
+
+    @property
+    def net_installation_profit_amount(self) -> Decimal:
+        qty = self.quantity or Decimal('0')
+        unit = self.installation_cost or Decimal('0')
+        selling = self.effective_installation_selling_unit
+        return (qty * (selling - unit)).quantize(Decimal('0.01'))
+
+    @property
+    def installation_net_selling(self) -> Decimal:
+        qty = self.quantity or Decimal('0')
+        return (qty * self.effective_installation_selling_unit).quantize(Decimal('0.01'))
+
+    @property
+    def total_selling_price(self) -> Decimal:
+        """Combined net selling (product + installation) before VAT."""
+        return (self.line_net_excl_vat + self.installation_net_selling).quantize(Decimal('0.01'))
+
+    @property
+    def quote_unit_rate(self) -> Decimal:
+        """Customer PDF unit rate: product + installation selling per unit."""
+        return (
+            self.effective_selling_unit + self.effective_installation_selling_unit
+        ).quantize(Decimal('0.01'))
+
+    @property
     def line_profit_amount(self) -> Decimal:
         """Profit AED for this line from stored profit type/value × qty."""
         qty = self.quantity or Decimal('0')
@@ -815,8 +936,8 @@ class EstimateItem(models.Model):
 
     @property
     def effective_rate(self):
-        """Always-computed unit rate for display (PDF/detail); matches compute_rate()."""
-        return self.compute_rate()
+        """Customer-facing unit rate on quotation PDF."""
+        return self.quote_unit_rate
 
     def _apply_vat_to_line_gross(self, gross: Decimal):
         """Split line gross into (total excl. VAT, vat_amount)."""
@@ -831,7 +952,7 @@ class EstimateItem(models.Model):
 
     @property
     def line_total_incl_vat(self) -> Decimal:
-        total, vat_amount = self._apply_vat_to_line_gross(self.line_net_excl_vat)
+        total, vat_amount = self._apply_vat_to_line_gross(self.total_selling_price)
         return (total + vat_amount).quantize(Decimal('0.01'))
 
     @property
@@ -849,6 +970,26 @@ class EstimateItem(models.Model):
         return ' · '.join(parts)
     
     def save(self, *args, **kwargs):
+        from .estimate_overhead import resolve_apply_overhead, uom_from_inventory_unit
+
+        inventory_changed = bool(getattr(self, '_inventory_changed', False))
+        is_new = self._state.adding
+        self.apply_overhead = resolve_apply_overhead(self)
+        if is_new or inventory_changed:
+            if self.inventory_item_id:
+                inv = self.inventory_item
+                if inv is None:
+                    from apps.inventory.models import Item
+
+                    inv = Item.objects.filter(pk=self.inventory_item_id).first()
+                if inv:
+                    if not self.uom:
+                        mapped = uom_from_inventory_unit(inv.unit)
+                        if mapped:
+                            self.uom = mapped
+                    if not self.installation_selling_cost and self.installation_cost:
+                        self.installation_selling_cost = self.installation_cost
+
         # Derive VAT rate from Tax Code (No Tax Code = 0%)
         if self.tax_code:
             self.vat_rate = self.tax_code.rate
@@ -857,10 +998,13 @@ class EstimateItem(models.Model):
 
         if not self.selling_cost and self.unit_price:
             self.selling_cost = self.unit_price
+        if not self.installation_selling_cost and self.installation_cost:
+            self.installation_selling_cost = self.installation_cost
         self.apply_profit_from_selling_cost()
+        self.apply_installation_profit_from_selling_cost()
         self.rate = self.effective_selling_unit
-        self.total, self.vat_amount = self._apply_vat_to_line_gross(self.line_net_excl_vat)
-        
+        self.total, self.vat_amount = self._apply_vat_to_line_gross(self.total_selling_price)
+
         super().save(*args, **kwargs)
 
 

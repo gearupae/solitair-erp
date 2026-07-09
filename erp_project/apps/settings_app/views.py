@@ -216,7 +216,18 @@ class RolePermissionView(PermissionRequiredMixin, TemplateView):
                 'delete': mp.can_delete,
             }
         context['current_permissions'] = current_permissions
-        
+        context['alerts_sections'] = [
+            ('contracts', 'Contracts & AMC — expiry alerts'),
+            ('support', 'Support — unattended tickets'),
+            ('crm', 'Leads — unassigned / stale pipeline'),
+            ('sales', 'Estimates & quotations — pending / not won'),
+            ('projects', 'Projects, tasks, expenses, inspections'),
+            ('projects', 'Operations & scheduling (uses Projects view)'),
+            ('purchase', 'Purchase — PR, PO, vendor bills'),
+            ('hr', 'HR — leave & recruitment approvals'),
+            ('inventory', 'Material & consumable requests'),
+        ]
+
         return context
     
     def post(self, request, *args, **kwargs):
@@ -627,6 +638,29 @@ class AuditLogListView(PermissionRequiredMixin, ListView):
             ('hr', 'HR'),
             ('settings', 'Settings'),
         ]
+        return context
+
+
+class AlertsHubView(LoginRequiredMixin, TemplateView):
+    """Section-wise alerts and red flags — visibility per module role permission."""
+
+    template_name = 'settings/alerts_hub.html'
+
+    def dispatch(self, request, *args, **kwargs):
+        from .alerts_hub import user_can_access_alerts_hub
+
+        if not user_can_access_alerts_hub(request.user):
+            messages.error(request, 'You do not have permission to view alerts.')
+            return redirect('dashboard')
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_context_data(self, **kwargs):
+        from .alerts_hub import build_alerts_hub
+
+        context = super().get_context_data(**kwargs)
+        hub = build_alerts_hub(self.request.user)
+        context['title'] = 'Alerts'
+        context.update(hub)
         return context
 
 

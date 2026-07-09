@@ -75,7 +75,7 @@ def find_employee_schedule_conflicts(employee_ids, duty_date, exclude_pk=None):
 
     qs = StaffDutySchedule.objects.filter(
         is_active=True,
-        status='scheduled',
+        status__in=StaffDutySchedule.ACTIVE_DUTY_STATUSES,
         duty_date=duty_date,
         employee_id__in=employee_ids,
     ).select_related('employee', 'project', 'amc_contract')

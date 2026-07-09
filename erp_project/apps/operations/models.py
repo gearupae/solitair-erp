@@ -27,11 +27,29 @@ class OperationsSettings(models.Model):
 class StaffDutySchedule(BaseModel):
     """One staff member assigned to a project or AMC on a specific date and time."""
 
+    STATUS_SCHEDULED = 'scheduled'
+    STATUS_PENDING = 'pending'
+    STATUS_IN_PROGRESS = 'in_progress'
+    STATUS_COMPLETED = 'completed'
+    STATUS_OVERDUE = 'overdue'
+    STATUS_PAUSED = 'paused'
+    STATUS_CANCELLED = 'cancelled'
+
     STATUS_CHOICES = [
-        ('scheduled', 'Scheduled'),
-        ('paused', 'Paused'),
-        ('cancelled', 'Cancelled'),
+        (STATUS_SCHEDULED, 'Scheduled'),
+        (STATUS_PENDING, 'Pending'),
+        (STATUS_IN_PROGRESS, 'In progress'),
+        (STATUS_COMPLETED, 'Completed'),
+        (STATUS_OVERDUE, 'Overdue'),
+        (STATUS_PAUSED, 'Paused'),
+        (STATUS_CANCELLED, 'Cancelled'),
     ]
+
+    ACTIVE_DUTY_STATUSES = frozenset({
+        STATUS_SCHEDULED,
+        STATUS_PENDING,
+        STATUS_IN_PROGRESS,
+    })
 
     LINK_TYPE_CHOICES = [
         ('project', 'Project'),
@@ -42,6 +60,9 @@ class StaffDutySchedule(BaseModel):
         Employee,
         on_delete=models.CASCADE,
         related_name='duty_schedules',
+        null=True,
+        blank=True,
+        help_text='Leave empty for AMC auto-drafts until a technician is assigned.',
     )
     duty_date = models.DateField(db_index=True)
     start_time = models.TimeField()
@@ -73,7 +94,11 @@ class StaffDutySchedule(BaseModel):
         constraints = [
             models.UniqueConstraint(
                 fields=['employee', 'duty_date'],
-                condition=Q(status='scheduled', is_active=True),
+                condition=Q(
+                    status__in=('scheduled', 'pending', 'in_progress'),
+                    is_active=True,
+                    employee__isnull=False,
+                ),
                 name='operations_unique_scheduled_duty_per_day',
             ),
         ]
@@ -81,7 +106,8 @@ class StaffDutySchedule(BaseModel):
         verbose_name_plural = 'Staff duty schedules'
 
     def __str__(self):
-        return f'{self.employee} — {self.duty_date} ({self.get_status_display()})'
+        staff = self.employee.full_name if self.employee_id else 'Unassigned'
+        return f'{staff} — {self.duty_date} ({self.get_status_display()})'
 
     def clean(self):
         errors = {}
@@ -97,11 +123,11 @@ class StaffDutySchedule(BaseModel):
         if self.end_time and self.start_time and self.end_time <= self.start_time:
             errors['end_time'] = 'End time must be after start time.'
 
-        if self.status == 'scheduled' and self.employee_id and self.duty_date:
+        if self.status in self.ACTIVE_DUTY_STATUSES and self.employee_id and self.duty_date:
             conflict = (
                 StaffDutySchedule.objects.filter(
                     is_active=True,
-                    status='scheduled',
+                    status__in=self.ACTIVE_DUTY_STATUSES,
                     employee_id=self.employee_id,
                     duty_date=self.duty_date,
                 )

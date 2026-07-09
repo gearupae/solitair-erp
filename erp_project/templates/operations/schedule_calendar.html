@@ -25,6 +25,7 @@
         <p class="text-muted mb-0">View staff duty assignments by month or custom period</p>
     </div>
     <div class="d-flex gap-2 flex-wrap">
+        {% include 'operations/_operations_nav.html' with active_tab='calendar' %}
         <a href="{% url 'operations:schedule_list' %}" class="btn btn-light btn-sm">List view</a>
         {% if can_edit %}
         <a href="{% url 'operations:schedule_create' %}" class="btn btn-primary btn-sm"><i class="fas fa-plus me-1"></i>Schedule</a>

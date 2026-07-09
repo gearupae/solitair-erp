@@ -52,3 +52,18 @@ def estimate_show_b2b_compliance_banner(estimate) -> bool:
         and not estimate_customer_b2b_compliance_ok(estimate)
         and not estimate.project_id
     )
+
+
+def estimate_convert_to_amc_block_reason(estimate) -> str:
+    """Empty string if a won quotation may be converted to an AMC contract."""
+    if not estimate.allows_follow_on_conversion:
+        return 'Only quotation-won estimates can be converted to an AMC contract.'
+    if estimate.has_amc_contract:
+        existing = estimate.primary_amc_contract
+        if existing:
+            return (
+                f'This quotation is already linked to AMC {existing.contract_number}. '
+                'Open the contract to edit or use Renew AMC for a new period.'
+            )
+        return 'This quotation already has an AMC contract.'
+    return ''

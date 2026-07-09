@@ -28,71 +28,33 @@
                     <label class="form-label">Contract number</label>
                     <input type="text" class="form-control" value="{{ object.contract_number }}" disabled>
                 </div>
+                {% if object.source_estimate or object.project %}
                 <div class="col-md-4">
-                    <label class="form-label">Customer</label>
-                    {{ form.customer }}
-                    {% if form.customer.errors %}<div class="text-danger small">{{ form.customer.errors }}</div>{% endif %}
-                </div>
-                <div class="col-md-4">
-                    <label class="form-label">Contract name <span class="text-danger">*</span></label>
-                    {{ form.name }}
-                    {% if form.name.errors %}<div class="text-danger small">{{ form.name.errors }}</div>{% endif %}
-                </div>
-                <div class="col-md-4">
-                    <label class="form-label">Contract value (AED) <span class="text-danger">*</span></label>
-                    {{ form.contract_value }}
-                    {% if form.contract_value.errors %}<div class="text-danger small">{{ form.contract_value.errors }}</div>{% endif %}
-                </div>
-                <div class="col-md-4">
-                    <label class="form-label">Start date <span class="text-danger">*</span></label>
-                    {{ form.start_date }}
-                    {% if form.start_date.errors %}<div class="text-danger small">{{ form.start_date.errors }}</div>{% endif %}
-                </div>
-                <div class="col-md-4">
-                    <label class="form-label">End date <span class="text-danger">*</span></label>
-                    {{ form.end_date }}
-                    {% if form.end_date.errors %}<div class="text-danger small">{{ form.end_date.errors }}</div>{% endif %}
-                </div>
-                <div class="col-md-4">
-                    <label class="form-label">Status</label>
-                    {{ form.status }}
-                    {% if form.status.errors %}<div class="text-danger small">{{ form.status.errors }}</div>{% endif %}
-                </div>
-                <div class="col-md-4">
-                    <label class="form-label">Remind before (days)</label>
-                    {{ form.remind_before_days }}
-                    {% if form.remind_before_days.errors %}<div class="text-danger small">{{ form.remind_before_days.errors }}</div>{% endif %}
-                </div>
-                <div class="col-md-4">
-                    <label class="form-label">Attachments</label>
-                    <input type="file" name="attachments" class="form-control" multiple accept=".pdf,.doc,.docx,.png,.jpg,.jpeg">
-                    <div class="form-text">Add more files (existing attachments are kept).</div>
-                </div>
-                <div class="col-md-6">
-                    <label class="form-label">Contract types <span class="text-danger">*</span></label>
-                    {{ form.contract_types }}
-                    {% if form.contract_types.errors %}<div class="text-danger small">{{ form.contract_types.errors }}</div>{% endif %}
-                </div>
-                <div class="col-md-6">
-                    <label class="form-label">New contract types</label>
-                    <div id="new-type-rows">
-                        <input type="text" name="new_type_name" class="form-control mb-2" placeholder="New type name">
+                    <label class="form-label text-muted">Source quotation</label>
+                    {% if object.source_estimate %}
+                    <div class="form-control bg-light">
+                        <a href="{% url 'sales:estimate_detail' object.source_estimate.pk %}" class="text-decoration-none">
+                            {{ object.source_estimate.display_estimate_number }}
+                        </a>
                     </div>
-                    <button type="button" class="btn btn-sm btn-outline-secondary" id="btnAddContractType" title="Add another type">
-                        <i class="fas fa-plus me-1"></i>Add type
-                    </button>
+                    {% else %}
+                    <input type="text" class="form-control" value="—" disabled>
+                    {% endif %}
                 </div>
-                <div class="col-12">
-                    <label class="form-label">Description</label>
-                    {{ form.description }}
-                    {% if form.description.errors %}<div class="text-danger small">{{ form.description.errors }}</div>{% endif %}
+                <div class="col-md-4">
+                    <label class="form-label text-muted">Linked project</label>
+                    {% if object.project %}
+                    <div class="form-control bg-light">
+                        <a href="{% url 'projects:project_detail' object.project.pk %}" class="text-decoration-none">
+                            {{ object.project.project_code }} — {{ object.project.name }}
+                        </a>
+                    </div>
+                    {% else %}
+                    <input type="text" class="form-control" value="—" disabled>
+                    {% endif %}
                 </div>
-                <div class="col-12">
-                    <label class="form-label">Terms &amp; conditions</label>
-                    {{ form.terms_and_conditions }}
-                    <div class="form-text">Shown on the contract PDF.</div>
-                    {% if form.terms_and_conditions.errors %}<div class="text-danger small">{{ form.terms_and_conditions.errors }}</div>{% endif %}
-                </div>
+                {% endif %}
+                {% include 'contracts/_contract_fields.html' with attachment_help='Add more signed contract files (existing attachments are kept).' %}
 
                 <div class="col-12">
                     <h6 class="fw-semibold text-muted text-uppercase small border-bottom pb-2 mb-3 mt-2">Document expiry</h6>
@@ -149,14 +111,16 @@
 
 {% block extra_js %}
 <script>
-document.getElementById('btnAddContractType')?.addEventListener('click', function () {
-    const wrap = document.getElementById('new-type-rows');
-    const inp = document.createElement('input');
-    inp.type = 'text';
-    inp.name = 'new_type_name';
-    inp.className = 'form-control mb-2';
-    inp.placeholder = 'Another type name';
-    wrap.appendChild(inp);
+document.querySelectorAll('.btn-add-contract-type, #btnAddContractType').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+        const wrap = document.getElementById('new-type-rows');
+        const inp = document.createElement('input');
+        inp.type = 'text';
+        inp.name = 'new_type_name';
+        inp.className = 'form-control mb-2';
+        inp.placeholder = 'Another type name';
+        wrap.appendChild(inp);
+    });
 });
 $(function () {
     if ($('.select2-contract-types').length) {
@@ -165,6 +129,13 @@ $(function () {
             width: '100%',
             placeholder: 'Select types…',
             closeOnSelect: false,
+        });
+    }
+    if ($('.select2-contract-salesperson').length) {
+        $('.select2-contract-salesperson').select2({
+            theme: 'bootstrap-5',
+            width: '100%',
+            placeholder: 'Select salesperson…',
         });
     }
 });

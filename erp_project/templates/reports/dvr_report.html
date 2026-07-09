@@ -75,10 +75,12 @@
             <thead class="table-light">
                 <tr class="small">
                     <th>Date</th>
+                    <th>Time</th>
                     <th>Lead</th>
                     <th>Salesman</th>
                     <th>Location</th>
                     <th>Outcome</th>
+                    <th>Selfie</th>
                     <th>Notes</th>
                 </tr>
             </thead>
@@ -86,6 +88,7 @@
                 {% for row in visit_rows %}
                 <tr>
                     <td class="text-nowrap">{{ row.visit_date|date:"d/m/Y" }}</td>
+                    <td class="text-nowrap">{{ row.visit_time_display|default:"—" }}</td>
                     <td>
                         {% if row.lead_pk %}
                         <a href="{% url 'crm:customer_detail' row.lead_pk %}" class="fw-medium text-decoration-none">{{ row.lead_label }}</a>
@@ -97,10 +100,11 @@
                     <td>{{ row.salesman_name }}</td>
                     <td>{{ row.location|default:"—" }}</td>
                     <td>{{ row.outcome }}</td>
+                    <td>{% if row.has_selfie %}<i class="fas fa-camera text-success" title="Selfie attached"></i>{% else %}—{% endif %}</td>
                     <td class="text-muted">{{ row.notes|default:"—"|truncatechars:80 }}</td>
                 </tr>
                 {% empty %}
-                <tr><td colspan="6" class="text-muted text-center py-3">No site visits match the selected filters.</td></tr>
+                <tr><td colspan="8" class="text-muted text-center py-3">No site visits match the selected filters.</td></tr>
                 {% endfor %}
             </tbody>
         </table>

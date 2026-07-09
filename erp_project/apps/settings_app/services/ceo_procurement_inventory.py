@@ -16,8 +16,9 @@ from .ceo_executive_reports import CeoFilters, _money
 from .ceo_module_reports import _flag_meta, _health_flag
 
 OPEN_PO_STATUSES = ('draft', 'sent', 'confirmed', 'partial_received')
-UNPAID_BILL_STATUSES = ('draft', 'posted', 'pending', 'partial', 'overdue')
+UNPAID_BILL_STATUSES = ('posted', 'partial', 'overdue')
 PENDING_CR_STATUSES = ('draft', 'submitted', 'pending', 'partially_issued')
+CEO_TABLE_LIMIT = 12
 
 
 def _status_chip(label: str, value, tone: str) -> dict:
@@ -74,8 +75,8 @@ def build_purchase_dashboard(user, filters: CeoFilters) -> dict:
     bill_period = bill_qs.filter(bill_date__gte=filters.date_from, bill_date__lte=filters.date_to)
 
     pending_po_qs = po_qs.filter(status__in=OPEN_PO_STATUSES)
-    pending_po_count = pending_po_qs.count()
-    pending_po_value = float(_money(pending_po_qs.aggregate(t=Sum('total_amount'))['t']))
+    open_po_count = pending_po_qs.count()
+    open_po_value = float(_money(pending_po_qs.aggregate(t=Sum('total_amount'))['t']))
 
     unpaid_bills = bill_qs.filter(status__in=UNPAID_BILL_STATUSES).filter(total_amount__gt=F('paid_amount'))
     pending_bill_count = unpaid_bills.count()
@@ -106,38 +107,67 @@ def build_purchase_dashboard(user, filters: CeoFilters) -> dict:
     for m in monthly_po:
         m['height_pct'] = round(m['value'] / peak * 100, 1) if peak else 0
 
+    from apps.purchase.purchase_dashboard import build_po_invoice_gaps
+
+    all_po_invoice_gaps = build_po_invoice_gaps(po_qs, preview_limit=None)
+    po_invoice_gaps = all_po_invoice_gaps[:CEO_TABLE_LIMIT]
+
     pending_po_rows = []
-    for po in pending_po_qs.select_related('vendor', 'project').order_by('-order_date')[:8]:
+    for row in po_invoice_gaps:
+        po = row['po']
+        primary_bill = row['primary_bill']
         pending_po_rows.append({
             'number': po.po_number,
-            'vendor': (po.vendor.name if po.vendor_id else '—')[:24],
+            'vendor': (po.vendor.name if po.vendor_id else '—')[:28],
             'project': po.project.project_code if po.project_id else '—',
             'status': po.get_status_display(),
+            'fulfillment': row['fulfillment'],
+            'issue_label': row['issue_label'],
+            'issue': row['issue'],
             'amount': float(po.total_amount),
+            'outstanding': float(row['outstanding']),
             'order_date': po.order_date,
+            'link': row['link'],
+            'bill_number': primary_bill.bill_number if primary_bill else '',
+            'bill_link': row['bill_link'],
         })
 
+    today = filters.date_to
+
     pending_bill_rows = []
-    for bill in unpaid_bills.select_related('vendor').order_by('due_date')[:8]:
+    for bill in unpaid_bills.select_related('vendor', 'purchase_order').order_by('due_date')[:CEO_TABLE_LIMIT]:
+        po_number = bill.purchase_order.po_number if bill.purchase_order_id else '—'
         pending_bill_rows.append({
             'number': bill.bill_number,
-            'vendor': (bill.vendor.name if bill.vendor_id else '—')[:24],
+            'vendor': (bill.vendor.name if bill.vendor_id else '—')[:28],
             'status': bill.get_status_display(),
             'balance': float(bill.balance),
+            'total': float(bill.total_amount),
             'due_date': bill.due_date,
+            'is_overdue': bool(bill.due_date and bill.due_date < today),
+            'po_number': po_number,
+            'link': reverse('purchase:bill_detail', args=[bill.pk]),
+            'po_link': (
+                reverse('purchase:po_detail', args=[bill.purchase_order_id])
+                if bill.purchase_order_id else ''
+            ),
         })
 
     flag = _health_flag(
         red=pending_bill_count >= 10 and pending_bill_value > 50000,
-        yellow=pending_po_count >= 5 or pending_bill_count >= 3 or pr_pending >= 5,
+        yellow=open_po_count >= 5 or len(all_po_invoice_gaps) >= 3 or pending_bill_count >= 3 or pr_pending >= 5,
     )
+
+    invoice_gap_count = len(all_po_invoice_gaps)
+    invoice_gap_value = float(_money(sum((row['outstanding'] for row in all_po_invoice_gaps), Decimal('0.00'))))
 
     return {
         'flag': flag,
         'flag_display': _flag_meta(flag, 'purchase'),
         'headline': (
-            f'{pending_po_count} open PO · AED {pending_po_value:,.0f} · '
-            f'{pending_bill_count} unpaid bills · AED {pending_bill_value:,.0f} outstanding'
+            f'{open_po_count} open PO · AED {open_po_value:,.0f} · '
+            f'{pending_bill_count} unpaid bills · AED {pending_bill_value:,.0f} outstanding · '
+            f'{invoice_gap_count} PO(s) awaiting invoice/payment'
         ),
         'url': reverse('purchase:po_list'),
         'status_counts': [
@@ -147,15 +177,20 @@ def build_purchase_dashboard(user, filters: CeoFilters) -> dict:
             _status_chip('PR returned', pr_returned, 'secondary'),
         ],
         'kpis': [
-            {'label': 'Pending purchase orders', 'value': pending_po_count, 'format': 'int', 'hint': f'AED {pending_po_value:,.0f} open PO value'},
+            {'label': 'Open purchase orders', 'value': open_po_count, 'format': 'int', 'hint': f'AED {open_po_value:,.0f} open PO value'},
             {'label': 'Pending vendor bills', 'value': pending_bill_count, 'format': 'int', 'hint': f'AED {pending_bill_value:,.0f} balance due'},
+            {'label': 'POs awaiting invoice', 'value': invoice_gap_count, 'format': 'int', 'hint': f'AED {invoice_gap_value:,.0f} outstanding'},
             {'label': 'PO value (period)', 'value': float(_money(po_period.exclude(status='cancelled').aggregate(t=Sum('total_amount'))['t'])), 'format': 'money'},
-            {'label': 'Bills in period', 'value': bill_period.count(), 'format': 'int', 'hint': f'AED {float(_money(bill_period.aggregate(t=Sum("total_amount"))["t"])):,.0f} total'},
         ],
         'vendor_bill_summary': bill_summary,
         'monthly_po': monthly_po,
         'pending_po_rows': pending_po_rows,
+        'pending_po_count': invoice_gap_count,
         'pending_bill_rows': pending_bill_rows,
+        'pending_bill_table_count': pending_bill_count,
+        'po_list_url': reverse('purchase:po_list'),
+        'bill_list_url': reverse('purchase:bill_list'),
+        'purchase_dashboard_url': reverse('purchase:dashboard') + '#po-invoice-gaps',
     }
 
 

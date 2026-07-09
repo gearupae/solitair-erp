@@ -640,51 +640,136 @@
                 {% endfor %}
             </div>
         </div>
-        <div class="row g-4 mt-1">
-            <div class="col-lg-6">
-                <h6 class="ceo-mod-subtitle">Pending purchase orders</h6>
-                <div class="ceo-table-wrap">
-                    <table class="table table-sm ceo-table mb-0">
-                        <thead><tr><th class="ps-3">PO</th><th>Vendor</th><th>Project</th><th>Status</th><th class="text-end pe-3">Amount</th></tr></thead>
-                        <tbody>
-                        {% for row in pd.pending_po_rows %}
-                        <tr>
-                            <td class="ps-3 fw-medium">{{ row.number }}</td>
-                            <td>{{ row.vendor }}</td>
-                            <td>{{ row.project }}</td>
-                            <td><span class="badge bg-warning-subtle text-warning-emphasis">{{ row.status }}</span></td>
-                            <td class="text-end pe-3">{{ currency }} {{ row.amount|floatformat:0|intcomma }}</td>
-                        </tr>
-                        {% empty %}
-                        <tr><td colspan="5" class="text-muted text-center py-3">No open purchase orders.</td></tr>
-                        {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-            <div class="col-lg-6">
-                <h6 class="ceo-mod-subtitle">Pending vendor bills</h6>
-                <div class="ceo-table-wrap">
-                    <table class="table table-sm ceo-table mb-0">
-                        <thead><tr><th class="ps-3">Bill</th><th>Vendor</th><th>Status</th><th>Due</th><th class="text-end pe-3">Balance</th></tr></thead>
-                        <tbody>
-                        {% for row in pd.pending_bill_rows %}
-                        <tr>
-                            <td class="ps-3 fw-medium">{{ row.number }}</td>
-                            <td>{{ row.vendor }}</td>
-                            <td><span class="badge bg-danger-subtle text-danger-emphasis">{{ row.status }}</span></td>
-                            <td>{{ row.due_date|date:"d/m/Y" }}</td>
-                            <td class="text-end pe-3">{{ currency }} {{ row.balance|floatformat:0|intcomma }}</td>
-                        </tr>
-                        {% empty %}
-                        <tr><td colspan="5" class="text-muted text-center py-3">No unpaid vendor bills.</td></tr>
-                        {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+    </div>
+    {% endwith %}
+</section>
+
+<!-- Pending vendor bills -->
+<section class="card ceo-dash-card mb-3">
+    {% with pd=exec_report.purchase_dashboard %}
+    <div class="card-header ceo-dash-card__header d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <div>
+            <h6 class="fw-bold mb-0"><i class="fas fa-file-invoice-dollar me-2 text-danger"></i>Pending vendor bills</h6>
+            <p class="ceo-dash-card__note mt-1 mb-0">
+                {{ pd.pending_bill_table_count }} unpaid bill(s) · open balance due to vendors
+            </p>
+        </div>
+        <a href="{{ pd.bill_list_url }}" class="btn btn-sm btn-outline-dark" target="_blank" rel="noopener">All bills <i class="fas fa-arrow-up-right-from-square ms-1"></i></a>
+    </div>
+    <div class="card-body p-0 ceo-exec-table-wrap">
+        <table class="table table-sm ceo-table mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th class="ps-3">Bill #</th>
+                    <th>Vendor</th>
+                    <th>PO</th>
+                    <th>Status</th>
+                    <th>Due</th>
+                    <th class="text-end">Total</th>
+                    <th class="text-end pe-3">Balance</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for row in pd.pending_bill_rows %}
+            <tr>
+                <td class="ps-3 fw-medium"><a href="{{ row.link }}" target="_blank" rel="noopener">{{ row.number }}</a></td>
+                <td>{{ row.vendor }}</td>
+                <td>
+                    {% if row.po_link %}
+                    <a href="{{ row.po_link }}" target="_blank" rel="noopener" class="small">{{ row.po_number }}</a>
+                    {% else %}
+                    <span class="text-muted">—</span>
+                    {% endif %}
+                </td>
+                <td><span class="badge bg-danger-subtle text-danger-emphasis">{{ row.status }}</span></td>
+                <td class="{% if row.is_overdue %}text-danger fw-semibold{% endif %}">{{ row.due_date|date:"d/m/Y"|default:"—" }}</td>
+                <td class="text-end">{{ currency }} {{ row.total|floatformat:0|intcomma }}</td>
+                <td class="text-end pe-3 fw-semibold">{{ currency }} {{ row.balance|floatformat:0|intcomma }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="7" class="text-muted text-center py-3">No unpaid vendor bills.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% if pd.pending_bill_table_count > pd.pending_bill_rows|length %}
+    <div class="card-footer bg-white small text-muted py-2">
+        Showing {{ pd.pending_bill_rows|length }} of {{ pd.pending_bill_table_count }} unpaid bills.
+    </div>
+    {% endif %}
+    {% endwith %}
+</section>
+
+<!-- Purchase orders awaiting invoice / payment -->
+<section class="card ceo-dash-card mb-4">
+    {% with pd=exec_report.purchase_dashboard %}
+    <div class="card-header ceo-dash-card__header d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <div>
+            <h6 class="fw-bold mb-0"><i class="fas fa-file-invoice me-2 text-warning"></i>Purchase orders</h6>
+            <p class="ceo-dash-card__note mt-1 mb-0">
+                {{ pd.pending_po_count }} PO(s) ordered or received — invoice not recorded, draft only, or unpaid
+            </p>
+        </div>
+        <div class="d-flex gap-2">
+            <a href="{{ pd.purchase_dashboard_url }}" class="btn btn-sm btn-outline-secondary" target="_blank" rel="noopener">Purchase dashboard</a>
+            <a href="{{ pd.po_list_url }}" class="btn btn-sm btn-outline-dark" target="_blank" rel="noopener">All POs <i class="fas fa-arrow-up-right-from-square ms-1"></i></a>
         </div>
     </div>
+    <div class="card-body p-0 ceo-exec-table-wrap">
+        <table class="table table-sm ceo-table mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th class="ps-3">PO #</th>
+                    <th>Vendor</th>
+                    <th>Project</th>
+                    <th>PO status</th>
+                    <th>Goods</th>
+                    <th>Invoice issue</th>
+                    <th>Bill</th>
+                    <th>Order date</th>
+                    <th class="text-end pe-3">Outstanding</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for row in pd.pending_po_rows %}
+            <tr>
+                <td class="ps-3 fw-medium"><a href="{{ row.link }}" target="_blank" rel="noopener">{{ row.number }}</a></td>
+                <td>{{ row.vendor }}</td>
+                <td>{{ row.project }}</td>
+                <td><span class="badge bg-light text-dark border">{{ row.status }}</span></td>
+                <td>{{ row.fulfillment }}</td>
+                <td>
+                    <span class="badge {% if row.issue == 'unpaid' %}bg-danger-subtle text-danger{% else %}bg-warning-subtle text-warning-emphasis{% endif %}">
+                        {{ row.issue_label }}
+                    </span>
+                </td>
+                <td>
+                    {% if row.bill_link %}
+                    <a href="{{ row.bill_link }}" target="_blank" rel="noopener" class="small">{{ row.bill_number }}</a>
+                    {% else %}
+                    <span class="text-muted">—</span>
+                    {% endif %}
+                </td>
+                <td>{{ row.order_date|date:"d/m/Y"|default:"—" }}</td>
+                <td class="text-end pe-3 fw-semibold">
+                    {% if row.issue == 'no_bill' %}
+                    <span class="text-muted small">PO {{ currency }} {{ row.amount|floatformat:0|intcomma }}</span>
+                    {% else %}
+                    {{ currency }} {{ row.outstanding|floatformat:0|intcomma }}
+                    {% endif %}
+                </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="9" class="text-muted text-center py-3">No purchase orders awaiting vendor invoice or payment.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% if pd.pending_po_count > pd.pending_po_rows|length %}
+    <div class="card-footer bg-white small text-muted py-2">
+        Showing {{ pd.pending_po_rows|length }} of {{ pd.pending_po_count }} purchase orders.
+    </div>
+    {% endif %}
     {% endwith %}
 </section>
 

@@ -316,6 +316,11 @@ class SiteVisitLog(BaseModel):
     ]
 
     visit_date = models.DateField(db_column='date')
+    visit_datetime = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text='Exact visit timestamp (public form or manual log).',
+    )
     lead = models.ForeignKey(
         Customer,
         on_delete=models.CASCADE,
@@ -329,6 +334,9 @@ class SiteVisitLog(BaseModel):
         related_name='crm_site_visits',
     )
     location = models.CharField(max_length=500, blank=True)
+    latitude = models.DecimalField(max_digits=10, decimal_places=7, null=True, blank=True)
+    longitude = models.DecimalField(max_digits=10, decimal_places=7, null=True, blank=True)
+    selfie = models.ImageField(upload_to='crm_site_visits/%Y/%m/', blank=True, max_length=500)
     notes = models.TextField(blank=True)
     outcome = models.CharField(max_length=30, choices=OUTCOME_CHOICES, default=OUTCOME_FOLLOW_UP)
 
@@ -342,5 +350,5 @@ class SiteVisitLog(BaseModel):
 
     @property
     def is_probably_image(self):
-        name = (self.original_filename or self.file.name or '').lower()
+        name = (self.selfie.name or '').lower()
         return name.endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.heic', '.heif'))

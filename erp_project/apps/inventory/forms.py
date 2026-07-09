@@ -100,7 +100,7 @@ class ItemForm(forms.ModelForm):
             'purchase_price', 'selling_price',
             'minimum_selling_price', 'minimum_selling_price_type',
             'maximum_selling_price', 'maximum_selling_price_type',
-            'unit', 'minimum_stock', 'tax_code',
+            'unit', 'minimum_stock', 'tax_code', 'no_overhead',
             'condition_status', 'condition_notes', 'track_by_serial',
             'warehouse', 'storage_location_master', 'barcode',
             'brand', 'serial_batch_number', 'purchase_date', 'warranty_expiry',
@@ -129,6 +129,7 @@ class ItemForm(forms.ModelForm):
             'purchase_date': forms.DateInput(attrs={'type': 'date'}),
             'warranty_expiry': forms.DateInput(attrs={'type': 'date'}),
             'track_by_serial': forms.CheckboxInput(attrs={'class': 'form-check-input', 'role': 'switch'}),
+            'no_overhead': forms.CheckboxInput(attrs={'class': 'form-check-input', 'id': 'id_no_overhead'}),
         }
     
     def __init__(self, *args, **kwargs):
@@ -156,6 +157,9 @@ class ItemForm(forms.ModelForm):
             elif field_name == 'track_by_serial':
                 field.widget.attrs['class'] = 'form-check-input'
                 field.widget.attrs['role'] = 'switch'
+            elif field_name == 'no_overhead':
+                field.widget.attrs['class'] = 'form-check-input'
+                field.widget.attrs['id'] = 'id_no_overhead'
             else:
                 field.widget.attrs['class'] = 'form-control'
         self.fields['category'].queryset = Category.objects.filter(is_active=True).order_by('name')

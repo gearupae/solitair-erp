@@ -21,6 +21,8 @@ from apps.hr.models import Employee
 from apps.settings_app.models import AuditLog
 from apps.core.middleware import get_current_request
 
+from .dashboard import build_dashboard_context
+from .exports import export_completed_schedules
 from .forms import StaffDutyBulkScheduleForm, StaffDutyScheduleForm
 from .models import StaffDutySchedule
 from .utils import (
@@ -135,10 +137,34 @@ class StaffDutyScheduleListView(PermissionRequiredMixin, ListView):
         ctx['filter_date_from'] = self.request.GET.get('date_from', '')
         ctx['filter_date_to'] = self.request.GET.get('date_to', '')
         ctx['filter_search'] = self.request.GET.get('search', '')
+        ctx['status_choices'] = StaffDutySchedule.STATUS_CHOICES
         token = ensure_operations_public_token()
         ctx['public_schedule_url'] = self.request.build_absolute_uri(
             reverse('operations:public_schedule', kwargs={'token': token})
         )
+        return ctx
+
+
+class StaffDutyDashboardView(PermissionRequiredMixin, TemplateView):
+    template_name = 'operations/schedule_dashboard.html'
+    module_name = 'projects'
+    permission_type = 'view'
+
+    def get(self, request, *args, **kwargs):
+        export_fmt = (request.GET.get('export') or '').strip().lower()
+        if export_fmt in ('xlsx', 'pdf'):
+            return export_completed_schedules(request, export_fmt)
+        return super().get(request, *args, **kwargs)
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx['title'] = 'Operations — Dashboard'
+        dash = build_dashboard_context(self.request.GET)
+        ctx.update(dash)
+        user = self.request.user
+        ctx['can_create'] = user.is_superuser or PermissionChecker.has_permission(user, 'projects', 'create')
+        ctx['can_edit'] = user.is_superuser or PermissionChecker.has_permission(user, 'projects', 'edit')
+        ctx['hub_url'] = reverse('projects:project_dashboard')
         return ctx
 
 
@@ -181,7 +207,8 @@ class StaffDutyScheduleUpdateView(UpdatePermissionMixin, UpdateView):
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        ctx['title'] = f'Edit duty — {self.object.employee.full_name}'
+        staff = self.object.employee.full_name if self.object.employee_id else 'Unassigned'
+        ctx['title'] = f'Edit duty — {staff}'
         ctx['is_create'] = False
         return ctx
 
@@ -225,7 +252,13 @@ class StaffDutyCalendarView(PermissionRequiredMixin, TemplateView):
         employee_id = (self.request.GET.get('employee') or '').strip()
         qs = StaffDutySchedule.objects.filter(
             is_active=True,
-            status__in=('scheduled', 'paused'),
+            status__in=(
+                StaffDutySchedule.STATUS_SCHEDULED,
+                StaffDutySchedule.STATUS_PENDING,
+                StaffDutySchedule.STATUS_IN_PROGRESS,
+                StaffDutySchedule.STATUS_OVERDUE,
+                StaffDutySchedule.STATUS_PAUSED,
+            ),
             duty_date__gte=start,
             duty_date__lte=end,
         ).select_related('employee', 'project', 'amc_contract')

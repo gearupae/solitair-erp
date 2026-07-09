@@ -61,17 +61,21 @@ def build_dvr_export(context: dict) -> dict:
         'title': 'Daily Visit Record',
         'columns': [
             {'key': 'visit_date', 'label': 'Date'},
+            {'key': 'visit_time', 'label': 'Time'},
             {'key': 'lead_label', 'label': 'Lead'},
             {'key': 'lead_number', 'label': 'Lead #'},
             {'key': 'salesman_name', 'label': 'Salesman'},
             {'key': 'location', 'label': 'Location'},
             {'key': 'outcome', 'label': 'Outcome'},
+            {'key': 'has_selfie', 'label': 'Selfie'},
             {'key': 'notes', 'label': 'Notes'},
         ],
         'rows': [
             {
                 **row,
                 'visit_date': row['visit_date'].strftime('%Y-%m-%d') if row.get('visit_date') else '',
+                'visit_time': row.get('visit_time_display', ''),
+                'has_selfie': 'Yes' if row.get('has_selfie') else 'No',
             }
             for row in (context.get('visit_rows') or [])
         ],

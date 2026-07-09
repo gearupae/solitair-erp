@@ -1,7 +1,11 @@
 """
 CRM Views - Customer/Lead Management
 """
+from datetime import datetime
+from decimal import Decimal, InvalidOperation
+
 from django.shortcuts import render, redirect, get_object_or_404
+from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.views.generic import ListView, CreateView, UpdateView, DeleteView, DetailView, TemplateView
@@ -11,6 +15,7 @@ from django.urls import reverse
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_http_methods, require_POST
 from django.db.models import Q, Count
+from django.utils import timezone
 import json
 
 from .models import Customer, CustomerPublicUpload, CrmLeadKanbanStage, SiteVisitLog
@@ -23,11 +28,11 @@ from .utils import (
     CRM_KANBAN_CUSTOMERS_THEME,
     CRM_KANBAN_STAGE_THEMES,
     kanban_theme_style,
-    get_crm_project_queryset,
     get_sales_employee_queryset,
+    salesperson_display_name,
+    get_crm_project_queryset,
     project_choice_label,
     get_sales_employee_for_user,
-    salesperson_display_name,
     user_can_access_customer,
 )
 from .activity import get_customer_activity_feed
@@ -477,6 +482,55 @@ def crm_kanban_move(request):
     return JsonResponse({'ok': True})
 
 
+User = get_user_model()
+
+
+def _public_upload_salespeople():
+    options = []
+    for emp in get_sales_employee_queryset():
+        if emp.user_id:
+            options.append({'id': emp.user_id, 'label': salesperson_display_name(emp)})
+    return options
+
+
+def _parse_public_visit_datetime(raw: str | None):
+    if not raw:
+        return timezone.now()
+    text = raw.strip()
+    if not text:
+        return timezone.now()
+    if text.endswith('Z'):
+        text = text[:-1] + '+00:00'
+    try:
+        dt = datetime.fromisoformat(text)
+    except ValueError:
+        return timezone.now()
+    if timezone.is_naive(dt):
+        dt = timezone.make_aware(dt, timezone.get_current_timezone())
+    return dt
+
+
+def _parse_public_coordinate(raw: str | None):
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    if not text:
+        return None
+    try:
+        return Decimal(text)
+    except (InvalidOperation, ValueError):
+        return None
+
+
+def _public_upload_form_context(**extra):
+    return {
+        'crm_leads': extra.pop('crm_leads', []),
+        'crm_customers': extra.pop('crm_customers', []),
+        'salespeople': _public_upload_salespeople(),
+        **extra,
+    }
+
+
 @never_cache
 @require_http_methods(['GET', 'POST'])
 def public_customer_upload(request):
@@ -491,16 +545,29 @@ def public_customer_upload(request):
     if request.method == 'POST':
         raw_id = request.POST.get('customer')
         note = (request.POST.get('note') or '').strip()[:500]
+        location = (request.POST.get('location') or '').strip()[:500]
+        latitude = _parse_public_coordinate(request.POST.get('latitude'))
+        longitude = _parse_public_coordinate(request.POST.get('longitude'))
+        if not location and latitude is not None and longitude is not None:
+            location = f'{latitude:.6f}, {longitude:.6f}'
+        visit_dt = _parse_public_visit_datetime(request.POST.get('visit_datetime'))
+        raw_salesman = (request.POST.get('salesman') or '').strip()
+        selfie = request.FILES.get('selfie')
+
+        base_ctx = {
+            'crm_leads': crm_leads,
+            'crm_customers': crm_customers,
+            'posted_note': note,
+            'posted_location': location,
+            'posted_salesman': raw_salesman,
+        }
+
         if not raw_id or not str(raw_id).isdigit():
             messages.error(request, 'Please select a lead or customer.')
             return render(
                 request,
                 'crm/public_upload_form.html',
-                {
-                    'crm_leads': crm_leads,
-                    'crm_customers': crm_customers,
-                    'posted_note': note,
-                },
+                _public_upload_form_context(**base_ctx),
                 status=400,
             )
         cust = Customer.objects.filter(pk=int(raw_id), is_active=True).first()
@@ -509,25 +576,46 @@ def public_customer_upload(request):
             return render(
                 request,
                 'crm/public_upload_form.html',
-                {
-                    'crm_leads': crm_leads,
-                    'crm_customers': crm_customers,
-                    'posted_note': note,
-                },
+                _public_upload_form_context(**base_ctx),
                 status=400,
             )
+        base_ctx['selected_customer_id'] = cust.pk
+
+        salesman = None
+        if raw_salesman:
+            if not str(raw_salesman).isdigit():
+                messages.error(request, 'Invalid salesperson selection.')
+                return render(
+                    request,
+                    'crm/public_upload_form.html',
+                    _public_upload_form_context(**base_ctx),
+                    status=400,
+                )
+            salesman = User.objects.filter(pk=int(raw_salesman), is_active=True).first()
+            if not salesman:
+                messages.error(request, 'Invalid salesperson selection.')
+                return render(
+                    request,
+                    'crm/public_upload_form.html',
+                    _public_upload_form_context(**base_ctx),
+                    status=400,
+                )
+            if not selfie:
+                messages.error(request, 'A selfie is required when a salesperson is selected.')
+                return render(
+                    request,
+                    'crm/public_upload_form.html',
+                    _public_upload_form_context(**base_ctx),
+                    status=400,
+                )
+
         files = request.FILES.getlist('files')
         if not files:
             messages.error(request, 'Please add at least one file or photo.')
             return render(
                 request,
                 'crm/public_upload_form.html',
-                {
-                    'crm_leads': crm_leads,
-                    'crm_customers': crm_customers,
-                    'selected_customer_id': cust.pk,
-                    'posted_note': note,
-                },
+                _public_upload_form_context(**base_ctx),
                 status=400,
             )
         created = 0
@@ -546,25 +634,41 @@ def public_customer_upload(request):
             return render(
                 request,
                 'crm/public_upload_form.html',
-                {
-                    'crm_leads': crm_leads,
-                    'crm_customers': crm_customers,
-                    'selected_customer_id': cust.pk,
-                    'posted_note': note,
-                },
+                _public_upload_form_context(**base_ctx),
                 status=400,
             )
+
+        visit_notes = note
+        if not visit_notes:
+            visit_notes = f'Public upload ({created} file(s))'
+        elif created:
+            visit_notes = f'{visit_notes} — {created} file(s) uploaded'
+
+        SiteVisitLog.objects.create(
+            lead=cust,
+            salesman=salesman,
+            visit_date=visit_dt.date(),
+            visit_datetime=visit_dt,
+            location=location,
+            latitude=latitude,
+            longitude=longitude,
+            selfie=selfie if selfie else None,
+            notes=visit_notes[:2000],
+            outcome=SiteVisitLog.OUTCOME_OTHER,
+        )
+
         type_label = 'Lead' if cust.customer_type == 'lead' else 'Customer'
         messages.success(
             request,
-            f'Thank you. {created} file(s) were uploaded to {type_label} {cust.public_upload_option_label}.',
+            f'Thank you. {created} file(s) were uploaded to {type_label} {cust.public_upload_option_label}. '
+            'Your visit was recorded.',
         )
         return redirect('crm:public_upload')
 
     return render(
         request,
         'crm/public_upload_form.html',
-        {'crm_leads': crm_leads, 'crm_customers': crm_customers},
+        _public_upload_form_context(crm_leads=crm_leads, crm_customers=crm_customers),
     )
 
 
@@ -695,6 +799,8 @@ class CustomerDetailView(PermissionRequiredMixin, DetailView):
                 visit.lead = self.object
                 visit.salesman = request.user
                 visit.created_by = request.user
+                if not visit.visit_datetime:
+                    visit.visit_datetime = timezone.now()
                 visit.save()
                 log_action(
                     request.user,

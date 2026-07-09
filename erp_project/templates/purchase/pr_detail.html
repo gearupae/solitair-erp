@@ -150,36 +150,119 @@
                 <h6 class="mb-0 fw-semibold">
                     <i class="fas fa-boxes me-1 text-warning"></i>Already in inventory
                 </h6>
+                <p class="small text-muted mb-0 mt-1">Stock on hand plus last purchase, vendor quotes, and price variance vs this request.</p>
             </div>
             <div class="card-body p-0">
-                <div class="table-responsive">
-                    <table class="table table-sm mb-0 align-middle">
-                        <thead class="table-light">
-                            <tr>
-                                <th>Item</th>
-                                <th class="text-end">In stock</th>
-                                <th class="text-end">Requested</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for notice in pr_inventory_stock_notices %}
-                            <tr>
-                                <td>
-                                    <div class="fw-semibold small">{{ notice.item_code }}</div>
-                                    <div class="text-muted small">{{ notice.name }}</div>
-                                </td>
-                                <td class="text-end">{{ notice.available_qty|floatformat:2 }}</td>
-                                <td class="text-end">
-                                    {{ notice.requested_qty|floatformat:2 }}
-                                    {% if notice.covers_request %}
-                                    <div class="small text-success">Covers request</div>
-                                    {% endif %}
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
+                {% for alert in pr_inventory_stock_notices %}
+                <div class="border-bottom px-3 py-3">
+                    <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
+                        <div>
+                            <div class="fw-semibold">{{ alert.item_code }}</div>
+                            <div class="text-muted small">{{ alert.name }}</div>
+                        </div>
+                        <div class="text-end small">
+                            <span class="badge bg-light text-dark border me-1">In stock {{ alert.available_qty|floatformat:2 }}</span>
+                            <span class="badge bg-light text-dark border">Requested {{ alert.requested_qty|floatformat:2 }}</span>
+                            {% if alert.covers_request %}
+                            <div class="text-success mt-1">Covers request</div>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <div class="row g-2 mb-2">
+                        <div class="col-6 col-md-3">
+                            <div class="small text-muted">Est. unit price</div>
+                            <div class="fw-semibold">{% if alert.estimated_unit_price is not None %}AED {{ alert.estimated_unit_price|floatformat:2 }}{% else %}—{% endif %}</div>
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <div class="small text-muted">Last purchase</div>
+                            <div class="fw-semibold">
+                                {% if alert.last_purchase %}
+                                AED {{ alert.last_purchase.unit_price|floatformat:2 }}
+                                <div class="small text-muted fw-normal">{{ alert.last_purchase.vendor }}</div>
+                                {% if alert.last_purchase.purchase_date %}
+                                <div class="small text-muted">{{ alert.last_purchase.purchase_date|date:"d/m/Y" }}</div>
+                                {% endif %}
+                                {% else %}—{% endif %}
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <div class="small text-muted">Lowest price</div>
+                            <div class="fw-semibold">{% if alert.lowest_price %}AED {{ alert.lowest_price|floatformat:2 }}{% else %}—{% endif %}</div>
+                            {% if alert.lowest_quote_price %}
+                            <div class="small text-muted">Quote low AED {{ alert.lowest_quote_price|floatformat:2 }}</div>
+                            {% endif %}
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <div class="small text-muted">Variance vs last</div>
+                            <div class="fw-semibold {% if alert.variance_vs_last_pct > 0 %}text-danger{% elif alert.variance_vs_last_pct < 0 %}text-success{% endif %}">
+                                {% if alert.variance_vs_last_pct is not None %}{{ alert.variance_vs_last_pct|floatformat:1 }}%{% else %}—{% endif %}
+                            </div>
+                            {% if alert.variance_vs_lowest_pct is not None %}
+                            <div class="small text-muted">vs lowest: {{ alert.variance_vs_lowest_pct|floatformat:1 }}%</div>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    {% if alert.purchase_history %}
+                    <p class="small fw-semibold mb-1 text-muted text-uppercase" style="letter-spacing:0.03em;">Purchase history</p>
+                    <div class="table-responsive mb-2">
+                        <table class="table table-sm table-bordered mb-0 align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Vendor</th>
+                                    <th class="text-end">Unit price</th>
+                                    <th>Purchase date</th>
+                                    <th>PO</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in alert.purchase_history %}
+                                <tr>
+                                    <td>{{ row.vendor }}</td>
+                                    <td class="text-end">AED {{ row.unit_price|floatformat:2 }}</td>
+                                    <td>{% if row.purchase_date %}{{ row.purchase_date|date:"d/m/Y" }}{% else %}—{% endif %}</td>
+                                    <td class="small text-muted">{{ row.po_number|default:"—" }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% endif %}
+
+                    {% if alert.quote_prices %}
+                    <p class="small fw-semibold mb-1 text-muted text-uppercase" style="letter-spacing:0.03em;">Vendor quotations</p>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-bordered mb-0 align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Vendor</th>
+                                    <th class="text-end">Unit price</th>
+                                    <th>Valid until</th>
+                                    <th>Source</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for q in alert.quote_prices %}
+                                <tr>
+                                    <td>{{ q.vendor }}</td>
+                                    <td class="text-end">
+                                        {% if q.unit_price is not None %}AED {{ q.unit_price|floatformat:2 }}
+                                        {% elif q.total_price %}Total AED {{ q.total_price|floatformat:2 }}
+                                        {% else %}—{% endif %}
+                                    </td>
+                                    <td>{{ q.validity_date|default:"—" }}</td>
+                                    <td class="small text-muted">{% if q.source == 'quote_line' %}Quote line{% else %}Attachment{% endif %}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% elif quote_attachments %}
+                    <p class="small text-muted mb-0">No matching line on uploaded vendor quotes yet — run quote analysis or upload quotes with this item.</p>
+                    {% endif %}
                 </div>
+                {% endfor %}
             </div>
         </div>
         {% endif %}

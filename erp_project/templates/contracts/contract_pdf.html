@@ -250,6 +250,24 @@
                         <span class="addr-to-detail-label">Title</span>
                         <span class="addr-to-detail-value">{{ contract.name }}</span>
                     </div>
+                    {% if contract.salesperson %}
+                    <div class="addr-to-detail-row">
+                        <span class="addr-to-detail-label">Salesperson</span>
+                        <span class="addr-to-detail-value">{{ contract.salesperson.full_name }}</span>
+                    </div>
+                    {% endif %}
+                    {% if contract.amc_category %}
+                    <div class="addr-to-detail-row">
+                        <span class="addr-to-detail-label">AMC category</span>
+                        <span class="addr-to-detail-value">{{ contract.get_amc_category_display }}</span>
+                    </div>
+                    {% endif %}
+                    {% if contract.service_site %}
+                    <div class="addr-to-detail-row">
+                        <span class="addr-to-detail-label">Service site</span>
+                        <span class="addr-to-detail-value">{{ contract.service_site|linebreaksbr }}</span>
+                    </div>
+                    {% endif %}
                     <div class="addr-to-detail-row">
                         <span class="addr-to-detail-label">Start date</span>
                         <span class="addr-to-detail-value">{{ contract.start_date|date:"d/m/Y" }}</span>
@@ -258,8 +276,14 @@
                         <span class="addr-to-detail-label">End date</span>
                         <span class="addr-to-detail-value">{{ contract.end_date|date:"d/m/Y" }}</span>
                     </div>
+                    {% if contract.planned_visits %}
                     <div class="addr-to-detail-row">
-                        <span class="addr-to-detail-label">Reminder</span>
+                        <span class="addr-to-detail-label">Planned visits</span>
+                        <span class="addr-to-detail-value">{{ contract.planned_visits }}</span>
+                    </div>
+                    {% endif %}
+                    <div class="addr-to-detail-row">
+                        <span class="addr-to-detail-label">Renewal reminder</span>
                         <span class="addr-to-detail-value">{{ contract.remind_before_days }} days before end</span>
                     </div>
                     <div class="addr-to-detail-row">
@@ -287,7 +311,7 @@
         <div class="totals-section">
             <div class="totals-table">
                 <div class="totals-row total">
-                    <span class="totals-label">Contract value</span>
+                    <span class="totals-label">Contract amount (AED)</span>
                     <span class="totals-value">AED {{ contract.contract_value|floatformat:2 }}</span>
                 </div>
             </div>

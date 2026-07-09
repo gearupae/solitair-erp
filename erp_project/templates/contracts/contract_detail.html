@@ -3,6 +3,30 @@
 
 {% block title %}{{ contract.contract_number }} — Contract{% endblock %}
 
+{% block extra_css %}
+<style>
+.contract-info-label {
+    display: block;
+    color: #64748b;
+    font-size: 0.8125rem;
+    margin-bottom: 0.35rem;
+    line-height: 1.3;
+}
+.contract-info-value {
+    margin-bottom: 0;
+    min-height: 1.5rem;
+    line-height: 1.5;
+}
+.contract-info-value .badge {
+    vertical-align: baseline;
+}
+.contract-info-block {
+    margin-bottom: 0;
+    white-space: pre-line;
+}
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2">
     <div>
@@ -19,6 +43,11 @@
         <a href="{% url 'contracts:contract_pdf' contract.pk %}" class="btn btn-light" target="_blank" rel="noopener">
             <i class="fas fa-file-pdf me-1"></i> PDF
         </a>
+        {% if can_create %}
+        <a href="{% url 'contracts:contract_renew' contract.pk %}" class="btn btn-outline-success">
+            <i class="fas fa-redo me-1"></i> Renew AMC
+        </a>
+        {% endif %}
         {% if can_edit %}
         <a href="{% url 'contracts:contract_edit' contract.pk %}" class="btn btn-outline-primary">
             <i class="fas fa-edit me-1"></i> Edit
@@ -30,45 +59,147 @@
 
 <div class="row g-4">
     <div class="col-lg-8">
+        {% if contract.source_estimate or contract.project %}
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-transparent">
+                <h6 class="fw-semibold mb-0"><i class="fas fa-link me-2 text-primary"></i>Linked records</h6>
+            </div>
+            <div class="card-body">
+                <div class="row g-4">
+                    {% if contract.source_estimate %}
+                    <div class="col-md-4">
+                        <span class="contract-info-label">Quotation</span>
+                        <p class="contract-info-value fw-medium mb-0">
+                            <a href="{% url 'sales:estimate_detail' contract.source_estimate.pk %}" class="text-decoration-none">
+                                {{ contract.source_estimate.display_estimate_number }}
+                            </a>
+                        </p>
+                    </div>
+                    {% endif %}
+                    {% if contract.customer %}
+                    <div class="col-md-4">
+                        <span class="contract-info-label">Customer</span>
+                        <p class="contract-info-value fw-medium mb-0">
+                            <a href="{% url 'crm:customer_detail' contract.customer.pk %}" class="text-decoration-none">
+                                {{ contract.customer.name }}
+                            </a>
+                            {% if contract.customer.company and contract.customer.company != contract.customer.name %}
+                            <span class="text-muted d-block small mt-1">{{ contract.customer.company }}</span>
+                            {% endif %}
+                        </p>
+                    </div>
+                    {% endif %}
+                    {% if contract.project %}
+                    <div class="col-md-4">
+                        <span class="contract-info-label">Project / job</span>
+                        <p class="contract-info-value fw-medium mb-0">
+                            <a href="{% url 'projects:project_detail' contract.project.pk %}" class="text-decoration-none">
+                                {{ contract.project.project_code }}
+                            </a>
+                            <span class="text-muted d-block small mt-1">{{ contract.project.name }}</span>
+                        </p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
         <div class="card border-0 shadow-sm mb-4">
             <div class="card-header bg-transparent">
                 <h6 class="fw-semibold mb-0"><i class="fas fa-file-contract me-2 text-primary"></i>Contract information</h6>
             </div>
             <div class="card-body">
-                <div class="row g-3">
-                    <div class="col-md-6">
-                        <label class="text-muted small">Customer</label>
-                        <p class="mb-0 fw-medium">
+                <div class="row g-4">
+                    <div class="col-md-4">
+                        <span class="contract-info-label">Customer</span>
+                        <p class="contract-info-value fw-medium">
                             {% if contract.customer %}
                             <a href="{% url 'crm:customer_detail' contract.customer.pk %}" class="text-decoration-none">{{ contract.customer.name }}</a>
-                            {% if contract.customer.company %}<span class="text-muted"> — {{ contract.customer.company }}</span>{% endif %}
+                            {% if contract.customer.company and contract.customer.company != contract.customer.name %}
+                            <span class="text-muted d-block small mt-1">{{ contract.customer.company }}</span>
+                            {% endif %}
                             {% else %}<span class="text-muted">—</span>{% endif %}
                         </p>
                     </div>
-                    <div class="col-md-6">
-                        <label class="text-muted small">Contract types</label>
-                        <p class="mb-0">
+                    <div class="col-md-4">
+                        <span class="contract-info-label">Salesperson</span>
+                        <p class="contract-info-value fw-medium">
+                            {% if contract.salesperson %}
+                            {{ contract.salesperson.full_name }}
+                            <span class="text-muted d-block small mt-1">{{ contract.salesperson.employee_code }}</span>
+                            {% else %}<span class="text-muted">—</span>{% endif %}
+                        </p>
+                    </div>
+                    <div class="col-md-4">
+                        <span class="contract-info-label">AMC category</span>
+                        <p class="contract-info-value">
+                            {% if contract.amc_category %}
+                            <span class="badge bg-light text-dark border">{{ contract.get_amc_category_display }}</span>
+                            {% else %}<span class="text-muted">—</span>{% endif %}
+                        </p>
+                    </div>
+                    <div class="col-md-4">
+                        <span class="contract-info-label">Contract types</span>
+                        <p class="contract-info-value">
                             {% for t in contract.contract_types.all %}
                             <span class="badge bg-light text-dark border me-1">{{ t.name }}</span>
                             {% empty %}<span class="text-muted">—</span>{% endfor %}
                         </p>
                     </div>
                     <div class="col-md-4">
-                        <label class="text-muted small">Contract value</label>
-                        <p class="mb-0 fw-semibold">AED {{ contract.contract_value|floatformat:2|intcomma }}</p>
+                        <span class="contract-info-label">Contract amount</span>
+                        <p class="contract-info-value fw-semibold">AED {{ contract.contract_value|floatformat:2|intcomma }}</p>
                     </div>
                     <div class="col-md-4">
-                        <label class="text-muted small">Start date</label>
-                        <p class="mb-0">{{ contract.start_date|date:"d M Y" }}</p>
+                        <span class="contract-info-label">Planned visits</span>
+                        <p class="contract-info-value fw-medium">
+                            {{ contract.planned_visits }}
+                            {% if ppm_inspection_count %}
+                            <span class="text-muted d-block small mt-1">{{ ppm_inspection_count }} PPM task{{ ppm_inspection_count|pluralize }} scheduled</span>
+                            {% endif %}
+                            {% if planned_visit_dates %}
+                            <span class="text-muted d-block small mt-1">
+                                {% for vd in planned_visit_dates %}
+                                Visit {{ forloop.counter }}: {{ vd|date:"d M Y" }}{% if not forloop.last %} · {% endif %}
+                                {% endfor %}
+                            </span>
+                            {% endif %}
+                        </p>
                     </div>
                     <div class="col-md-4">
-                        <label class="text-muted small">End date</label>
-                        <p class="mb-0">{{ contract.end_date|date:"d M Y" }}</p>
+                        <span class="contract-info-label">Contract start date</span>
+                        <p class="contract-info-value">{{ contract.start_date|date:"d M Y" }}</p>
+                    </div>
+                    <div class="col-md-4">
+                        <span class="contract-info-label">Contract end date</span>
+                        <p class="contract-info-value">{{ contract.end_date|date:"d M Y" }}</p>
+                    </div>
+                    <div class="col-md-4">
+                        <span class="contract-info-label">Renewal reminder</span>
+                        <p class="contract-info-value">{{ contract.remind_before_days }} day{{ contract.remind_before_days|pluralize }} before end</p>
+                    </div>
+                    <div class="col-md-4">
+                        <span class="contract-info-label">Lifecycle status</span>
+                        <p class="contract-info-value">
+                            {% if contract.status == 'cancelled' %}
+                            <span class="badge bg-danger bg-opacity-25 text-danger">{{ contract.get_status_display }}</span>
+                            {% elif contract.status == 'expired' %}
+                            <span class="badge bg-secondary">{{ contract.get_status_display }}</span>
+                            {% elif contract.status == 'active' %}
+                            <span class="badge badge-active">{{ contract.get_status_display }}</span>
+                            {% else %}
+                            <span class="badge" style="background:#dbeafe;color:#1e40af;">{{ contract.get_status_display }}</span>
+                            {% endif %}
+                        </p>
+                    </div>
+                    <div class="col-12">
+                        <span class="contract-info-label">Service site / place</span>
+                        <p class="contract-info-value contract-info-block">{% if contract.service_site %}{{ contract.service_site }}{% else %}<span class="text-muted">—</span>{% endif %}</p>
                     </div>
                     {% if contract.description %}
                     <div class="col-12">
-                        <label class="text-muted small">Description</label>
-                        <p class="mb-0">{{ contract.description|linebreaksbr }}</p>
+                        <span class="contract-info-label">Description</span>
+                        <p class="contract-info-value contract-info-block text-muted">{{ contract.description }}</p>
                     </div>
                     {% endif %}
                 </div>
@@ -181,12 +312,12 @@
             </div>
         </div>
 
-        {% if contract.attachments.all %}
         <div class="card border-0 shadow-sm mb-4">
             <div class="card-header bg-transparent">
-                <h6 class="fw-semibold mb-0"><i class="fas fa-paperclip me-2 text-primary"></i>Attachments</h6>
+                <h6 class="fw-semibold mb-0"><i class="fas fa-file-signature me-2 text-primary"></i>Signed contract attachment</h6>
             </div>
             <div class="card-body p-0">
+                {% if contract.attachments.all %}
                 <div class="table-responsive">
                     <table class="table table-sm table-hover mb-0">
                         <thead>
@@ -207,9 +338,11 @@
                         </tbody>
                     </table>
                 </div>
+                {% else %}
+                <p class="text-muted small mb-0 p-3">No signed contract uploaded yet.</p>
+                {% endif %}
             </div>
         </div>
-        {% endif %}
 
         {% if contract.terms_and_conditions %}
         <div class="card border-0 shadow-sm">
@@ -218,6 +351,7 @@
             </div>
             <div class="card-body">
                 <div class="small">{{ contract.terms_and_conditions|linebreaks }}</div>
+                <p class="text-muted small mb-0 mt-2">These terms are copied to each PPM visit task when the schedule is generated. Edit here to update the contract PDF; save with planned visits to refresh PPM task notes on new visits.</p>
             </div>
         </div>
         {% endif %}
@@ -230,24 +364,8 @@
             </div>
             <div class="card-body">
                 <div class="mb-3">
-                    <label class="text-muted small">Lifecycle status</label>
-                    <p class="mb-0">
-                        {% if contract.status == 'cancelled' %}
-                        <span class="badge bg-danger bg-opacity-25 text-danger">{{ contract.get_status_display }}</span>
-                        {% elif contract.status == 'expired' %}
-                        <span class="badge bg-secondary">{{ contract.get_status_display }}</span>
-                        {% elif contract.status == 'active' %}
-                        <span class="badge badge-active">{{ contract.get_status_display }}</span>
-                        {% else %}
-                        <span class="badge" style="background:#dbeafe;color:#1e40af;">{{ contract.get_status_display }}</span>
-                        {% endif %}
-                    </p>
-                </div>
-                <div class="mb-3">
-                    <label class="text-muted small">Contract end reminder</label>
-                    <p class="mb-0 small">
-                        Remind {{ contract.remind_before_days }} day{{ contract.remind_before_days|pluralize }} before end date
-                    </p>
+                    <label class="text-muted small">End date alerts</label>
+                    <p class="mb-0 small text-muted">Renewal reminder {{ contract.remind_before_days }} days before end.</p>
                     {% if contract.is_expired %}
                     <span class="badge bg-danger mt-1">Contract expired</span>
                     {% elif contract.reminder_due %}

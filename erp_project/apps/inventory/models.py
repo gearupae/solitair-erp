@@ -335,6 +335,11 @@ class Item(BaseModel):
 
     # Warranty / batch (warranty report)
     brand = models.CharField(max_length=120, blank=True, default='')
+    no_overhead = models.BooleanField(
+        default=False,
+        verbose_name='No overhead calculation',
+        help_text='When set, estimate lines using this item default to no overhead markup.',
+    )
     serial_batch_number = models.CharField(max_length=120, blank=True, default='')
     purchase_date = models.DateField(null=True, blank=True)
     warranty_expiry = models.DateField(null=True, blank=True)

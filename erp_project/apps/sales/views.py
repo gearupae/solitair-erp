@@ -85,6 +85,8 @@ def _estimate_save_success_message(
 
 def _inventory_item_estimate_json(item):
     """Serialize inventory item bounds as effective AED amounts for estimate line validation."""
+    from .estimate_overhead import uom_from_inventory_unit
+
     return {
         'id': item.id,
         'item_code': item.item_code,
@@ -100,6 +102,9 @@ def _inventory_item_estimate_json(item):
         'quote_maximum_rate': item.get_quote_maximum_rate(item.selling_price),
         'quote_minimum_rate': item.get_quote_minimum_rate(item.selling_price),
         'tax_code_id': item.tax_code_id,
+        'unit': item.unit or '',
+        'no_overhead': bool(getattr(item, 'no_overhead', False)),
+        'default_uom': uom_from_inventory_unit(item.unit),
     }
 
 
@@ -1451,6 +1456,7 @@ class EstimateDetailView(PermissionRequiredMixin, DetailView):
         co = CompanySettings.get_settings()
         context['estimate_to_project_prompt_include_lines'] = co.estimate_to_project_prompt_include_lines
         from .estimate_conversion import (
+            estimate_convert_to_amc_block_reason,
             estimate_convert_to_project_block_reason,
             estimate_show_b2b_compliance_banner,
         )
@@ -1463,6 +1469,20 @@ class EstimateDetailView(PermissionRequiredMixin, DetailView):
             and not block_reason
         )
         context['convert_to_project_block_reason'] = block_reason
+        amc_block = estimate_convert_to_amc_block_reason(self.object)
+        can_create_contract = (
+            self.request.user.is_superuser
+            or PermissionChecker.has_permission(self.request.user, 'contracts', 'create')
+        )
+        context['can_convert_to_amc'] = (
+            context['can_convert_estimate_follow_on']
+            and self.object.allows_follow_on_conversion
+            and self.object.is_active
+            and can_create_contract
+            and not amc_block
+        )
+        context['convert_to_amc_block_reason'] = amc_block
+        context['primary_amc_contract'] = self.object.primary_amc_contract
         context['show_b2b_compliance_banner'] = estimate_show_b2b_compliance_banner(self.object)
         if self.object.customer_id:
             context['customer_detail_url'] = reverse(
@@ -2032,6 +2052,57 @@ def estimate_convert_to_project(request, pk):
             f'Project {project.project_code} created from estimate {estimate.estimate_number}.',
         )
     return redirect('projects:project_detail', pk=project.pk)
+
+
+@login_required
+def estimate_convert_to_amc(request, pk):
+    """Create an AMC contract from a quotation-won estimate."""
+    if request.method != 'POST':
+        return HttpResponseNotAllowed(['POST'])
+
+    estimate = get_object_or_404(
+        Estimate.objects.filter(is_active=True).select_related(
+            'customer', 'project', 'sales_engineer'
+        ),
+        pk=pk,
+    )
+
+    from .approval_rules import user_can_convert_estimate_follow_on
+
+    if not user_can_convert_estimate_follow_on(request.user, estimate):
+        messages.error(
+            request,
+            'Only the assigned salesperson or the user who created this estimate can create an AMC.',
+        )
+        return redirect('sales:estimate_detail', pk=pk)
+
+    if not estimate.allows_follow_on_conversion:
+        messages.error(request, 'Only quotation-won estimates can be converted to an AMC contract.')
+        return redirect('sales:estimate_detail', pk=pk)
+
+    if not (
+        request.user.is_superuser
+        or PermissionChecker.has_permission(request.user, 'contracts', 'create')
+    ):
+        messages.error(request, 'You do not have permission to create AMC contracts.')
+        return redirect('sales:estimate_detail', pk=pk)
+
+    from .estimate_conversion import estimate_convert_to_amc_block_reason
+
+    block = estimate_convert_to_amc_block_reason(estimate)
+    if block:
+        messages.error(request, block)
+        return redirect('sales:estimate_detail', pk=pk)
+
+    from apps.contracts.estimate_to_amc import create_amc_from_estimate
+
+    contract = create_amc_from_estimate(estimate=estimate)
+    messages.success(
+        request,
+        f'AMC {contract.contract_number} created from {estimate.display_estimate_number}. '
+        'Review the copied terms and complete planned visits before saving.',
+    )
+    return redirect('contracts:contract_edit', pk=contract.pk)
 
 
 def _build_estimate_pdf_context(request, estimate, *, proforma_invoice=None, for_weasyprint=False):

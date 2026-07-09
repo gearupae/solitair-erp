@@ -271,6 +271,27 @@
                 {% endif %}
             </div>
             {% endif %}
+            {% if primary_amc_contract %}
+            <a href="{% url 'contracts:contract_detail' primary_amc_contract.pk %}" class="btn btn-outline-success">
+                <i class="fas fa-file-signature me-2"></i>View AMC ({{ primary_amc_contract.contract_number }})
+            </a>
+            {% elif can_convert_to_amc %}
+            <form method="post" action="{% url 'sales:estimate_convert_amc' estimate.pk %}" class="d-inline" onsubmit="return confirm('Create an AMC contract from this won quotation? Terms &amp; conditions will be copied and you can edit them next.');">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-outline-success">
+                    <i class="fas fa-file-signature me-2"></i>Create AMC
+                </button>
+            </form>
+            {% elif can_convert_estimate_follow_on and estimate.allows_follow_on_conversion and estimate.is_active and convert_to_amc_block_reason %}
+            <span class="d-inline-block convert-amc-blocked-wrap" tabindex="0" role="button" aria-label="Why create AMC is unavailable">
+                <button type="button" class="btn btn-outline-success" disabled>
+                    <i class="fas fa-file-signature me-2"></i>Create AMC
+                </button>
+            </span>
+            <div class="d-none" id="convertAmcPopoverBody">
+                <p class="small mb-0">{{ convert_to_amc_block_reason }}</p>
+            </div>
+            {% endif %}
             {% if show_public_quotation_link %}
             <button type="button" class="btn btn-outline-primary" id="btn-copy-public-quote"
                     data-public-url="{{ public_quotation_url }}">
@@ -748,6 +769,42 @@
             </div>
         </div>
         {% endif %}
+        {% if primary_amc_contract %}
+        <div class="card mb-4">
+            <div class="card-header bg-transparent py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <h6 class="mb-0 fw-semibold"><i class="fas fa-file-signature me-2 text-dark"></i>AMC contract</h6>
+                <a href="{% url 'contracts:contract_detail' primary_amc_contract.pk %}" class="btn btn-sm btn-success">
+                    <i class="fas fa-file-signature me-1"></i>{{ primary_amc_contract.contract_number }}
+                </a>
+            </div>
+            <div class="card-body">
+                <p class="text-muted small mb-2">
+                    Created from this won quotation. Quotation terms were copied to the AMC and PPM visit tasks when scheduled.
+                </p>
+                <div class="row g-2 small">
+                    <div class="col-md-6">
+                        <span class="text-muted">Quotation</span><br>
+                        <span class="fw-medium">{{ estimate.display_estimate_number }}</span>
+                    </div>
+                    <div class="col-md-6">
+                        <span class="text-muted">Customer</span><br>
+                        <span class="fw-medium">{{ estimate.customer.name }}{% if estimate.customer.company %} — {{ estimate.customer.company }}{% endif %}</span>
+                    </div>
+                    {% if primary_amc_contract.project %}
+                    <div class="col-md-6">
+                        <span class="text-muted">Project</span><br>
+                        <a href="{% url 'projects:project_detail' primary_amc_contract.project.pk %}" class="text-decoration-none fw-medium">{{ primary_amc_contract.project.name }}</a>
+                    </div>
+                    {% elif estimate.project %}
+                    <div class="col-md-6">
+                        <span class="text-muted">Project</span><br>
+                        <a href="{% url 'projects:project_detail' estimate.project.pk %}" class="text-decoration-none fw-medium">{{ estimate.project.name }}</a>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
         <div class="card mb-4" id="project-retention-card">
             <div class="card-header bg-transparent py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
                 <h6 class="mb-0 fw-semibold"><i class="fas fa-hand-holding-usd me-2 text-dark"></i>Project retention</h6>
@@ -1130,6 +1187,24 @@
         html: true,
         sanitize: false,
         title: 'Convert to project',
+        content: body.innerHTML,
+        trigger: 'hover focus',
+        placement: 'bottom',
+        customClass: 'convert-project-popover',
+    });
+})();
+</script>
+{% endif %}
+{% if convert_to_amc_block_reason %}
+<script>
+(function() {
+    const wrap = document.querySelector('.convert-amc-blocked-wrap');
+    const body = document.getElementById('convertAmcPopoverBody');
+    if (!wrap || !body || !window.bootstrap) return;
+    new bootstrap.Popover(wrap, {
+        html: true,
+        sanitize: false,
+        title: 'Create AMC',
         content: body.innerHTML,
         trigger: 'hover focus',
         placement: 'bottom',

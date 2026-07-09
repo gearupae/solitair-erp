@@ -7,6 +7,7 @@ from decimal import Decimal, InvalidOperation
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.db import transaction
 from django.db.models import Q, Sum
 from django.http import HttpResponseNotAllowed
 from django.shortcuts import redirect, get_object_or_404, render
@@ -20,7 +21,63 @@ from apps.core.utils import PermissionChecker
 from apps.crm.models import Customer
 
 from .forms import ContractDocumentExpiryFormSet, ContractForm
-from .models import Contract, ContractAttachment, ContractType
+from .models import Contract, ContractAttachment, ContractDocumentExpiry, ContractType
+from .ppm_schedule import parse_visit_dates_from_post, sync_contract_visits, visit_dates_for_contract
+
+
+def _ppm_visit_dates_context(contract=None, request=None, planned=None):
+    if request and request.method == 'POST':
+        if planned is None:
+            try:
+                planned = int(request.POST.get('planned_visits', 0))
+            except (TypeError, ValueError):
+                planned = 0
+        posted = [
+            (request.POST.get(f'ppm_visit_date_{i}') or '').strip()
+            for i in range(1, (planned or 0) + 1)
+        ]
+        if any(posted):
+            return posted
+    if not contract or not contract.pk:
+        return []
+    return [d.isoformat() for d in visit_dates_for_contract(contract)]
+
+
+def _maybe_sync_ppm_schedule(contract, request, visit_dates=None) -> None:
+    result = sync_contract_visits(contract, visit_dates)
+    parts = []
+    if result['ppm_created']:
+        parts.append(f'{result["ppm_created"]} PPM inspection{"s" if result["ppm_created"] != 1 else ""} created')
+    if result['ops_created']:
+        parts.append(
+            f'{result["ops_created"]} operations draft{"s" if result["ops_created"] != 1 else ""} created (pending, unassigned)'
+        )
+    if result['ppm_updated'] or result['ops_updated']:
+        parts.append('existing visit schedules updated')
+    if parts:
+        messages.info(request, '; '.join(parts) + '.')
+
+
+def _renewal_initial_dates(source: Contract):
+    """Suggest the next AMC period after the source contract ends."""
+    today = timezone.now().date()
+    duration = source.end_date - source.start_date
+    if duration.days < 0:
+        duration = timedelta(days=365)
+    start = source.end_date + timedelta(days=1)
+    if start < today:
+        start = today
+    end = start + duration
+    return start, end
+
+
+def _contract_form_kwargs(request, instance=None, initial=None):
+    kwargs = {'user': request.user}
+    if instance is not None:
+        kwargs['instance'] = instance
+    if initial is not None:
+        kwargs['initial'] = initial
+    return kwargs
 
 
 def _strip_new_type_names(request):
@@ -50,7 +107,9 @@ class ContractListView(PermissionRequiredMixin, ListView):
     paginate_by = 25
 
     def get_queryset(self):
-        qs = Contract.objects.filter(is_active=True).select_related('customer').prefetch_related(
+        qs = Contract.objects.filter(is_active=True).select_related(
+            'customer', 'salesperson'
+        ).prefetch_related(
             'contract_types'
         )
         search = self.request.GET.get('search')
@@ -90,8 +149,20 @@ class ContractListView(PermissionRequiredMixin, ListView):
         ctx['type_chart_data'] = type_rows
         ctx['today'] = today
 
+        document_expiries = (
+            ContractDocumentExpiry.objects.filter(
+                is_active=True,
+                contract__is_active=True,
+            )
+            .select_related('contract', 'contract__customer')
+            .order_by('expiry_date', 'document_name')
+        )
+        ctx['document_expiries'] = document_expiries
+        ctx['metric_doc_expired'] = document_expiries.filter(expiry_date__lt=today).count()
+        ctx['metric_doc_due_soon'] = sum(1 for doc in document_expiries if doc.reminder_due() and not doc.is_expired)
+
         ctx['title'] = 'Contracts'
-        ctx['form'] = ContractForm()
+        ctx['form'] = ContractForm(**_contract_form_kwargs(self.request))
         ctx['can_create'] = self.request.user.is_superuser or PermissionChecker.has_permission(
             self.request.user, 'contracts', 'create'
         )
@@ -104,6 +175,7 @@ class ContractListView(PermissionRequiredMixin, ListView):
         ctx['customers_for_inline'] = Customer.objects.filter(is_active=True).order_by('name', 'company')
         ctx['contract_types_for_inline'] = ContractType.objects.filter(is_active=True).order_by('name')
         ctx['contract_status_choices'] = Contract.STATUS_CHOICES
+        ctx['ppm_visit_dates'] = []
         return ctx
 
     def post(self, request, *args, **kwargs):
@@ -111,13 +183,32 @@ class ContractListView(PermissionRequiredMixin, ListView):
             messages.error(request, 'You do not have permission to create contracts.')
             return redirect('contracts:contract_list')
 
-        form = ContractForm(request.POST, request.FILES)
+        form = ContractForm(request.POST, request.FILES, **_contract_form_kwargs(request))
         extra_names = _strip_new_type_names(request)
 
         if not form.is_valid():
             self.object_list = self.get_queryset()
             context = self.get_context_data()
             context['form'] = form
+            context['ppm_visit_dates'] = _ppm_visit_dates_context(request=request)
+            return self.render_to_response(context)
+
+        visit_dates, visit_errors = parse_visit_dates_from_post(
+            request.POST,
+            form.cleaned_data['planned_visits'],
+            form.cleaned_data['start_date'],
+            form.cleaned_data['end_date'],
+        )
+        if visit_errors:
+            for err in visit_errors:
+                form.add_error(None, err)
+            self.object_list = self.get_queryset()
+            context = self.get_context_data()
+            context['form'] = form
+            context['ppm_visit_dates'] = _ppm_visit_dates_context(
+                request=request,
+                planned=form.cleaned_data['planned_visits'],
+            )
             return self.render_to_response(context)
 
         selected = form.cleaned_data['contract_types']
@@ -131,6 +222,7 @@ class ContractListView(PermissionRequiredMixin, ListView):
         contract = form.save(commit=False)
         contract.save()
         _persist_contract_types_and_attachments(request, contract, selected, extra_names)
+        _maybe_sync_ppm_schedule(contract, request, visit_dates)
 
         messages.success(request, f'Contract {contract.contract_number} created.')
         return redirect('contracts:contract_detail', pk=contract.pk)
@@ -146,7 +238,7 @@ class ContractDetailView(PermissionRequiredMixin, DetailView):
     def get_queryset(self):
         return (
             Contract.objects.filter(is_active=True)
-            .select_related('customer', 'created_by', 'updated_by')
+            .select_related('customer', 'salesperson', 'source_estimate', 'project', 'created_by', 'updated_by')
             .prefetch_related('contract_types', 'attachments', 'document_expiries')
         )
 
@@ -160,10 +252,17 @@ class ContractDetailView(PermissionRequiredMixin, DetailView):
         ctx['can_delete'] = self.request.user.is_superuser or PermissionChecker.has_permission(
             self.request.user, 'contracts', 'delete'
         )
+        ctx['can_create'] = self.request.user.is_superuser or PermissionChecker.has_permission(
+            self.request.user, 'contracts', 'create'
+        )
         ctx['document_expiries'] = self.object.document_expiries.filter(is_active=True).order_by(
             'expiry_date', 'document_name'
         )
         ctx['contract_expiring_within_30'] = self.object.is_expiring_within(30)
+        ctx['ppm_inspection_count'] = self.object.inspections.filter(
+            link_type='amc', is_active=True
+        ).count()
+        ctx['planned_visit_dates'] = visit_dates_for_contract(self.object)
         if 'doc_formset' in kwargs:
             ctx['doc_formset'] = kwargs['doc_formset']
         elif ctx['can_edit']:
@@ -197,7 +296,14 @@ class ContractUpdateView(UpdatePermissionMixin, UpdateView):
     module_name = 'contracts'
 
     def get_queryset(self):
-        return Contract.objects.filter(is_active=True).select_related('customer').prefetch_related('contract_types')
+        return Contract.objects.filter(is_active=True).select_related(
+            'customer', 'salesperson', 'source_estimate', 'project'
+        ).prefetch_related('contract_types')
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs['user'] = self.request.user
+        return kwargs
 
     def get_success_url(self):
         return reverse_lazy('contracts:contract_detail', kwargs={'pk': self.object.pk})
@@ -213,6 +319,7 @@ class ContractUpdateView(UpdatePermissionMixin, UpdateView):
             ctx['doc_formset'] = ContractDocumentExpiryFormSet(self.request.POST, instance=self.object)
         else:
             ctx['doc_formset'] = ContractDocumentExpiryFormSet(instance=self.object)
+        ctx['ppm_visit_dates'] = _ppm_visit_dates_context(self.object, self.request)
         return ctx
 
     def form_valid(self, form):
@@ -226,20 +333,108 @@ class ContractUpdateView(UpdatePermissionMixin, UpdateView):
         if not doc_formset.is_valid():
             return self.render_to_response(self.get_context_data(form=form, doc_formset=doc_formset))
 
+        visit_dates, visit_errors = parse_visit_dates_from_post(
+            self.request.POST,
+            form.cleaned_data['planned_visits'],
+            form.cleaned_data['start_date'],
+            form.cleaned_data['end_date'],
+        )
+        if visit_errors:
+            for err in visit_errors:
+                form.add_error(None, err)
+            return self.render_to_response(self.get_context_data(form=form, doc_formset=doc_formset))
+
         contract = form.save(commit=False)
         contract.save()
         _persist_contract_types_and_attachments(self.request, contract, selected, extra_names)
         doc_formset.instance = contract
         doc_formset.save()
+        _maybe_sync_ppm_schedule(contract, self.request, visit_dates)
         messages.success(self.request, f'Contract {contract.contract_number} updated.')
         return redirect(self.get_success_url())
+
+
+@login_required
+def contract_renew(request, pk):
+    """Create a renewed AMC contract from an existing one."""
+    source = get_object_or_404(
+        Contract.objects.filter(is_active=True).select_related('customer', 'salesperson').prefetch_related(
+            'contract_types'
+        ),
+        pk=pk,
+    )
+    if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'contracts', 'create')):
+        messages.error(request, 'You do not have permission to renew contracts.')
+        return redirect('contracts:contract_detail', pk=source.pk)
+
+    start_date, end_date = _renewal_initial_dates(source)
+    initial = {
+        'customer': source.customer_id,
+        'salesperson': source.salesperson_id or (
+            source.customer.assigned_salesperson_id if source.customer_id else None
+        ),
+        'amc_category': source.amc_category,
+        'service_site': source.service_site,
+        'name': source.name,
+        'contract_value': source.contract_value,
+        'planned_visits': source.planned_visits,
+        'start_date': start_date,
+        'end_date': end_date,
+        'status': 'upcoming' if start_date > timezone.now().date() else 'active',
+        'remind_before_days': source.remind_before_days or 30,
+        'description': source.description,
+        'terms_and_conditions': source.terms_and_conditions,
+        'contract_types': list(source.contract_types.values_list('pk', flat=True)),
+    }
+
+    if request.method == 'POST':
+        form = ContractForm(request.POST, request.FILES, **_contract_form_kwargs(request, initial=initial))
+        extra_names = _strip_new_type_names(request)
+        if form.is_valid():
+            selected = form.cleaned_data['contract_types']
+            if not selected.exists() and not extra_names:
+                form.add_error(None, 'Select at least one contract type or add a new type.')
+            else:
+                visit_dates, visit_errors = parse_visit_dates_from_post(
+                    request.POST,
+                    form.cleaned_data['planned_visits'],
+                    form.cleaned_data['start_date'],
+                    form.cleaned_data['end_date'],
+                )
+                if visit_errors:
+                    for err in visit_errors:
+                        form.add_error(None, err)
+                else:
+                    with transaction.atomic():
+                        contract = form.save(commit=False)
+                        contract.save()
+                        _persist_contract_types_and_attachments(request, contract, selected, extra_names)
+                    _maybe_sync_ppm_schedule(contract, request, visit_dates)
+                    messages.success(
+                        request,
+                        f'Renewed AMC as {contract.contract_number} (from {source.contract_number}).',
+                    )
+                    return redirect('contracts:contract_detail', pk=contract.pk)
+    else:
+        form = ContractForm(**_contract_form_kwargs(request, initial=initial))
+
+    return render(
+        request,
+        'contracts/contract_renew.html',
+        {
+            'form': form,
+            'source': source,
+            'title': f'Renew AMC — {source.contract_number}',
+            'ppm_visit_dates': _ppm_visit_dates_context(source, request),
+        },
+    )
 
 
 @login_required
 def contract_pdf(request, pk):
     """Printable contract (HTML for print), layout aligned with estimate PDF."""
     contract = get_object_or_404(
-        Contract.objects.select_related('customer').prefetch_related('contract_types'),
+        Contract.objects.select_related('customer', 'salesperson').prefetch_related('contract_types'),
         pk=pk,
         is_active=True,
     )

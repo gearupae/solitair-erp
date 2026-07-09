@@ -39,6 +39,12 @@ class Contract(BaseModel):
         ('expired', 'Expired'),
         ('cancelled', 'Cancelled'),
     ]
+    AMC_CATEGORY_CHOICES = [
+        ('fire_alarm', 'Fire Alarm'),
+        ('gas', 'Gas'),
+        ('cctv', 'CCTV'),
+        ('general_maintenance', 'General Maintenance'),
+    ]
 
     contract_number = models.CharField(max_length=50, unique=True, editable=False)
     status = models.CharField(
@@ -54,12 +60,34 @@ class Contract(BaseModel):
         blank=True,
         related_name='contracts',
     )
+    salesperson = models.ForeignKey(
+        'hr.Employee',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='contracts',
+        help_text='Salesperson responsible for this AMC (independent of customer assignment).',
+    )
+    amc_category = models.CharField(
+        max_length=40,
+        choices=AMC_CATEGORY_CHOICES,
+        blank=True,
+        help_text='AMC service category (Fire Alarm, Gas, CCTV, etc.).',
+    )
+    service_site = models.TextField(
+        blank=True,
+        help_text='Building, address, and emirate/area where AMC work is performed.',
+    )
     name = models.CharField(max_length=255)
     contract_value = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
     start_date = models.DateField()
     end_date = models.DateField()
+    planned_visits = models.PositiveIntegerField(
+        default=0,
+        help_text='Number of planned PPM visits for this contract period.',
+    )
     remind_before_days = models.PositiveIntegerField(
-        default=10,
+        default=30,
         help_text='Reminder this many days before end date',
     )
     description = models.TextField(blank=True)
@@ -71,6 +99,22 @@ class Contract(BaseModel):
         ContractType,
         blank=True,
         related_name='contracts',
+    )
+    source_estimate = models.ForeignKey(
+        'sales.Estimate',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='amc_contracts',
+        help_text='Won quotation this AMC was created from.',
+    )
+    project = models.ForeignKey(
+        'projects.Project',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='amc_contracts',
+        help_text='Linked job / project for this AMC.',
     )
 
     class Meta:
@@ -116,6 +160,47 @@ class Contract(BaseModel):
             return False
         warn_from = self.end_date - timedelta(days=self.remind_before_days)
         return today >= warn_from
+
+
+class ContractPlannedVisit(BaseModel):
+    """Explicit PPM visit date for an AMC contract (drives inspections and operations drafts)."""
+
+    contract = models.ForeignKey(
+        Contract,
+        on_delete=models.CASCADE,
+        related_name='planned_visit_records',
+    )
+    visit_number = models.PositiveSmallIntegerField()
+    visit_date = models.DateField()
+    inspection = models.OneToOneField(
+        'projects.Inspection',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='planned_visit',
+    )
+    duty_schedule = models.OneToOneField(
+        'operations.StaffDutySchedule',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='planned_visit',
+    )
+
+    class Meta:
+        ordering = ['visit_number']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['contract', 'visit_number'],
+                condition=models.Q(is_active=True),
+                name='contracts_unique_active_planned_visit_number',
+            ),
+        ]
+        verbose_name = 'Planned PPM visit'
+        verbose_name_plural = 'Planned PPM visits'
+
+    def __str__(self):
+        return f'Visit {self.visit_number} — {self.contract.contract_number} ({self.visit_date:%d %b %Y})'
 
 
 class ContractAttachment(BaseModel):

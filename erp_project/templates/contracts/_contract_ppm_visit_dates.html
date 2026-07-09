@@ -1,0 +1,123 @@
+{% comment %}
+Dynamic PPM visit date pickers — one date input per planned visit.
+Expects optional ppm_visit_dates (list of ISO date strings) for edit/renew prefill.
+{% endcomment %}
+<div class="col-12" id="ppm-visit-dates-section">
+    <label class="form-label fw-semibold">PPM visit dates <span class="text-danger">*</span></label>
+    <p class="form-text mb-2">Select one date per planned visit. Operations drafts are created automatically in Pending status with no technician assigned.</p>
+    <div id="ppm-visit-dates-container" class="row g-2"></div>
+    <div id="ppm-visit-dates-errors" class="text-danger small mt-1"></div>
+</div>
+{{ ppm_visit_dates|json_script:"ppm-visit-dates-prefill" }}
+
+<script>
+(function () {
+    var prefillEl = document.getElementById('ppm-visit-dates-prefill');
+    var prefill = [];
+    if (prefillEl) {
+        try { prefill = JSON.parse(prefillEl.textContent); } catch (e) { prefill = []; }
+    }
+
+    function suggestVisitDates(count, startStr, endStr, preserveExisting) {
+        if (!count || count < 1 || !startStr || !endStr) return [];
+        var start = new Date(startStr + 'T00:00:00');
+        var end = new Date(endStr + 'T00:00:00');
+        if (isNaN(start.getTime()) || isNaN(end.getTime()) || end < start) return [];
+
+        var totalDays = Math.max(Math.round((end - start) / 86400000), 1);
+        var interval = Math.max(Math.floor(totalDays / count), 1);
+        var dates = [];
+        for (var i = 1; i <= count; i++) {
+            var key = 'ppm_visit_date_' + i;
+            if (preserveExisting) {
+                var existing = document.querySelector('[name="' + key + '"]');
+                if (existing && existing.value) {
+                    dates.push(existing.value);
+                    continue;
+                }
+            }
+            var d = new Date(start);
+            d.setDate(d.getDate() + interval * i);
+            if (d > end) d = end;
+            dates.push(d.toISOString().slice(0, 10));
+        }
+        return dates;
+    }
+
+    function renderVisitDates(initialDates) {
+        var section = document.getElementById('ppm-visit-dates-section');
+        var container = document.getElementById('ppm-visit-dates-container');
+        if (!section || !container) return;
+
+        var plannedEl = document.getElementById('id_planned_visits');
+        var startEl = document.getElementById('id_start_date');
+        var endEl = document.getElementById('id_end_date');
+        if (!plannedEl) return;
+
+        var count = parseInt(plannedEl.value, 10) || 0;
+        container.innerHTML = '';
+
+        if (count < 1) {
+            section.style.display = 'none';
+            return;
+        }
+        section.style.display = '';
+
+        var startStr = startEl ? startEl.value : '';
+        var endStr = endEl ? endEl.value : '';
+        var suggested = suggestVisitDates(count, startStr, endStr, false);
+        if (initialDates && initialDates.length === count) {
+            suggested = initialDates.slice();
+        } else if (suggested.length !== count) {
+            suggested = suggestVisitDates(count, startStr, endStr, true);
+        }
+
+        for (var i = 1; i <= count; i++) {
+            var col = document.createElement('div');
+            col.className = 'col-md-4 col-lg-3';
+
+            var label = document.createElement('label');
+            label.className = 'form-label small text-muted mb-1';
+            label.textContent = 'Visit ' + i + ' date';
+            label.setAttribute('for', 'ppm_visit_date_' + i);
+
+            var input = document.createElement('input');
+            input.type = 'date';
+            input.name = 'ppm_visit_date_' + i;
+            input.id = 'ppm_visit_date_' + i;
+            input.className = 'form-control form-control-sm ppm-visit-date-input';
+            input.required = true;
+            if (startStr) input.min = startStr;
+            if (endStr) input.max = endStr;
+            if (suggested[i - 1]) input.value = suggested[i - 1];
+
+            col.appendChild(label);
+            col.appendChild(input);
+            container.appendChild(col);
+        }
+    }
+
+    function bindPpmVisitDates() {
+        var plannedEl = document.getElementById('id_planned_visits');
+        var startEl = document.getElementById('id_start_date');
+        var endEl = document.getElementById('id_end_date');
+        if (!plannedEl) return;
+
+        var usePrefill = prefill && prefill.length;
+        renderVisitDates(usePrefill ? prefill : null);
+        if (usePrefill) prefill = [];
+
+        ['change', 'input'].forEach(function (evt) {
+            plannedEl.addEventListener(evt, function () { renderVisitDates(null); });
+            if (startEl) startEl.addEventListener(evt, function () { renderVisitDates(null); });
+            if (endEl) endEl.addEventListener(evt, function () { renderVisitDates(null); });
+        });
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', bindPpmVisitDates);
+    } else {
+        bindPpmVisitDates();
+    }
+})();
+</script>

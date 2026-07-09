@@ -1,0 +1,354 @@
+{% extends 'base.html' %}
+
+{% block extra_css %}
+<style>
+.ops-status-scheduled { color: #059669; font-weight: 600; }
+.ops-status-pending { color: #6366f1; font-weight: 600; }
+.ops-status-in_progress { color: #2563eb; font-weight: 600; }
+.ops-status-completed { color: #059669; font-weight: 600; }
+.ops-status-overdue { color: #dc2626; font-weight: 600; }
+.ops-status-paused { color: #d97706; font-weight: 600; }
+.ops-status-cancelled { color: #64748b; }
+.ops-dash-kpi .card-body { padding: 0.75rem 1rem; }
+.ops-dash-kpi__label { font-size: 0.72rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.03em; }
+.ops-dash-kpi__value { font-size: 1.35rem; font-weight: 700; line-height: 1.2; }
+.ops-alert-card { border-left: 4px solid transparent; }
+.ops-alert-card--warning { border-left-color: #f59e0b; }
+.ops-alert-card--danger { border-left-color: #dc2626; }
+.ops-alert-card--info { border-left-color: #3b82f6; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+    <div>
+        <h4 class="mb-1 fw-bold">{{ title }}</h4>
+        <p class="text-muted mb-0">Summary, alerts, and completed schedule reporting</p>
+    </div>
+    <div class="d-flex gap-2 flex-wrap align-items-center">
+        {% include 'operations/_operations_nav.html' with active_tab='dashboard' %}
+        {% if can_create %}
+        <a href="{% url 'operations:schedule_create' %}" class="btn btn-primary">
+            <i class="fas fa-plus me-2"></i>Schedule Duty
+        </a>
+        {% endif %}
+        <a href="{{ hub_url }}" class="btn btn-light" title="Project & operations hub">
+            <i class="fas fa-th-large me-1"></i>Hub
+        </a>
+    </div>
+</div>
+
+<!-- Summary (matches project hub operations KPIs) -->
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-transparent d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <h6 class="fw-semibold mb-0"><i class="fas fa-chart-bar me-2 text-primary"></i>Summary</h6>
+        <span class="small text-muted">
+            {% if filters.date_from and filters.date_to %}
+            {{ filters.date_from|date:"d M Y" }} – {{ filters.date_to|date:"d M Y" }}
+            {% endif %}
+            · <a href="{{ hub_url }}" class="text-decoration-none">Open hub</a>
+        </span>
+    </div>
+    <div class="card-body">
+        <div class="row g-2 mb-3">
+            <div class="col-6 col-md-4 col-lg-2">
+                <div class="ops-dash-kpi card h-100">
+                    <div class="card-body">
+                        <div class="ops-dash-kpi__label">Scheduled</div>
+                        <div class="ops-dash-kpi__value">{{ summary.total_scheduled }}</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-4 col-lg-2">
+                <div class="ops-dash-kpi card h-100 border-success border-opacity-25">
+                    <div class="card-body">
+                        <div class="ops-dash-kpi__label">On duty today</div>
+                        <div class="ops-dash-kpi__value text-success">{{ summary.on_duty_today }}</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-4 col-lg-2">
+                <div class="ops-dash-kpi card h-100">
+                    <div class="card-body">
+                        <div class="ops-dash-kpi__label">Pending</div>
+                        <div class="ops-dash-kpi__value">
+                            <a href="{{ summary.hub_links.pending }}" class="text-decoration-none">{{ summary.status_counts.pending|default:0 }}</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-4 col-lg-2">
+                <div class="ops-dash-kpi card h-100">
+                    <div class="card-body">
+                        <div class="ops-dash-kpi__label">In progress</div>
+                        <div class="ops-dash-kpi__value">
+                            <a href="{{ summary.hub_links.in_progress }}" class="text-decoration-none">{{ summary.status_counts.in_progress|default:0 }}</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-4 col-lg-2">
+                <div class="ops-dash-kpi card h-100 border-danger border-opacity-25">
+                    <div class="card-body">
+                        <div class="ops-dash-kpi__label">Overdue</div>
+                        <div class="ops-dash-kpi__value text-danger">
+                            <a href="{{ summary.hub_links.overdue }}" class="text-decoration-none text-danger">{{ summary.status_counts.overdue|default:0 }}</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-4 col-lg-2">
+                <div class="ops-dash-kpi card h-100">
+                    <div class="card-body">
+                        <div class="ops-dash-kpi__label">Completed</div>
+                        <div class="ops-dash-kpi__value">{{ summary.status_counts.completed|default:0 }}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="row g-2">
+            <div class="col-6 col-md-3">
+                <span class="text-muted small">Paused</span>
+                <span class="fw-semibold ms-1">{{ summary.status_counts.paused|default:0 }}</span>
+            </div>
+            <div class="col-6 col-md-3">
+                <span class="text-muted small">Cancelled</span>
+                <span class="fw-semibold ms-1">{{ summary.status_counts.cancelled|default:0 }}</span>
+            </div>
+            <div class="col-6 col-md-3">
+                <span class="text-muted small">Total in range</span>
+                <span class="fw-semibold ms-1">{{ summary.total_duties }}</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Alerts & notifications -->
+{% if alerts.has_alerts %}
+<div class="row g-3 mb-4">
+    {% if alerts.upcoming %}
+    <div class="col-lg-6">
+        <div class="card border-0 shadow-sm ops-alert-card ops-alert-card--info h-100">
+            <div class="card-header bg-transparent d-flex justify-content-between align-items-center py-2">
+                <h6 class="fw-semibold mb-0"><i class="fas fa-clock me-2 text-primary"></i>Upcoming (14 days)</h6>
+                <span class="badge bg-primary">{{ alerts.upcoming_total }}</span>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0">
+                        <thead><tr><th>Date</th><th>Staff</th><th>Assignment</th><th>Status</th></tr></thead>
+                        <tbody>
+                            {% for s in alerts.upcoming %}
+                            <tr>
+                                <td>{{ s.duty_date|date:"d M Y" }}</td>
+                                <td>{% if s.employee %}{{ s.employee.full_name }}{% else %}<span class="text-muted fst-italic">Unassigned</span>{% endif %}</td>
+                                <td class="small">{{ s.target_label|truncatechars:36 }}</td>
+                                <td><span class="ops-status-{{ s.status }}">{{ s.get_status_display }}</span></td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if alerts.unassigned %}
+    <div class="col-lg-6">
+        <div class="card border-0 shadow-sm ops-alert-card ops-alert-card--warning h-100">
+            <div class="card-header bg-transparent d-flex justify-content-between align-items-center py-2">
+                <h6 class="fw-semibold mb-0"><i class="fas fa-user-slash me-2 text-warning"></i>No technician assigned</h6>
+                <span class="badge bg-warning text-dark">{{ alerts.unassigned_total }}</span>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0">
+                        <thead><tr><th>Date</th><th>Assignment</th><th></th></tr></thead>
+                        <tbody>
+                            {% for s in alerts.unassigned %}
+                            <tr>
+                                <td>{{ s.duty_date|date:"d M Y" }}</td>
+                                <td class="small">{{ s.target_label|truncatechars:40 }}</td>
+                                <td class="text-end">
+                                    {% if can_edit %}
+                                    <a href="{% url 'operations:schedule_edit' s.pk %}" class="btn btn-sm btn-outline-primary">Assign</a>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if alerts.overdue_past or alerts.marked_overdue %}
+    <div class="col-lg-6">
+        <div class="card border-0 shadow-sm ops-alert-card ops-alert-card--danger h-100">
+            <div class="card-header bg-transparent py-2">
+                <h6 class="fw-semibold mb-0"><i class="fas fa-exclamation-triangle me-2 text-danger"></i>Overdue / past due</h6>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0">
+                        <thead><tr><th>Date</th><th>Staff</th><th>Status</th><th></th></tr></thead>
+                        <tbody>
+                            {% for s in alerts.marked_overdue %}
+                            <tr>
+                                <td>{{ s.duty_date|date:"d M Y" }}</td>
+                                <td>{% if s.employee %}{{ s.employee.full_name }}{% else %}<span class="text-muted">Unassigned</span>{% endif %}</td>
+                                <td><span class="ops-status-overdue">{{ s.get_status_display }}</span></td>
+                                <td class="text-end"><a href="{% url 'operations:schedule_edit' s.pk %}" class="btn btn-sm btn-light">Open</a></td>
+                            </tr>
+                            {% endfor %}
+                            {% for s in alerts.overdue_past %}
+                            <tr>
+                                <td>{{ s.duty_date|date:"d M Y" }}</td>
+                                <td>{% if s.employee %}{{ s.employee.full_name }}{% else %}<span class="text-muted">Unassigned</span>{% endif %}</td>
+                                <td><span class="ops-status-{{ s.status }}">{{ s.get_status_display }}</span></td>
+                                <td class="text-end"><a href="{% url 'operations:schedule_edit' s.pk %}" class="btn btn-sm btn-light">Open</a></td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                <div class="px-3 py-2 border-top">
+                    <a href="{{ summary.hub_links.overdue }}" class="small text-decoration-none">View overdue in hub →</a>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if alerts.conflicts %}
+    <div class="col-lg-6">
+        <div class="card border-0 shadow-sm ops-alert-card ops-alert-card--danger h-100">
+            <div class="card-header bg-transparent d-flex justify-content-between align-items-center py-2">
+                <h6 class="fw-semibold mb-0"><i class="fas fa-random me-2 text-danger"></i>Scheduling conflicts</h6>
+                <span class="badge bg-danger">{{ alerts.conflicts_total }}</span>
+            </div>
+            <div class="card-body p-0">
+                <ul class="list-group list-group-flush">
+                    {% for c in alerts.conflicts %}
+                    <li class="list-group-item py-2">
+                        <div class="fw-semibold small">{{ c.employee.full_name }} — {{ c.duty_date|date:"d M Y" }}</div>
+                        <ul class="small text-muted mb-0 ps-3">
+                            {% for s in c.schedules %}
+                            <li>{{ s.target_label }} ({{ s.get_status_display }})</li>
+                            {% endfor %}
+                        </ul>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% else %}
+<div class="alert alert-success border-0 shadow-sm mb-4">
+    <i class="fas fa-check-circle me-2"></i>No urgent alerts — upcoming schedules look clear.
+</div>
+{% endif %}
+
+<!-- Completed schedules -->
+<div class="card border-0 shadow-sm">
+    <div class="card-header bg-transparent d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <h6 class="fw-semibold mb-0"><i class="fas fa-check-double me-2 text-success"></i>Completed schedules</h6>
+        <div class="d-flex gap-2 flex-wrap">
+            <a href="?date_from={{ filters.date_from|date:'Y-m-d' }}&date_to={{ filters.date_to|date:'Y-m-d' }}{% if filters.contract %}&contract={{ filters.contract }}{% endif %}{% if filters.customer %}&customer={{ filters.customer }}{% endif %}{% if filters.technician %}&technician={{ filters.technician }}{% endif %}&export=xlsx" class="btn btn-sm btn-outline-success">
+                <i class="fas fa-file-excel me-1"></i>Excel
+            </a>
+            <a href="?date_from={{ filters.date_from|date:'Y-m-d' }}&date_to={{ filters.date_to|date:'Y-m-d' }}{% if filters.contract %}&contract={{ filters.contract }}{% endif %}{% if filters.customer %}&customer={{ filters.customer }}{% endif %}{% if filters.technician %}&technician={{ filters.technician }}{% endif %}&export=pdf" class="btn btn-sm btn-outline-danger" target="_blank" rel="noopener">
+                <i class="fas fa-file-pdf me-1"></i>PDF
+            </a>
+        </div>
+    </div>
+    <div class="card-body border-bottom">
+        <form method="get" class="row g-2 align-items-end">
+            <div class="col-md-2">
+                <label class="form-label small text-muted mb-0">From</label>
+                <input type="date" name="date_from" class="form-control form-control-sm" value="{{ filters.date_from|date:'Y-m-d' }}">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small text-muted mb-0">To</label>
+                <input type="date" name="date_to" class="form-control form-control-sm" value="{{ filters.date_to|date:'Y-m-d' }}">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small text-muted mb-0">Contract (AMC)</label>
+                <select name="contract" class="form-select form-select-sm">
+                    <option value="">All</option>
+                    {% for c in filter_contracts %}
+                    <option value="{{ c.pk }}" {% if filters.contract == c.pk|stringformat:"s" %}selected{% endif %}>{{ c.contract_number }} — {{ c.name|truncatechars:30 }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small text-muted mb-0">Customer</label>
+                <select name="customer" class="form-select form-select-sm">
+                    <option value="">All</option>
+                    {% for cust in filter_customers %}
+                    <option value="{{ cust.pk }}" {% if filters.customer == cust.pk|stringformat:"s" %}selected{% endif %}>{{ cust.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small text-muted mb-0">Technician</label>
+                <select name="technician" class="form-select form-select-sm">
+                    <option value="">All</option>
+                    {% for emp in filter_technicians %}
+                    <option value="{{ emp.pk }}" {% if filters.technician == emp.pk|stringformat:"s" %}selected{% endif %}>{{ emp.full_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-1">
+                <button type="submit" class="btn btn-primary btn-sm w-100">Filter</button>
+            </div>
+        </form>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-hover table-sm mb-0">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Time</th>
+                    <th>Technician</th>
+                    <th>Customer</th>
+                    <th>Contract / Project</th>
+                    <th>Assignment</th>
+                    <th>Location</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for s in completed_schedules %}
+                <tr>
+                    <td>{{ s.duty_date|date:"d M Y" }}</td>
+                    <td>{{ s.time_display }}</td>
+                    <td>{% if s.employee %}{{ s.employee.full_name }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+                    <td>
+                        {% if s.link_type == 'amc' and s.amc_contract.customer %}{{ s.amc_contract.customer.name }}
+                        {% elif s.project.customer %}{{ s.project.customer.name }}
+                        {% else %}—{% endif %}
+                    </td>
+                    <td>
+                        {% if s.amc_contract %}{{ s.amc_contract.contract_number }}
+                        {% elif s.project %}{{ s.project.project_code }}
+                        {% else %}—{% endif %}
+                    </td>
+                    <td class="small">{{ s.target_label|truncatechars:40 }}</td>
+                    <td class="small">{{ s.location|default:"—"|truncatechars:24 }}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="7" class="text-center text-muted py-4">No completed schedules for this filter.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% if completed_schedules|length >= 200 %}
+    <div class="card-footer bg-white small text-muted">Showing first 200 rows — narrow filters or export for the full list.</div>
+    {% endif %}
+</div>
+{% endblock %}

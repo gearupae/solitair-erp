@@ -644,6 +644,7 @@ class ApprovalConfiguration(BaseModel):
         ('project_conversion', 'Project from estimate (draft)'),
         ('leave', 'Leave Request'),
         ('recruitment_request', 'Recruitment Request'),
+        ('vendor_bill', 'Vendor Bill'),
     ]
     
     module = models.CharField(max_length=50, choices=MODULE_CHOICES, unique=True)
@@ -713,6 +714,7 @@ class ApprovalConfiguration(BaseModel):
                 or getattr(request_obj, 'project_code', None)
                 or getattr(request_obj, 'sr_number', None)
                 or getattr(request_obj, 'pr_number', None)
+                or getattr(request_obj, 'bill_number', None)
                 or getattr(request_obj, 'request_number', None)
                 or str(request_obj.pk)
             )
@@ -726,6 +728,7 @@ class ApprovalConfiguration(BaseModel):
                 'project_conversion': f'/projects/{pk}/' if pk else '',
                 'leave': f'/hr/leave/{pk}/' if pk else '',
                 'recruitment_request': f'/recruitment/requests/{pk}/' if pk else '',
+                'vendor_bill': f'/purchase/bills/{pk}/' if pk else '',
             }
             link = link_map.get(module, str(pk) if pk else '')
             title = f'Approval Required: {module.replace("_", " ").title()}'
@@ -739,6 +742,8 @@ class ApprovalConfiguration(BaseModel):
                 msg = f'Leave request {ref} requires your approval.'
             elif module == 'recruitment_request':
                 msg = f'Recruitment request {ref} requires your approval.'
+            elif module == 'vendor_bill':
+                msg = f'Vendor bill {ref} requires your approval before posting. Amount: AED {amount:,.2f}'
             else:
                 msg = f'{ref} requires your approval. Amount: AED {amount:,.2f}'
             Notification.create(

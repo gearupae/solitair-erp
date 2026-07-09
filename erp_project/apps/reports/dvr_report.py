@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 
 from apps.crm.models import SiteVisitLog
 from apps.crm.utils import filter_customers_for_user, get_sales_employee_queryset, salesperson_display_name
@@ -45,9 +46,12 @@ def build_dvr_report(*, start_date, end_date, salesman_user_id='', user=None):
     rows = []
     for visit in qs[:1000]:
         lead = visit.lead
+        visit_when = visit.visit_datetime or visit.created_at
         rows.append({
             'pk': visit.pk,
             'visit_date': visit.visit_date,
+            'visit_datetime': visit_when,
+            'visit_time_display': timezone.localtime(visit_when).strftime('%H:%M') if visit_when else '',
             'lead_pk': lead.pk if lead else None,
             'lead_label': lead.display_name or lead.customer_number if lead else '—',
             'lead_number': lead.customer_number if lead else '',
@@ -56,6 +60,7 @@ def build_dvr_report(*, start_date, end_date, salesman_user_id='', user=None):
             'outcome': visit.get_outcome_display(),
             'outcome_code': visit.outcome,
             'notes': visit.notes or '',
+            'has_selfie': bool(visit.selfie),
         })
 
     salespeople = []

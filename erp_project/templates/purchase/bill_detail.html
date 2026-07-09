@@ -14,6 +14,16 @@
             <span class="text-muted">{{ bill.vendor.name }}</span>
         </div>
         <div>
+            {% if can_submit %}
+            <a href="{% url 'purchase:bill_submit' bill.pk %}" class="btn btn-primary" onclick="return confirm('Submit this bill for approval?');">
+                <i class="fas fa-paper-plane me-2"></i>Submit for Approval
+            </a>
+            {% endif %}
+            {% if can_approve %}
+            <a href="{% url 'purchase:bill_approve' bill.pk %}" class="btn btn-success" onclick="return confirm('Approve this vendor bill?');">
+                <i class="fas fa-check me-2"></i>Approve
+            </a>
+            {% endif %}
             {% if can_post %}
             <form method="post" action="{% url 'purchase:bill_post' bill.pk %}" class="d-inline">
                 {% csrf_token %}
@@ -35,6 +45,39 @@
         </div>
     </div>
 </div>
+
+{% if bill.rejection_reason %}
+<div class="alert alert-warning">
+    <strong><i class="fas fa-comment-alt me-2"></i>Comment from approver:</strong><br>
+    {{ bill.rejection_reason }}
+</div>
+{% endif %}
+
+{% if can_reject or can_return %}
+<div class="card mb-4 border-warning">
+    <div class="card-body">
+        <h6 class="fw-semibold mb-3">Approver actions</h6>
+        <div class="row g-3">
+            <div class="col-md-6">
+                <form method="post" action="{% url 'purchase:bill_reject' bill.pk %}">
+                    {% csrf_token %}
+                    <label class="form-label small">Reject bill</label>
+                    <textarea name="comment" class="form-control mb-2" rows="2" placeholder="Enter rejection reason..."></textarea>
+                    <button type="submit" class="btn btn-outline-danger btn-sm">Reject</button>
+                </form>
+            </div>
+            <div class="col-md-6">
+                <form method="post" action="{% url 'purchase:bill_return' bill.pk %}">
+                    {% csrf_token %}
+                    <label class="form-label small">Return for revision</label>
+                    <textarea name="comment" class="form-control mb-2" rows="2" placeholder="Enter revision notes..."></textarea>
+                    <button type="submit" class="btn btn-outline-warning btn-sm">Return</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
 
 <div class="row g-4">
     <div class="col-lg-8">
@@ -165,6 +208,14 @@
                 <h6 class="text-muted mb-3">Status</h6>
                 {% if bill.status == 'draft' %}
                 <span class="badge bg-secondary fs-6">Draft</span>
+                {% elif bill.status == 'pending_approval' %}
+                <span class="badge fs-6" style="background:#fef3c7;color:#92400e;">Pending Approval</span>
+                {% elif bill.status == 'approved' %}
+                <span class="badge fs-6" style="background:#dcfce7;color:#166534;">Approved</span>
+                {% elif bill.status == 'returned' %}
+                <span class="badge bg-warning text-dark fs-6">Returned</span>
+                {% elif bill.status == 'rejected' %}
+                <span class="badge badge-inactive fs-6">Rejected</span>
                 {% elif bill.status == 'posted' %}
                 <span class="badge fs-6" style="background:#dcfce7;color:#166534;">Posted</span>
                 {% elif bill.status == 'pending' %}

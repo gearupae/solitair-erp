@@ -538,6 +538,10 @@ class VendorBill(BaseModel):
     """
     STATUS_CHOICES = [
         ('draft', 'Draft'),
+        ('pending_approval', 'Pending Approval'),
+        ('approved', 'Approved'),
+        ('returned', 'Returned for Revision'),
+        ('rejected', 'Rejected'),
         ('posted', 'Posted'),  # Posted to accounting
         ('pending', 'Pending'),
         ('paid', 'Paid'),
@@ -571,6 +575,7 @@ class VendorBill(BaseModel):
     due_date = models.DateField()
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft')
     notes = models.TextField(blank=True)
+    rejection_reason = models.TextField(blank=True)
     
     # Amounts
     subtotal = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
@@ -667,7 +672,12 @@ class VendorBill(BaseModel):
         """
         from apps.finance.models import JournalEntry, JournalEntryLine, AccountMapping, FiscalYear
 
-        if self.status != 'draft':
+        from apps.purchase.bill_approval_rules import vendor_bill_approval_enabled
+
+        postable = ('approved',) if vendor_bill_approval_enabled() else ('draft',)
+        if self.status not in postable:
+            if vendor_bill_approval_enabled():
+                raise ValidationError("Only approved vendor bills can be posted.")
             raise ValidationError("Only draft bills can be posted.")
 
         if self.total_amount <= 0:

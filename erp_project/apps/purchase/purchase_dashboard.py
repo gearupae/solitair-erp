@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import timedelta
 from decimal import Decimal
 
-from django.db.models import F, Q, Sum
+from django.db.models import F, Prefetch, Q, Sum
 from django.urls import reverse
 from django.utils import timezone
 
@@ -21,7 +21,8 @@ from apps.purchase.pr_approval_rules import user_can_act_on_purchase_request
 
 PREVIEW_LIMIT = 8
 OPEN_PO_STATUSES = ('draft', 'sent', 'confirmed', 'partial_received')
-UNPAID_BILL_STATUSES = ('draft', 'posted', 'pending', 'partial', 'overdue')
+PO_ORDERED_OR_RECEIVED_STATUSES = ('sent', 'confirmed', 'partial_received', 'received')
+UNPAID_BILL_STATUSES = ('posted', 'partial', 'overdue')
 PURCHASE_ALERT_MODULES = frozenset({'purchase_order', 'purchase_request'})
 
 
@@ -30,6 +31,106 @@ def _unpaid_bills_qs():
         is_active=True,
         status__in=UNPAID_BILL_STATUSES,
     ).filter(total_amount__gt=F('paid_amount'))
+
+
+def _active_po_bills(po) -> list[VendorBill]:
+    return [
+        bill for bill in po.bills.all()
+        if bill.is_active and bill.status != 'cancelled'
+    ]
+
+
+def _classify_po_invoice_gap(po) -> dict | None:
+    """PO is ordered or goods received but vendor invoice is missing, draft-only, or unpaid."""
+    bills = _active_po_bills(po)
+    posted_bills = [b for b in bills if b.status in ('posted', 'paid', 'partial', 'overdue')]
+    in_progress_bills = [b for b in bills if b.status in ('draft', 'pending_approval', 'approved', 'returned')]
+    unpaid_bills = [b for b in posted_bills if b.balance > 0 and b.status != 'paid']
+
+    if po.status in ('partial_received', 'received'):
+        fulfillment = 'Goods received' if po.status == 'received' else 'Partially received'
+    else:
+        fulfillment = 'Ordered'
+
+    if not bills:
+        issue = 'no_bill'
+        issue_label = 'No vendor invoice recorded'
+        severity = 'amber'
+        outstanding = po.total_amount
+        draft_bills = []
+    elif not posted_bills and in_progress_bills:
+        pending_approval = [b for b in in_progress_bills if b.status == 'pending_approval']
+        approved_only = [b for b in in_progress_bills if b.status == 'approved']
+        draft_bills = [b for b in in_progress_bills if b.status == 'draft']
+        if pending_approval:
+            issue = 'pending_approval'
+            issue_label = 'Bill awaiting approval'
+            severity = 'amber'
+            outstanding = sum((b.balance for b in pending_approval), Decimal('0.00'))
+        elif approved_only:
+            issue = 'approved_not_posted'
+            issue_label = 'Bill approved — not posted'
+            severity = 'amber'
+            outstanding = sum((b.balance for b in approved_only), Decimal('0.00'))
+        else:
+            issue = 'draft_only'
+            issue_label = 'Draft bill only — not posted'
+            severity = 'amber'
+            outstanding = sum((b.balance for b in draft_bills), Decimal('0.00'))
+    elif unpaid_bills:
+        issue = 'unpaid'
+        issue_label = 'Invoice recorded — payment outstanding'
+        severity = 'red'
+        outstanding = sum((b.balance for b in unpaid_bills), Decimal('0.00'))
+        draft_bills = []
+    else:
+        return None
+
+    primary_bill = (
+        unpaid_bills[0] if unpaid_bills
+        else (in_progress_bills[0] if in_progress_bills else None)
+    )
+
+    return {
+        'po': po,
+        'issue': issue,
+        'issue_label': issue_label,
+        'severity': severity,
+        'fulfillment': fulfillment,
+        'bills': bills,
+        'unpaid_bills': unpaid_bills,
+        'draft_bills': draft_bills,
+        'primary_bill': primary_bill,
+        'outstanding': outstanding,
+        'link': reverse('purchase:po_detail', args=[po.pk]),
+        'bill_link': reverse('purchase:bill_detail', args=[primary_bill.pk]) if primary_bill else '',
+        'create_bill_link': reverse('purchase:po_convert_bill', args=[po.pk]),
+    }
+
+
+def build_po_invoice_gaps(po_qs, *, preview_limit: int | None = PREVIEW_LIMIT) -> list[dict]:
+    """Purchase orders awaiting vendor invoice recording or payment."""
+    bill_prefetch = Prefetch(
+        'bills',
+        queryset=VendorBill.objects.filter(is_active=True)
+        .exclude(status='cancelled')
+        .order_by('-bill_date', '-pk'),
+    )
+    candidates = (
+        po_qs.filter(status__in=PO_ORDERED_OR_RECEIVED_STATUSES)
+        .select_related('vendor', 'project')
+        .prefetch_related(bill_prefetch)
+        .order_by('-order_date', '-created_at')
+    )
+
+    rows: list[dict] = []
+    for po in candidates:
+        row = _classify_po_invoice_gap(po)
+        if row:
+            rows.append(row)
+            if preview_limit is not None and len(rows) >= preview_limit:
+                break
+    return rows
 
 
 def build_purchase_dashboard_context(user) -> dict:
@@ -81,6 +182,10 @@ def build_purchase_dashboard_context(user) -> dict:
         is_active=True,
         status=GoodsReceiptNote.STATUS_DRAFT,
     )
+
+    all_po_invoice_gaps = build_po_invoice_gaps(po_qs, preview_limit=None)
+    po_invoice_gaps = all_po_invoice_gaps[:PREVIEW_LIMIT]
+    po_invoice_gap_count = len(all_po_invoice_gaps)
 
     overdue_total = overdue_bills_qs.aggregate(
         t=Sum(F('total_amount') - F('paid_amount')),
@@ -154,6 +259,15 @@ def build_purchase_dashboard_context(user) -> dict:
             'hint': 'Not yet posted to accounting',
         },
         {
+            'key': 'po_invoice_gap',
+            'label': 'POs awaiting invoice / payment',
+            'value': po_invoice_gap_count,
+            'icon': 'fa-file-invoice-dollar',
+            'color': 'warning' if po_invoice_gap_count else 'secondary',
+            'link': reverse('purchase:dashboard') + '#po-invoice-gaps',
+            'hint': 'Ordered or received — no bill, draft only, or unpaid',
+        },
+        {
             'key': 'expense_pending',
             'label': 'Expense claims pending',
             'value': expense_submitted.count(),
@@ -172,7 +286,7 @@ def build_purchase_dashboard_context(user) -> dict:
         {'label': 'Draft GRNs', 'value': draft_grns.count(), 'link': reverse('purchase:grn_list')},
     ]
 
-    alerts = _purchase_alerts(user)
+    alerts = _purchase_alerts(user, po_qs, po_invoice_gaps=all_po_invoice_gaps[:6])
 
     return {
         'today': today,
@@ -190,13 +304,15 @@ def build_purchase_dashboard_context(user) -> dict:
         'draft_bills': list(draft_bills_qs.order_by('-created_at')[:PREVIEW_LIMIT]),
         'alerts': alerts[:12],
         'alert_count': len(alerts),
+        'po_invoice_gaps': po_invoice_gaps,
+        'po_invoice_gap_count': po_invoice_gap_count,
         'can_create_pr': user.is_superuser or PermissionChecker.has_permission(user, 'purchase', 'create'),
         'can_create_po': user.is_superuser or PermissionChecker.has_permission(user, 'purchase', 'create'),
         'can_create_bill': user.is_superuser or PermissionChecker.has_permission(user, 'purchase', 'create'),
     }
 
 
-def _purchase_alerts(user) -> list[dict]:
+def _purchase_alerts(user, po_qs=None, *, po_invoice_gaps=None) -> list[dict]:
     if not (user.is_superuser or PermissionChecker.has_permission(user, 'purchase', 'view')):
         return []
 
@@ -208,6 +324,32 @@ def _purchase_alerts(user) -> list[dict]:
             alerts.append(alert)
 
     today = timezone.localdate()
+
+    if po_invoice_gaps is None and po_qs is not None:
+        po_invoice_gaps = build_po_invoice_gaps(po_qs, preview_limit=6)
+
+    if po_invoice_gaps:
+        for row in po_invoice_gaps:
+            po = row['po']
+            detail_parts = [row['fulfillment'], po.vendor.name]
+            if row['issue'] == 'unpaid':
+                detail_parts.append(f'AED {row["outstanding"]:,.2f} outstanding')
+            elif row['issue'] == 'no_bill':
+                detail_parts.append(f'PO total AED {po.total_amount:,.2f}')
+            elif row['primary_bill']:
+                detail_parts.append(row['primary_bill'].bill_number)
+            alerts.append(
+                {
+                    'module': 'purchase_order',
+                    'module_label': 'Purchase order',
+                    'record_label': po.po_number,
+                    'link': row['link'],
+                    'title': f'{po.po_number} — {row["issue_label"]}',
+                    'detail': ' · '.join(detail_parts),
+                    'severity': row['severity'],
+                },
+            )
+
     for bill in _unpaid_bills_qs().filter(due_date__lt=today).order_by('due_date')[:5]:
         balance = bill.balance
         if balance <= 0:

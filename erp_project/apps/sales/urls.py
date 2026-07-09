@@ -29,6 +29,7 @@ urlpatterns = [
     path('estimates/<int:pk>/delete/', views.estimate_delete, name='estimate_delete'),
     path('estimates/<int:pk>/convert/', views.estimate_convert_to_invoice, name='estimate_convert'),
     path('estimates/<int:pk>/convert-project/', views.estimate_convert_to_project, name='estimate_convert_project'),
+    path('estimates/<int:pk>/convert-amc/', views.estimate_convert_to_amc, name='estimate_convert_amc'),
     path('estimates/<int:pk>/status/<str:status>/', views.estimate_update_status, name='estimate_status'),
     path('estimates/<int:pk>/set-status/', views.estimate_set_status, name='estimate_set_status'),
     path('estimates/<int:pk>/convert-quotation/', views.estimate_convert_to_quotation, name='estimate_convert_to_quotation'),

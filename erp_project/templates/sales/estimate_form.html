@@ -46,6 +46,45 @@
 #itemsTable .items-col-inventory { min-width: 9rem; position: relative; }
 #itemsTable .items-col-brand { min-width: 6.5rem; }
 #itemsTable .items-col-desc { min-width: 10rem; }
+/* Frozen columns (Group → Inventory) */
+#itemsTable .items-col-frozen-1 { position: sticky; left: 0; z-index: 2; min-width: 9rem; width: 9rem; background: #fff; }
+#itemsTable .items-col-frozen-2 { position: sticky; left: 9rem; z-index: 2; min-width: 3.25rem; width: 3.25rem; background: #fff; }
+#itemsTable .items-col-frozen-3 {
+    position: sticky;
+    left: calc(9rem + 3.25rem);
+    z-index: 2;
+    min-width: 9rem;
+    width: 9rem;
+    background: #fff;
+    box-shadow: 2px 0 5px rgba(15, 23, 42, 0.08);
+}
+#itemsTable thead .items-col-frozen-1,
+#itemsTable thead .items-col-frozen-2,
+#itemsTable thead .items-col-frozen-3 {
+    z-index: 5;
+    background: #f8f9fa;
+}
+#itemsTable tbody tr:hover .items-col-frozen-1,
+#itemsTable tbody tr:hover .items-col-frozen-2,
+#itemsTable tbody tr:hover .items-col-frozen-3 {
+    background: #f8fafc;
+}
+#itemsTable .items-col-apply-oh { min-width: 3.5rem; text-align: center; }
+#itemsTable .row-oh-indicator {
+    display: inline-block;
+    min-width: 2.75rem;
+    font-size: 0.68rem;
+    font-weight: 600;
+    padding: 0.15rem 0.35rem;
+}
+#itemsTable .items-col-uom { min-width: 4.5rem; }
+#itemsTable .items-col-oh-amt { min-width: 4.5rem; }
+#itemsTable .items-col-total-cost-oh { min-width: 5rem; }
+#itemsTable .items-col-install-profit { min-width: 4.5rem; }
+#itemsTable .items-col-install-profit-num { min-width: 4.5rem; }
+#itemsTable .items-col-install-selling { min-width: 5.5rem; }
+#itemsTable .items-col-install-net-selling { min-width: 5rem; }
+#itemsTable .items-col-total-selling { min-width: 5.5rem; }
 #itemsTable .items-col-qty { min-width: 4rem; }
 #itemsTable .items-col-base { min-width: 5.5rem; overflow: visible; }
 #itemsTable .items-col-net-cost { min-width: 4.5rem; }
@@ -324,6 +363,11 @@
                     {{ form.discount_value }}
                     <small class="text-muted d-block">Use % or fixed amount based on type</small>
                 </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="{{ form.overhead_percent.id_for_label }}">Overhead %</label>
+                    {{ form.overhead_percent }}
+                    {% if form.overhead_percent.errors %}<div class="text-danger small">{{ form.overhead_percent.errors|join:", " }}</div>{% endif %}
+                </div>
                 <div class="col-12 mt-1">
                     <div class="row g-2 g-md-3 align-items-center">
                         <div class="col-md-3">
@@ -410,39 +454,51 @@
                 <strong>Scope of work:</strong> choosing a main group loads all of its sub-groups and items below (group name = sub-group on each line).
                 <strong>How each line is calculated:</strong>
                 <strong>Net cost</strong> = qty × unit cost.
-                <strong>Net installation cost</strong> = qty × unit installation cost (not in line net — consolidated under Expenses).
-                Enter <strong>Selling cost</strong> per unit; <strong>Profit value</strong> is calculated automatically.
-                <strong>Group ×</strong> multiplies the <strong>Qty</strong> on every line with the same group name (not shown on PDF).
-                <strong>Net</strong> = qty × selling cost (excl. VAT). <strong>Gross</strong> includes VAT from the tax code.
+                <strong>Net installation cost</strong> = qty × unit installation cost.
+                <strong>Total cost</strong> = net cost + net install cost.
+                <strong>Overhead</strong> = total cost × OH% (automatic; skipped only for inventory items marked “No overhead calculation”, e.g. services).
+                <strong>Total cost + OH</strong> = total cost + overhead.
+                Enter <strong>Selling cost</strong> and <strong>Install selling cost</strong> per unit; profit values are calculated automatically.
+                <strong>Group ×</strong> multiplies qty on lines sharing the same group name (not on PDF).
+                <strong>Total selling</strong> = net (excl. VAT) + install net selling. VAT applies to total selling.
             </p>
             {{ items_formset.management_form }}
             <div class="line-items-table-wrap">
                 <table class="table mb-0 table-sm align-middle" id="itemsTable">
                     <thead class="table-light">
                         <tr>
-                            <th class="items-col-group" title="Choose a group on the left to load items; edit the PDF section title on the right (screen layout only—does not change inventory).">Group</th>
-                            <th class="items-col-group-mult" title="Multiplied with qty for all lines in this group">Group ×</th>
-                            <th class="items-col-inventory">Inventory</th>
+                            <th class="items-col-group items-col-frozen-1" title="Choose a group on the left to load items; edit the PDF section title on the right (screen layout only—does not change inventory).">Group</th>
+                            <th class="items-col-group-mult items-col-frozen-2" title="Multiplied with qty for all lines in this group">Group ×</th>
+                            <th class="items-col-inventory items-col-frozen-3">Inventory</th>
                             <th class="items-col-brand">Brand</th>
                             <th class="items-col-desc">Description</th>
+                            <th class="items-col-uom">UOM</th>
                             <th class="items-col-qty">Qty</th>
                             <th class="items-col-base" title="Unit cost per unit">Unit cost</th>
                             <th class="items-col-net-cost text-end" title="Qty × unit cost">Net cost</th>
                             <th class="items-col-install" title="Unit installation cost per unit">Unit install cost</th>
                             <th class="items-col-net-install text-end" title="Qty × unit installation cost">Net install cost</th>
+                            <th class="items-col-apply-oh" title="Overhead applies automatically unless inventory item is marked No overhead">OH</th>
+                            <th class="items-col-oh-amt text-end" title="Total cost × OH%">OH amount</th>
+                            <th class="items-col-total-cost-oh text-end" title="Total cost + overhead">Total cost +OH</th>
                             <th class="items-col-profit">Profit</th>
                             <th class="items-col-profit-num" title="Calculated from selling cost vs unit cost">Profit value</th>
                             <th class="items-col-selling" title="Unit selling price (user enters)">Selling cost</th>
+                            <th class="items-col-install-profit">Install profit</th>
+                            <th class="items-col-install-profit-num">Install profit value</th>
+                            <th class="items-col-install-selling">Install selling cost</th>
+                            <th class="items-col-install-net-selling text-end">Install net selling</th>
+                            <th class="items-col-total-selling text-end" title="Net excl. + install net selling">Total selling</th>
                             <th class="items-col-tax">Tax</th>
-                            <th class="items-col-net text-end" title="Subtotal + profit (before VAT)">Net (excl.)</th>
-                            <th class="items-col-gross text-end" title="Net + VAT for this line">Gross (incl.)</th>
+                            <th class="items-col-net text-end" title="Product net before VAT">Net (excl.)</th>
+                            <th class="items-col-gross text-end" title="Total selling + VAT">Gross (incl.)</th>
                             <th class="items-col-actions"></th>
                         </tr>
                     </thead>
                     <tbody id="itemsBody">
                         {% for item_form in items_formset %}
                         <tr class="item-row" {% if item_form.DELETE.value %}style="display:none;"{% endif %}>
-                            <td class="items-col-group">
+                            <td class="items-col-group items-col-frozen-1">
                                 {{ item_form.id }}
                                 <div class="input-group input-group-sm flex-nowrap estimate-group-combo">
                                     <select class="form-select form-select-sm estimate-add-from-group estimate-pick-group" aria-label="Pick inventory group to add all its lines on this estimate"></select>
@@ -450,18 +506,27 @@
                                 </div>
                                 {{ item_form.sort_order }}
                             </td>
-                            <td class="items-col-group-mult">{{ item_form.group_qty_multiplier }}</td>
-                            <td class="items-col-inventory">{{ item_form.inventory_item }}</td>
+                            <td class="items-col-group-mult items-col-frozen-2">{{ item_form.group_qty_multiplier }}</td>
+                            <td class="items-col-inventory items-col-frozen-3">{{ item_form.inventory_item }}</td>
                             <td class="items-col-brand">{{ item_form.brand }}</td>
                             <td class="items-col-desc">{{ item_form.description }}</td>
+                            <td class="items-col-uom">{{ item_form.uom }}</td>
                             <td class="items-col-qty">{{ item_form.quantity }}</td>
                             <td class="items-col-base">{{ item_form.unit_price }}</td>
                             <td class="items-col-net-cost text-end"><span class="row-net-cost text-muted small">0.00</span></td>
                             <td class="items-col-install">{{ item_form.installation_cost }}</td>
                             <td class="items-col-net-install text-end"><span class="row-net-install-total text-muted small">0.00</span></td>
+                            <td class="items-col-apply-oh text-center"><span class="row-oh-indicator badge text-bg-light border text-muted" title="Overhead applies">Yes</span></td>
+                            <td class="items-col-oh-amt text-end"><span class="row-oh-amount text-muted small">0.00</span></td>
+                            <td class="items-col-total-cost-oh text-end"><span class="row-total-cost-oh text-muted small">0.00</span></td>
                             <td class="items-col-profit">{{ item_form.profit_type }}</td>
                             <td class="items-col-profit-num">{{ item_form.profit_value }}</td>
                             <td class="items-col-selling">{{ item_form.selling_cost }}</td>
+                            <td class="items-col-install-profit">{{ item_form.installation_profit_type }}</td>
+                            <td class="items-col-install-profit-num">{{ item_form.installation_profit_value }}</td>
+                            <td class="items-col-install-selling">{{ item_form.installation_selling_cost }}</td>
+                            <td class="items-col-install-net-selling text-end"><span class="row-install-net-selling text-muted small">0.00</span></td>
+                            <td class="items-col-total-selling text-end"><span class="row-total-selling text-muted small">0.00</span></td>
                             <td class="items-col-tax">{{ item_form.tax_code }}</td>
                             <td class="items-col-net text-end"><span class="row-net text-muted small">0.00</span></td>
                             <td class="items-col-gross text-end"><span class="row-gross fw-medium">0.00</span></td>
@@ -476,32 +541,57 @@
                         {% endfor %}
                     </tbody>
                     <tfoot>
+                        <tr class="table-light">
+                            <td colspan="22" class="text-end fw-medium">Total product cost:</td>
+                            <td class="text-end fw-medium" id="footerTotalProductCost">0.00</td>
+                            <td colspan="3"></td>
+                        </tr>
+                        <tr class="table-light">
+                            <td colspan="22" class="text-end fw-medium">Total installation (net selling):</td>
+                            <td class="text-end fw-medium" id="footerTotalInstallation">0.00</td>
+                            <td colspan="3"></td>
+                        </tr>
+                        <tr class="table-light">
+                            <td colspan="22" class="text-end fw-medium">Total overhead:</td>
+                            <td class="text-end fw-medium" id="footerTotalOverhead">0.00</td>
+                            <td colspan="3"></td>
+                        </tr>
+                        <tr class="table-light">
+                            <td colspan="22" class="text-end fw-medium">Total profit:</td>
+                            <td class="text-end fw-medium" id="footerTotalProfit">0.00</td>
+                            <td colspan="3"></td>
+                        </tr>
+                        <tr class="table-light">
+                            <td colspan="22" class="text-end fw-medium">Total profit %:</td>
+                            <td class="text-end fw-medium" id="footerTotalProfitPct">0.00%</td>
+                            <td colspan="3"></td>
+                        </tr>
                         <tr>
-                            <td colspan="12" class="text-end fw-medium">Subtotal (excl. VAT):</td>
+                            <td colspan="22" class="text-end fw-medium">Subtotal (excl. VAT):</td>
                             <td class="text-end fw-medium" id="subtotal">0.00</td>
                             <td></td>
                             <td></td>
                         </tr>
                         <tr id="discountExclRow" class="d-none">
-                            <td colspan="12" class="text-end fw-medium text-danger">Discount (before VAT):</td>
+                            <td colspan="22" class="text-end fw-medium text-danger">Discount (before VAT):</td>
                             <td class="text-end fw-medium text-danger" id="discountDisplayExcl">0.00</td>
                             <td></td>
                             <td></td>
                         </tr>
                         <tr id="discountInclRow" class="d-none">
-                            <td colspan="12" class="text-end fw-medium text-danger">Discount (after VAT):</td>
+                            <td colspan="22" class="text-end fw-medium text-danger">Discount (after VAT):</td>
                             <td class="text-end fw-medium text-danger" id="discountDisplayIncl">0.00</td>
                             <td></td>
                             <td></td>
                         </tr>
                         <tr>
-                            <td colspan="12" class="text-end fw-medium">VAT:</td>
+                            <td colspan="22" class="text-end fw-medium">VAT:</td>
                             <td></td>
                             <td class="text-end fw-medium" id="vatTotal">0.00</td>
                             <td></td>
                         </tr>
                         <tr>
-                            <td colspan="12" class="text-end fw-bold">Total (incl. VAT):</td>
+                            <td colspan="22" class="text-end fw-bold">Total (incl. VAT):</td>
                             <td></td>
                             <td class="text-end fw-bold" id="grandTotal">0.00</td>
                             <td></td>
@@ -632,6 +722,15 @@ const profitChoices = [
     {v: 'none', l: 'None'},
     {v: 'percent', l: '%'},
     {v: 'amount', l: 'AED/u'},
+];
+const uomChoices = [
+    {v: '', l: '—'},
+    {v: 'units', l: 'Units'},
+    {v: 'ls', l: 'LS'},
+    {v: 'rm', l: 'RM'},
+    {v: 'litre', l: 'Litre'},
+    {v: 'set', l: 'Set'},
+    {v: 'mtr', l: 'Mtr'},
 ];
 
 let formCount = {{ items_formset.total_form_count }};
@@ -1287,6 +1386,123 @@ function getProfitTypeOptions(val) {
     return o;
 }
 
+function getUomOptions(val) {
+    let o = '';
+    uomChoices.forEach(u => {
+        const sel = val && val === u.v ? 'selected' : '';
+        o += `<option value="${u.v}" ${sel}>${u.l}</option>`;
+    });
+    return o;
+}
+
+function getHeaderOverheadPercent() {
+    const el = document.getElementById('id_overhead_percent');
+    const n = parseFloat(el?.value);
+    return Number.isNaN(n) || n < 0 ? 0 : n;
+}
+
+function expenseTypeExemptFromOverhead(typeName) {
+    if (!typeName) return false;
+    const low = String(typeName).trim().toLowerCase();
+    if (low.includes('authority')) return true;
+    if (low.includes('expense')) return true;
+    return false;
+}
+
+function resolveApplyOverheadForRow(row, meta) {
+    if (meta && meta.no_overhead) return false;
+    const expenseMeta = getRowExpenseTypeMeta(row);
+    if (expenseMeta && expenseTypeExemptFromOverhead(expenseMeta.expenseTypeName)) return false;
+    return true;
+}
+
+function rowAppliesOverhead(row) {
+    const invId = row.querySelector('.item-inventory')?.value;
+    const meta = invId ? getInventoryMeta(invId) : null;
+    return resolveApplyOverheadForRow(row, meta);
+}
+
+function updateOverheadIndicator(row) {
+    const el = row.querySelector('.row-oh-indicator');
+    if (!el) return;
+    const applies = rowAppliesOverhead(row);
+    if (applies) {
+        el.textContent = 'Yes';
+        el.className = 'row-oh-indicator badge text-bg-light border text-muted';
+        el.title = 'Overhead applies';
+    } else {
+        el.textContent = 'No OH';
+        el.className = 'row-oh-indicator badge text-bg-secondary';
+        el.title = 'No overhead (inventory item exempt)';
+    }
+}
+
+function computeOverhead(row) {
+    if (!rowAppliesOverhead(row)) return 0;
+    const pct = getHeaderOverheadPercent();
+    if (pct <= 0) return 0;
+    return money2(computeTotalCost(row) * pct / 100);
+}
+
+function computeTotalCost(row) {
+    return money2(computeNetCost(row) + computeNetInstallation(row));
+}
+
+function computeTotalCostWithOH(row) {
+    return money2(computeTotalCost(row) + computeOverhead(row));
+}
+
+function getInstallSellingCost(row) {
+    return parseFloat(row.querySelector('.item-installation-selling-cost')?.value) || 0;
+}
+
+function applyInstallProfitFromSellingCost(row) {
+    const unit = parseFloat(row.querySelector('.item-installation-cost')?.value) || 0;
+    const selling = getInstallSellingCost(row);
+    const pt = row.querySelector('.item-installation-profit-type')?.value || 'none';
+    const pvInput = row.querySelector('.item-installation-profit-value');
+    if (!pvInput) return;
+    if (pt === 'percent') {
+        pvInput.value = unit > 0 ? money2((selling - unit) / unit * 100).toFixed(2) : '0';
+    } else if (pt === 'amount') {
+        pvInput.value = money2(selling - unit).toFixed(2);
+    } else {
+        pvInput.value = '0';
+    }
+}
+
+function syncInstallSellingWhenNoProfit(row) {
+    const pt = row.querySelector('.item-installation-profit-type')?.value || 'none';
+    if (pt !== 'none') return;
+    const unit = parseFloat(row.querySelector('.item-installation-cost')?.value) || 0;
+    const sc = row.querySelector('.item-installation-selling-cost');
+    if (sc) sc.value = unit.toFixed(2);
+}
+
+function computeInstallNetSelling(row) {
+    const qty = parseFloat(row.querySelector('.item-qty')?.value) || 0;
+    const selling = getInstallSellingCost(row);
+    return money2(qty * selling);
+}
+
+function computeTotalSelling(row) {
+    return money2(computeLineNet(row) + computeInstallNetSelling(row));
+}
+
+function computeNetProductProfit(row) {
+    const qty = parseFloat(row.querySelector('.item-qty')?.value) || 0;
+    const unit = parseFloat(row.querySelector('.item-base-price')?.value) || 0;
+    const selling = getSellingCost(row);
+    return money2(qty * (selling - unit));
+}
+
+function computeNetInstallProfit(row) {
+    const qty = parseFloat(row.querySelector('.item-qty')?.value) || 0;
+    const unit = parseFloat(row.querySelector('.item-installation-cost')?.value) || 0;
+    const selling = getInstallSellingCost(row);
+    return money2(qty * (selling - unit));
+}
+
 function computeNetCost(row) {
     const qty = parseFloat(row.querySelector('.item-qty')?.value) || 0;
     const unit = parseFloat(row.querySelector('.item-base-price')?.value) || 0;
@@ -1328,11 +1544,22 @@ function syncSellingWhenNoProfit(row) {
 
 function updateRowComputedFields(row) {
     syncSellingWhenNoProfit(row);
+    syncInstallSellingWhenNoProfit(row);
+    updateOverheadIndicator(row);
     const netCostEl = row.querySelector('.row-net-cost');
     const netInstEl = row.querySelector('.row-net-install-total');
+    const ohEl = row.querySelector('.row-oh-amount');
+    const totalCostOhEl = row.querySelector('.row-total-cost-oh');
+    const instNetEl = row.querySelector('.row-install-net-selling');
+    const totalSellingEl = row.querySelector('.row-total-selling');
     if (netCostEl) netCostEl.textContent = computeNetCost(row).toFixed(2);
     if (netInstEl) netInstEl.textContent = computeNetInstallation(row).toFixed(2);
+    if (ohEl) ohEl.textContent = computeOverhead(row).toFixed(2);
+    if (totalCostOhEl) totalCostOhEl.textContent = computeTotalCostWithOH(row).toFixed(2);
     applyProfitFromSellingCost(row);
+    applyInstallProfitFromSellingCost(row);
+    if (instNetEl) instNetEl.textContent = computeInstallNetSelling(row).toFixed(2);
+    if (totalSellingEl) totalSellingEl.textContent = computeTotalSelling(row).toFixed(2);
 }
 
 function computeLinePreProfit(row) {
@@ -1379,6 +1606,14 @@ function populateRowFromInventory(row, invId, groupName, defaultQuantity) {
     applyProfitFromItemMaximum(row, meta);
     const tc = row.querySelector('.item-tax-code');
     if (tc) tc.value = meta.tax_code_id || defaultTaxCodeId || '';
+    const uomSel = row.querySelector('.item-uom');
+    if (uomSel && meta.default_uom) uomSel.value = meta.default_uom;
+    const instCostEl = row.querySelector('.item-installation-cost');
+    const instSellEl = row.querySelector('.item-installation-selling-cost');
+    if (instSellEl && (!instSellEl.value || parseFloat(instSellEl.value) === 0)) {
+        const ic = parseFloat(instCostEl?.value || 0);
+        instSellEl.value = ic.toFixed(2);
+    }
     updateRowComputedFields(row);
     const qtyInput = row.querySelector('.item-qty');
     if (qtyInput) {
@@ -1406,6 +1641,8 @@ function onInventoryChange(sel) {
     if (!row) return;
     if (!id) {
         syncBrandFromInventory(row, null);
+        updateRowComputedFields(row);
+        calculateTotals();
         return;
     }
     populateRowFromInventory(row, id);
@@ -1607,7 +1844,7 @@ function addItemRow() {
     const tr = document.createElement('tr');
     tr.className = 'item-row';
     tr.innerHTML = `
-        <td class="items-col-group">
+        <td class="items-col-group items-col-frozen-1">
             <input type="hidden" name="items-${formCount}-id" id="id_items-${formCount}-id">
             <div class="input-group input-group-sm flex-nowrap estimate-group-combo">
                 <select class="form-select form-select-sm estimate-add-from-group estimate-pick-group" aria-label="Pick inventory group to add all its lines on this estimate"></select>
@@ -1615,10 +1852,11 @@ function addItemRow() {
             </div>
             <input type="hidden" name="items-${formCount}-sort_order" value="${formCount}" id="id_items-${formCount}-sort_order">
         </td>
-        <td class="items-col-group-mult"><input type="number" name="items-${formCount}-group_qty_multiplier" value="1" step="1" min="1" class="form-control form-control-sm item-group-qty-mult" title="Multiplied with qty for every line in this group"></td>
-        <td class="items-col-inventory"><select name="items-${formCount}-inventory_item" class="form-select form-select-sm item-inventory">${getInventoryOptions()}</select></td>
+        <td class="items-col-group-mult items-col-frozen-2"><input type="number" name="items-${formCount}-group_qty_multiplier" value="1" step="1" min="1" class="form-control form-control-sm item-group-qty-mult" title="Multiplied with qty for every line in this group"></td>
+        <td class="items-col-inventory items-col-frozen-3"><select name="items-${formCount}-inventory_item" class="form-select form-select-sm item-inventory">${getInventoryOptions()}</select></td>
         <td class="items-col-brand"><select name="items-${formCount}-brand" class="form-select form-select-sm item-brand">${getBrandOptions('')}</select></td>
         <td class="items-col-desc"><input type="text" name="items-${formCount}-description" class="form-control form-control-sm"></td>
+        <td class="items-col-uom"><select name="items-${formCount}-uom" class="form-select form-select-sm item-uom">${getUomOptions('')}</select></td>
         <td class="items-col-qty"><input type="number" name="items-${formCount}-quantity" value="1" step="1" min="1" class="form-control form-control-sm item-qty"></td>
         <td class="items-col-base">
             <div class="input-group input-group-sm estimate-price-input-group flex-nowrap">
@@ -1629,9 +1867,17 @@ function addItemRow() {
         <td class="items-col-net-cost text-end"><span class="row-net-cost text-muted small">0.00</span></td>
         <td class="items-col-install"><input type="number" name="items-${formCount}-installation_cost" value="0" step="0.01" min="0" class="form-control form-control-sm item-installation-cost"></td>
         <td class="items-col-net-install text-end"><span class="row-net-install-total text-muted small">0.00</span></td>
+        <td class="items-col-apply-oh text-center"><span class="row-oh-indicator badge text-bg-light border text-muted" title="Overhead applies">Yes</span></td>
+        <td class="items-col-oh-amt text-end"><span class="row-oh-amount text-muted small">0.00</span></td>
+        <td class="items-col-total-cost-oh text-end"><span class="row-total-cost-oh text-muted small">0.00</span></td>
         <td class="items-col-profit"><select name="items-${formCount}-profit_type" class="form-select form-select-sm item-profit-type">${getProfitTypeOptions('none')}</select></td>
         <td class="items-col-profit-num"><input type="number" name="items-${formCount}-profit_value" value="0" step="0.01" class="form-control form-control-sm item-profit-value" readonly></td>
         <td class="items-col-selling"><input type="number" name="items-${formCount}-selling_cost" value="0" step="0.01" min="0" class="form-control form-control-sm item-selling-cost"></td>
+        <td class="items-col-install-profit"><select name="items-${formCount}-installation_profit_type" class="form-select form-select-sm item-installation-profit-type">${getProfitTypeOptions('none')}</select></td>
+        <td class="items-col-install-profit-num"><input type="number" name="items-${formCount}-installation_profit_value" value="0" step="0.01" class="form-control form-control-sm item-installation-profit-value" readonly></td>
+        <td class="items-col-install-selling"><input type="number" name="items-${formCount}-installation_selling_cost" value="0" step="0.01" min="0" class="form-control form-control-sm item-installation-selling-cost"></td>
+        <td class="items-col-install-net-selling text-end"><span class="row-install-net-selling text-muted small">0.00</span></td>
+        <td class="items-col-total-selling text-end"><span class="row-total-selling text-muted small">0.00</span></td>
         <td class="items-col-tax"><select name="items-${formCount}-tax_code" class="form-select form-select-sm item-tax-code">${getTaxOptions(defaultTaxCodeId)}</select></td>
         <td class="items-col-net text-end"><span class="row-net text-muted small">0.00</span></td>
         <td class="items-col-gross text-end"><span class="row-gross fw-medium">0.00</span></td>
@@ -1741,12 +1987,13 @@ function calculateRowTotal(input) {
     updateRowComputedFields(row);
     const taxSel = row.querySelector('.item-tax-code');
     const vatRate = getVatRatePercent(taxSel);
-    const net = computeLineNet(row);
-    const vat = net * (vatRate / 100);
-    const gross = net + vat;
+    const productNet = computeLineNet(row);
+    const totalSelling = computeTotalSelling(row);
+    const vat = totalSelling * (vatRate / 100);
+    const gross = totalSelling + vat;
     const netEl = row.querySelector('.row-net');
     const grossEl = row.querySelector('.row-gross');
-    if (netEl) netEl.textContent = net.toFixed(2);
+    if (netEl) netEl.textContent = productNet.toFixed(2);
     if (grossEl) grossEl.textContent = gross.toFixed(2);
     calculateTotals();
     if (!suppressTrailingEmptyRow) {
@@ -1881,14 +2128,23 @@ function updateExpenseTypeTotals() {
 function calculateTotals() {
     const rows = [];
     let subtotal = 0;
+    let totalProductCost = 0;
+    let totalInstallation = 0;
+    let totalOverhead = 0;
+    let totalProfit = 0;
+    let totalCostWithOh = 0;
     document.querySelectorAll('#itemsBody .item-row').forEach(row => {
         if (row.style.display === 'none') return;
-        const qty = parseFloat(row.querySelector('.item-qty')?.value) || 0;
         const taxSel = row.querySelector('.item-tax-code');
         const vatRate = getVatRatePercent(taxSel);
-        const net = computeLineNet(row);
-        rows.push({ net, vatRate });
-        subtotal += net;
+        const totalSelling = computeTotalSelling(row);
+        rows.push({ totalSelling, vatRate });
+        subtotal += totalSelling;
+        totalProductCost += computeNetCost(row);
+        totalInstallation += computeInstallNetSelling(row);
+        totalOverhead += computeOverhead(row);
+        totalProfit += computeNetProductProfit(row) + computeNetInstallProfit(row);
+        totalCostWithOh += computeTotalCostWithOH(row);
     });
     const dt = document.querySelector('[name="discount_type"]')?.value || 'none';
     const dv = parseFloat(document.querySelector('[name="discount_value"]')?.value) || 0;
@@ -1901,22 +2157,29 @@ function calculateTotals() {
     let vatTotal = 0;
     let vatWithoutDiscount = 0;
     rows.forEach((row, idx) => {
-        vatWithoutDiscount += Math.round(row.net * (row.vatRate / 100) * 100) / 100;
+        vatWithoutDiscount += Math.round(row.totalSelling * (row.vatRate / 100) * 100) / 100;
         let lineDisc = 0;
         if (disc > 0 && subtotal > 0) {
             if (idx === rows.length - 1) {
                 lineDisc = remainingDisc;
             } else {
-                lineDisc = Math.round(disc * (row.net / subtotal) * 100) / 100;
+                lineDisc = Math.round(disc * (row.totalSelling / subtotal) * 100) / 100;
                 remainingDisc -= lineDisc;
             }
         }
-        const lineNet = row.net - lineDisc;
+        const lineNet = row.totalSelling - lineDisc;
         vatTotal += Math.round(lineNet * (row.vatRate / 100) * 100) / 100;
     });
 
     const discInclVat = disc + Math.round((vatWithoutDiscount - vatTotal) * 100) / 100;
     const grand = subtotal - disc + vatTotal;
+    const profitPct = totalCostWithOh > 0 ? (totalProfit / totalCostWithOh * 100) : 0;
+
+    document.getElementById('footerTotalProductCost').textContent = totalProductCost.toFixed(2);
+    document.getElementById('footerTotalInstallation').textContent = totalInstallation.toFixed(2);
+    document.getElementById('footerTotalOverhead').textContent = totalOverhead.toFixed(2);
+    document.getElementById('footerTotalProfit').textContent = totalProfit.toFixed(2);
+    document.getElementById('footerTotalProfitPct').textContent = profitPct.toFixed(2) + '%';
     document.getElementById('subtotal').textContent = subtotal.toFixed(2);
     const showDiscount = disc > 0;
     document.getElementById('discountExclRow')?.classList.toggle('d-none', !showDiscount);
@@ -1951,6 +2214,9 @@ function bindLineItemsTableEvents() {
         if (t.matches('.item-group-name')) {
             if (!row) return;
             inheritGroupQtyMultiplier(row);
+            updateRowComputedFields(row);
+            const q = row.querySelector('.item-qty');
+            if (q) calculateRowTotal(q);
             ensureTrailingEmptyRow();
             return;
         }
@@ -1958,7 +2224,7 @@ function bindLineItemsTableEvents() {
             ensureTrailingEmptyRow();
             return;
         }
-        if (!t.matches('.item-qty, .item-base-price, .item-installation-cost, .item-selling-cost')) return;
+        if (!t.matches('.item-qty, .item-base-price, .item-installation-cost, .item-selling-cost, .item-installation-selling-cost')) return;
         if (!row) return;
         if (t.matches('.item-qty')) updateBaseQtyFromManualEdit(row);
         const q = row.querySelector('.item-qty');
@@ -1993,14 +2259,24 @@ function bindLineItemsTableEvents() {
             const row = t.closest('tr.item-row');
             if (!row) return;
             inheritGroupQtyMultiplier(row);
+            updateRowComputedFields(row);
+            const q = row.querySelector('.item-qty');
+            if (q) calculateRowTotal(q);
             return;
         }
-        if (t.matches('.item-profit-type')) {
+        if (t.matches('.item-profit-type, .item-installation-profit-type')) {
             const row = t.closest('tr.item-row');
             if (!row) return;
             const q = row.querySelector('.item-qty');
             if (q) calculateRowTotal(q);
             validateRowSellingRate(row, false, row.querySelector('.item-selling-cost'));
+            return;
+        }
+        if (t.matches('.item-installation-cost, .item-installation-selling-cost')) {
+            const row = t.closest('tr.item-row');
+            if (!row) return;
+            const q = row.querySelector('.item-qty');
+            if (q) calculateRowTotal(q);
             return;
         }
         if (!t.matches('.item-qty, .item-tax-code')) return;
@@ -2093,6 +2369,13 @@ document.addEventListener('DOMContentLoaded', function() {
     {% endif %}
     document.querySelector('[name="discount_type"]')?.addEventListener('change', calculateTotals);
     document.querySelector('[name="discount_value"]')?.addEventListener('input', calculateTotals);
+    document.getElementById('id_overhead_percent')?.addEventListener('input', function() {
+        document.querySelectorAll('#itemsBody .item-row').forEach(row => {
+            if (row.style.display === 'none') return;
+            const q = row.querySelector('.item-qty');
+            if (q) calculateRowTotal(q);
+        });
+    });
     const scopeSelect = document.getElementById('id_scope_of_work');
     if (scopeSelect) {
         let lastScopeOfWork = scopeSelect.value || '';

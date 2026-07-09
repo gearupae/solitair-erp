@@ -115,26 +115,9 @@ def _pr_inventory_items_json():
 
 def _pr_inventory_stock_notices(pr):
     """PR lines linked to inventory items that already have stock on hand."""
-    from apps.inventory.serial_stock import item_available_qty
+    from apps.purchase.services.pr_inventory_alerts import build_pr_inventory_purchase_alerts
 
-    notices = []
-    for line in pr.items.select_related('inventory_item').all():
-        if not line.inventory_item_id:
-            continue
-        inv = line.inventory_item
-        if not inv.is_active or inv.status != 'active':
-            continue
-        available = item_available_qty(inv)
-        if available <= 0:
-            continue
-        notices.append({
-            'name': inv.name,
-            'item_code': inv.item_code,
-            'requested_qty': line.quantity,
-            'available_qty': available,
-            'covers_request': available >= line.quantity,
-        })
-    return notices
+    return build_pr_inventory_purchase_alerts(pr)
 
 
 def _save_vendor_bill_attachments(request, bill):
@@ -1695,9 +1678,13 @@ class VendorBillUpdateView(UpdatePermissionMixin, UpdateView):
     
     def get_object(self, queryset=None):
         obj = super().get_object(queryset)
-        # Block editing posted bills
-        if obj.status != 'draft':
-            messages.error(self.request, 'Posted bills cannot be edited. Only draft bills are editable.')
+        from .bill_approval_rules import bill_status_allows_edit
+
+        if not bill_status_allows_edit(obj):
+            messages.error(
+                self.request,
+                'Only draft or returned vendor bills can be edited.',
+            )
             return None
         return obj
     
@@ -1772,14 +1759,28 @@ class VendorBillDetailView(PermissionRequiredMixin, DetailView):
 
     def get_context_data(self, **kwargs):
         from apps.core.audit import get_entity_audit_history
+        from .bill_approval_rules import (
+            bill_status_allows_edit,
+            bill_status_allows_post,
+            user_can_act_on_vendor_bill,
+            vendor_bill_approval_enabled,
+        )
         
         context = super().get_context_data(**kwargs)
         context['title'] = f'Bill: {self.object.bill_number}'
         has_permission = self.request.user.is_superuser or PermissionChecker.has_permission(self.request.user, 'purchase', 'edit')
-        # Only allow editing draft bills
-        context['can_edit'] = has_permission and self.object.status == 'draft'
-        # Allow posting draft bills
-        context['can_post'] = has_permission and self.object.status == 'draft' and self.object.total_amount > 0
+        context['can_edit'] = has_permission and bill_status_allows_edit(self.object)
+        context['can_post'] = has_permission and bill_status_allows_post(self.object)
+        context['approval_enabled'] = vendor_bill_approval_enabled()
+        context['can_submit'] = (
+            has_permission
+            and context['approval_enabled']
+            and self.object.status in ('draft', 'returned')
+            and self.object.total_amount > 0
+        )
+        context['can_approve'] = user_can_act_on_vendor_bill(self.request.user, self.object)
+        context['can_reject'] = context['can_approve']
+        context['can_return'] = context['can_approve']
         
         # Audit History
         context['audit_history'] = get_entity_audit_history('Bill', self.object.pk)
@@ -1800,12 +1801,158 @@ def bill_delete(request, pk):
 
 
 @login_required
+def bill_submit(request, pk):
+    """Submit vendor bill for approval."""
+    from .bill_approval_rules import vendor_bill_approval_enabled
+
+    bill = get_object_or_404(VendorBill, pk=pk, is_active=True)
+    if not vendor_bill_approval_enabled():
+        messages.error(request, 'Vendor bill approval is not configured in Settings.')
+        return redirect('purchase:bill_detail', pk=pk)
+    if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'purchase', 'edit')):
+        messages.error(request, 'Permission denied.')
+        return redirect('purchase:bill_detail', pk=pk)
+    if bill.status not in ('draft', 'returned'):
+        messages.error(request, 'Only draft or returned bills can be submitted for approval.')
+        return redirect('purchase:bill_detail', pk=pk)
+    if bill.total_amount <= 0:
+        messages.error(request, 'Add line items before submitting for approval.')
+        return redirect('purchase:bill_detail', pk=pk)
+
+    bill.status = 'pending_approval'
+    bill.rejection_reason = ''
+    bill.save(update_fields=['status', 'rejection_reason', 'updated_at'])
+
+    from apps.settings_app.models import ApprovalConfiguration, Notification
+    ApprovalConfiguration.notify_approver(bill, 'vendor_bill')
+    if bill.created_by_id:
+        Notification.create(
+            user=bill.created_by,
+            title='Vendor Bill Submitted',
+            message=f'Vendor bill {bill.bill_number} has been submitted for approval.',
+            link=f'/purchase/bills/{bill.pk}/',
+        )
+    messages.success(request, f'Vendor bill {bill.bill_number} submitted for approval.')
+    return redirect('purchase:bill_detail', pk=pk)
+
+
+@login_required
+def bill_approve(request, pk):
+    from .bill_approval_rules import user_can_act_on_vendor_bill
+
+    bill = get_object_or_404(VendorBill, pk=pk, is_active=True)
+    if bill.status != 'pending_approval':
+        messages.error(request, 'Only bills pending approval can be approved.')
+        return redirect('purchase:bill_detail', pk=pk)
+    if not user_can_act_on_vendor_bill(request.user, bill):
+        messages.error(request, 'Only the configured approver can approve this bill.')
+        return redirect('purchase:bill_detail', pk=pk)
+
+    bill.status = 'approved'
+    bill.rejection_reason = ''
+    bill.save(update_fields=['status', 'rejection_reason', 'updated_at'])
+
+    from apps.settings_app.models import ApprovalAuditLog, Notification
+    ApprovalAuditLog.objects.create(
+        module='vendor_bill',
+        reference=bill.bill_number,
+        approver=request.user,
+        action='approve',
+        comment='',
+    )
+    if bill.created_by_id:
+        Notification.create(
+            user=bill.created_by,
+            title='Vendor Bill Approved',
+            message=f'Vendor bill {bill.bill_number} has been approved and can be posted to accounting.',
+            link=f'/purchase/bills/{bill.pk}/',
+        )
+    messages.success(request, f'Vendor bill {bill.bill_number} approved.')
+    return redirect('purchase:bill_detail', pk=pk)
+
+
+@login_required
+def bill_reject(request, pk):
+    from .bill_approval_rules import user_can_act_on_vendor_bill
+
+    bill = get_object_or_404(VendorBill, pk=pk, is_active=True)
+    if not user_can_act_on_vendor_bill(request.user, bill):
+        messages.error(request, 'Only the configured approver can reject this bill.')
+        return redirect('purchase:bill_list')
+    if bill.status != 'pending_approval':
+        messages.error(request, 'Only bills pending approval can be rejected.')
+        return redirect('purchase:bill_detail', pk=pk)
+    if request.method == 'POST':
+        comment = request.POST.get('comment', '').strip()
+        bill.status = 'rejected'
+        bill.rejection_reason = comment
+        bill.save(update_fields=['status', 'rejection_reason', 'updated_at'])
+        from apps.settings_app.models import ApprovalAuditLog, Notification
+        ApprovalAuditLog.objects.create(
+            module='vendor_bill',
+            reference=bill.bill_number,
+            approver=request.user,
+            action='reject',
+            comment=comment,
+        )
+        if bill.created_by_id:
+            Notification.create(
+                user=bill.created_by,
+                title='Vendor Bill Rejected',
+                message=f'Vendor bill {bill.bill_number} has been rejected.'
+                + (f' Reason: {comment[:100]}...' if comment else ''),
+                link=f'/purchase/bills/{bill.pk}/',
+            )
+        messages.success(request, f'Vendor bill {bill.bill_number} rejected.')
+        return redirect('purchase:bill_list')
+    return redirect('purchase:bill_detail', pk=pk)
+
+
+@login_required
+def bill_return(request, pk):
+    from .bill_approval_rules import user_can_act_on_vendor_bill
+
+    bill = get_object_or_404(VendorBill, pk=pk, is_active=True)
+    if not user_can_act_on_vendor_bill(request.user, bill):
+        messages.error(request, 'Only the configured approver can return this bill.')
+        return redirect('purchase:bill_list')
+    if bill.status != 'pending_approval':
+        messages.error(request, 'Only bills pending approval can be returned.')
+        return redirect('purchase:bill_detail', pk=pk)
+    if request.method == 'POST':
+        comment = request.POST.get('comment', '').strip()
+        bill.status = 'returned'
+        bill.rejection_reason = comment
+        bill.save(update_fields=['status', 'rejection_reason', 'updated_at'])
+        from apps.settings_app.models import ApprovalAuditLog, Notification
+        ApprovalAuditLog.objects.create(
+            module='vendor_bill',
+            reference=bill.bill_number,
+            approver=request.user,
+            action='return',
+            comment=comment,
+        )
+        if bill.created_by_id:
+            Notification.create(
+                user=bill.created_by,
+                title='Vendor Bill Returned for Revision',
+                message=f'Vendor bill {bill.bill_number} has been returned for revision.'
+                + (f' {comment[:100]}{"..." if len(comment) > 100 else ""}' if comment else ''),
+                link=f'/purchase/bills/{bill.pk}/',
+            )
+        messages.success(request, f'Vendor bill {bill.bill_number} returned for revision.')
+        return redirect('purchase:bill_list')
+    return redirect('purchase:bill_detail', pk=pk)
+
+
+@login_required
 def bill_post(request, pk):
     """
     Post vendor bill to accounting - creates journal entry.
     Debit Expense, Debit VAT Recoverable, Credit AP
     """
     from apps.core.audit import audit_bill_post
+    from .bill_approval_rules import bill_status_allows_post
     
     bill = get_object_or_404(VendorBill, pk=pk)
     
@@ -1813,8 +1960,8 @@ def bill_post(request, pk):
         messages.error(request, 'Permission denied.')
         return redirect('purchase:bill_list')
     
-    if bill.status != 'draft':
-        messages.error(request, 'Only draft bills can be posted to accounting.')
+    if not bill_status_allows_post(bill):
+        messages.error(request, 'This vendor bill cannot be posted to accounting yet.')
         return redirect('purchase:bill_detail', pk=pk)
     
     try:

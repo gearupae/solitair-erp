@@ -74,6 +74,10 @@ urlpatterns = [
     path('bills/<int:pk>/', views.VendorBillDetailView.as_view(), name='bill_detail'),
     path('bills/<int:pk>/edit/', views.VendorBillUpdateView.as_view(), name='bill_edit'),
     path('bills/<int:pk>/delete/', views.bill_delete, name='bill_delete'),
+    path('bills/<int:pk>/submit/', views.bill_submit, name='bill_submit'),
+    path('bills/<int:pk>/approve/', views.bill_approve, name='bill_approve'),
+    path('bills/<int:pk>/reject/', views.bill_reject, name='bill_reject'),
+    path('bills/<int:pk>/return/', views.bill_return, name='bill_return'),
     path('bills/<int:pk>/post/', views.bill_post, name='bill_post'),
     path('bills/<int:pk>/pay/', views.bill_make_payment, name='bill_pay'),
     

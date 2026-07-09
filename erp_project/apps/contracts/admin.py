@@ -22,9 +22,13 @@ class ContractDocumentExpiryInline(admin.TabularInline):
 
 @admin.register(Contract)
 class ContractAdmin(admin.ModelAdmin):
-    list_display = ['contract_number', 'name', 'customer', 'contract_value', 'start_date', 'end_date', 'status', 'is_active']
-    list_filter = ['start_date', 'end_date']
-    search_fields = ['contract_number', 'name', 'customer__name']
-    raw_id_fields = ['customer']
+    list_display = [
+        'contract_number', 'name', 'customer', 'source_estimate', 'project',
+        'salesperson', 'amc_category',
+        'contract_value', 'planned_visits', 'start_date', 'end_date', 'status', 'is_active',
+    ]
+    list_filter = ['amc_category', 'status', 'start_date', 'end_date']
+    search_fields = ['contract_number', 'name', 'customer__name', 'source_estimate__estimate_number']
+    raw_id_fields = ['customer', 'salesperson', 'source_estimate', 'project']
     filter_horizontal = ('contract_types',)
     inlines = [ContractAttachmentInline, ContractDocumentExpiryInline]

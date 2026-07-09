@@ -6,6 +6,7 @@ app_name = 'operations'
 
 urlpatterns = [
     path('', views.StaffDutyScheduleListView.as_view(), name='schedule_list'),
+    path('dashboard/', views.StaffDutyDashboardView.as_view(), name='schedule_dashboard'),
     path('create/', views.StaffDutyScheduleCreateView.as_view(), name='schedule_create'),
     path('calendar/', views.StaffDutyCalendarView.as_view(), name='schedule_calendar'),
     path('availability/', views.staff_availability_check, name='availability_check'),

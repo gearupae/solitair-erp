@@ -69,8 +69,8 @@ class StaffDutyScheduleForm(forms.ModelForm):
 
         employee = cleaned.get('employee')
         duty_date = cleaned.get('duty_date')
-        status = cleaned.get('status') or 'scheduled'
-        if employee and duty_date and status == 'scheduled':
+        status = cleaned.get('status') or StaffDutySchedule.STATUS_SCHEDULED
+        if employee and duty_date and status in StaffDutySchedule.ACTIVE_DUTY_STATUSES:
             exclude_pk = self.instance.pk if self.instance and self.instance.pk else None
             conflicts = find_employee_schedule_conflicts([employee.pk], duty_date, exclude_pk=exclude_pk)
             if employee.pk in conflicts:

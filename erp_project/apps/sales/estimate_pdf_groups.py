@@ -112,7 +112,7 @@ def _accumulate_item_expense(by_type, item, type_name, sort_order):
         },
     )
     entry['line_total'] += item.line_total_incl_vat
-    entry['line_subtotal'] += item.line_net_excl_vat
+    entry['line_subtotal'] += item.total_selling_price
     entry['pre_profit_subtotal'] += item.line_pre_profit_subtotal
     entry['profit_amount'] += item.line_profit_amount
 
@@ -248,7 +248,7 @@ def build_detail_item_groups(estimate):
 
         groups_by_name[name]['items'].append(item)
         groups_by_name[name]['line_total'] += line_amt
-        groups_by_name[name]['line_subtotal'] += item.line_net_excl_vat
+        groups_by_name[name]['line_subtotal'] += item.total_selling_price
 
     groups = []
     row_index = 0
@@ -297,7 +297,7 @@ def build_pdf_item_groups(estimate):
 
         groups_by_name[name]['items'].append(item)
         groups_by_name[name]['line_total'] += line_amt
-        groups_by_name[name]['line_subtotal'] += item.line_net_excl_vat
+        groups_by_name[name]['line_subtotal'] += item.total_selling_price
 
     groups = []
     row_index = 0

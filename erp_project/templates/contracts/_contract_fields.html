@@ -1,0 +1,96 @@
+{% comment %}
+Shared AMC contract fields for create, edit, and renewal forms.
+Expects: form, show_attachments (optional, default True)
+{% endcomment %}
+<div class="col-md-4">
+    <label class="form-label">Customer</label>
+    {{ form.customer }}
+    {% if form.customer.errors %}<div class="text-danger small">{{ form.customer.errors }}</div>{% endif %}
+</div>
+<div class="col-md-4">
+    <label class="form-label">Salesperson <span class="text-danger">*</span></label>
+    {{ form.salesperson }}
+    {% if form.salesperson.errors %}<div class="text-danger small">{{ form.salesperson.errors }}</div>{% endif %}
+</div>
+<div class="col-md-4">
+    <label class="form-label">AMC category <span class="text-danger">*</span></label>
+    {{ form.amc_category }}
+    {% if form.amc_category.errors %}<div class="text-danger small">{{ form.amc_category.errors }}</div>{% endif %}
+</div>
+<div class="col-md-4">
+    <label class="form-label">Contract name <span class="text-danger">*</span></label>
+    {{ form.name }}
+    {% if form.name.errors %}<div class="text-danger small">{{ form.name.errors }}</div>{% endif %}
+</div>
+<div class="col-md-4">
+    <label class="form-label">Contract amount (AED) <span class="text-danger">*</span></label>
+    {{ form.contract_value }}
+    {% if form.contract_value.errors %}<div class="text-danger small">{{ form.contract_value.errors }}</div>{% endif %}
+</div>
+<div class="col-md-4">
+    <label class="form-label">Number of planned visits <span class="text-danger">*</span></label>
+    {{ form.planned_visits }}
+    <div class="form-text">Used for PPM visit scheduling.</div>
+    {% if form.planned_visits.errors %}<div class="text-danger small">{{ form.planned_visits.errors }}</div>{% endif %}
+</div>
+{% include 'contracts/_contract_ppm_visit_dates.html' %}
+<div class="col-md-3">
+    <label class="form-label">Contract start date <span class="text-danger">*</span></label>
+    {{ form.start_date }}
+    {% if form.start_date.errors %}<div class="text-danger small">{{ form.start_date.errors }}</div>{% endif %}
+</div>
+<div class="col-md-3">
+    <label class="form-label">Contract end date <span class="text-danger">*</span></label>
+    {{ form.end_date }}
+    {% if form.end_date.errors %}<div class="text-danger small">{{ form.end_date.errors }}</div>{% endif %}
+</div>
+<div class="col-md-3">
+    <label class="form-label">Status</label>
+    {{ form.status }}
+    {% if form.status.errors %}<div class="text-danger small">{{ form.status.errors }}</div>{% endif %}
+</div>
+<div class="col-md-3">
+    <label class="form-label">Renewal reminder (days before end)</label>
+    {{ form.remind_before_days }}
+    <div class="form-text">Default: 30 days before AMC end date.</div>
+    {% if form.remind_before_days.errors %}<div class="text-danger small">{{ form.remind_before_days.errors }}</div>{% endif %}
+</div>
+<div class="col-12">
+    <label class="form-label">Service site / place <span class="text-danger">*</span></label>
+    {{ form.service_site }}
+    <div class="form-text">Building, address, and emirate/area where work is performed.</div>
+    {% if form.service_site.errors %}<div class="text-danger small">{{ form.service_site.errors }}</div>{% endif %}
+</div>
+{% if show_attachments|default:True %}
+<div class="col-md-6">
+    <label class="form-label">Signed contract attachment</label>
+    <input type="file" name="attachments" class="form-control" multiple accept=".pdf,.doc,.docx,.png,.jpg,.jpeg">
+    {% if attachment_help %}<div class="form-text">{{ attachment_help }}</div>{% else %}<div class="form-text">Upload the signed AMC contract (PDF or image).</div>{% endif %}
+</div>
+{% endif %}
+<div class="col-md-6">
+    <label class="form-label">Contract types <span class="text-danger">*</span></label>
+    {{ form.contract_types }}
+    {% if form.contract_types.errors %}<div class="text-danger small">{{ form.contract_types.errors }}</div>{% endif %}
+    <div class="form-text">Select one or more existing types (include AMC).</div>
+</div>
+<div class="col-md-6">
+    <label class="form-label">New contract types</label>
+    <div id="new-type-rows">
+        <input type="text" name="new_type_name" class="form-control mb-2" placeholder="Type a new label and use + for another row">
+    </div>
+    <button type="button" class="btn btn-sm btn-outline-secondary btn-add-contract-type" title="Add another type">
+        <i class="fas fa-plus me-1"></i>Add type
+    </button>
+</div>
+<div class="col-12">
+    <label class="form-label">Description</label>
+    {{ form.description }}
+    {% if form.description.errors %}<div class="text-danger small">{{ form.description.errors }}</div>{% endif %}
+</div>
+<div class="col-12">
+    <label class="form-label">Terms &amp; conditions</label>
+    {{ form.terms_and_conditions }}
+    <div class="form-text">Pre-filled from Company Settings; shown on the contract PDF.</div>
+    {% if form.terms_and_conditions.errors %}<div class="text-danger small">{{ form.terms_and_conditions.errors }}</div>{% endif %}
+</div>

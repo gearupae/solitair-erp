@@ -224,6 +224,77 @@
     </div>
 </div>
 
+<!-- Document expiry across all contracts -->
+<div class="card mb-4{% if metric_doc_expired %} border-danger border-opacity-25{% elif metric_doc_due_soon %} border-warning border-opacity-25{% endif %}">
+    <div class="card-header bg-transparent py-3 d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <h6 class="fw-semibold mb-0">
+            <i class="fas fa-bell me-2 text-primary"></i>Document expiry
+        </h6>
+        <div class="d-flex flex-wrap align-items-center gap-2">
+            {% if metric_doc_expired %}
+            <span class="badge bg-danger">{{ metric_doc_expired }} expired</span>
+            {% endif %}
+            {% if metric_doc_due_soon %}
+            <span class="badge bg-warning text-dark">{{ metric_doc_due_soon }} due soon</span>
+            {% endif %}
+            <span class="small text-muted">{{ document_expiries|length }} document{{ document_expiries|length|pluralize }}</span>
+        </div>
+    </div>
+    <div class="card-body p-0">
+        {% if document_expiries %}
+        <div class="table-responsive">
+            <table class="table table-hover table-sm mb-0 contract-table">
+                <thead>
+                    <tr>
+                        <th>Status</th>
+                        <th>Document</th>
+                        <th>Contract</th>
+                        <th>Customer</th>
+                        <th>Expiry date</th>
+                        <th>Remind before</th>
+                        <th class="text-end">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for doc in document_expiries %}
+                    <tr>
+                        <td>
+                            {% if doc.expiry_status == 'expired' %}
+                            <span class="badge bg-danger">Expired</span>
+                            {% elif doc.expiry_status == 'due_today' %}
+                            <span class="badge bg-warning text-dark">Due today</span>
+                            {% elif doc.expiry_status == 'expiring' %}
+                            <span class="badge bg-warning text-dark">{{ doc.days_until_expiry }} day{{ doc.days_until_expiry|pluralize }} left</span>
+                            {% else %}
+                            <span class="badge badge-active">OK</span>
+                            {% endif %}
+                        </td>
+                        <td class="fw-medium">{{ doc.document_name }}</td>
+                        <td class="text-nowrap">
+                            <a href="{% url 'contracts:contract_detail' doc.contract.pk %}" class="text-decoration-none">{{ doc.contract.contract_number }}</a>
+                            <div class="small text-muted">{{ doc.contract.name|truncatechars:40 }}</div>
+                        </td>
+                        <td>
+                            {% if doc.contract.customer %}
+                            {{ doc.contract.customer.name }}{% if doc.contract.customer.company %} <span class="text-muted">— {{ doc.contract.customer.company }}</span>{% endif %}
+                            {% else %}<span class="text-muted">—</span>{% endif %}
+                        </td>
+                        <td class="text-nowrap">{{ doc.expiry_date|date:"d/m/Y" }}</td>
+                        <td>{{ doc.remind_before_days }} day{{ doc.remind_before_days|pluralize }}</td>
+                        <td class="text-end text-nowrap">
+                            <a href="{% url 'contracts:contract_detail' doc.contract.pk %}" class="btn btn-action btn-outline-info" title="View contract"><i class="fas fa-eye"></i></a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-muted small mb-0 p-3">No document expiry records yet. Add them on a contract detail page.</p>
+        {% endif %}
+    </div>
+</div>
+
 <!-- Charts by contract type -->
 <div class="row g-3 mb-4">
     <div class="col-lg-6">
@@ -259,72 +330,7 @@
     <form method="post" enctype="multipart/form-data">
         {% csrf_token %}
         <div class="row g-3">
-            <div class="col-md-4">
-                <label class="form-label">Customer</label>
-                {{ form.customer }}
-                {% if form.customer.errors %}<div class="text-danger small">{{ form.customer.errors }}</div>{% endif %}
-            </div>
-            <div class="col-md-4">
-                <label class="form-label">Contract name <span class="text-danger">*</span></label>
-                {{ form.name }}
-                {% if form.name.errors %}<div class="text-danger small">{{ form.name.errors }}</div>{% endif %}
-            </div>
-            <div class="col-md-4">
-                <label class="form-label">Contract value (AED) <span class="text-danger">*</span></label>
-                {{ form.contract_value }}
-                {% if form.contract_value.errors %}<div class="text-danger small">{{ form.contract_value.errors }}</div>{% endif %}
-            </div>
-            <div class="col-md-3">
-                <label class="form-label">Start date <span class="text-danger">*</span></label>
-                {{ form.start_date }}
-                {% if form.start_date.errors %}<div class="text-danger small">{{ form.start_date.errors }}</div>{% endif %}
-            </div>
-            <div class="col-md-3">
-                <label class="form-label">End date <span class="text-danger">*</span></label>
-                {{ form.end_date }}
-                {% if form.end_date.errors %}<div class="text-danger small">{{ form.end_date.errors }}</div>{% endif %}
-            </div>
-            <div class="col-md-3">
-                <label class="form-label">Status</label>
-                {{ form.status }}
-                {% if form.status.errors %}<div class="text-danger small">{{ form.status.errors }}</div>{% endif %}
-            </div>
-            <div class="col-md-3">
-                <label class="form-label">Remind before (days)</label>
-                {{ form.remind_before_days }}
-                <div class="form-text">e.g. 10 = reminder 10 days before end</div>
-                {% if form.remind_before_days.errors %}<div class="text-danger small">{{ form.remind_before_days.errors }}</div>{% endif %}
-            </div>
-            <div class="col-md-6">
-                <label class="form-label">Attachments</label>
-                <input type="file" name="attachments" class="form-control" multiple accept=".pdf,.doc,.docx,.png,.jpg,.jpeg">
-            </div>
-            <div class="col-md-6">
-                <label class="form-label">Contract types <span class="text-danger">*</span></label>
-                {{ form.contract_types }}
-                {% if form.contract_types.errors %}<div class="text-danger small">{{ form.contract_types.errors }}</div>{% endif %}
-                <div class="form-text">Select one or more existing types.</div>
-            </div>
-            <div class="col-md-6">
-                <label class="form-label">New contract types</label>
-                <div id="new-type-rows">
-                    <input type="text" name="new_type_name" class="form-control mb-2" placeholder="Type a new label and use + for another row">
-                </div>
-                <button type="button" class="btn btn-sm btn-outline-secondary" id="btnAddContractType" title="Add another type">
-                    <i class="fas fa-plus me-1"></i>Add type
-                </button>
-            </div>
-            <div class="col-12">
-                <label class="form-label">Description</label>
-                {{ form.description }}
-                {% if form.description.errors %}<div class="text-danger small">{{ form.description.errors }}</div>{% endif %}
-            </div>
-            <div class="col-12">
-                <label class="form-label">Terms &amp; conditions</label>
-                {{ form.terms_and_conditions }}
-                <div class="form-text">Pre-filled from Company Settings; edit here for this contract. Shown on the contract PDF.</div>
-                {% if form.terms_and_conditions.errors %}<div class="text-danger small">{{ form.terms_and_conditions.errors }}</div>{% endif %}
-            </div>
+            {% include 'contracts/_contract_fields.html' %}
             {% if form.non_field_errors %}
             <div class="col-12"><div class="alert alert-danger mb-0">{{ form.non_field_errors }}</div></div>
             {% endif %}
@@ -583,14 +589,16 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 {% endif %}
 
-document.getElementById('btnAddContractType')?.addEventListener('click', function () {
-    const wrap = document.getElementById('new-type-rows');
-    const inp = document.createElement('input');
-    inp.type = 'text';
-    inp.name = 'new_type_name';
-    inp.className = 'form-control mb-2';
-    inp.placeholder = 'Another type name';
-    wrap.appendChild(inp);
+document.querySelectorAll('.btn-add-contract-type, #btnAddContractType').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+        const wrap = document.getElementById('new-type-rows');
+        const inp = document.createElement('input');
+        inp.type = 'text';
+        inp.name = 'new_type_name';
+        inp.className = 'form-control mb-2';
+        inp.placeholder = 'Another type name';
+        wrap.appendChild(inp);
+    });
 });
 
 $(function () {
@@ -600,6 +608,13 @@ $(function () {
             width: '100%',
             placeholder: 'Select types…',
             closeOnSelect: false,
+        });
+    }
+    if ($('.select2-contract-salesperson').length) {
+        $('.select2-contract-salesperson').select2({
+            theme: 'bootstrap-5',
+            width: '100%',
+            placeholder: 'Select salesperson…',
         });
     }
 });

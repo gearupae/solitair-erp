@@ -20,6 +20,9 @@ ESTIMATE_ITEMS_CSV_HEADERS = [
     'unit_price',
     'profit_percent',
     'profit_amount',
+    'uom',
+    'installation_selling_cost',
+    'apply_overhead',
 ]
 
 
@@ -81,6 +84,8 @@ def parse_estimate_items_csv(file_obj):
     sort_order follows CSV row order (0-based).
     Raises ValueError with user-facing message on failure.
     """
+    from .models import EstimateItem
+
     raw = file_obj.read()
     if isinstance(raw, bytes):
         raw = raw.decode('utf-8-sig')
@@ -139,6 +144,17 @@ def parse_estimate_items_csv(file_obj):
 
         desc = row.get('description', '').strip() or inv.name
         group_name = row.get('group_name', '').strip()
+        uom_raw = row.get('uom', '').strip().lower()
+        uom = uom_raw if uom_raw in dict(EstimateItem.UOM_CHOICES) else ''
+        if not uom:
+            from .estimate_overhead import uom_from_inventory_unit
+            uom = uom_from_inventory_unit(inv.unit)
+
+        install_selling = _dec(row.get('installation_selling_cost'))
+        from .estimate_overhead import resolve_apply_overhead
+        apply_overhead = resolve_apply_overhead(
+            EstimateItem(inventory_item=inv, group_name=group_name),
+        )
 
         out.append(
             {
@@ -150,6 +166,9 @@ def parse_estimate_items_csv(file_obj):
                 'unit_price': base,
                 'profit_type': ptype,
                 'profit_value': pval,
+                'uom': uom,
+                'apply_overhead': apply_overhead,
+                'installation_selling_cost': install_selling or Decimal('0'),
                 'tax_code_id': default_tax.pk,
                 'is_vat_inclusive': True,
             }

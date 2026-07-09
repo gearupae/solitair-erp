@@ -132,6 +132,83 @@
     {% endfor %}
 </div>
 
+<div class="row g-3 mb-4" id="po-invoice-gaps">
+    <div class="col-12">
+        <div class="card pur-dash-section">
+            <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <span><i class="fas fa-file-invoice-dollar me-2 text-warning"></i>POs awaiting vendor invoice / payment</span>
+                <div class="d-flex align-items-center gap-2">
+                    {% if po_invoice_gap_count > po_invoice_gaps|length %}
+                    <span class="small text-muted">Showing {{ po_invoice_gaps|length }} of {{ po_invoice_gap_count }}</span>
+                    {% endif %}
+                    <a href="{% url 'purchase:po_list' %}" class="small">All POs</a>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table pur-dash-table table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>PO #</th>
+                                <th>Vendor</th>
+                                <th>PO status</th>
+                                <th>Goods</th>
+                                <th>Issue</th>
+                                <th>Bill</th>
+                                <th class="text-end">Outstanding</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in po_invoice_gaps %}
+                            <tr>
+                                <td><a href="{{ row.link }}" class="fw-medium">{{ row.po.po_number }}</a></td>
+                                <td>{{ row.po.vendor.name }}</td>
+                                <td><span class="badge bg-light text-dark border">{{ row.po.get_status_display }}</span></td>
+                                <td>{{ row.fulfillment }}</td>
+                                <td>
+                                    <span class="badge {% if row.severity == 'red' %}bg-danger{% else %}bg-warning text-dark{% endif %}">
+                                        {{ row.issue_label }}
+                                    </span>
+                                </td>
+                                <td>
+                                    {% if row.primary_bill %}
+                                    <a href="{{ row.bill_link }}">{{ row.primary_bill.bill_number }}</a>
+                                    {% else %}
+                                    <span class="text-muted">—</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-end fw-semibold">
+                                    {% if row.issue == 'no_bill' %}
+                                    <span class="text-muted small">PO AED {{ row.po.total_amount|floatformat:2|intcomma }}</span>
+                                    {% else %}
+                                    AED {{ row.outstanding|floatformat:2|intcomma }}
+                                    {% endif %}
+                                </td>
+                                <td class="text-end text-nowrap">
+                                    <a href="{{ row.link }}" class="btn btn-sm btn-outline-secondary">PO</a>
+                                    {% if row.primary_bill %}
+                                    <a href="{{ row.bill_link }}" class="btn btn-sm btn-outline-primary">Bill</a>
+                                    {% elif can_create_bill %}
+                                    <a href="{{ row.create_bill_link }}" class="btn btn-sm btn-primary">Record bill</a>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="8" class="text-center text-muted py-4 small">
+                                    No purchase orders with missing or unpaid vendor invoices.
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="row g-3 mb-4">
     <div class="col-lg-6">
         <div class="card pur-dash-section h-100">

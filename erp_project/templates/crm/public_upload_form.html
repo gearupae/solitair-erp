@@ -1,10 +1,33 @@
 {% extends 'minimal_public.html' %}
 {% block title %}Upload to lead or customer{% endblock %}
+{% block extra_css %}
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet">
+<style>
+    #selfieCameraWrap { display: none; }
+    #selfieCameraWrap.is-active { display: block; }
+    #selfieVideo {
+        width: 100%;
+        max-height: 280px;
+        object-fit: cover;
+        transform: scaleX(-1);
+        background: #000;
+        border-radius: 0.375rem;
+    }
+    .public-customer-select2-dropdown {
+        min-width: min(100vw - 2rem, 28rem) !important;
+        z-index: 1060;
+    }
+    .public-customer-select2-dropdown .select2-search__field {
+        width: 100% !important;
+    }
+</style>
+{% endblock %}
 {% block content %}
 <div class="card shadow-sm border-0">
     <div class="card-body p-4">
         <h1 class="h4 fw-bold mb-1">Upload files to a lead or customer</h1>
-        <p class="text-muted small mb-4">No login required. Pick a lead or customer, then take photos or attach files. You can send many at once. Files appear on that record in CRM for your team.</p>
+        <p class="text-muted small mb-4">No login required. Pick a lead or customer, then take photos or attach files. Date, time, and location are captured automatically for the daily visit record.</p>
 
         {% if not crm_leads and not crm_customers %}
         <div class="alert alert-warning small">There are no active leads or customers to attach files to yet.</div>
@@ -12,10 +35,21 @@
 
         <form method="post" enctype="multipart/form-data" id="publicUploadForm">
             {% csrf_token %}
+
+            <div id="selfieCameraWrap" class="mb-3" aria-live="polite">
+                <video id="selfieVideo" autoplay playsinline muted></video>
+                <canvas id="selfieCanvas" class="d-none" aria-hidden="true"></canvas>
+            </div>
+
+            <input type="hidden" name="visit_datetime" id="id_visit_datetime" value="">
+            <input type="hidden" name="location" id="id_location" value="{{ posted_location|default:'' }}">
+            <input type="hidden" name="latitude" id="id_latitude" value="">
+            <input type="hidden" name="longitude" id="id_longitude" value="">
+
             <div class="mb-3">
                 <label for="id_customer" class="form-label">Lead or customer <span class="text-danger">*</span></label>
-                <select name="customer" id="id_customer" class="form-select" required>
-                    <option value="">— Select —</option>
+                <select name="customer" id="id_customer" class="form-select public-customer-select" required>
+                    <option value="">Search lead or customer…</option>
                     {% if crm_leads %}
                     <optgroup label="Leads">
                         {% for c in crm_leads %}
@@ -31,7 +65,20 @@
                     </optgroup>
                     {% endif %}
                 </select>
+                <div class="form-text">Type to search by lead/customer name, company, or number.</div>
             </div>
+
+            <div class="mb-3">
+                <label for="id_salesman" class="form-label">Salesperson <span class="text-muted fw-normal">(optional)</span></label>
+                <select name="salesman" id="id_salesman" class="form-select">
+                    <option value="">— Not selected —</option>
+                    {% for sp in salespeople %}
+                    <option value="{{ sp.id }}" {% if posted_salesman == sp.id|stringformat:'s' %}selected{% endif %}>{{ sp.label }}</option>
+                    {% endfor %}
+                </select>
+                <div class="form-text">Selecting a salesperson opens the front camera automatically for a selfie.</div>
+            </div>
+
             <div class="mb-3">
                 <label for="id_note" class="form-label">Note <span class="text-muted fw-normal">(optional)</span></label>
                 <textarea name="note" id="id_note" class="form-control" rows="2" maxlength="500" placeholder="Short description for your upload">{{ posted_note|default:'' }}</textarea>
@@ -54,7 +101,7 @@
             </ul>
 
             <noscript>
-                <div class="alert alert-warning small mb-3 mb-0">Turn on JavaScript for the camera button and combined file list. You can still upload using the field below.</div>
+                <div class="alert alert-warning small mb-3 mb-0">Turn on JavaScript for the camera button, location, and combined file list. You can still upload using the field below.</div>
                 <input type="file" name="files" class="form-control mb-3" multiple>
             </noscript>
 
@@ -66,13 +113,154 @@
 </div>
 {% endblock %}
 {% block extra_js %}
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script>
 (function () {
     var form = document.getElementById('publicUploadForm');
     var submitBtn = document.getElementById('publicUploadSubmit');
+    var salesmanEl = document.getElementById('id_salesman');
     var dt = new DataTransfer();
     var posting = false;
+    var selfieFile = null;
+    var selfieStream = null;
+    var selfieCaptureTimer = null;
+    var selfieVideo = document.getElementById('selfieVideo');
+    var selfieCanvas = document.getElementById('selfieCanvas');
+    var selfieWrap = document.getElementById('selfieCameraWrap');
 
+    function refreshVisitDateTime() {
+        var hidden = document.getElementById('id_visit_datetime');
+        if (hidden) hidden.value = new Date().toISOString();
+    }
+
+    function setCoordinates(lat, lng) {
+        var latEl = document.getElementById('id_latitude');
+        var lngEl = document.getElementById('id_longitude');
+        var locEl = document.getElementById('id_location');
+        if (latEl) latEl.value = String(lat);
+        if (lngEl) lngEl.value = String(lng);
+        if (locEl) locEl.value = lat.toFixed(6) + ', ' + lng.toFixed(6);
+    }
+
+    function fetchLocation(callback) {
+        if (!navigator.geolocation) {
+            if (callback) callback(false);
+            return;
+        }
+        navigator.geolocation.getCurrentPosition(
+            function (pos) {
+                setCoordinates(pos.coords.latitude, pos.coords.longitude);
+                if (callback) callback(true);
+            },
+            function () {
+                if (callback) callback(false);
+            },
+            { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
+        );
+    }
+
+    function ensureLocationThen(fn) {
+        var latEl = document.getElementById('id_latitude');
+        if (latEl && latEl.value) {
+            fn();
+            return;
+        }
+        fetchLocation(function () { fn(); });
+    }
+
+    function stopSelfieCamera() {
+        if (selfieCaptureTimer) {
+            clearTimeout(selfieCaptureTimer);
+            selfieCaptureTimer = null;
+        }
+        if (selfieStream) {
+            selfieStream.getTracks().forEach(function (track) { track.stop(); });
+            selfieStream = null;
+        }
+        if (selfieVideo) selfieVideo.srcObject = null;
+        selfieFile = null;
+        if (selfieWrap) selfieWrap.classList.remove('is-active');
+    }
+
+    function captureSelfieFromVideo() {
+        return new Promise(function (resolve) {
+            if (!selfieVideo || !selfieCanvas || !selfieVideo.videoWidth) {
+                resolve(false);
+                return;
+            }
+            var canvas = selfieCanvas;
+            canvas.width = selfieVideo.videoWidth;
+            canvas.height = selfieVideo.videoHeight;
+            var ctx = canvas.getContext('2d');
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.translate(canvas.width, 0);
+            ctx.scale(-1, 1);
+            ctx.drawImage(selfieVideo, 0, 0, canvas.width, canvas.height);
+            canvas.toBlob(function (blob) {
+                if (!blob) {
+                    resolve(false);
+                    return;
+                }
+                selfieFile = new File([blob], 'selfie-' + Date.now() + '.jpg', { type: 'image/jpeg' });
+                resolve(true);
+            }, 'image/jpeg', 0.92);
+        });
+    }
+
+    function startSelfieCamera() {
+        stopSelfieCamera();
+        if (!salesmanEl || !salesmanEl.value) return;
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            alert('Camera is not available on this device.');
+            return;
+        }
+        if (selfieWrap) selfieWrap.classList.add('is-active');
+        navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } },
+            audio: false,
+        }).then(function (stream) {
+            selfieStream = stream;
+            selfieVideo.srcObject = stream;
+            var onReady = function () {
+                selfieVideo.removeEventListener('loadedmetadata', onReady);
+                selfieVideo.play().catch(function () {});
+                selfieCaptureTimer = setTimeout(function () {
+                    captureSelfieFromVideo();
+                }, 1200);
+            };
+            if (selfieVideo.readyState >= 1) {
+                onReady();
+            } else {
+                selfieVideo.addEventListener('loadedmetadata', onReady);
+            }
+        }).catch(function () {
+            stopSelfieCamera();
+            alert('Could not access the front camera. Allow camera permission and select the salesperson again.');
+        });
+    }
+
+    function updateSelfieRequirement() {
+        if (salesmanEl && salesmanEl.value) {
+            startSelfieCamera();
+        } else {
+            stopSelfieCamera();
+        }
+    }
+
+    function ensureSelfieThen(fn) {
+        if (!salesmanEl || !salesmanEl.value) {
+            fn();
+            return;
+        }
+        captureSelfieFromVideo().then(function (ok) {
+            if (!ok || !selfieFile) {
+                alert('Could not capture your selfie. Keep your face in the camera frame and try again.');
+                return;
+            }
+            fn();
+        });
+    }
     function renderList() {
         var ul = document.getElementById('fileList');
         var empty = document.getElementById('fileListEmpty');
@@ -140,9 +328,36 @@
         this.value = '';
     });
 
+    if (salesmanEl) {
+        salesmanEl.addEventListener('change', updateSelfieRequirement);
+    }
+
+    if (typeof $ !== 'undefined' && $.fn.select2) {
+        $('#id_customer').select2({
+            theme: 'bootstrap-5',
+            width: '100%',
+            placeholder: 'Search lead or customer…',
+            allowClear: true,
+            dropdownParent: $(document.body),
+            minimumResultsForSearch: 0,
+            dropdownCssClass: 'public-customer-select2-dropdown',
+            language: {
+                noResults: function () { return 'No matching lead or customer'; },
+                searching: function () { return 'Searching…'; },
+            },
+        });
+    }
+
+    refreshVisitDateTime();
+    fetchLocation();
+    if (salesmanEl && salesmanEl.value) {
+        updateSelfieRequirement();
+    }
+
     form.addEventListener('submit', function (e) {
         e.preventDefault();
         if (posting) return;
+
         if (dt.files.length === 0) {
             alert('Please add at least one file or photo.');
             return;
@@ -153,11 +368,30 @@
             return;
         }
 
+        ensureSelfieThen(function () {
+            ensureLocationThen(function () {
+                refreshVisitDateTime();
+                submitUpload();
+            });
+        });
+    });
+
+    function submitUpload() {
+        if (posting) return;
+        var customerEl = document.getElementById('id_customer');
         var fd = new FormData();
         var csrfInput = form.querySelector('input[name="csrfmiddlewaretoken"]');
         if (csrfInput) fd.append('csrfmiddlewaretoken', csrfInput.value);
         fd.append('customer', customerEl.value);
         fd.append('note', (document.getElementById('id_note') && document.getElementById('id_note').value) || '');
+        fd.append('salesman', (salesmanEl && salesmanEl.value) || '');
+        fd.append('location', (document.getElementById('id_location') && document.getElementById('id_location').value) || '');
+        fd.append('latitude', (document.getElementById('id_latitude') && document.getElementById('id_latitude').value) || '');
+        fd.append('longitude', (document.getElementById('id_longitude') && document.getElementById('id_longitude').value) || '');
+        fd.append('visit_datetime', (document.getElementById('id_visit_datetime') && document.getElementById('id_visit_datetime').value) || '');
+        if (selfieFile) {
+            fd.append('selfie', selfieFile, selfieFile.name);
+        }
         for (var k = 0; k < dt.files.length; k++) {
             fd.append('files', dt.files[k], dt.files[k].name);
         }
@@ -195,7 +429,7 @@
                     submitBtn.innerHTML = origHtml;
                 }
             });
-    });
+    }
 })();
 </script>
 {% endblock %}

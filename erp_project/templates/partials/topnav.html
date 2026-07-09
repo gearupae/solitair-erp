@@ -738,12 +738,23 @@
             <!-- Right Side -->
             <ul class="navbar-nav">
                 <!-- Settings Dropdown (Icon only to save space) -->
-                {% if is_superuser or 'settings' in user_permissions %}
+                {% if is_superuser or 'settings' in user_permissions or can_access_alerts_hub %}
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle {% if 'settings' in request.path or '/mes/' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown" title="Settings">
                         <i class="fas fa-cog"></i>
                     </a>
                     <ul class="dropdown-menu dropdown-menu-dark dropdown-menu-end settings-dropdown">
+                        {% if can_access_alerts_hub %}
+                        <li>
+                            <a class="dropdown-item {% if '/settings/alerts' in request.path %}active{% endif %}" href="{% url 'settings:alerts_hub' %}">
+                                <i class="fas fa-bell me-2"></i>Alerts
+                            </a>
+                        </li>
+                        {% if is_superuser or 'settings' in user_permissions %}
+                        <li><hr class="dropdown-divider"></li>
+                        {% endif %}
+                        {% endif %}
+                        {% if is_superuser or 'settings' in user_permissions %}
                         <li>
                             <a class="dropdown-item" href="{% url 'settings:user_list' %}">
                                 <i class="fas fa-users-cog me-2"></i>Users
@@ -812,6 +823,7 @@
                                 <i class="fas fa-check-double me-2"></i>Approval Configuration
                             </a>
                         </li>
+                        {% endif %}
                     </ul>
                 </li>
                 {% endif %}

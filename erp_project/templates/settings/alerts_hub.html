@@ -1,0 +1,809 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block extra_css %}
+<style>
+.alerts-hub { width: 100%; font-size: 0.9375rem; }
+.alerts-hub h4 { font-size: 1.35rem; }
+.alerts-hub .text-muted.small { font-size: 0.875rem !important; }
+
+.alerts-hub__top {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+    margin-bottom: 1.25rem;
+}
+
+/* Summary strip — compact inline stats */
+.alerts-summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 1.25rem;
+    padding: 0.85rem 1.15rem;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.65rem;
+    margin-bottom: 1rem;
+    box-shadow: 0 1px 2px rgba(15,23,42,.04);
+}
+.alerts-summary__stat {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.35rem;
+    font-size: 0.875rem;
+    color: #64748b;
+}
+.alerts-summary__stat strong {
+    font-size: 1.125rem;
+    font-weight: 700;
+    color: #0f172a;
+    font-variant-numeric: tabular-nums;
+}
+.alerts-summary__stat--hot strong { color: #dc2626; }
+.alerts-summary__divider {
+    width: 1px;
+    height: 1.25rem;
+    background: #e2e8f0;
+    flex-shrink: 0;
+}
+
+.alerts-toolbar {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.65rem;
+    padding: 0.85rem 1.15rem;
+    margin-bottom: 1rem;
+    box-shadow: 0 1px 2px rgba(15,23,42,.04);
+}
+.alerts-toolbar__row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 0.75rem 1rem;
+}
+.alerts-toolbar__field { flex: 1 1 140px; min-width: 120px; }
+.alerts-toolbar__field--search { flex: 2 1 200px; min-width: 180px; }
+.alerts-toolbar__actions {
+    display: flex;
+    gap: 0.4rem;
+    flex-shrink: 0;
+}
+.alerts-toolbar .form-label {
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #64748b;
+    margin-bottom: 0.25rem;
+}
+.alerts-toolbar .form-select,
+.alerts-toolbar .form-control { font-size: 0.9rem; }
+
+/* Two-column layout */
+.alerts-layout {
+    display: grid;
+    grid-template-columns: 220px minmax(0, 1fr);
+    gap: 1.25rem;
+    align-items: start;
+}
+@media (max-width: 992px) {
+    .alerts-layout { grid-template-columns: 1fr; }
+    .alerts-sidebar { position: static !important; max-height: none !important; }
+}
+
+.alerts-sidebar {
+    position: sticky;
+    top: 4.5rem;
+    max-height: calc(100vh - 6rem);
+    overflow-y: auto;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.65rem;
+    padding: 0.65rem;
+    box-shadow: 0 1px 2px rgba(15,23,42,.04);
+}
+.alerts-sidebar__label {
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #94a3b8;
+    padding: 0.35rem 0.5rem 0.5rem;
+    margin: 0;
+}
+.alerts-nav {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+.alerts-nav__item { margin-bottom: 0.15rem; }
+.alerts-nav__link {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.5rem 0.65rem;
+    border: none;
+    border-radius: 0.45rem;
+    background: transparent;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: #475569;
+    text-align: left;
+    text-decoration: none;
+    cursor: pointer;
+    transition: background .1s, color .1s;
+}
+.alerts-nav__link:hover {
+    background: #f1f5f9;
+    color: #0f172a;
+}
+.alerts-nav__link.is-active {
+    background: #eff6ff;
+    color: #1d4ed8;
+    font-weight: 600;
+}
+.alerts-nav__link.is-clear { color: #94a3b8; }
+.alerts-nav__left {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    min-width: 0;
+}
+.alerts-nav__left i {
+    width: 1rem;
+    text-align: center;
+    flex-shrink: 0;
+    font-size: 0.75rem;
+    opacity: 0.75;
+}
+.alerts-nav__name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.alerts-nav__count {
+    flex-shrink: 0;
+    font-size: 0.68rem;
+    font-weight: 700;
+    min-width: 1.35rem;
+    text-align: center;
+    padding: 0.1rem 0.35rem;
+    border-radius: 999px;
+    background: #fee2e2;
+    color: #b91c1c;
+}
+.alerts-nav__count--zero {
+    background: #f1f5f9;
+    color: #cbd5e1;
+    font-weight: 600;
+}
+
+/* Section accordion */
+.alerts-main { min-width: 0; }
+
+.alerts-section {
+    scroll-margin-top: 5rem;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.65rem;
+    margin-bottom: 0.85rem;
+    box-shadow: 0 1px 2px rgba(15,23,42,.04);
+    overflow: hidden;
+}
+.alerts-section[data-has-alerts="true"] { border-left: 3px solid #ef4444; }
+.alerts-section[data-has-alerts="false"] { border-left: 3px solid #22c55e; }
+.alerts-section.is-collapsed .alerts-section__body { display: none; }
+
+.alerts-section__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    width: 100%;
+    padding: 0.85rem 1rem;
+    background: #f8fafc;
+    border: none;
+    border-bottom: 1px solid transparent;
+    cursor: pointer;
+    text-align: left;
+    transition: background .1s;
+}
+.alerts-section.is-expanded .alerts-section__head {
+    border-bottom-color: #e2e8f0;
+}
+.alerts-section__head:hover { background: #f1f5f9; }
+
+.alerts-section__head-left {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    min-width: 0;
+}
+.alerts-section__chevron {
+    color: #94a3b8;
+    font-size: 0.7rem;
+    transition: transform .15s;
+    flex-shrink: 0;
+}
+.alerts-section.is-expanded .alerts-section__chevron { transform: rotate(90deg); }
+
+.alerts-section__icon {
+    width: 2rem;
+    height: 2rem;
+    border-radius: 0.45rem;
+    background: #eff6ff;
+    color: #2563eb;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    font-size: 0.85rem;
+}
+.alerts-section__title {
+    font-size: 1rem;
+    font-weight: 700;
+    margin: 0;
+    color: #0f172a;
+}
+.alerts-section__meta {
+    font-size: 0.78rem;
+    color: #94a3b8;
+    margin-top: 0.1rem;
+}
+.alerts-section__badge {
+    flex-shrink: 0;
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.25rem 0.6rem;
+    border-radius: 999px;
+}
+.alerts-section__badge--alert { background: #fee2e2; color: #b91c1c; }
+.alerts-section__badge--clear { background: #dcfce7; color: #15803d; }
+
+/* Group accordion */
+.alerts-group {
+    border-bottom: 1px solid #f1f5f9;
+}
+.alerts-group:last-child { border-bottom: none; }
+.alerts-group.is-collapsed .alerts-group__body { display: none; }
+.alerts-group.is-empty { display: none; }
+
+.alerts-group__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    width: 100%;
+    padding: 0.65rem 1rem 0.65rem 1.25rem;
+    background: #fff;
+    border: none;
+    border-bottom: 1px solid transparent;
+    cursor: pointer;
+    text-align: left;
+}
+.alerts-group.is-expanded .alerts-group__head { border-bottom-color: #f8fafc; }
+.alerts-group__head:hover { background: #fafbfc; }
+
+.alerts-group__head-left {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+}
+.alerts-group__chevron {
+    color: #cbd5e1;
+    font-size: 0.6rem;
+    transition: transform .15s;
+    flex-shrink: 0;
+}
+.alerts-group.is-expanded .alerts-group__chevron { transform: rotate(90deg); }
+
+.alerts-group__title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #334155;
+    margin: 0;
+}
+.alerts-group__count {
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 0.1rem 0.45rem;
+    border-radius: 999px;
+    background: #fef3c7;
+    color: #92400e;
+    flex-shrink: 0;
+}
+.alerts-group__count--zero {
+    background: #f1f5f9;
+    color: #94a3b8;
+}
+.alerts-group__open {
+    flex-shrink: 0;
+    font-size: 0.78rem;
+    padding: 0.2rem 0.55rem;
+    border-radius: 0.35rem;
+    color: #2563eb;
+    text-decoration: none;
+    border: 1px solid #dbeafe;
+    background: #fff;
+}
+.alerts-group__open:hover {
+    background: #eff6ff;
+    color: #1d4ed8;
+}
+
+/* Compact item list — no repeated table headers */
+.alerts-items {
+    list-style: none;
+    margin: 0;
+    padding: 0.25rem 0;
+}
+.alerts-item {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 0.75rem 1rem;
+    padding: 0.6rem 1rem 0.6rem 2rem;
+    cursor: pointer;
+    border-bottom: 1px solid #f8fafc;
+    transition: background .1s;
+}
+.alerts-item:last-child { border-bottom: none; }
+.alerts-item:hover { background: #f8fafc; }
+
+.alerts-item__main { min-width: 0; }
+.alerts-item__label {
+    font-weight: 600;
+    color: #0f172a;
+    font-size: 0.9rem;
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.alerts-item__detail {
+    color: #64748b;
+    font-size: 0.8125rem;
+    margin-top: 0.15rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.alerts-item__arrow {
+    color: #cbd5e1;
+    font-size: 0.7rem;
+}
+
+.alerts-sev {
+    display: inline-block;
+    font-size: 0.68rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    padding: 0.18rem 0.45rem;
+    border-radius: 0.25rem;
+    white-space: nowrap;
+}
+.alerts-sev--danger { background: #fee2e2; color: #b91c1c; }
+.alerts-sev--warning { background: #fef3c7; color: #92400e; }
+
+.alerts-foot {
+    padding: 0.55rem 1rem 0.65rem 2rem;
+    font-size: 0.8125rem;
+    color: #64748b;
+    background: #fafbfc;
+    border-top: 1px solid #f1f5f9;
+}
+.alerts-empty {
+    padding: 1rem 1.25rem 1rem 2rem;
+    color: #94a3b8;
+    font-size: 0.875rem;
+}
+
+.alerts-no-results {
+    display: none;
+    text-align: center;
+    padding: 3rem 2rem;
+    color: #64748b;
+    font-size: 1rem;
+    background: #fff;
+    border: 1px dashed #cbd5e1;
+    border-radius: 0.65rem;
+}
+.alerts-no-results.is-visible { display: block; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="alerts-hub">
+    <div class="alerts-hub__top">
+        <div>
+            <h4 class="mb-1 fw-bold">{{ title }}</h4>
+            <p class="text-muted mb-0 small">Module red flags · {{ today|date:"d M Y" }} · visible per role permissions</p>
+        </div>
+        <a href="{% url 'settings:role_list' %}" class="btn btn-outline-secondary btn-sm">
+            <i class="fas fa-user-shield me-1"></i>Roles &amp; permissions
+        </a>
+    </div>
+
+    <div class="alerts-summary">
+        <span class="alerts-summary__stat alerts-summary__stat--hot">
+            <strong id="alerts-stat-total">{{ total_alerts|intcomma }}</strong> total
+        </span>
+        <span class="alerts-summary__divider" aria-hidden="true"></span>
+        <span class="alerts-summary__stat">
+            <strong id="alerts-stat-sections">{{ sections_with_alerts }}</strong> sections flagged
+        </span>
+        <span class="alerts-summary__divider" aria-hidden="true"></span>
+        <span class="alerts-summary__stat">
+            <strong id="alerts-stat-visible">—</strong> showing
+        </span>
+        <span class="alerts-summary__divider" aria-hidden="true"></span>
+        <span class="alerts-summary__stat">
+            <strong>{{ sections|length }}</strong> in your role
+        </span>
+    </div>
+
+    <div class="alerts-toolbar">
+        <div class="alerts-toolbar__row">
+            <div class="alerts-toolbar__field">
+                <label class="form-label" for="alerts-filter-section">Section</label>
+                <select id="alerts-filter-section" class="form-select form-select-sm">
+                    <option value="">All sections</option>
+                    {% for section in sections %}
+                    <option value="{{ section.key }}">{{ section.title }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="alerts-toolbar__field">
+                <label class="form-label" for="alerts-filter-status">Status</label>
+                <select id="alerts-filter-status" class="form-select form-select-sm">
+                    <option value="all">All</option>
+                    <option value="active" selected>With alerts</option>
+                    <option value="clear">Clear only</option>
+                </select>
+            </div>
+            <div class="alerts-toolbar__field">
+                <label class="form-label" for="alerts-filter-severity">Severity</label>
+                <select id="alerts-filter-severity" class="form-select form-select-sm">
+                    <option value="">Any</option>
+                    <option value="danger">Critical</option>
+                    <option value="warning">Warning</option>
+                </select>
+            </div>
+            <div class="alerts-toolbar__field alerts-toolbar__field--search">
+                <label class="form-label" for="alerts-filter-search">Search</label>
+                <input type="search" id="alerts-filter-search" class="form-control form-control-sm" placeholder="Label or detail…">
+            </div>
+            <div class="alerts-toolbar__actions">
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="alerts-expand-all" title="Expand all sections">
+                    <i class="fas fa-expand-alt"></i>
+                </button>
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="alerts-collapse-all" title="Collapse all sections">
+                    <i class="fas fa-compress-alt"></i>
+                </button>
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="alerts-filter-reset" title="Reset filters">
+                    <i class="fas fa-undo"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="alerts-layout">
+        <aside class="alerts-sidebar d-none d-lg-block">
+            <p class="alerts-sidebar__label">Jump to section</p>
+            <ul class="alerts-nav" aria-label="Jump to section">
+                {% for section in sections %}
+                <li class="alerts-nav__item">
+                    <button type="button"
+                            class="alerts-nav__link {% if not section.total_count %}is-clear{% endif %}"
+                            data-jump="{{ section.key }}"
+                            data-anchor="{{ section.anchor }}">
+                        <span class="alerts-nav__left">
+                            <i class="fas {{ section.icon }}"></i>
+                            <span class="alerts-nav__name">{{ section.title }}</span>
+                        </span>
+                        <span class="alerts-nav__count {% if not section.total_count %}alerts-nav__count--zero{% endif %}">
+                            {{ section.total_count }}
+                        </span>
+                    </button>
+                </li>
+                {% endfor %}
+            </ul>
+        </aside>
+
+        <div class="alerts-main">
+            <div id="alerts-sections-list">
+                {% for section in sections %}
+                <article class="alerts-section {% if section.has_alerts %}is-expanded{% else %}is-collapsed{% endif %}"
+                         id="{{ section.anchor }}"
+                         data-section="{{ section.key }}"
+                         data-has-alerts="{{ section.has_alerts|yesno:'true,false' }}">
+                    <button type="button" class="alerts-section__head" aria-expanded="{{ section.has_alerts|yesno:'true,false' }}">
+                        <span class="alerts-section__head-left">
+                            <i class="fas fa-chevron-right alerts-section__chevron"></i>
+                            <span class="alerts-section__icon"><i class="fas {{ section.icon }}"></i></span>
+                            <span>
+                                <span class="alerts-section__title">{{ section.title }}</span>
+                                <div class="alerts-section__meta">{{ section.module }} module · {{ section.groups|length }} group{{ section.groups|length|pluralize }}</div>
+                            </span>
+                        </span>
+                        {% if section.total_count %}
+                        <span class="alerts-section__badge alerts-section__badge--alert">{{ section.total_count }}</span>
+                        {% else %}
+                        <span class="alerts-section__badge alerts-section__badge--clear">Clear</span>
+                        {% endif %}
+                    </button>
+
+                    <div class="alerts-section__body">
+                        {% for group in section.groups %}
+                        <div class="alerts-group {% if group.count %}is-expanded{% else %}is-collapsed is-empty{% endif %}"
+                             data-group-count="{{ group.count }}">
+                            <div class="alerts-group__head" role="button" tabindex="0" aria-expanded="{{ group.count|yesno:'true,false' }}">
+                                <span class="alerts-group__head-left">
+                                    <i class="fas fa-chevron-right alerts-group__chevron"></i>
+                                    <span class="alerts-group__title">
+                                        {% if group.source == 'gearup_agent' %}<i class="fas fa-robot text-danger me-1" title="Gearup Agent AI"></i>{% endif %}
+                                        {{ group.title }}
+                                    </span>
+                                    <span class="alerts-group__count {% if not group.count %}alerts-group__count--zero{% endif %}">{{ group.count }}</span>
+                                </span>
+                                <a href="{{ group.link }}" class="alerts-group__open" onclick="event.stopPropagation()">Open list</a>
+                            </div>
+
+                            <div class="alerts-group__body">
+                                {% if group.items %}
+                                <ul class="alerts-items">
+                                    {% for item in group.items %}
+                                    <li class="alerts-item alerts-row"
+                                        data-href="{{ item.link }}"
+                                        data-severity="{{ item.severity }}"
+                                        data-search="{{ item.label|lower }} {{ item.detail|lower }}">
+                                        <div class="alerts-item__main">
+                                            <span class="alerts-item__label">{{ item.label }}</span>
+                                            <div class="alerts-item__detail">{{ item.detail }}</div>
+                                        </div>
+                                        <span class="alerts-sev alerts-sev--{{ item.severity }}">
+                                            {% if item.severity == 'danger' %}Critical{% else %}Warning{% endif %}
+                                        </span>
+                                        <i class="fas fa-chevron-right alerts-item__arrow"></i>
+                                    </li>
+                                    {% endfor %}
+                                </ul>
+                                {% if group.remaining %}
+                                <div class="alerts-foot">
+                                    + {{ group.remaining }} more · <a href="{{ group.link }}">view full list</a>
+                                </div>
+                                {% endif %}
+                                {% else %}
+                                <div class="alerts-empty">No alerts in this group.</div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </article>
+                {% empty %}
+                <div class="alerts-section is-expanded">
+                    <div class="alerts-empty py-4 text-center">
+                        <i class="fas fa-shield-alt fa-2x mb-3 d-block opacity-50"></i>
+                        No alert sections available for your role.
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+
+            <div class="alerts-no-results" id="alerts-no-results">
+                <i class="fas fa-filter fa-2x mb-2 d-block opacity-50"></i>
+                No alerts match your filters.
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+    var sectionEl = document.getElementById('alerts-filter-section');
+    var statusEl = document.getElementById('alerts-filter-status');
+    var severityEl = document.getElementById('alerts-filter-severity');
+    var searchEl = document.getElementById('alerts-filter-search');
+    var resetBtn = document.getElementById('alerts-filter-reset');
+    var expandAllBtn = document.getElementById('alerts-expand-all');
+    var collapseAllBtn = document.getElementById('alerts-collapse-all');
+    var noResults = document.getElementById('alerts-no-results');
+    var visibleStat = document.getElementById('alerts-stat-visible');
+    var cards = Array.prototype.slice.call(document.querySelectorAll('.alerts-section[data-section]'));
+    var navLinks = Array.prototype.slice.call(document.querySelectorAll('.alerts-nav__link'));
+
+    function setExpanded(el, expanded) {
+        el.classList.toggle('is-expanded', expanded);
+        el.classList.toggle('is-collapsed', !expanded);
+        var head = el.querySelector('.alerts-section__head, .alerts-group__head');
+        if (head) head.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    }
+
+    document.querySelectorAll('.alerts-section__head').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            var section = btn.closest('.alerts-section');
+            setExpanded(section, section.classList.contains('is-collapsed'));
+        });
+    });
+
+    document.querySelectorAll('.alerts-group__head').forEach(function(head) {
+        function toggle() {
+            var group = head.closest('.alerts-group');
+            if (group.classList.contains('is-empty')) return;
+            setExpanded(group, group.classList.contains('is-collapsed'));
+        }
+        head.addEventListener('click', toggle);
+        head.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                toggle();
+            }
+        });
+    });
+
+    document.querySelectorAll('.alerts-row[data-href]').forEach(function(row) {
+        row.addEventListener('click', function() {
+            window.location.href = row.getAttribute('data-href');
+        });
+    });
+
+    function setActiveNav(key) {
+        navLinks.forEach(function(link) {
+            link.classList.toggle('is-active', key && link.getAttribute('data-jump') === key);
+        });
+    }
+
+    function applyFilters() {
+        var section = sectionEl ? sectionEl.value : '';
+        var status = statusEl ? statusEl.value : 'all';
+        var severity = severityEl ? severityEl.value : '';
+        var q = (searchEl ? searchEl.value : '').trim().toLowerCase();
+        var visibleSections = 0;
+        var visibleItems = 0;
+        var hideEmptyGroups = status === 'active' || severity || q;
+
+        setActiveNav(section);
+
+        cards.forEach(function(card) {
+            var matchSection = !section || card.getAttribute('data-section') === section;
+            var hasAlerts = card.getAttribute('data-has-alerts') === 'true';
+            var matchStatus = status === 'all'
+                || (status === 'active' && hasAlerts)
+                || (status === 'clear' && !hasAlerts);
+
+            var showSection = matchSection && matchStatus;
+            var sectionHasVisible = false;
+
+            card.querySelectorAll('.alerts-group').forEach(function(group) {
+                var groupCount = parseInt(group.getAttribute('data-group-count') || '0', 10);
+                var groupVisible = false;
+
+                group.querySelectorAll('.alerts-row').forEach(function(row) {
+                    var itemSev = row.getAttribute('data-severity') || '';
+                    var itemSearch = row.getAttribute('data-search') || '';
+                    var matchSev = !severity || itemSev === severity;
+                    var matchQ = !q || itemSearch.indexOf(q) !== -1;
+                    var show = showSection && matchSev && matchQ;
+                    row.style.display = show ? '' : 'none';
+                    if (show) {
+                        groupVisible = true;
+                        sectionHasVisible = true;
+                        visibleItems++;
+                    }
+                });
+
+                var hideGroup = !groupVisible && (hideEmptyGroups || groupCount === 0);
+                if (groupCount === 0 && status === 'active') hideGroup = true;
+                group.classList.toggle('is-empty', hideGroup);
+                group.style.display = hideGroup ? 'none' : '';
+
+                if (groupVisible && showSection) {
+                    setExpanded(group, true);
+                }
+            });
+
+            if (showSection && (q || severity)) showSection = sectionHasVisible;
+
+            card.style.display = showSection ? '' : 'none';
+            if (showSection) {
+                visibleSections++;
+                if (sectionHasVisible || (hasAlerts && !q && !severity)) {
+                    setExpanded(card, true);
+                }
+            }
+        });
+
+        if (visibleStat) visibleStat.textContent = String(visibleItems);
+        if (noResults) noResults.classList.toggle('is-visible', visibleSections === 0 && cards.length > 0);
+    }
+
+    if (expandAllBtn) {
+        expandAllBtn.addEventListener('click', function() {
+            cards.forEach(function(card) {
+                if (card.style.display !== 'none') {
+                    setExpanded(card, true);
+                    card.querySelectorAll('.alerts-group:not(.is-empty)').forEach(function(g) {
+                        setExpanded(g, true);
+                    });
+                }
+            });
+        });
+    }
+
+    if (collapseAllBtn) {
+        collapseAllBtn.addEventListener('click', function() {
+            cards.forEach(function(card) { setExpanded(card, false); });
+        });
+    }
+
+    [sectionEl, statusEl, severityEl].forEach(function(el) {
+        if (el) el.addEventListener('change', applyFilters);
+    });
+    if (searchEl) searchEl.addEventListener('input', applyFilters);
+    if (resetBtn) {
+        resetBtn.addEventListener('click', function() {
+            if (sectionEl) sectionEl.value = '';
+            if (statusEl) statusEl.value = 'active';
+            if (severityEl) severityEl.value = '';
+            if (searchEl) searchEl.value = '';
+            cards.forEach(function(card) {
+                var hasAlerts = card.getAttribute('data-has-alerts') === 'true';
+                setExpanded(card, hasAlerts);
+                card.querySelectorAll('.alerts-group').forEach(function(g) {
+                    var count = parseInt(g.getAttribute('data-group-count') || '0', 10);
+                    setExpanded(g, count > 0);
+                    g.classList.toggle('is-empty', count === 0);
+                    g.style.display = count === 0 ? 'none' : '';
+                });
+            });
+            applyFilters();
+        });
+    }
+
+    navLinks.forEach(function(link) {
+        link.addEventListener('click', function() {
+            var key = link.getAttribute('data-jump');
+            var anchor = link.getAttribute('data-anchor');
+            if (sectionEl && key) {
+                sectionEl.value = key;
+                if (statusEl) statusEl.value = 'all';
+                applyFilters();
+            }
+            var el = document.getElementById(anchor);
+            if (el) {
+                setExpanded(el, true);
+                el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        });
+    });
+
+    var hash = (window.location.hash || '').replace(/^#/, '');
+    if (hash && sectionEl) {
+        var opt = sectionEl.querySelector('option[value="' + hash + '"]');
+        if (opt) {
+            sectionEl.value = hash;
+            if (statusEl) statusEl.value = 'all';
+            setTimeout(function() {
+                var el = document.getElementById(hash);
+                if (el) {
+                    setExpanded(el, true);
+                    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            }, 100);
+        }
+    }
+
+    applyFilters();
+})();
+</script>
+{% endblock %}

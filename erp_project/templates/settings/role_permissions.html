@@ -10,6 +10,17 @@
         </ol>
     </nav>
     <h4 class="mb-0 fw-bold">{{ title }}</h4>
+    <p class="text-muted small mb-0">Module <strong>View</strong> permission controls which sections appear on <a href="{% url 'settings:alerts_hub' %}">Settings → Alerts</a>.</p>
+</div>
+
+<div class="alert alert-info border-0 shadow-sm mb-4">
+    <div class="fw-semibold mb-2"><i class="fas fa-bell me-2"></i>Alerts hub visibility</div>
+    <p class="small mb-2">Users see alert sections only for modules where this role has <strong>View</strong> checked below:</p>
+    <ul class="small mb-0 ps-3">
+        {% for module_code, label in alerts_sections %}
+        <li><span class="text-muted">{{ module_code }}</span> — {{ label }}</li>
+        {% endfor %}
+    </ul>
 </div>
 
 <form method="post">
