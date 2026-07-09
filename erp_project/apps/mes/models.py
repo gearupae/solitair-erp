@@ -933,8 +933,13 @@ class ActualCountSetting(TenantScopedModel):
         help_text='Counts from the previous frame; used to increment only when new objects appear.',
     )
     capture_interval_seconds = models.PositiveSmallIntegerField(
-        default=5,
-        help_text='Default seconds between automatic camera captures.',
+        default=0,
+        help_text='Seconds between automatic camera captures (0 = scan again as soon as the previous finishes).',
+    )
+    presence_state = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text='Per-item in-frame flag — prevents re-counting the same visible object on every scan.',
     )
 
     class Meta:
@@ -979,3 +984,20 @@ class ActualCountCapture(TenantScopedModel):
     class Meta:
         ordering = ['-captured_at']
         verbose_name = 'Actual count capture'
+
+
+class ActualCountExampleImage(TenantScopedModel):
+    """Reference photo(s) per item label — helps vision match shape (e.g. bottle-shaped)."""
+
+    item_name = models.CharField(max_length=120)
+    image = models.ImageField(upload_to='mes/actual_examples/%Y/%m/')
+
+    class Meta:
+        ordering = ['item_name', 'id']
+        verbose_name = 'Actual count example image'
+        indexes = [
+            models.Index(fields=['company', 'item_name']),
+        ]
+
+    def __str__(self):
+        return f'{self.item_name} example ({self.pk})'

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import re
@@ -13,7 +14,7 @@ from django.utils import timezone
 from apps.core.openai_gateway import AiQuotaExceeded, call_openai_json_with_images
 from apps.inventory.utils import is_ai_available
 
-from ..models import ActualCountCapture, ActualCountDailyLog, ActualCountSetting
+from ..models import ActualCountCapture, ActualCountDailyLog, ActualCountExampleImage, ActualCountSetting
 
 logger = logging.getLogger(__name__)
 
@@ -87,10 +88,42 @@ def _counts_from_ai_payload(payload: dict | list, configured: list[str]) -> dict
     return result
 
 
+def _load_example_images(*, company, item_names: list[str]) -> dict[str, list[str]]:
+    """Return base64 data URLs grouped by item name for reference photos."""
+    if not item_names:
+        return {}
+    names_lower = {_normalize_item_name(n).lower(): _normalize_item_name(n) for n in item_names}
+    grouped: dict[str, list[str]] = {n: [] for n in item_names}
+    qs = ActualCountExampleImage.objects.filter(
+        company=company,
+        is_active=True,
+        item_name__in=item_names,
+    ).order_by('item_name', 'id')
+    for row in qs:
+        canonical = names_lower.get(_normalize_item_name(row.item_name).lower(), row.item_name)
+        if canonical not in grouped:
+            grouped[canonical] = []
+        try:
+            with row.image.open('rb') as fh:
+                raw = fh.read()
+            mime = 'image/jpeg'
+            name = (row.image.name or '').lower()
+            if name.endswith('.png'):
+                mime = 'image/png'
+            elif name.endswith('.webp'):
+                mime = 'image/webp'
+            b64 = base64.b64encode(raw).decode('ascii')
+            grouped[canonical].append(f'data:{mime};base64,{b64}')
+        except OSError:
+            logger.warning('Could not read example image pk=%s', row.pk)
+    return grouped
+
+
 def count_objects_in_image(
     *,
     image_base64: str,
     item_names: list[str],
+    example_images: dict[str, list[str]] | None = None,
 ) -> dict[str, int]:
     """Send a camera frame to OpenAI vision and return counts per configured item."""
     items = [_normalize_item_name(n) for n in item_names if _normalize_item_name(n)]
@@ -105,23 +138,53 @@ def count_objects_in_image(
     else:
         image_url = f'data:image/jpeg;base64,{b64}'
 
+    examples = example_images or {}
+    has_examples = any(examples.get(name) for name in items)
+
     example = json.dumps({name: 0 for name in items}, ensure_ascii=False)
     label_list = ', '.join(f'"{name}"' for name in items)
+
     system = (
         'You count physical objects in a live camera image. Return json only. '
-        'For each label, count every separate visible instance — identical items '
-        'each count as 1 (e.g. 5 bottles on screen = 5). Use 0 when none are visible. '
-        'Integer counts only; no notes or extra json keys.'
+        'For each label, count every separate visible instance in the CURRENT frame only. '
+        'Use 0 when none are visible. Integer counts only; no notes or extra json keys.'
     )
-    user_text = (
-        f'Count how many of each item are visible right now: {label_list}. '
-        f'Return json like: {example}'
-    )
+    if has_examples:
+        system += (
+            ' Reference photos (if provided) show what each label looks like — match the same '
+            'product type and shape (e.g. bottle-shaped containers count as "bottle" even if '
+            'colour or label differs). Ignore similar-looking objects that are not the target item.'
+        )
+    else:
+        system += (
+            ' Match items by name and typical shape (e.g. "bottle" includes bottle-shaped '
+            'containers and similar cylindrical vessels).'
+        )
+
+    user_parts = [
+        f'Count how many of each item are visible in the LIVE camera image: {label_list}.',
+        f'Return json like: {example}',
+    ]
+    if has_examples:
+        user_parts.append(
+            'Reference photos for each label are attached before the live frame — use them to '
+            'recognise shape and appearance. The last image is the live camera frame.'
+        )
+    else:
+        user_parts.append('The attached image is the live camera frame.')
+
+    user_text = ' '.join(user_parts)
+
+    images_payload: list[str] = []
+    for name in items:
+        for ref in examples.get(name) or []:
+            images_payload.append(ref)
+    images_payload.append(image_url)
 
     payload = call_openai_json_with_images(
         system=system,
         user_text=user_text,
-        images_base64=[image_url],
+        images_base64=images_payload,
         temperature=0,
         feature='mes_actual_count',
         model=ACTUAL_COUNT_MODEL,
@@ -133,17 +196,38 @@ def count_objects_in_image(
     return _counts_from_ai_payload(payload, items)
 
 
-def _compute_deltas(new_counts: dict[str, int], last_counts: dict[str, int]) -> dict[str, int]:
+def _compute_deltas(
+    new_counts: dict[str, int],
+    last_counts: dict[str, int],
+    presence_state: dict[str, bool],
+) -> tuple[dict[str, int], dict[str, bool]]:
     """
-    Add to daily total when more items appear in frame than last scan.
-    First scan after reset logs the full visible count (last is empty → full delta).
+    Increment daily totals using presence-aware deltas.
+
+    - First sighting after frame was clear (or monitor start): log visible count.
+    - While the same object(s) stay in frame: do not re-count on every scan.
+    - If more instances appear while others remain visible: log only the increase.
+    - When count drops to 0, clear presence so the next appearance counts again.
     """
     added: dict[str, int] = {}
+    new_presence = dict(presence_state or {})
+
     for item, new_val in new_counts.items():
-        old_val = int(last_counts.get(item, 0) or 0)
-        if new_val > old_val:
+        new_val = max(0, int(new_val or 0))
+        old_val = max(0, int(last_counts.get(item, 0) or 0))
+        was_present = bool(presence_state.get(item))
+
+        if new_val <= 0:
+            new_presence[item] = False
+            continue
+
+        if not was_present:
+            added[item] = new_val
+            new_presence[item] = True
+        elif new_val > old_val:
             added[item] = new_val - old_val
-    return added
+
+    return added, new_presence
 
 
 def get_today_totals(company) -> dict[str, int]:
@@ -154,6 +238,24 @@ def get_today_totals(company) -> dict[str, int]:
             company=company, log_date=today, is_active=True,
         )
     }
+
+
+def get_example_images_for_ui(company, item_names: list[str]) -> dict[str, list[dict]]:
+    """Return example photo metadata for the template."""
+    if not item_names:
+        return {}
+    qs = ActualCountExampleImage.objects.filter(
+        company=company,
+        is_active=True,
+        item_name__in=item_names,
+    ).order_by('item_name', 'id')
+    grouped: dict[str, list[dict]] = {}
+    for row in qs:
+        grouped.setdefault(row.item_name, []).append({
+            'id': row.pk,
+            'url': row.image.url if row.image else '',
+        })
+    return grouped
 
 
 @transaction.atomic
@@ -167,15 +269,21 @@ def process_capture(
     """Analyze frame, apply delta logic, update daily logs, return summary for the UI."""
     setting, _ = ActualCountSetting.objects.select_for_update().get_or_create(
         company=company,
-        defaults={'item_names': [], 'last_capture_counts': {}},
+        defaults={'item_names': [], 'last_capture_counts': {}, 'presence_state': {}},
     )
     item_names = [_normalize_item_name(n) for n in (setting.item_names or []) if _normalize_item_name(n)]
     if not item_names:
         raise ValueError('Add at least one item name before starting the camera count.')
 
-    raw_counts = count_objects_in_image(image_base64=image_base64, item_names=item_names)
+    examples = _load_example_images(company=company, item_names=item_names)
+    raw_counts = count_objects_in_image(
+        image_base64=image_base64,
+        item_names=item_names,
+        example_images=examples,
+    )
     last_counts = {k: int(v or 0) for k, v in (setting.last_capture_counts or {}).items()}
-    added_counts = _compute_deltas(raw_counts, last_counts)
+    presence_state = {k: bool(v) for k, v in (setting.presence_state or {}).items()}
+    added_counts, new_presence = _compute_deltas(raw_counts, last_counts, presence_state)
 
     day = log_date or timezone.localdate()
     daily_totals: dict[str, int] = {}
@@ -194,7 +302,8 @@ def process_capture(
         daily_totals[item] = log.count
 
     setting.last_capture_counts = raw_counts
-    setting.save(update_fields=['last_capture_counts', 'updated_at'])
+    setting.presence_state = new_presence
+    setting.save(update_fields=['last_capture_counts', 'presence_state', 'updated_at'])
 
     capture_id = None
     if added_counts:
@@ -216,7 +325,10 @@ def process_capture(
 
 
 def reset_capture_baseline(company) -> None:
-    ActualCountSetting.objects.filter(company=company).update(last_capture_counts={})
+    ActualCountSetting.objects.filter(company=company).update(
+        last_capture_counts={},
+        presence_state={},
+    )
 
 
 def get_daily_log_rows(company, *, days: int = 30) -> list[dict]:

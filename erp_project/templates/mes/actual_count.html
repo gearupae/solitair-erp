@@ -92,8 +92,8 @@
                 </div>
             </div>
             <div class="card-footer bg-white small text-muted">
-                Fast scan mode — next frame starts ~{{ capture_interval }}s after the previous finishes.
-                Only integer counts are sent to OpenAI (no notes).
+                Fast scan mode — next frame starts {% if capture_interval %}~{{ capture_interval }}s after{% else %}immediately when{% endif %} the previous scan finishes.
+                Same object in frame is counted once until it leaves; re-appearing items count again.
             </div>
         </div>
 
@@ -144,12 +144,13 @@
                         <textarea class="form-control" id="itemNamesInput" name="item_names" rows="6"
                             placeholder="Enter one item per line, e.g.&#10;bottle&#10;carton&#10;box">{% for n in item_names %}{{ n }}{% if not forloop.last %}
 {% endif %}{% endfor %}</textarea>
-                        <div class="form-text">One name per line (e.g. <strong>bottle</strong>). Each separate visible instance is counted — 5 bottles on screen = 5.</div>
+                        <div class="form-text">One name per line (e.g. <strong>bottle</strong>). Add example photos below so the camera matches shape (bottle-shaped containers count even if colour differs).</div>
                     </div>
                     <div class="mb-3">
-                        <label for="captureInterval" class="form-label small fw-semibold">Min gap between scans (seconds)</label>
+                        <label for="captureInterval" class="form-label small fw-semibold">Gap between scans (seconds)</label>
                         <input type="number" class="form-control" id="captureInterval" name="capture_interval"
-                            min="1" max="30" value="{{ capture_interval }}">
+                            min="0" max="30" value="{{ capture_interval }}">
+                        <div class="form-text">Use <strong>0</strong> for continuous scanning (as fast as each AI scan completes).</div>
                     </div>
                     <div class="d-flex gap-2 flex-wrap">
                         <button type="submit" class="btn btn-primary btn-sm">
@@ -166,9 +167,35 @@
                 </form>
                 {% if item_names %}
                 <div class="mt-3 pt-3 border-top">
-                    <span class="small text-muted d-block mb-1">Active items:</span>
-                    {% for n in item_names %}
-                    <span class="actual-item-chip">{{ n }}</span>
+                    <span class="small text-muted d-block mb-2">Active items &amp; example photos:</span>
+                    {% for row in items_with_examples %}
+                    <div class="mb-3 pb-2 border-bottom">
+                        <span class="actual-item-chip">{{ row.name }}</span>
+                        {% if row.examples %}
+                        <div class="d-flex flex-wrap gap-2 mt-2 mb-2">
+                            {% for ex in row.examples %}
+                            <div class="position-relative">
+                                <img src="{{ ex.url }}" alt="{{ row.name }} example" class="rounded border" style="width:72px;height:72px;object-fit:cover;">
+                                <form method="post" action="{% url 'mes:actual' %}" class="d-inline">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="action" value="delete_example">
+                                    <input type="hidden" name="example_id" value="{{ ex.id }}">
+                                    <button type="submit" class="btn btn-sm btn-danger position-absolute top-0 end-0 p-0 px-1" style="line-height:1.2;font-size:0.65rem;" title="Remove">&times;</button>
+                                </form>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                        <form method="post" action="{% url 'mes:actual' %}" enctype="multipart/form-data" class="d-flex gap-2 align-items-center flex-wrap">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="upload_example">
+                            <input type="hidden" name="item_name" value="{{ row.name }}">
+                            <input type="file" name="example_image" accept="image/*" class="form-control form-control-sm" style="max-width:220px;" required>
+                            <button type="submit" class="btn btn-outline-primary btn-sm">
+                                <i class="fas fa-image me-1"></i>Add photo
+                            </button>
+                        </form>
+                    </div>
                     {% endfor %}
                 </div>
                 {% endif %}
@@ -217,7 +244,7 @@
     const CSRF = '{{ csrf_token }}';
     const CAPTURE_URL = '{% url "mes:api_actual_capture" %}';
     const RESET_URL = '{% url "mes:api_actual_reset" %}';
-    const SCAN_GAP_MS = Math.max(500, ({{ capture_interval|default:2 }} * 1000));
+    const SCAN_GAP_MS = Math.max(0, ({{ capture_interval|default:0 }} * 1000));
     const AI_AVAILABLE = {{ ai_available|yesno:"true,false" }};
     const HAS_ITEMS = {{ item_names|length }} > 0;
 
@@ -328,7 +355,11 @@
     function scheduleNextScan() {
         if (!monitorActive) return;
         if (scanTimer) clearTimeout(scanTimer);
-        scanTimer = setTimeout(scanLoop, SCAN_GAP_MS);
+        if (SCAN_GAP_MS <= 0) {
+            scanLoop();
+        } else {
+            scanTimer = setTimeout(scanLoop, SCAN_GAP_MS);
+        }
     }
 
     async function scanLoop() {
