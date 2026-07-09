@@ -93,6 +93,10 @@ cd "\${APP}/erp_project"
 python manage.py migrate --no-input
 python manage.py collectstatic --no-input --clear
 systemctl restart gunicorn
+if [[ -f "\${APP}/scripts/nginx/gearuperp.conf" ]]; then
+  cp "\${APP}/scripts/nginx/gearuperp.conf" /etc/nginx/sites-enabled/gearuperp
+  nginx -t && systemctl reload nginx
+fi
 sleep 1
 systemctl is-active gunicorn
 EOF

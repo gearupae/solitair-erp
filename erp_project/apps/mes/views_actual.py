@@ -13,6 +13,8 @@ from .models import ActualCountExampleImage, ActualCountSetting
 from .services.actual_count import get_daily_log_rows, get_example_images_for_ui, reset_capture_baseline
 from .views import MesAccessMixin, MesCompanyMixin
 
+EXAMPLE_PHOTO_MAX_BYTES = 20 * 1024 * 1024
+
 
 class ActualCountView(MesAccessMixin, MesCompanyMixin, TemplateView):
     template_name = 'mes/actual_count.html'
@@ -86,6 +88,12 @@ class ActualCountView(MesAccessMixin, MesCompanyMixin, TemplateView):
             configured = [_n.strip() for _n in (setting.item_names if setting else []) if _n.strip()]
             if item_name not in configured:
                 messages.error(request, f'"{item_name}" is not in your saved item list.')
+                return redirect('mes:actual')
+            if upload.size > EXAMPLE_PHOTO_MAX_BYTES:
+                messages.error(
+                    request,
+                    'Photo is too large (max 20 MB). Try a smaller image or take a new photo.',
+                )
                 return redirect('mes:actual')
 
             ActualCountExampleImage.objects.create(

@@ -186,11 +186,11 @@
                             {% endfor %}
                         </div>
                         {% endif %}
-                        <form method="post" action="{% url 'mes:actual' %}" enctype="multipart/form-data" class="d-flex gap-2 align-items-center flex-wrap">
+                        <form method="post" action="{% url 'mes:actual' %}" enctype="multipart/form-data" class="actual-example-upload-form d-flex gap-2 align-items-center flex-wrap">
                             {% csrf_token %}
                             <input type="hidden" name="action" value="upload_example">
                             <input type="hidden" name="item_name" value="{{ row.name }}">
-                            <input type="file" name="example_image" accept="image/*" class="form-control form-control-sm" style="max-width:220px;" required>
+                            <input type="file" name="example_image" accept="image/*" capture="environment" class="form-control form-control-sm" style="max-width:220px;" required>
                             <button type="submit" class="btn btn-outline-primary btn-sm">
                                 <i class="fas fa-image me-1"></i>Add photo
                             </button>
@@ -458,6 +458,62 @@
         if (stream) {
             stream.getTracks().forEach(function(t) { t.stop(); });
         }
+    });
+
+    function compressImageFile(file, maxDim, quality) {
+        return new Promise(function(resolve, reject) {
+            const img = new Image();
+            const url = URL.createObjectURL(file);
+            img.onload = function() {
+                URL.revokeObjectURL(url);
+                let w = img.width;
+                let h = img.height;
+                const scale = Math.min(1, maxDim / Math.max(w, h));
+                w = Math.round(w * scale);
+                h = Math.round(h * scale);
+                const c = document.createElement('canvas');
+                c.width = w;
+                c.height = h;
+                c.getContext('2d').drawImage(img, 0, 0, w, h);
+                c.toBlob(function(blob) {
+                    if (!blob) {
+                        reject(new Error('compress failed'));
+                        return;
+                    }
+                    const base = (file.name || 'photo').replace(/\.[^.]+$/, '') || 'photo';
+                    resolve(new File([blob], base + '.jpg', { type: 'image/jpeg' }));
+                }, 'image/jpeg', quality);
+            };
+            img.onerror = function() {
+                URL.revokeObjectURL(url);
+                reject(new Error('load failed'));
+            };
+            img.src = url;
+        });
+    }
+
+    document.querySelectorAll('.actual-example-upload-form').forEach(function(form) {
+        form.addEventListener('submit', function(e) {
+            const input = form.querySelector('input[type=file]');
+            const file = input && input.files && input.files[0];
+            if (!file || !file.type.startsWith('image/') || file.size < 800 * 1024) {
+                return;
+            }
+            e.preventDefault();
+            const btn = form.querySelector('button[type=submit]');
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Uploading…';
+            }
+            compressImageFile(file, 1280, 0.82).then(function(compressed) {
+                const dt = new DataTransfer();
+                dt.items.add(compressed);
+                input.files = dt.files;
+                form.submit();
+            }).catch(function() {
+                form.submit();
+            });
+        });
     });
 })();
 </script>
