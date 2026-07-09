@@ -36,6 +36,15 @@
 .actual-log-table td {
     font-size: 0.9rem;
 }
+.actual-camera-wrap canvas#detectOverlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 1;
+}
 .actual-item-chip {
     display: inline-block;
     background: #e0f2fe;
@@ -45,6 +54,14 @@
     margin: 0.15rem 0.25rem 0.15rem 0;
     font-size: 0.82rem;
 }
+.actual-count-flash {
+    animation: actualFlash 0.35s ease;
+}
+@keyframes actualFlash {
+    0% { transform: scale(1); }
+    40% { transform: scale(1.15); color: #16a34a; }
+    100% { transform: scale(1); }
+}
 </style>
 {% endblock %}
 
@@ -52,7 +69,7 @@
 <div class="page-header d-flex flex-wrap justify-content-between align-items-start gap-2 mb-4">
     <div>
         <h4 class="mb-1 fw-bold"><i class="fas fa-video me-2 text-primary"></i>Actual — Camera Count</h4>
-        <p class="text-muted mb-0">Live camera feed with OpenAI vision — counts objects per item, logged daily.</p>
+        <p class="text-muted mb-0">Real-time camera counting — local AI detects each time you show an item (fast re-count after you remove it).</p>
     </div>
     <a href="{% url 'mes:index' %}" class="btn btn-outline-secondary btn-sm">
         <i class="fas fa-arrow-left me-1"></i>Manufacturing
@@ -60,9 +77,9 @@
 </div>
 
 {% if not ai_available %}
-<div class="alert alert-warning">
-    <i class="fas fa-robot me-2"></i>
-    OpenAI is not configured. Add an API key under <strong>Settings → Company</strong> to enable automatic counting.
+<div class="alert alert-info py-2">
+    <i class="fas fa-microchip me-2"></i>
+    Live counting uses <strong>local AI in your browser</strong> (no OpenAI needed). GPT capture is optional for manual verify.
 </div>
 {% endif %}
 
@@ -72,14 +89,14 @@
             <div class="card-header bg-white d-flex flex-wrap justify-content-between align-items-center gap-2">
                 <h6 class="mb-0 fw-semibold"><i class="fas fa-camera me-2"></i>Camera feed</h6>
                 <div class="d-flex gap-2 flex-wrap">
-                    <button type="button" class="btn btn-success btn-sm" id="btnStartMonitor" {% if not item_names or not ai_available %}disabled{% endif %}>
+                    <button type="button" class="btn btn-success btn-sm" id="btnStartMonitor" {% if not item_names %}disabled{% endif %}>
                         <i class="fas fa-play me-1"></i>Start
                     </button>
                     <button type="button" class="btn btn-outline-danger btn-sm" id="btnStopMonitor" disabled>
                         <i class="fas fa-stop me-1"></i>Stop
                     </button>
-                    <button type="button" class="btn btn-outline-secondary btn-sm" id="btnCaptureOnce" {% if not item_names or not ai_available %}disabled{% endif %}>
-                        <i class="fas fa-camera me-1"></i>Capture now
+                    <button type="button" class="btn btn-outline-secondary btn-sm" id="btnCaptureOnce" {% if not item_names or not ai_available %}disabled{% endif %} title="OpenAI verify (optional)">
+                        <i class="fas fa-robot me-1"></i>GPT verify
                     </button>
                 </div>
             </div>
@@ -87,13 +104,14 @@
                 <div class="actual-camera-wrap">
                     <span class="badge actual-status-pill bg-secondary" id="monitorStatus">Idle</span>
                     <video id="cameraVideo" autoplay playsinline muted></video>
+                    <canvas id="detectOverlay"></canvas>
                     <canvas id="captureCanvas" class="d-none"></canvas>
                     <div class="actual-last-scan" id="lastScanLine">Configure items below, then start monitoring.</div>
                 </div>
             </div>
             <div class="card-footer bg-white small text-muted">
-                Fast scan mode — next frame starts {% if capture_interval %}~{{ capture_interval }}s after{% else %}immediately when{% endif %} the previous scan finishes.
-                Same object in frame is counted once until it leaves; re-appearing items count again.
+                Local detection runs ~12 fps in your browser. Show an item → count +1 instantly. Remove it briefly → show again → +1 again.
+                Example photos improve bottle-shaped matching. Optional <strong>GPT verify</strong> uses OpenAI.
             </div>
         </div>
 
@@ -239,16 +257,25 @@
 {% endblock %}
 
 {% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2"></script>
 <script>
 (function() {
     const CSRF = '{{ csrf_token }}';
+    const INCREMENT_URL = '{% url "mes:api_actual_increment" %}';
     const CAPTURE_URL = '{% url "mes:api_actual_capture" %}';
     const RESET_URL = '{% url "mes:api_actual_reset" %}';
-    const SCAN_GAP_MS = Math.max(0, ({{ capture_interval|default:0 }} * 1000));
     const AI_AVAILABLE = {{ ai_available|yesno:"true,false" }};
-    const HAS_ITEMS = {{ item_names|length }} > 0;
+    const ITEM_NAMES = [{% for n in item_names %}'{{ n|escapejs }}'{% if not forloop.last %}, {% endif %}{% endfor %}];
+    const HAS_ITEMS = ITEM_NAMES.length > 0;
+
+    const DETECT_EVERY_MS = 70;
+    const MIN_CONFIDENCE = 0.38;
+    const CLEAR_FRAMES = 2;
+    const COCO_BASE = 'lite_mobilenet_v2';
 
     const video = document.getElementById('cameraVideo');
+    const overlay = document.getElementById('detectOverlay');
     const canvas = document.getElementById('captureCanvas');
     const statusEl = document.getElementById('monitorStatus');
     const lastScanEl = document.getElementById('lastScanLine');
@@ -261,46 +288,45 @@
 
     let stream = null;
     let monitorActive = false;
-    let capturing = false;
-    let scanTimer = null;
+    let detectTimer = null;
+    let detectModel = null;
+    let modelLoading = false;
+    let detecting = false;
+    let localToday = {};
+    let itemStates = {};
+
+    ITEM_NAMES.forEach(function(name) {
+        itemStates[name] = { armed: true, emptyFrames: CLEAR_FRAMES, visible: 0 };
+    });
 
     function setStatus(text, variant) {
         statusEl.textContent = text;
         statusEl.className = 'badge actual-status-pill bg-' + (variant || 'secondary');
     }
 
-    async function initCamera() {
-        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-            lastScanEl.textContent = 'Camera not supported in this browser.';
-            return false;
-        }
-        try {
-            stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } },
-                audio: false,
-            });
-            video.srcObject = stream;
-            await video.play();
-            return true;
-        } catch (err) {
-            lastScanEl.textContent = 'Camera access denied: ' + (err.message || err);
-            setStatus('No camera', 'danger');
-            return false;
-        }
+    function escapeHtml(s) {
+        return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
 
-    function frameToBase64() {
-        const srcW = video.videoWidth || 640;
-        const srcH = video.videoHeight || 480;
-        const maxW = 640;
-        const scale = srcW > maxW ? maxW / srcW : 1;
-        const w = Math.round(srcW * scale);
-        const h = Math.round(srcH * scale);
-        canvas.width = w;
-        canvas.height = h;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(video, 0, 0, w, h);
-        return canvas.toDataURL('image/jpeg', 0.65).split(',')[1];
+    function cocoClassesForItem(name) {
+        const n = String(name || '').toLowerCase();
+        if (n.indexOf('bottle') >= 0) return ['bottle', 'cup', 'wine glass', 'vase'];
+        if (n.indexOf('cup') >= 0 || n.indexOf('mug') >= 0) return ['cup', 'wine glass', 'bottle'];
+        if (n.indexOf('box') >= 0 || n.indexOf('carton') >= 0) return ['suitcase', 'handbag', 'backpack'];
+        if (n.indexOf('phone') >= 0) return ['cell phone'];
+        if (n.indexOf('can') >= 0) return ['bottle', 'cup'];
+        return [n];
+    }
+
+    function countForItem(detections, itemName) {
+        const classes = cocoClassesForItem(itemName);
+        let total = 0;
+        (detections || []).forEach(function(d) {
+            if (d.score >= MIN_CONFIDENCE && classes.indexOf(d.class) >= 0) {
+                total += 1;
+            }
+        });
+        return total;
     }
 
     function renderLogRows(rows) {
@@ -314,31 +340,22 @@
         }).join('');
     }
 
-    function escapeHtml(s) {
-        return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    }
-
-    function formatCounts(obj) {
-        const parts = [];
-        Object.keys(obj || {}).forEach(function(k) {
-            parts.push(k + ': ' + obj[k]);
-        });
-        return parts.join(' · ') || '0';
-    }
-
-    function renderVisibleNow(raw) {
-        if (!raw || !Object.keys(raw).length) {
-            visibleNowBody.innerHTML = '<p class="text-muted mb-0 small">Nothing detected.</p>';
+    function renderVisibleNow(raw, flashItem) {
+        if (!ITEM_NAMES.length) {
+            visibleNowBody.innerHTML = '<p class="text-muted mb-0 small">Configure items below.</p>';
             return;
         }
-        visibleNowBody.innerHTML = '<div class="row g-2">' + Object.keys(raw).map(function(k) {
+        visibleNowBody.innerHTML = '<div class="row g-2">' + ITEM_NAMES.map(function(k) {
+            const val = (raw && raw[k]) ? raw[k] : 0;
+            const flash = flashItem === k ? ' actual-count-flash' : '';
             return '<div class="col-auto"><div class="border rounded px-3 py-2 text-center">' +
                 '<div class="small text-muted">' + escapeHtml(k) + '</div>' +
-                '<div class="fs-3 fw-bold text-success">' + raw[k] + '</div></div></div>';
+                '<div class="fs-3 fw-bold ' + (val > 0 ? 'text-success' : 'text-secondary') + flash + '">' +
+                val + '</div></div></div>';
         }).join('') + '</div>';
     }
 
-    function renderTodayTotals(totals) {
+    function renderTodayTotals(totals, flashItem) {
         if (!totals || !Object.keys(totals).length) {
             todayTotalsBody.innerHTML = '<p class="text-muted mb-0 small">No counts recorded today yet.</p>';
             return;
@@ -346,118 +363,245 @@
         let grand = 0;
         Object.keys(totals).forEach(function(k) { grand += totals[k]; });
         todayTotalsBody.innerHTML = '<div class="row g-2">' + Object.keys(totals).map(function(k) {
+            const flash = flashItem === k ? ' actual-count-flash' : '';
             return '<div class="col-auto"><div class="border rounded px-3 py-2 text-center">' +
                 '<div class="small text-muted">' + escapeHtml(k) + '</div>' +
-                '<div class="fs-4 fw-bold text-primary">' + totals[k] + '</div></div></div>';
+                '<div class="fs-4 fw-bold text-primary' + flash + '">' + totals[k] + '</div></div></div>';
         }).join('') + '</div><p class="small text-muted mb-0 mt-2">Total today: <strong>' + grand + '</strong></p>';
     }
 
-    function scheduleNextScan() {
-        if (!monitorActive) return;
-        if (scanTimer) clearTimeout(scanTimer);
-        if (SCAN_GAP_MS <= 0) {
-            scanLoop();
-        } else {
-            scanTimer = setTimeout(scanLoop, SCAN_GAP_MS);
+    function mergeTodayTotals(serverTotals) {
+        Object.keys(serverTotals || {}).forEach(function(k) {
+            localToday[k] = Math.max(localToday[k] || 0, serverTotals[k]);
+        });
+        renderTodayTotals(localToday);
+    }
+
+    {% for name, total in today_totals.items %}
+    localToday['{{ name|escapejs }}'] = {{ total }};
+    {% endfor %}
+
+    async function initCamera() {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            lastScanEl.textContent = 'Camera not supported in this browser.';
+            return false;
+        }
+        try {
+            stream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+                audio: false,
+            });
+            video.srcObject = stream;
+            await video.play();
+            return true;
+        } catch (err) {
+            lastScanEl.textContent = 'Camera access denied: ' + (err.message || err);
+            setStatus('No camera', 'danger');
+            return false;
         }
     }
 
-    async function scanLoop() {
-        if (!monitorActive || capturing) return;
-        await sendCapture();
-        scheduleNextScan();
+    async function loadDetectModel() {
+        if (detectModel || modelLoading || typeof cocoSsd === 'undefined') return detectModel;
+        modelLoading = true;
+        setStatus('Loading AI…', 'info');
+        try {
+            detectModel = await cocoSsd.load({ base: COCO_BASE });
+            setStatus('Ready', 'success');
+        } catch (err) {
+            lastScanEl.textContent = 'Local model failed to load: ' + (err.message || err);
+            setStatus('Model error', 'danger');
+        } finally {
+            modelLoading = false;
+        }
+        return detectModel;
     }
 
-    async function sendCapture() {
-        if (capturing || !video.videoWidth) return;
-        capturing = true;
-        setStatus('Scanning…', 'info');
+    function drawOverlay(detections, itemName) {
+        if (!overlay || !video.videoWidth) return;
+        const classes = cocoClassesForItem(itemName);
+        overlay.width = video.videoWidth;
+        overlay.height = video.videoHeight;
+        const ctx = overlay.getContext('2d');
+        ctx.clearRect(0, 0, overlay.width, overlay.height);
+        (detections || []).forEach(function(d) {
+            if (d.score < MIN_CONFIDENCE || classes.indexOf(d.class) < 0) return;
+            const [x, y, w, h] = d.bbox;
+            ctx.strokeStyle = '#22c55e';
+            ctx.lineWidth = 3;
+            ctx.strokeRect(x, y, w, h);
+            ctx.fillStyle = 'rgba(34, 197, 94, 0.15)';
+            ctx.fillRect(x, y, w, h);
+        });
+    }
+
+    function syncIncrement(increments) {
+        fetch(INCREMENT_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+            body: JSON.stringify({ increments: increments }),
+        }).then(function(r) { return r.json(); }).then(function(data) {
+            if (data.success) {
+                if (data.today_totals) mergeTodayTotals(data.today_totals);
+                if (data.daily_logs) renderLogRows(data.daily_logs);
+            }
+        }).catch(function() { /* local total already shown */ });
+    }
+
+    function registerCount(itemName) {
+        localToday[itemName] = (localToday[itemName] || 0) + 1;
+        const visible = {};
+        ITEM_NAMES.forEach(function(n) {
+            visible[n] = itemStates[n] ? itemStates[n].visible : 0;
+        });
+        renderVisibleNow(visible, itemName);
+        renderTodayTotals(localToday, itemName);
+        lastScanEl.textContent = '+' + itemName + ' → today ' + localToday[itemName];
+        const inc = {};
+        inc[itemName] = 1;
+        syncIncrement(inc);
+    }
+
+    async function detectFrame() {
+        if (!monitorActive || detecting || !detectModel || !video.videoWidth) return;
+        detecting = true;
         try {
-            const resp = await fetch(CAPTURE_URL, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': CSRF,
-                },
-                body: JSON.stringify({ image: frameToBase64() }),
+            const detections = await detectModel.detect(video, 20, MIN_CONFIDENCE);
+            const visibleNow = {};
+            let countedItem = null;
+
+            ITEM_NAMES.forEach(function(itemName) {
+                const st = itemStates[itemName];
+                const vis = countForItem(detections, itemName);
+                st.visible = vis;
+                visibleNow[itemName] = vis;
+
+                if (vis > 0) {
+                    st.emptyFrames = 0;
+                    if (st.armed) {
+                        st.armed = false;
+                        registerCount(itemName);
+                        countedItem = itemName;
+                    }
+                } else {
+                    st.emptyFrames += 1;
+                    if (!st.armed && st.emptyFrames >= CLEAR_FRAMES) {
+                        st.armed = true;
+                    }
+                }
             });
-            const data = await resp.json();
-            if (!data.success) {
-                lastScanEl.textContent = data.message || 'Capture failed.';
-                setStatus('Error', 'danger');
-                stopMonitor();
-                return;
-            }
-            const inFrame = formatCounts(data.raw_counts);
-            renderVisibleNow(data.raw_counts || {});
-            if (data.today_totals) {
-                renderTodayTotals(data.today_totals);
-            }
-            const added = formatCounts(data.added_counts);
-            if (Object.keys(data.added_counts || {}).length) {
-                lastScanEl.textContent = 'Logged +' + added + ' | Visible: ' + inFrame;
-            } else {
-                lastScanEl.textContent = 'Visible: ' + inFrame;
-            }
-            if (data.daily_logs) {
-                renderLogRows(data.daily_logs);
-            }
-            setStatus(monitorActive ? 'Live' : 'Idle', monitorActive ? 'success' : 'secondary');
+
+            drawOverlay(detections, countedItem || ITEM_NAMES[0]);
+            renderVisibleNow(visibleNow, countedItem);
+            if (monitorActive) setStatus('Live', 'success');
         } catch (err) {
-            lastScanEl.textContent = 'Network error: ' + (err.message || err);
-            setStatus('Error', 'danger');
-            stopMonitor();
+            /* skip frame */
         } finally {
-            capturing = false;
+            detecting = false;
+        }
+    }
+
+    function startDetectLoop() {
+        if (detectTimer) clearInterval(detectTimer);
+        detectTimer = setInterval(detectFrame, DETECT_EVERY_MS);
+    }
+
+    function stopDetectLoop() {
+        if (detectTimer) {
+            clearInterval(detectTimer);
+            detectTimer = null;
+        }
+        if (overlay) {
+            const ctx = overlay.getContext('2d');
+            ctx.clearRect(0, 0, overlay.width, overlay.height);
         }
     }
 
     async function startMonitor() {
-        if (!AI_AVAILABLE || !HAS_ITEMS) return;
+        if (!HAS_ITEMS) return;
         const ok = stream || await initCamera();
         if (!ok) return;
+        await loadDetectModel();
+        if (!detectModel) return;
 
-        await fetch(RESET_URL, {
-            method: 'POST',
-            headers: { 'X-CSRFToken': CSRF },
+        await fetch(RESET_URL, { method: 'POST', headers: { 'X-CSRFToken': CSRF } });
+        ITEM_NAMES.forEach(function(name) {
+            itemStates[name] = { armed: true, emptyFrames: CLEAR_FRAMES, visible: 0 };
         });
 
         monitorActive = true;
         btnStart.disabled = true;
         btnStop.disabled = false;
-        btnOnce.disabled = true;
+        if (btnOnce) btnOnce.disabled = !AI_AVAILABLE;
         setStatus('Live', 'success');
-        scanLoop();
+        lastScanEl.textContent = 'Ready — show an item to count.';
+        startDetectLoop();
     }
 
     function stopMonitor() {
         monitorActive = false;
-        if (scanTimer) {
-            clearTimeout(scanTimer);
-            scanTimer = null;
-        }
-        btnStart.disabled = !(AI_AVAILABLE && HAS_ITEMS);
+        stopDetectLoop();
+        btnStart.disabled = !HAS_ITEMS;
         btnStop.disabled = true;
-        btnOnce.disabled = !(AI_AVAILABLE && HAS_ITEMS);
+        if (btnOnce) btnOnce.disabled = !(AI_AVAILABLE && HAS_ITEMS);
         setStatus('Idle', 'secondary');
+    }
+
+    function frameToBase64() {
+        const srcW = video.videoWidth || 640;
+        const srcH = video.videoHeight || 480;
+        const maxW = 640;
+        const scale = srcW > maxW ? maxW / srcW : 1;
+        const w = Math.round(srcW * scale);
+        const h = Math.round(srcH * scale);
+        canvas.width = w;
+        canvas.height = h;
+        canvas.getContext('2d').drawImage(video, 0, 0, w, h);
+        return canvas.toDataURL('image/jpeg', 0.65).split(',')[1];
+    }
+
+    async function sendGptCapture() {
+        if (!video.videoWidth) return;
+        setStatus('GPT…', 'info');
+        try {
+            const resp = await fetch(CAPTURE_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+                body: JSON.stringify({ image: frameToBase64() }),
+            });
+            const data = await resp.json();
+            if (!data.success) {
+                lastScanEl.textContent = data.message || 'GPT capture failed.';
+                return;
+            }
+            renderVisibleNow(data.raw_counts || {});
+            if (data.today_totals) mergeTodayTotals(data.today_totals);
+            if (data.daily_logs) renderLogRows(data.daily_logs);
+            lastScanEl.textContent = 'GPT: ' + JSON.stringify(data.raw_counts || {});
+        } catch (err) {
+            lastScanEl.textContent = 'GPT error: ' + (err.message || err);
+        } finally {
+            setStatus(monitorActive ? 'Live' : 'Idle', monitorActive ? 'success' : 'secondary');
+        }
     }
 
     btnStart.addEventListener('click', startMonitor);
     btnStop.addEventListener('click', stopMonitor);
-    btnOnce.addEventListener('click', async function() {
-        const ok = stream || await initCamera();
-        if (ok) await sendCapture();
-    });
+    if (btnOnce) {
+        btnOnce.addEventListener('click', async function() {
+            const ok = stream || await initCamera();
+            if (ok) await sendGptCapture();
+        });
+    }
 
-    if (AI_AVAILABLE && HAS_ITEMS) {
+    if (HAS_ITEMS) {
         initCamera();
+        loadDetectModel();
     }
 
     window.addEventListener('beforeunload', function() {
         stopMonitor();
-        if (stream) {
-            stream.getTracks().forEach(function(t) { t.stop(); });
-        }
+        if (stream) stream.getTracks().forEach(function(t) { t.stop(); });
     });
 
     function compressImageFile(file, maxDim, quality) {
@@ -466,8 +610,7 @@
             const url = URL.createObjectURL(file);
             img.onload = function() {
                 URL.revokeObjectURL(url);
-                let w = img.width;
-                let h = img.height;
+                let w = img.width, h = img.height;
                 const scale = Math.min(1, maxDim / Math.max(w, h));
                 w = Math.round(w * scale);
                 h = Math.round(h * scale);
@@ -476,18 +619,12 @@
                 c.height = h;
                 c.getContext('2d').drawImage(img, 0, 0, w, h);
                 c.toBlob(function(blob) {
-                    if (!blob) {
-                        reject(new Error('compress failed'));
-                        return;
-                    }
+                    if (!blob) { reject(new Error('compress failed')); return; }
                     const base = (file.name || 'photo').replace(/\.[^.]+$/, '') || 'photo';
                     resolve(new File([blob], base + '.jpg', { type: 'image/jpeg' }));
                 }, 'image/jpeg', quality);
             };
-            img.onerror = function() {
-                URL.revokeObjectURL(url);
-                reject(new Error('load failed'));
-            };
+            img.onerror = function() { URL.revokeObjectURL(url); reject(new Error('load failed')); };
             img.src = url;
         });
     }
@@ -496,23 +633,16 @@
         form.addEventListener('submit', function(e) {
             const input = form.querySelector('input[type=file]');
             const file = input && input.files && input.files[0];
-            if (!file || !file.type.startsWith('image/') || file.size < 800 * 1024) {
-                return;
-            }
+            if (!file || !file.type.startsWith('image/') || file.size < 800 * 1024) return;
             e.preventDefault();
             const btn = form.querySelector('button[type=submit]');
-            if (btn) {
-                btn.disabled = true;
-                btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Uploading…';
-            }
+            if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Uploading…'; }
             compressImageFile(file, 1280, 0.82).then(function(compressed) {
                 const dt = new DataTransfer();
                 dt.items.add(compressed);
                 input.files = dt.files;
                 form.submit();
-            }).catch(function() {
-                form.submit();
-            });
+            }).catch(function() { form.submit(); });
         });
     });
 })();

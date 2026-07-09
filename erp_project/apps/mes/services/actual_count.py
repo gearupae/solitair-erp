@@ -331,6 +331,67 @@ def reset_capture_baseline(company) -> None:
     )
 
 
+@transaction.atomic
+def increment_counts(
+    *,
+    company,
+    user,
+    increments: dict[str, int],
+    log_date: date | None = None,
+) -> dict:
+    """Fast path — client-side detection logs +1 (or more) without OpenAI."""
+    setting, _ = ActualCountSetting.objects.select_for_update().get_or_create(
+        company=company,
+        defaults={'item_names': [], 'last_capture_counts': {}, 'presence_state': {}},
+    )
+    configured = [
+        _normalize_item_name(n)
+        for n in (setting.item_names or [])
+        if _normalize_item_name(n)
+    ]
+    if not configured:
+        raise ValueError('Add at least one item name before counting.')
+
+    day = log_date or timezone.localdate()
+    added: dict[str, int] = {}
+    daily_totals: dict[str, int] = {}
+
+    for raw_name, delta in increments.items():
+        matched = _match_count_to_config(str(raw_name), configured)
+        if not matched:
+            continue
+        try:
+            qty = max(0, int(delta))
+        except (TypeError, ValueError):
+            continue
+        if qty <= 0:
+            continue
+        log, _ = ActualCountDailyLog.objects.select_for_update().get_or_create(
+            company=company,
+            item_name=matched,
+            log_date=day,
+            defaults={'count': 0},
+        )
+        log.count += qty
+        log.save(update_fields=['count', 'updated_at'])
+        added[matched] = qty
+        daily_totals[matched] = log.count
+
+    if added:
+        ActualCountCapture.objects.create(
+            company=company,
+            created_by=user,
+            raw_counts={k: v for k, v in added.items()},
+            added_counts=added,
+        )
+
+    return {
+        'added_counts': added,
+        'daily_totals': daily_totals,
+        'today_totals': get_today_totals(company),
+    }
+
+
 def get_daily_log_rows(company, *, days: int = 30) -> list[dict]:
     cutoff = timezone.localdate() - timedelta(days=max(1, days) - 1)
     qs = (

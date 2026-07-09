@@ -140,5 +140,6 @@ urlpatterns = [
     path('oracle/pull/run/', views.OraclePullExecuteView.as_view(), name='oracle_pull_run'),
     path('actual/', views_actual.ActualCountView.as_view(), name='actual'),
     path('api/actual/capture/', api_views.actual_count_capture_api, name='api_actual_capture'),
+    path('api/actual/increment/', api_views.actual_count_increment_api, name='api_actual_increment'),
     path('api/actual/reset/', api_views.actual_count_reset_api, name='api_actual_reset'),
 ]

@@ -395,6 +395,35 @@ def actual_count_capture_api(request):
 
 @login_required
 @require_http_methods(['POST'])
+def actual_count_increment_api(request):
+    """Log counts from fast client-side detection (no OpenAI round-trip)."""
+    company = _mes_api_guard(request)
+    if isinstance(company, JsonResponse):
+        return company
+
+    body = _parse_json_body(request)
+    increments = body.get('increments') or body.get('counts') or {}
+    if not isinstance(increments, dict) or not increments:
+        return JsonResponse({'success': False, 'message': 'increments object is required.'}, status=400)
+
+    from .services.actual_count import get_daily_log_rows, increment_counts
+
+    try:
+        result = increment_counts(company=company, user=request.user, increments=increments)
+    except ValueError as exc:
+        return JsonResponse({'success': False, 'message': str(exc)}, status=400)
+    except Exception as exc:
+        logger.exception('Actual count increment failed')
+        return JsonResponse({'success': False, 'message': str(exc) or 'Increment failed.'}, status=500)
+
+    payload = {'success': True, **result}
+    if result.get('added_counts'):
+        payload['daily_logs'] = get_daily_log_rows(company, days=30)
+    return JsonResponse(payload)
+
+
+@login_required
+@require_http_methods(['POST'])
 def actual_count_reset_api(request):
     """Reset delta baseline when monitoring restarts."""
     company = _mes_api_guard(request)
