@@ -20,6 +20,7 @@ urlpatterns = [
     
     # Apps
     path('', include('apps.core.urls')),
+    path('account/', include('apps.settings_app.urls_account')),
     path('settings/', include('apps.settings_app.urls')),
     path('crm/', include('apps.crm.urls')),
     path('contracts/', include('apps.contracts.urls')),

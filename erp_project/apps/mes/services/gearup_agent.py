@@ -18,8 +18,6 @@ from apps.mes.models import (
 from apps.mes.services.station_queue import get_station_queue
 
 logger = logging.getLogger(__name__)
-
-MES_AGENT_MODEL = 'gpt-4o-mini'
 SLOW_OP_THRESHOLD = 1.25  # flag when dwell exceeds 125% of routing std time
 
 
@@ -470,7 +468,7 @@ def run_delay_prediction(company) -> dict:
             'predictions': [],
         }
 
-    from apps.core.openai_gateway import call_openai_json
+    from apps.core.openai_gateway import call_openai_json, get_default_ai_model
 
     system = """You are Gearup Agent for a manufacturing execution system (MES).
 Analyze live production data: open orders, station queue depths, routing std-times, and slow operations.
@@ -521,7 +519,7 @@ Max 5 predictions and 5 alerts. Plain English."""
             user_payload=snapshot,
             temperature=0.2,
             feature='mes_agent_delay',
-            model=MES_AGENT_MODEL,
+            model=get_default_ai_model(),
             json_schema=schema,
             json_schema_name='mes_delay_prediction',
         )
@@ -557,7 +555,7 @@ def run_nl_query(company, question: str) -> dict:
             'answer': _fallback_nl_answer(question, snapshot),
         }
 
-    from apps.core.openai_gateway import call_openai_json
+    from apps.core.openai_gateway import call_openai_json, get_default_ai_model
 
     system = """You are Gearup Agent answering natural-language questions about live MES data
 (production orders, station queues, parts progress, due dates). Answer concisely in 2–4 sentences.
@@ -570,7 +568,7 @@ Return JSON: {"answer": "..."}"""
             user_payload={'question': question, 'mes_data': snapshot},
             temperature=0.2,
             feature='mes_agent_ask',
-            model=MES_AGENT_MODEL,
+            model=get_default_ai_model(),
             json_schema={
                 'type': 'object',
                 'properties': {'answer': {'type': 'string'}},
@@ -646,7 +644,7 @@ def run_delay_classification(company) -> dict:
             ),
         }
 
-    from apps.core.openai_gateway import call_openai_json
+    from apps.core.openai_gateway import call_openai_json, get_default_ai_model
 
     system = """Classify why manufacturing operations exceeded standard time.
 Likely reasons: material_wait, machine_issue, rework, capacity_queue, staffing, unknown.
@@ -663,7 +661,7 @@ Return JSON:
             },
             temperature=0.2,
             feature='mes_agent_classify',
-            model=MES_AGENT_MODEL,
+            model=get_default_ai_model(),
             json_schema={
                 'type': 'object',
                 'properties': {
@@ -717,7 +715,7 @@ def run_draft_template(company, description: str) -> dict:
             ),
         }
 
-    from apps.core.openai_gateway import call_openai_json
+    from apps.core.openai_gateway import call_openai_json, get_default_ai_model
 
     system = """Draft a manufacturing product template for engineer-to-order furniture (Depa-style).
 Given a short description, propose BOM lines and routing steps using available work centers.
@@ -739,7 +737,7 @@ Use realistic quantities for UAE joinery. 3–8 BOM lines, 2–6 routing steps."
             user_payload={'description': description, 'work_centers': work_centers},
             temperature=0.35,
             feature='mes_agent_draft',
-            model=MES_AGENT_MODEL,
+            model=get_default_ai_model(),
             json_schema={
                 'type': 'object',
                 'properties': {
@@ -789,7 +787,7 @@ def run_cost_estimate(company, spec: str) -> dict:
             ),
         }
 
-    from apps.core.openai_gateway import call_openai_json
+    from apps.core.openai_gateway import call_openai_json, get_default_ai_model
 
     system = """Estimate manufacturing cost for engineer-to-order joinery in AED.
 Use typical UAE material costs and provided work-center hourly rates.
@@ -803,7 +801,7 @@ assumptions (array of strings), summary (one sentence)."""
             user_payload={'spec': spec, 'rates': rates},
             temperature=0.25,
             feature='mes_agent_estimate',
-            model=MES_AGENT_MODEL,
+            model=get_default_ai_model(),
             json_schema={
                 'type': 'object',
                 'properties': {

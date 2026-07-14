@@ -13,6 +13,7 @@ from django.db.models import Max, Q, Sum
 from django.urls import reverse
 from django.utils import timezone
 
+from apps.core.openai_gateway import get_default_ai_model
 from apps.hr.models_extended import AttendanceRecord
 from apps.inventory.models import ConsumableRequest
 from apps.inventory.utils import get_openai_api_key, is_ai_available
@@ -28,7 +29,6 @@ from apps.sales.models import Estimate, Invoice
 logger = logging.getLogger(__name__)
 
 CACHE_SECONDS = 30 * 60
-OPENAI_MODEL = 'gpt-4o-mini'
 
 FORBIDDEN_INSIGHT_PHRASES = (
     'on track against plan',
@@ -124,10 +124,11 @@ def _call_openai(*, system: str, user_payload: dict | list, temperature: float =
     from apps.core.openai_gateway import call_openai_json
 
     payload_preview = json.dumps(user_payload, default=str)
+    model = get_default_ai_model()
     logger.info(
         'project_forecasting %s: model=%s payload_bytes=%d',
         call_label,
-        OPENAI_MODEL,
+        model,
         len(payload_preview),
     )
     try:
@@ -136,6 +137,7 @@ def _call_openai(*, system: str, user_payload: dict | list, temperature: float =
             user_payload=user_payload,
             temperature=temperature,
             feature=f'project_forecasting:{call_label}',
+            model=model,
         )
     except Exception as exc:
         if exc.__class__.__name__ == 'OpenAINotConfigured':

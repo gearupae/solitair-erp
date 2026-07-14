@@ -5,8 +5,6 @@ import json
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from django.conf import settings
-
 from apps.purchase.models import PurchaseRequestAttachment
 from apps.purchase.services.quote_schemas import (
     PROMPT_CACHE_KEY_COMPARE,
@@ -23,15 +21,9 @@ MAX_TEXT_FOR_EXTRACT = 6_000
 
 
 def _quote_model() -> str:
-    from apps.core.openai_gateway import resolve_openai_model
+    from apps.core.openai_gateway import get_default_ai_model
 
-    override = (
-        getattr(settings, 'OPENAI_VENDOR_QUOTE_MODEL', '')
-        or getattr(settings, 'OPENAI_VENDOR_QUOTE_REASON_MODEL', '')
-        or getattr(settings, 'OPENAI_VENDOR_QUOTE_EXTRACT_MODEL', '')
-        or ''
-    )
-    return resolve_openai_model(override or 'gpt-5.4-mini')
+    return get_default_ai_model()
 
 
 def _extract_model() -> str:

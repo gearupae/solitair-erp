@@ -14,11 +14,9 @@ CACHE_HOURS = 12
 
 
 def _kpi_model() -> str:
-    from django.conf import settings
-    from apps.core.openai_gateway import resolve_openai_model
+    from apps.core.openai_gateway import get_default_ai_model
 
-    override = getattr(settings, 'OPENAI_CEO_MODEL', '') or 'gpt-5.5-mini'
-    return resolve_openai_model(override)
+    return get_default_ai_model()
 
 
 def _ai_available() -> bool:

@@ -218,7 +218,7 @@ def _parse_json_content(content: str) -> dict:
 def _fetch_evaluation_from_openai(snapshot: dict) -> dict:
     from apps.core.ai_knowledge import get_ai_knowledge_prompt_block
     from apps.core.models import AiModuleKnowledge
-    from apps.core.openai_gateway import AiQuotaExceeded, call_openai_raw
+    from apps.core.openai_gateway import AiQuotaExceeded, call_openai_raw, get_default_ai_model
 
     if not is_ai_available():
         result = _heuristic_evaluation(snapshot)
@@ -242,7 +242,7 @@ def _fetch_evaluation_from_openai(snapshot: dict) -> dict:
     )
     user_payload = json.dumps(snapshot, default=str)[:14000]
     body = {
-        'model': 'gpt-4o-mini',
+        'model': get_default_ai_model(),
         'messages': [
             {'role': 'system', 'content': system},
             {'role': 'user', 'content': f'Project snapshot:\n{user_payload}'},

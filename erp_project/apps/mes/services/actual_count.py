@@ -11,15 +11,12 @@ from datetime import date, timedelta
 from django.db import transaction
 from django.utils import timezone
 
-from apps.core.openai_gateway import AiQuotaExceeded, call_openai_json_with_images
+from apps.core.openai_gateway import AiQuotaExceeded, call_openai_json_with_images, get_default_ai_model
 from apps.inventory.utils import is_ai_available
 
 from ..models import ActualCountCapture, ActualCountDailyLog, ActualCountExampleImage, ActualCountSetting
 
 logger = logging.getLogger(__name__)
-
-# Fast vision model — count integers only, no reasoning chain.
-ACTUAL_COUNT_MODEL = 'gpt-4o-mini'
 
 
 def _normalize_item_name(name: str) -> str:
@@ -187,7 +184,7 @@ def count_objects_in_image(
         images_base64=images_payload,
         temperature=0,
         feature='mes_actual_count',
-        model=ACTUAL_COUNT_MODEL,
+        model=get_default_ai_model(),
         reasoning_effort='none',
         json_schema=_count_schema(items),
         json_schema_name='actual_count',

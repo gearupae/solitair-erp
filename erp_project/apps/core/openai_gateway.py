@@ -10,7 +10,7 @@ from django.conf import settings
 from django.db import transaction
 from django.db.models import F
 
-OPENAI_MODEL = getattr(settings, 'OPENAI_MODEL', 'gpt-5.5')
+OPENAI_MODEL = getattr(settings, 'OPENAI_MODEL', 'gpt-5.4-mini')
 OPENAI_CHAT_URL = 'https://api.openai.com/v1/chat/completions'
 OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses'
 OPENAI_REQUEST_TIMEOUT = 180
@@ -24,9 +24,14 @@ class AiQuotaExceeded(Exception):
     """Raised when the company AI token allowance is exhausted."""
 
 
+def get_default_ai_model() -> str:
+    """Standard ERP AI model (gpt-5.4-mini unless OPENAI_MODEL is overridden)."""
+    return resolve_openai_model('')
+
+
 def resolve_openai_model(override: str = '') -> str:
     model = (override or '').strip() or OPENAI_MODEL
-    return model or 'gpt-5.5'
+    return model or 'gpt-5.4-mini'
 
 
 def resolve_reasoning_effort(override: str = '') -> str:
@@ -306,7 +311,13 @@ def call_openai_json_with_images(
 
 
 def tokens_for_amount(amount: Decimal, currency: str = 'AED') -> int:
-    rate = int(getattr(settings, 'AI_TOKENS_PER_CURRENCY_UNIT', 50000))
+    """ERP tokens granted on recharge — half of OPENAI_TOKENS_PER_AED_REFERENCE by default."""
+    explicit = getattr(settings, 'AI_TOKENS_PER_CURRENCY_UNIT', None)
+    if explicit is not None:
+        rate = int(explicit)
+    else:
+        reference = int(getattr(settings, 'OPENAI_TOKENS_PER_AED_REFERENCE', 181529))
+        rate = int(reference * 0.5)
     cur = (currency or 'AED').upper()
     multiplier = Decimal('1')
     if cur == 'USD':

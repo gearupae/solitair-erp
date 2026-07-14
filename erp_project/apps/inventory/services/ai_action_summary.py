@@ -19,7 +19,7 @@ def _cache_key(report_snapshot: dict) -> str:
 
 
 def _fetch_bullets_from_openai(snapshot: dict) -> list[str]:
-    from apps.core.openai_gateway import call_openai_raw, parse_openai_json
+    from apps.core.openai_gateway import call_openai_raw, get_default_ai_model, parse_openai_json
     from apps.inventory.utils import is_ai_available
 
     if not is_ai_available():
@@ -33,7 +33,7 @@ def _fetch_bullets_from_openai(snapshot: dict) -> list[str]:
         f'Snapshot:\n{json.dumps(snapshot, default=str)[:12000]}'
     )
     body = {
-        'model': 'gpt-4o-mini',
+        'model': get_default_ai_model(),
         'messages': [
             {
                 'role': 'system',

@@ -252,7 +252,7 @@ def _parse_json_content(content: str) -> dict:
 def _fetch_evaluation_from_openai(snapshot: dict, employee=None) -> dict:
     from apps.core.ai_knowledge import get_ai_knowledge_prompt_block
     from apps.core.models import AiModuleKnowledge
-    from apps.core.openai_gateway import AiQuotaExceeded, call_openai_raw
+    from apps.core.openai_gateway import AiQuotaExceeded, call_openai_raw, get_default_ai_model
     from apps.hr.services.employee_attachment_extract import build_attachment_ai_parts
 
     if not is_ai_available():
@@ -298,7 +298,7 @@ def _fetch_evaluation_from_openai(snapshot: dict, employee=None) -> dict:
         user_content = f'Employee snapshot:\n{user_payload}'
 
     body = {
-        'model': 'gpt-4o-mini',
+        'model': get_default_ai_model(),
         'messages': [
             {'role': 'system', 'content': system},
             {'role': 'user', 'content': user_content},

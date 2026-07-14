@@ -17,7 +17,6 @@ from apps.projects.models import Project, ProjectExpense
 from apps.sales.models import Estimate, EstimateItem, Invoice
 
 CACHE_SECONDS = 30 * 60
-OPENAI_MODEL = 'gpt-4o-mini'
 HISTORY_MONTHS = 12
 
 ACTIVE_STATUSES = (
@@ -120,7 +119,7 @@ def _parse_openai_json(content: str) -> dict | list:
 
 
 def _call_openai(*, system: str, user_payload: dict | list, temperature: float = 0.25) -> dict | list:
-    from apps.core.openai_gateway import call_openai_json
+    from apps.core.openai_gateway import call_openai_json, get_default_ai_model
 
     try:
         return call_openai_json(
@@ -128,6 +127,7 @@ def _call_openai(*, system: str, user_payload: dict | list, temperature: float =
             user_payload=user_payload,
             temperature=temperature,
             feature='sales_forecasting',
+            model=get_default_ai_model(),
         )
     except Exception as exc:
         if exc.__class__.__name__ == 'OpenAINotConfigured':

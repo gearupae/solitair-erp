@@ -748,7 +748,7 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 (function () {
-    const rate = {{ ai_tokens_per_unit|default:50000 }};
+    const rate = {{ ai_tokens_per_unit|default:90764 }};
     const currency = '{{ object.currency|default:"AED"|escapejs }}';
     const publishableKey = '{{ stripe_publishable_key|escapejs }}';
     const returnUrl = window.location.origin + '{% url "settings:company" %}?stripe=success';

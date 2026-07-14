@@ -347,7 +347,7 @@ class CompanySettingsView(PermissionRequiredMixin, UpdateView):
         context['ai_available'] = is_ai_available()
         context['stripe_configured'] = stripe_configured()
         context['stripe_publishable_key'] = getattr(django_settings, 'STRIPE_PUBLISHABLE_KEY', '')
-        context['ai_tokens_per_unit'] = getattr(django_settings, 'AI_TOKENS_PER_CURRENCY_UNIT', 50000)
+        context['ai_tokens_per_unit'] = getattr(django_settings, 'AI_TOKENS_PER_CURRENCY_UNIT', 90764)
         context['ai_recharge_min'] = getattr(django_settings, 'AI_RECHARGE_MIN_AMOUNT', '5')
         context['ai_credit_purchases'] = AiCreditPurchase.objects.filter(
             status=AiCreditPurchase.STATUS_COMPLETED,

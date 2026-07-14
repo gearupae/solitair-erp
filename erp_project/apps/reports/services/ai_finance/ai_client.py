@@ -9,8 +9,9 @@ from django.core.cache import cache
 
 from apps.inventory.utils import get_openai_api_key
 
+from apps.core.openai_gateway import get_default_ai_model
+
 CACHE_SECONDS = 30 * 60
-OPENAI_MODEL = 'gpt-4o-mini'
 
 
 class OpenAINotConfigured(Exception):
@@ -38,7 +39,7 @@ def call_openai_json(*, system: str, user_payload: dict | list, temperature: flo
             user_payload=user_payload,
             temperature=temperature,
             feature='ai_finance',
-            model=OPENAI_MODEL,
+            model=get_default_ai_model(),
         )
     except GatewayNotConfigured as exc:
         raise OpenAINotConfigured(str(exc)) from exc

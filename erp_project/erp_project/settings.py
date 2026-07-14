@@ -2,9 +2,20 @@
 Django settings for ERP Project.
 """
 
+from decimal import Decimal
 from pathlib import Path
 from decouple import config, Csv
 import os
+
+
+def _openai_gpt54_mini_tokens_per_aed(input_ratio=Decimal('0.80')):
+    """OpenAI Standard API tokens per 1 AED (gpt-5.4-mini, 80/20 in/out blend by default)."""
+    usd_per_aed = Decimal('1') / Decimal('3.6725')  # CBUAE USD/AED peg
+    input_usd_per_m = Decimal('0.75')
+    output_usd_per_m = Decimal('4.50')
+    output_ratio = Decimal('1') - input_ratio
+    blended_usd_per_m = input_ratio * input_usd_per_m + output_ratio * output_usd_per_m
+    return int(usd_per_aed / blended_usd_per_m * 1_000_000)
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -24,21 +35,32 @@ NAV_HIDDEN_MODULES = frozenset(
 
 # OpenAI (inventory AI forecasting) — env takes precedence over DB-stored key
 OPENAI_API_KEY = config('OPENAI_API_KEY', default='')
-OPENAI_MODEL = config('OPENAI_MODEL', default='gpt-5.5')
+OPENAI_MODEL = config('OPENAI_MODEL', default='gpt-5.4-mini')
 OPENAI_REASONING_EFFORT = config('OPENAI_REASONING_EFFORT', default='none')
 OPENAI_VENDOR_QUOTE_MODEL = config('OPENAI_VENDOR_QUOTE_MODEL', default='')
 OPENAI_VENDOR_QUOTE_EXTRACT_MODEL = config('OPENAI_VENDOR_QUOTE_EXTRACT_MODEL', default='gpt-5.4-mini')
 OPENAI_VENDOR_QUOTE_REASON_MODEL = config('OPENAI_VENDOR_QUOTE_REASON_MODEL', default='gpt-5.4-mini')
-OPENAI_CEO_MODEL = config('OPENAI_CEO_MODEL', default='gpt-5.5-mini')
+OPENAI_CEO_MODEL = config('OPENAI_CEO_MODEL', default='gpt-5.4-mini')
 
 # Stripe — AI credit recharge (keys in .env only, never commit live keys)
 STRIPE_SECRET_KEY = config('STRIPE_SECRET_KEY', default='')
 STRIPE_PUBLISHABLE_KEY = config('STRIPE_PUBLISHABLE_KEY', default='')
 STRIPE_WEBHOOK_SECRET = config('STRIPE_WEBHOOK_SECRET', default='')
 STRIPE_AI_PRODUCT_ID = config('STRIPE_AI_PRODUCT_ID', default='')
-AI_TOKENS_PER_CURRENCY_UNIT = config('AI_TOKENS_PER_CURRENCY_UNIT', default=50000, cast=int)
+# gpt-5.4-mini Standard API ($0.75/$4.50 per 1M in/out) → ~181.5k tokens/AED; ERP grants half.
+_OPENAI_TOKENS_PER_AED_DEFAULT = _openai_gpt54_mini_tokens_per_aed()
+OPENAI_TOKENS_PER_AED_REFERENCE = config(
+    'OPENAI_TOKENS_PER_AED_REFERENCE',
+    default=_OPENAI_TOKENS_PER_AED_DEFAULT,
+    cast=int,
+)
+AI_TOKENS_PER_CURRENCY_UNIT = config(
+    'AI_TOKENS_PER_CURRENCY_UNIT',
+    default=int(OPENAI_TOKENS_PER_AED_REFERENCE * 0.5),
+    cast=int,
+)
 AI_RECHARGE_MIN_AMOUNT = config('AI_RECHARGE_MIN_AMOUNT', default='5')
-AI_USD_TO_AED = config('AI_USD_TO_AED', default='3.67')
+AI_USD_TO_AED = config('AI_USD_TO_AED', default='3.6725')
 
 ALLOWED_HOSTS = config(
     'ALLOWED_HOSTS',

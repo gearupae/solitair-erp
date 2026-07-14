@@ -738,12 +738,24 @@
             <!-- Right Side -->
             <ul class="navbar-nav">
                 <!-- Settings Dropdown (Icon only to save space) -->
-                {% if is_superuser or 'settings' in user_permissions or can_access_alerts_hub %}
+                {% if user.is_authenticated %}
                 <li class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle {% if 'settings' in request.path or '/mes/' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown" title="Settings">
+                    <a class="nav-link dropdown-toggle {% if 'settings' in request.path or '/account/' in request.path or '/mes/' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown" title="Settings">
                         <i class="fas fa-cog"></i>
                     </a>
                     <ul class="dropdown-menu dropdown-menu-dark dropdown-menu-end settings-dropdown">
+                        <li>
+                            <a class="dropdown-item {% if '/account/' in request.path and '/account/modules' not in request.path %}active{% endif %}" href="{% url 'account:settings' %}">
+                                <i class="fas fa-user-cog me-2"></i>My Settings
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item {% if '/account/modules' in request.path %}active{% endif %}" href="{% url 'account:module_requests' %}">
+                                <i class="fas fa-th-large me-2"></i>Request Modules
+                            </a>
+                        </li>
+                        {% if is_superuser or 'settings' in user_permissions or can_access_alerts_hub %}
+                        <li><hr class="dropdown-divider"></li>
                         {% if can_access_alerts_hub %}
                         <li>
                             <a class="dropdown-item {% if '/settings/alerts' in request.path %}active{% endif %}" href="{% url 'settings:alerts_hub' %}">
@@ -824,6 +836,7 @@
                             </a>
                         </li>
                         {% endif %}
+                        {% endif %}
                     </ul>
                 </li>
                 {% endif %}
@@ -885,6 +898,16 @@
                             </span>
                         </li>
                         <li><hr class="dropdown-divider"></li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'account:settings' %}">
+                                <i class="fas fa-user-cog me-2"></i>My Settings
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" href="{% url 'account:module_requests' %}">
+                                <i class="fas fa-th-large me-2"></i>Request Modules
+                            </a>
+                        </li>
                         <li>
                             <a class="dropdown-item" href="{% url 'hr:self_service_profile' %}">
                                 <i class="fas fa-clock me-2"></i>Clock in / out

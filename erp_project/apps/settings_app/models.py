@@ -815,6 +815,36 @@ class ApprovalAuditLog(models.Model):
         return f"{self.reference} - {self.get_action_display()} by {self.approver}"
 
 
+class ModuleAccessRequest(BaseModel):
+    """User request for access to an ERP module (email sent to ERP team)."""
+
+    STATUS_SENT = 'sent'
+    STATUS_CHOICES = [
+        (STATUS_SENT, 'Request sent'),
+    ]
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='module_access_requests',
+    )
+    module = models.CharField(max_length=50, choices=ModulePermission.MODULE_CHOICES)
+    reason = models.TextField(blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_SENT)
+
+    class Meta:
+        ordering = ['-created_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'module'],
+                name='settings_unique_module_access_request',
+            ),
+        ]
+
+    def __str__(self):
+        return f'{self.user.username} → {self.get_module_display()} ({self.get_status_display()})'
+
+
 class Notification(models.Model):
     """In-app notification for users."""
     user = models.ForeignKey(

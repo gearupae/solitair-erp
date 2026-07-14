@@ -1,0 +1,96 @@
+{% extends 'base.html' %}
+
+{% block extra_css %}
+<style>
+    .settings-link-card {
+        transition: transform 0.15s ease, box-shadow 0.15s ease;
+        cursor: pointer;
+    }
+    .settings-link-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.08) !important;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header mb-4">
+    <h4 class="mb-1 fw-bold">{{ title }}</h4>
+    <p class="text-muted mb-0">Manage your account and module access.</p>
+</div>
+
+<div class="row g-4 mb-4">
+    <div class="col-12 col-lg-4">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <h6 class="text-muted text-uppercase small fw-semibold mb-3">Profile</h6>
+                <div class="d-flex align-items-center mb-3">
+                    <div class="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center me-3" style="width: 48px; height: 48px; font-size: 1.1rem;">
+                        {{ user.first_name.0|default:user.username.0|upper }}
+                    </div>
+                    <div>
+                        <div class="fw-semibold">{{ user.get_full_name|default:user.username }}</div>
+                        <div class="text-muted small">{{ user.email|default:"No email" }}</div>
+                    </div>
+                </div>
+                <div class="small">
+                    <div class="d-flex justify-content-between py-1 border-bottom">
+                        <span class="text-muted">Username</span>
+                        <span class="fw-medium">{{ user.username }}</span>
+                    </div>
+                    <div class="d-flex justify-content-between py-1 border-bottom">
+                        <span class="text-muted">Roles</span>
+                        <span class="fw-medium text-end">
+                            {% for ur in roles %}{{ ur.role.name }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}
+                        </span>
+                    </div>
+                    <div class="d-flex justify-content-between py-1">
+                        <span class="text-muted">Modules active</span>
+                        <span class="fw-medium">{{ accessible_count }} / {{ total_modules }}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 col-lg-8">
+        <div class="row g-3">
+            <div class="col-12 col-md-6">
+                <a href="{% url 'account:module_requests' %}" class="text-decoration-none text-body">
+                    <div class="card border-0 shadow-sm h-100 settings-link-card">
+                        <div class="card-body d-flex align-items-start gap-3">
+                            <div class="bg-primary bg-opacity-10 rounded-3 p-3">
+                                <i class="fas fa-th-large text-primary fs-4"></i>
+                            </div>
+                            <div>
+                                <h5 class="fw-semibold mb-1">Request Modules</h5>
+                                <p class="text-muted small mb-2">Browse all ERP modules and request access to the ones you need.</p>
+                                {% if sent_count %}
+                                <span class="badge bg-primary">{{ sent_count }} request{% if sent_count != 1 %}s{% endif %} sent</span>
+                                {% else %}
+                                <span class="text-primary small fw-semibold">Open module catalog <i class="fas fa-arrow-right ms-1"></i></span>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </a>
+            </div>
+            <div class="col-12 col-md-6">
+                <a href="{% url 'hr:self_service_profile' %}" class="text-decoration-none text-body">
+                    <div class="card border-0 shadow-sm h-100 settings-link-card">
+                        <div class="card-body d-flex align-items-start gap-3">
+                            <div class="bg-success bg-opacity-10 rounded-3 p-3">
+                                <i class="fas fa-clock text-success fs-4"></i>
+                            </div>
+                            <div>
+                                <h5 class="fw-semibold mb-1">Clock in / out</h5>
+                                <p class="text-muted small mb-0">Record attendance from self-service.</p>
+                            </div>
+                        </div>
+                    </div>
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

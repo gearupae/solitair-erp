@@ -78,7 +78,7 @@ def _can_refresh(item_id: int) -> bool:
 def fetch_forecast_from_openai(item: Item, monthly_data: list[dict]) -> dict:
     from apps.core.ai_knowledge import get_ai_knowledge_prompt_block
     from apps.core.models import AiModuleKnowledge
-    from apps.core.openai_gateway import call_openai_raw, parse_openai_json
+    from apps.core.openai_gateway import call_openai_raw, get_default_ai_model, parse_openai_json
 
     knowledge = get_ai_knowledge_prompt_block(AiModuleKnowledge.MODULE_INVENTORY)
     prompt = (
@@ -91,7 +91,7 @@ def fetch_forecast_from_openai(item: Item, monthly_data: list[dict]) -> dict:
         f'{knowledge}'
     )
     body = {
-        'model': 'gpt-4o-mini',
+        'model': get_default_ai_model(),
         'messages': [
             {
                 'role': 'system',

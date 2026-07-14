@@ -96,7 +96,7 @@ def extract_bill_from_uploaded_file(uploaded: UploadedFile) -> dict:
             tmp.flush()
             text = extract_file_text_from_path(tmp.name, filename)
 
-    from apps.core.openai_gateway import call_openai_raw
+    from apps.core.openai_gateway import call_openai_raw, get_default_ai_model
     from apps.inventory.utils import get_openai_api_key, is_ai_available
 
     if not is_ai_available():
@@ -144,7 +144,7 @@ def extract_bill_from_uploaded_file(uploaded: UploadedFile) -> dict:
         user_parts.append({'type': 'text', 'text': text[:MAX_EXTRACT_CHARS]})
 
     body = {
-        'model': 'gpt-4o-mini',
+        'model': get_default_ai_model(),
         'messages': [
             {
                 'role': 'system',
