@@ -136,6 +136,24 @@ class ModulePermission(models.Model):
         return cls.MODULE_CHOICES
 
 
+class ModuleFeaturePermission(models.Model):
+    """Granular permissions for features within a module (e.g. Purchase submenus)."""
+    role = models.ForeignKey(Role, on_delete=models.CASCADE, related_name='feature_permissions')
+    module = models.CharField(max_length=50)
+    feature = models.CharField(max_length=50)
+    can_view = models.BooleanField(default=False)
+    can_create = models.BooleanField(default=False)
+    can_edit = models.BooleanField(default=False)
+    can_delete = models.BooleanField(default=False)
+
+    class Meta:
+        unique_together = ['role', 'module', 'feature']
+        ordering = ['role', 'module', 'feature']
+
+    def __str__(self):
+        return f"{self.role.name} - {self.module}:{self.feature}"
+
+
 class UserRole(BaseModel):
     """
     Links users to roles.

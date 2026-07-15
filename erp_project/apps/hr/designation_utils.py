@@ -213,3 +213,72 @@ def sync_all_employee_roles_from_designations(limit: int = 2000) -> int:
         if sync_erp_role_from_designation(emp):
             n += 1
     return n
+
+
+def resolve_designation_for_role_name(role_name, department=None):
+    """Find an active HR designation matching an ERP role display name."""
+    from .models import Designation
+
+    name = (role_name or '').strip()
+    if not name:
+        return None
+
+    qs = Designation.objects.filter(is_active=True, name__iexact=name)
+    if department:
+        match = qs.filter(department=department).first()
+        if match:
+            return match
+    return qs.first()
+
+
+def sync_designation_from_user_roles(employee):
+    """
+    Set employee.designation from linked user's ERP role(s).
+    Prefers specific roles over generic Manager when multiple roles exist.
+    Returns True when designation was set or updated.
+    """
+    if not employee or not employee.user_id:
+        return False
+
+    from apps.settings_app.models import UserRole
+
+    role_names = list(
+        UserRole.objects.filter(user=employee.user, is_active=True)
+        .select_related('role')
+        .order_by('role__name')
+        .values_list('role__name', flat=True)
+    )
+    if not role_names:
+        return False
+
+    ordered = [n for n in role_names if n.lower() != 'manager']
+    ordered.extend(n for n in role_names if n.lower() == 'manager')
+
+    chosen = None
+    for name in ordered:
+        chosen = resolve_designation_for_role_name(name, employee.department)
+        if chosen:
+            break
+
+    if not chosen or employee.designation_id == chosen.pk:
+        return False
+
+    employee.designation = chosen
+    employee.save(update_fields=['designation', 'updated_at'])
+    return True
+
+
+def sync_all_designations_from_user_roles(limit: int = 2000) -> int:
+    """Backfill employee.designation from ERP roles. Returns count updated."""
+    from .models import Employee
+
+    n = 0
+    qs = (
+        Employee.objects.filter(is_active=True, user__isnull=False)
+        .select_related('user', 'department', 'designation')
+        .order_by('pk')[:limit]
+    )
+    for emp in qs:
+        if sync_designation_from_user_roles(emp):
+            n += 1
+    return n

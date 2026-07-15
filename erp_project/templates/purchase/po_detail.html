@@ -128,6 +128,10 @@
                         <h6 class="text-muted mb-2">Expected Delivery</h6>
                         <p class="mb-0">{{ po.expected_delivery_date|date:"d/m/Y"|default:"-" }}</p>
                     </div>
+                    <div class="col-md-3">
+                        <h6 class="text-muted mb-2">Currency</h6>
+                        <p class="mb-0">{{ po.get_currency_display }}</p>
+                    </div>
                 </div>
             </div>
         </div>
@@ -178,15 +182,15 @@
                         <tfoot>
                             <tr>
                                 <td colspan="6" class="text-end">Subtotal:</td>
-                                <td class="text-end fw-medium">AED {{ po.subtotal|floatformat:2 }}</td>
+                                <td class="text-end fw-medium">{{ po.currency }} {{ po.subtotal|floatformat:2 }}</td>
                             </tr>
                             <tr>
                                 <td colspan="6" class="text-end">VAT:</td>
-                                <td class="text-end fw-medium">AED {{ po.vat_amount|floatformat:2 }}</td>
+                                <td class="text-end fw-medium">{{ po.currency }} {{ po.vat_amount|floatformat:2 }}</td>
                             </tr>
                             <tr>
                                 <td colspan="6" class="text-end fw-bold">Total:</td>
-                                <td class="text-end fw-bold">AED {{ po.total_amount|floatformat:2 }}</td>
+                                <td class="text-end fw-bold">{{ po.currency }} {{ po.total_amount|floatformat:2 }}</td>
                             </tr>
                         </tfoot>
                     </table>
@@ -269,16 +273,16 @@
                 <h6 class="text-muted mb-3">Summary</h6>
                 <div class="d-flex justify-content-between mb-2">
                     <span>Subtotal</span>
-                    <span>AED {{ po.subtotal|floatformat:2 }}</span>
+                    <span>{{ po.currency }} {{ po.subtotal|floatformat:2 }}</span>
                 </div>
                 <div class="d-flex justify-content-between mb-2">
                     <span>VAT</span>
-                    <span>AED {{ po.vat_amount|floatformat:2 }}</span>
+                    <span>{{ po.currency }} {{ po.vat_amount|floatformat:2 }}</span>
                 </div>
                 <hr>
                 <div class="d-flex justify-content-between">
                     <span class="fw-bold">Total</span>
-                    <span class="fw-bold">AED {{ po.total_amount|floatformat:2 }}</span>
+                    <span class="fw-bold">{{ po.currency }} {{ po.total_amount|floatformat:2 }}</span>
                 </div>
             </div>
         </div>

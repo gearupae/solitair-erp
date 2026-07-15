@@ -124,8 +124,6 @@
                             <th style="min-width:12rem">Description</th>
                             <th style="width:5rem">Qty</th>
                             <th style="width:6rem">Unit</th>
-                            <th style="width:7rem">Est. Price</th>
-                            <th style="width:6rem">Total</th>
                             <th style="width:3rem"></th>
                         </tr>
                     </thead>
@@ -167,13 +165,6 @@
                                 {% endif %}
                             </td>
                             <td>{{ item_form.unit }}</td>
-                            <td>
-                                {{ item_form.estimated_price }}
-                                {% if item_form.estimated_price.errors %}
-                                <div class="text-danger small">{{ item_form.estimated_price.errors|join:", " }}</div>
-                                {% endif %}
-                            </td>
-                            <td class="item-total align-middle">0.00</td>
                             <td class="text-center">
                                 {% if item_form.instance.pk %}
                                 <input type="checkbox" name="{{ item_form.prefix }}-DELETE" class="d-none delete-check"
@@ -192,19 +183,25 @@
     </div>
     
     <div class="card mb-4">
-        <div class="card-header"><h6 class="mb-0 fw-semibold">Attachments</h6></div>
+        <div class="card-header"><h6 class="mb-0 fw-semibold">Supporting documents</h6></div>
         <div class="card-body">
-            <input type="file" name="attachments" class="form-control" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png">
-            <small class="text-muted">You can select multiple files</small>
-            {% if object and object.attachments.exists %}
+            <input type="file" name="attachments" class="form-control" multiple accept=".doc,.docx,.jpg,.jpeg,.png">
+            <small class="text-muted">Optional specs, photos, or notes (Word or images). Vendor quotes (PDF/Excel) are added on the PR detail page after saving.</small>
+            {% if object %}
+            {% with supporting_attachments=object.attachments.all %}
+            {% if supporting_attachments %}
             <div class="mt-3">
-                <strong>Existing attachments:</strong>
+                <strong>Existing supporting documents:</strong>
                 <ul class="mb-0 mt-1">
-                    {% for att in object.attachments.all %}
+                    {% for att in supporting_attachments %}
+                    {% if att.kind == 'supporting' %}
                     <li><a href="{{ att.file.url }}" target="_blank">{{ att.filename|default:att.file.name }}</a></li>
+                    {% endif %}
                     {% endfor %}
                 </ul>
             </div>
+            {% endif %}
+            {% endwith %}
             {% endif %}
         </div>
     </div>
@@ -301,11 +298,10 @@ function isPrRowFilled(row) {
     if (!row || row.style.display === 'none') return false;
     const inv = (row.querySelector('.item-inventory-select')?.value || '').trim();
     const qty = parseFloat(row.querySelector('.item-qty')?.value || 0) || 0;
-    const cost = parseFloat(row.querySelector('.item-cost')?.value || 0) || 0;
     const brand = (row.querySelector('.item-brand')?.value || '').trim();
     const model = (row.querySelector('.item-model')?.value || '').trim();
     const desc = (row.querySelector('.item-description')?.value || '').trim();
-    return Boolean(inv) || qty > 0 || cost > 0 || brand || model || desc;
+    return Boolean(inv) || qty > 0 || brand || model || desc;
 }
 
 function isPrRowEmpty(row) {
@@ -344,17 +340,6 @@ function ensureTrailingEmptyRow() {
     }
 }
 
-function updateRowTotal(row) {
-    const qty = parseFloat(row.querySelector('.item-qty')?.value || 0) || 0;
-    const cost = parseFloat(row.querySelector('.item-cost')?.value || 0) || 0;
-    const total = (qty * cost).toFixed(2);
-    const totalCell = row.querySelector('.item-total');
-    if (totalCell) totalCell.textContent = total;
-    if (!suppressTrailingEmptyRow) {
-        ensureTrailingEmptyRow();
-    }
-}
-
 function applyInventoryDefaults(selectEl, row) {
     const id = parseInt(selectEl.value, 10);
     if (!id) return;
@@ -368,21 +353,15 @@ function applyInventoryDefaults(selectEl, row) {
     if (desc && !(desc.value || '').trim()) {
         desc.value = meta.name || meta.label || '';
     }
-    const cost = row.querySelector('.item-cost');
-    if (cost) {
-        const cur = parseFloat(cost.value);
-        if (!cur || cur === 0) {
-            const p = parseFloat(meta.purchase_price);
-            cost.value = (isNaN(p) ? 0 : p).toFixed(2);
-        }
-    }
     const unitSel = row.querySelector('select[name$="-unit"]');
     if (unitSel) {
         let u = (meta.unit || 'pcs').toLowerCase();
         if (!PR_UNIT_KEYS.has(u)) u = 'other';
         unitSel.value = u;
     }
-    updateRowTotal(row);
+    if (!suppressTrailingEmptyRow) {
+        ensureTrailingEmptyRow();
+    }
 }
 
 function buildInventorySelect(name, selectedId) {
@@ -406,8 +385,6 @@ function addItemRow() {
         <td><textarea name="items-${idx}-description" class="form-control form-control-sm item-description" rows="2" placeholder="Specs, notes…"></textarea></td>
         <td><input type="number" name="items-${idx}-quantity" class="form-control form-control-sm item-qty" value="0" step="1" min="0"></td>
         <td><select name="items-${idx}-unit" class="form-select form-select-sm"><option value="pcs">Pcs</option><option value="box">Box</option><option value="kg">Kg</option><option value="ltr">Ltr</option><option value="set">Set</option><option value="other">Other</option></select></td>
-        <td><input type="number" name="items-${idx}-estimated_price" class="form-control form-control-sm item-cost" value="0" step="0.01" min="0"></td>
-        <td class="item-total align-middle">0.00</td>
         <td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger" onclick="removeItemRow(this)"><i class="fas fa-times"></i></button></td>
     `;
     tbody.appendChild(newRow);
@@ -417,8 +394,8 @@ function addItemRow() {
     initPrInventorySelect2(invSel);
     formCount++;
     document.getElementById('id_items-TOTAL_FORMS').value = formCount;
-    newRow.querySelectorAll('.item-qty, .item-cost').forEach(el => el.addEventListener('input', () => updateRowTotal(newRow)));
-    updateRowTotal(newRow);
+    newRow.querySelectorAll('.item-qty').forEach(el => el.addEventListener('input', () => ensureTrailingEmptyRow()));
+    ensureTrailingEmptyRow();
 }
 
 function removeItemRow(btn) {
@@ -457,10 +434,8 @@ $(function() {
         }
     });
     itemsBody.addEventListener('input', function(e) {
-        if (e.target.matches('.item-qty, .item-cost, .item-brand, .item-model, .item-description')) {
-            if (e.target.matches('.item-qty, .item-cost')) {
-                updateRowTotal(e.target.closest('tr'));
-            } else if (!suppressTrailingEmptyRow) {
+        if (e.target.matches('.item-qty, .item-brand, .item-model, .item-description')) {
+            if (!suppressTrailingEmptyRow) {
                 ensureTrailingEmptyRow();
             }
         }

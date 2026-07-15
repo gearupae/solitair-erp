@@ -5,6 +5,9 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from django.shortcuts import redirect
 from django.views.generic import TemplateView
 
+from apps.core.utils import PermissionChecker
+from apps.hr.models import Employee
+from apps.hr.models_extended import EmployeeHRProfile
 from apps.purchase.email_outbound import email_sent_via_console, outgoing_mail_hint
 from apps.settings_app.models import CompanySettings, ModuleAccessRequest, ModulePermission, UserRole
 from apps.settings_app.module_catalog import get_module_catalog
@@ -72,6 +75,37 @@ class UserSettingsView(LoginRequiredMixin, TemplateView):
             'sent_count': sent_count,
             'accessible_count': accessible_count,
             'total_modules': len(catalog),
+        })
+        return context
+
+
+class MyProfileView(LoginRequiredMixin, TemplateView):
+    template_name = 'account/my_profile.html'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        user = self.request.user
+        roles = UserRole.objects.filter(user=user, is_active=True).select_related('role')
+        employee = (
+            Employee.objects.filter(user=user, is_active=True)
+            .select_related('department', 'designation', 'company')
+            .first()
+        )
+        leave_context = None
+        hr_profile = None
+        if employee:
+            from apps.hr.leave_context_service import build_employee_leave_context_dict
+
+            leave_context = build_employee_leave_context_dict(employee)
+            hr_profile = EmployeeHRProfile.objects.filter(employee=employee).first()
+
+        context.update({
+            'title': 'My Profile',
+            'roles': roles,
+            'employee': employee,
+            'leave_context': leave_context,
+            'hr_profile': hr_profile,
+            'can_link_help': user.is_superuser or PermissionChecker.has_permission(user, 'hr', 'edit'),
         })
         return context
 

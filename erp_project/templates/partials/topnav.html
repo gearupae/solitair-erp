@@ -81,7 +81,7 @@
 <nav class="navbar navbar-expand-lg navbar-dark bg-dark sticky-top">
     <div class="container-fluid px-1">
         <!-- Brand -->
-        <a class="navbar-brand d-flex align-items-center" href="{% url 'dashboard' %}">
+        <a class="navbar-brand d-flex align-items-center" href="{% if app_minimal_nav %}{{ user_home_url }}{% else %}{% url 'dashboard' %}{% endif %}">
             <img src="{% static 'img/logo.png' %}" alt="ERP" height="36">
         </a>
         
@@ -94,7 +94,7 @@
         <div class="collapse navbar-collapse" id="mainNavbar">
             <ul class="navbar-nav me-auto mb-2 mb-lg-0">
                 <!-- CRM -->
-                {% if is_superuser or 'crm' in user_permissions %}
+                {% if not app_minimal_nav %}{% if is_superuser or 'crm' in user_permissions %}
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle {% if 'crm' in request.path or '/reports/leads' in request.path or '/reports/lead-forecasting' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
                         <i class="fas fa-users me-1"></i>CRM
@@ -119,10 +119,10 @@
                         </li>
                     </ul>
                 </li>
-                {% endif %}
+                {% endif %}{% endif %}
                 
                 <!-- Sales -->
-                {% if is_superuser or 'sales' in user_permissions %}
+                {% if not app_minimal_nav %}{% if is_superuser or 'sales' in user_permissions %}
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle {% if 'sales' in request.path and '/sales/invoices' not in request.path or '/reports/sales' in request.path or '/reports/sales-forecasting' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
                         <i class="fas fa-shopping-cart me-1"></i>Sales
@@ -152,10 +152,10 @@
                         </li>
                     </ul>
                 </li>
-                {% endif %}
+                {% endif %}{% endif %}
                 
                 <!-- Projects -->
-                {% if 'projects' not in nav_hidden_modules %}{% if is_superuser or 'projects' in user_permissions %}
+                {% if not app_minimal_nav %}{% if 'projects' not in nav_hidden_modules %}{% if is_superuser or 'projects' in user_permissions %}
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle {% if 'projects' in request.path or '/reports/projects/' in request.path or '/reports/project-forecasting' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
                         <i class="fas fa-project-diagram me-1"></i>Projects
@@ -197,7 +197,7 @@
                         </li>
                     </ul>
                 </li>
-                {% endif %}{% endif %}
+                {% endif %}{% endif %}{% endif %}
                 
                 <!-- Purchase (includes Service Requests) -->
                 {% if is_superuser or 'purchase' in user_permissions or 'service_request' in user_permissions %}
@@ -206,61 +206,81 @@
                         <i class="fas fa-truck me-1"></i>Purchase
                     </a>
                     <ul class="dropdown-menu dropdown-menu-dark">
+                        {% if purchase_feature_access.vendors.view %}
                         <li>
                             <a class="dropdown-item" href="{% url 'purchase:vendor_list' %}">
                                 <i class="fas fa-industry me-2"></i>Vendors
                             </a>
                         </li>
+                        {% endif %}
+                        {% if purchase_feature_access.vendors.view or purchase_feature_access.pr.view %}
                         <li><hr class="dropdown-divider"></li>
+                        {% endif %}
+                        {% if purchase_feature_access.pr.view %}
                         <li>
                             <a class="dropdown-item" href="{% url 'purchase:pr_list' %}">
                                 <i class="fas fa-clipboard-list me-2"></i>Purchase Requests
                             </a>
                         </li>
-                        {% if is_superuser or 'service_request' in user_permissions %}
+                        {% endif %}
+                        {% if is_superuser or 'purchase' in user_permissions or 'service_request' in user_permissions %}
                         <li>
                             <a class="dropdown-item" href="{% url 'service_request:sr_list' %}">
                                 <i class="fas fa-tools me-2"></i>Service Requests
                             </a>
                         </li>
                         {% endif %}
+                        {% if purchase_feature_access.po.view %}
                         <li>
                             <a class="dropdown-item" href="{% url 'purchase:po_list' %}">
                                 <i class="fas fa-file-alt me-2"></i>Purchase Orders
                             </a>
                         </li>
+                        {% endif %}
+                        {% if purchase_feature_access.grn.view %}
                         <li>
                             <a class="dropdown-item" href="{% url 'purchase:grn_list' %}">
                                 <i class="fas fa-dolly-flatbed me-2"></i>Goods Receipt Notes
                             </a>
                         </li>
+                        {% endif %}
+                        {% if purchase_feature_access.rfq.view %}
                         <li>
                             <a class="dropdown-item" href="{% url 'purchase:rfq_list' %}">
                                 <i class="fas fa-balance-scale me-2"></i>RFQ / Competitive Analysis
                             </a>
                         </li>
+                        {% endif %}
+                        {% if purchase_feature_access.bills.view %}
                         <li>
                             <a class="dropdown-item" href="{% url 'purchase:bill_list' %}">
                                 <i class="fas fa-file-invoice-dollar me-2"></i>Vendor Bills
                             </a>
                         </li>
+                        {% endif %}
+                        {% if purchase_feature_access.expense_claims.view or purchase_feature_access.recurring_expenses.view %}
                         <li><hr class="dropdown-divider"></li>
+                        {% endif %}
+                        {% if purchase_feature_access.expense_claims.view %}
                         <li>
                             <a class="dropdown-item" href="{% url 'purchase:expenseclaim_list' %}">
                                 <i class="fas fa-receipt me-2"></i>Expense Claims
                             </a>
                         </li>
+                        {% endif %}
+                        {% if purchase_feature_access.recurring_expenses.view %}
                         <li>
                             <a class="dropdown-item" href="{% url 'purchase:recurringexpense_list' %}">
                                 <i class="fas fa-sync-alt me-2"></i>Recurring Expenses
                             </a>
                         </li>
+                        {% endif %}
                     </ul>
                 </li>
                 {% endif %}
                 
                 <!-- Documents (includes Contracts as submenu) -->
-                {% if 'documents' not in nav_hidden_modules %}{% if is_superuser or 'documents' in user_permissions or 'contracts' in user_permissions %}
+                {% if not app_minimal_nav %}{% if 'documents' not in nav_hidden_modules %}{% if is_superuser or 'documents' in user_permissions or 'contracts' in user_permissions %}
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle {% if 'documents' in request.path or '/contracts/' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
                         <i class="fas fa-folder-open me-1"></i>Doc
@@ -290,10 +310,10 @@
                         {% endif %}
                     </ul>
                 </li>
-                {% endif %}{% endif %}
+                {% endif %}{% endif %}{% endif %}
                 
                 <!-- Finance (with nested Reports submenu) -->
-                {% if 'finance' not in nav_hidden_modules %}{% if is_superuser or 'finance' in user_permissions %}
+                {% if not app_minimal_nav %}{% if 'finance' not in nav_hidden_modules %}{% if is_superuser or 'finance' in user_permissions %}
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle {% if 'finance' in request.path or '/sales/invoices' in request.path or '/property/pdc' in request.path or '/property/reconciliation' in request.path or '/property/reports/' in request.path or '/reports/ai-finance' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
                         <i class="fas fa-coins me-1"></i>Finance
@@ -433,15 +453,32 @@
                         </li>
                     </ul>
                 </li>
-                {% endif %}{% endif %}
+                {% endif %}{% endif %}{% endif %}
                 
                 <!-- HR -->
                 {% if 'hr' not in nav_hidden_modules %}{% if is_superuser or 'hr' in user_permissions %}
                 <li class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle {% if '/hr/' in request.path or '/recruitment/' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
+                    <a class="nav-link dropdown-toggle {% if '/hr/employees' in request.path or '/hr/departments' in request.path or '/hr/designations' in request.path or not app_minimal_nav and '/hr/' in request.path or not app_minimal_nav and '/recruitment/' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
                         <i class="fas fa-user-friends me-1"></i>HR
                     </a>
                     <ul class="dropdown-menu dropdown-menu-dark" data-bs-auto-close="outside">
+                        {% if app_minimal_nav %}
+                        <li>
+                            <a class="dropdown-item {% if '/hr/employees' in request.path %}active{% endif %}" href="{% url 'hr:employee_list' %}">
+                                <i class="fas fa-id-card me-2"></i>Employees
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item {% if '/hr/departments' in request.path %}active{% endif %}" href="{% url 'hr:department_list' %}">
+                                <i class="fas fa-sitemap me-2"></i>Departments
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item {% if '/hr/designations' in request.path %}active{% endif %}" href="{% url 'hr:designation_list' %}">
+                                <i class="fas fa-user-tag me-2"></i>Designations
+                            </a>
+                        </li>
+                        {% else %}
                         <li>
                             <a class="dropdown-item" href="{% url 'hr:dashboard' %}">
                                 <i class="fas fa-chart-line me-2"></i>Dashboard
@@ -550,12 +587,13 @@
                                 </a>
                             </div>
                         </li>
+                        {% endif %}
                     </ul>
                 </li>
                 {% endif %}{% endif %}
                 
                 <!-- Assets (Fixed Assets + Fleet) -->
-                {% if 'assets' not in nav_hidden_modules %}{% if is_superuser or 'assets' in user_permissions or 'finance' in user_permissions or 'fleet' in user_permissions %}
+                {% if not app_minimal_nav %}{% if 'assets' not in nav_hidden_modules %}{% if is_superuser or 'assets' in user_permissions or 'finance' in user_permissions or 'fleet' in user_permissions %}
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle {% if 'assets' in request.path or '/fleet/' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
                         <i class="fas fa-building me-1"></i>Assets
@@ -602,10 +640,10 @@
                         {% endif %}
                     </ul>
                 </li>
-                {% endif %}{% endif %}
+                {% endif %}{% endif %}{% endif %}
                 
                 <!-- Inventory -->
-                {% if is_superuser or 'inventory' in user_permissions %}
+                {% if not app_minimal_nav %}{% if is_superuser or 'inventory' in user_permissions %}
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle {% if 'inventory' in request.path or 'stock-take' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
                         <i class="fas fa-boxes me-1"></i>Inventory
@@ -707,10 +745,10 @@
                         </li>
                     </ul>
                 </li>
-                {% endif %}
+                {% endif %}{% endif %}
                 
                 <!-- Reports -->
-                {% if is_superuser or 'reports' in user_permissions %}
+                {% if not app_minimal_nav %}{% if is_superuser or 'reports' in user_permissions %}
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle {% if request.path == '/reports/' or request.path == '/reports' %}active{% endif %}" href="#" data-bs-toggle="dropdown">
                         <i class="fas fa-chart-line me-1"></i>Reports
@@ -723,27 +761,28 @@
                         </li>
                     </ul>
                 </li>
-                {% endif %}
+                {% endif %}{% endif %}
                 
                 <!-- Support -->
-                {% if is_superuser or 'support' in user_permissions %}
+                {% if not app_minimal_nav %}{% if is_superuser or 'support' in user_permissions %}
                 <li class="nav-item">
                     <a class="nav-link {% if '/support/' in request.path %}active{% endif %}" href="{% url 'support:ticket_list' %}">
                         <i class="fas fa-life-ring me-1"></i>Support
                     </a>
                 </li>
-                {% endif %}
+                {% endif %}{% endif %}
             </ul>
             
             <!-- Right Side -->
             <ul class="navbar-nav">
                 <!-- Settings Dropdown (Icon only to save space) -->
-                {% if user.is_authenticated %}
+                {% if user.is_authenticated %}{% if not app_minimal_nav or is_superuser %}
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle {% if 'settings' in request.path or '/account/' in request.path or '/mes/' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown" title="Settings">
                         <i class="fas fa-cog"></i>
                     </a>
                     <ul class="dropdown-menu dropdown-menu-dark dropdown-menu-end settings-dropdown">
+                        {% if not app_minimal_nav %}
                         <li>
                             <a class="dropdown-item {% if '/account/' in request.path and '/account/modules' not in request.path %}active{% endif %}" href="{% url 'account:settings' %}">
                                 <i class="fas fa-user-cog me-2"></i>My Settings
@@ -754,9 +793,10 @@
                                 <i class="fas fa-th-large me-2"></i>Request Modules
                             </a>
                         </li>
+                        {% endif %}
                         {% if is_superuser or 'settings' in user_permissions or can_access_alerts_hub %}
                         <li><hr class="dropdown-divider"></li>
-                        {% if can_access_alerts_hub %}
+                        {% if can_access_alerts_hub and not app_minimal_nav %}
                         <li>
                             <a class="dropdown-item {% if '/settings/alerts' in request.path %}active{% endif %}" href="{% url 'settings:alerts_hub' %}">
                                 <i class="fas fa-bell me-2"></i>Alerts
@@ -782,6 +822,7 @@
                                 <i class="fas fa-building me-2"></i>Company
                             </a>
                         </li>
+                        {% if not app_minimal_nav %}
                         <li>
                             <a class="dropdown-item" href="{% url 'settings:crm_kanban' %}">
                                 <i class="fas fa-columns me-2"></i>CRM Kanban
@@ -837,9 +878,10 @@
                         </li>
                         {% endif %}
                         {% endif %}
+                        {% endif %}
                     </ul>
                 </li>
-                {% endif %}
+                {% endif %}{% endif %}
                 
                 <!-- Notifications (in-app; see apps.settings_app.Notification) -->
                 {% if user.is_authenticated %}
@@ -899,10 +941,16 @@
                         </li>
                         <li><hr class="dropdown-divider"></li>
                         <li>
+                            <a class="dropdown-item" href="{% url 'account:my_profile' %}">
+                                <i class="fas fa-user me-2"></i>My Profile
+                            </a>
+                        </li>
+                        <li>
                             <a class="dropdown-item" href="{% url 'account:settings' %}">
                                 <i class="fas fa-user-cog me-2"></i>My Settings
                             </a>
                         </li>
+                        {% if not app_minimal_nav %}
                         <li>
                             <a class="dropdown-item" href="{% url 'account:module_requests' %}">
                                 <i class="fas fa-th-large me-2"></i>Request Modules
@@ -913,6 +961,7 @@
                                 <i class="fas fa-clock me-2"></i>Clock in / out
                             </a>
                         </li>
+                        {% endif %}
                         <li><hr class="dropdown-divider"></li>
                         <li>
                             <form method="post" action="{% url 'logout' %}" class="m-0">
@@ -929,6 +978,7 @@
     </div>
 </nav>
 
+{% if not app_minimal_nav %}
 <!-- Reports Panel (Finance flyout) -->
 <div id="reportsPanel" class="nav-reports-panel">
     <h6 class="dropdown-header">Financial Statements</h6>
@@ -1164,6 +1214,7 @@
         <i class="fas fa-video me-2"></i>Actual
     </a>
 </div>
+{% endif %}
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {

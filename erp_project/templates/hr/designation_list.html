@@ -12,6 +12,12 @@
 
 {% if can_create %}
 <div id="desigForm" class="inline-form-container">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="mb-0 fw-semibold">
+            <i class="fas fa-id-badge me-2 text-primary"></i>Add designation
+        </h5>
+        <button type="button" class="btn-close" aria-label="Close" onclick="cancelInlineForm('desigForm')"></button>
+    </div>
     <form method="post">{% csrf_token %}
         <div class="row g-3">
             <div class="col-md-5">
@@ -41,6 +47,7 @@
                         <th>Department</th>
                         <th>Employees</th>
                         <th>ERP role</th>
+                        {% if can_delete %}<th class="text-end">Actions</th>{% endif %}
                     </tr>
                 </thead>
                 <tbody>
@@ -57,9 +64,21 @@
                             <span class="badge bg-warning text-dark">Pending</span>
                             {% endif %}
                         </td>
+                        {% if can_delete %}
+                        <td class="text-end text-nowrap">
+                            {% if d.employee_count == 0 %}
+                            <form method="post" action="{% url 'hr:designation_delete' d.pk %}" class="d-inline" onsubmit="return confirm('Delete designation {{ d.name }}?');">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-action btn-outline-danger btn-sm" title="Delete"><i class="fas fa-trash"></i></button>
+                            </form>
+                            {% else %}
+                            <span class="text-muted small" title="Reassign employees first">In use</span>
+                            {% endif %}
+                        </td>
+                        {% endif %}
                     </tr>
                     {% empty %}
-                    <tr><td colspan="4" class="text-muted py-4 text-center">No designations yet. Add one above or create ERP roles under Settings → Roles (designations sync from roles on the employee form).</td></tr>
+                    <tr><td colspan="{% if can_delete %}5{% else %}4{% endif %}" class="text-muted py-4 text-center">No designations yet. Add one above or create ERP roles under Settings → Roles (designations sync from roles on the employee form).</td></tr>
                     {% endfor %}
                 </tbody>
             </table>

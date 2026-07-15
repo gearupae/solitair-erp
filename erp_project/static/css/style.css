@@ -317,6 +317,7 @@ body {
     margin-bottom: 1.5rem;
     display: none;
     border: 1px solid var(--gray-200);
+    scroll-margin-top: calc(var(--navbar-height) + 1.5rem);
 }
 
 .inline-form-container.show {

@@ -1,0 +1,307 @@
+{% extends 'base.html' %}
+
+{% block extra_css %}
+<style>
+.hr-emp-photo {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    object-fit: cover;
+    flex-shrink: 0;
+}
+.hr-emp-photo--lg { width: 88px; height: 88px; }
+.hr-emp-photo--placeholder {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #e9ecef;
+    color: #6c757d;
+    border: 1px solid #dee2e6;
+}
+.profile-link-card {
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.profile-link-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.08) !important;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header mb-4">
+    <h4 class="mb-1 fw-bold">{{ title }}</h4>
+    <p class="text-muted mb-0">Your account and employment details.</p>
+</div>
+
+<div class="row g-4 mb-4">
+    <div class="col-12 col-lg-4">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body text-center">
+                {% if employee %}
+                <div class="mb-3">
+                    {% include 'hr/includes/employee_photo.html' with employee=employee size='lg' %}
+                </div>
+                <h5 class="fw-semibold mb-1">{{ employee.full_name }}</h5>
+                <p class="text-muted small mb-2">{{ employee.employee_code }}</p>
+                {% if employee.status %}
+                <span class="badge {% if employee.status == 'active' %}bg-success{% else %}bg-secondary{% endif %}">
+                    {{ employee.get_status_display }}
+                </span>
+                {% endif %}
+                {% else %}
+                <div class="bg-primary text-white rounded-circle d-inline-flex align-items-center justify-content-center mb-3" style="width: 88px; height: 88px; font-size: 2rem;">
+                    {{ user.first_name.0|default:user.username.0|upper }}
+                </div>
+                <h5 class="fw-semibold mb-1">{{ user.get_full_name|default:user.username }}</h5>
+                <p class="text-muted small mb-0">{{ user.email|default:"No email" }}</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 col-lg-8">
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-white">
+                <h6 class="mb-0 fw-semibold">Account</h6>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <h6 class="text-muted mb-1 small">Full name</h6>
+                        <p class="mb-0">{{ user.get_full_name|default:user.username }}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <h6 class="text-muted mb-1 small">Username</h6>
+                        <p class="mb-0">{{ user.username }}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <h6 class="text-muted mb-1 small">Email</h6>
+                        <p class="mb-0">{{ user.email|default:"—" }}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <h6 class="text-muted mb-1 small">Roles</h6>
+                        <p class="mb-0">
+                            {% for ur in roles %}{{ ur.role.name }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {% if employee %}
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-white">
+                <h6 class="mb-0 fw-semibold">Employment</h6>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <h6 class="text-muted mb-1 small">Department</h6>
+                        <p class="mb-0">{{ employee.department.name|default:"—" }}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <h6 class="text-muted mb-1 small">Designation</h6>
+                        <p class="mb-0">{{ employee.designation.name|default:"—" }}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <h6 class="text-muted mb-1 small">Company</h6>
+                        <p class="mb-0">{{ employee.company.name|default:"—" }}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <h6 class="text-muted mb-1 small">Location</h6>
+                        <p class="mb-0">{{ employee.get_location_display }}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <h6 class="text-muted mb-1 small">Joining date</h6>
+                        <p class="mb-0">{{ employee.date_of_joining|date:"d/m/Y"|default:"—" }}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <h6 class="text-muted mb-1 small">Phone</h6>
+                        <p class="mb-0">{{ employee.phone|default:"—" }}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <h6 class="text-muted mb-1 small">Date of birth</h6>
+                        <p class="mb-0">{{ employee.date_of_birth|date:"d/m/Y"|default:"—" }}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <h6 class="text-muted mb-1 small">Gender</h6>
+                        <p class="mb-0">{{ employee.get_gender_display|default:"—" }}</p>
+                    </div>
+                    {% if hr_profile and hr_profile.nationality_display %}
+                    <div class="col-md-6">
+                        <h6 class="text-muted mb-1 small">Nationality</h6>
+                        <p class="mb-0">{{ hr_profile.nationality_display }}</p>
+                    </div>
+                    {% endif %}
+                    {% if employee.is_in_probation %}
+                    <div class="col-12">
+                        <span class="badge bg-warning text-dark">In probation</span>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        {% if employee.additional_contact_name or employee.additional_contact_phone or employee.additional_contact_email %}
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-white">
+                <h6 class="mb-0 fw-semibold">Emergency contact</h6>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <h6 class="text-muted mb-1 small">Name</h6>
+                        <p class="mb-0">{{ employee.additional_contact_name|default:"—" }}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <h6 class="text-muted mb-1 small">Phone</h6>
+                        <p class="mb-0">{{ employee.additional_contact_phone|default:"—" }}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <h6 class="text-muted mb-1 small">Email</h6>
+                        <p class="mb-0">{{ employee.additional_contact_email|default:"—" }}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <h6 class="text-muted mb-1 small">Location</h6>
+                        <p class="mb-0">{{ employee.additional_contact_location|default:"—" }}</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if leave_context and leave_context.leave_balances %}
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <h6 class="mb-0 fw-semibold">Leave balances</h6>
+                <a href="{% url 'hr:self_service_leave' %}" class="small">View leave</a>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th class="ps-3">Leave type</th>
+                                <th class="text-end">Used</th>
+                                <th class="text-end pe-3">Remaining</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for bal in leave_context.leave_balances %}
+                            {% if bal.eligible %}
+                            <tr>
+                                <td class="ps-3">{{ bal.leave_type_name }}</td>
+                                <td class="text-end">{{ bal.used_days }}</td>
+                                <td class="text-end pe-3 fw-medium">{{ bal.remaining_days }}</td>
+                            </tr>
+                            {% endif %}
+                            {% empty %}
+                            <tr>
+                                <td colspan="3" class="text-muted ps-3 py-3">No leave balances configured.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+        {% else %}
+        <div class="alert alert-info mb-4">
+            <p class="mb-2">Your login is not linked to an employee record yet.</p>
+            <p class="mb-0 small text-muted">Ask HR to open <strong>HR → Employees → your name → Edit</strong> and set the <strong>ERP login</strong> field to your username.</p>
+            {% if can_link_help %}
+            <p class="mb-0 mt-3"><a href="{% url 'hr:employee_list' %}" class="btn btn-sm btn-outline-primary">Open employee list</a></p>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="row g-3">
+    <div class="col-12">
+        <h6 class="text-muted text-uppercase small fw-semibold mb-2">Quick links</h6>
+    </div>
+    <div class="col-12 col-md-6 col-lg-4">
+        <a href="{% url 'account:settings' %}" class="text-decoration-none text-body">
+            <div class="card border-0 shadow-sm h-100 profile-link-card">
+                <div class="card-body d-flex align-items-center gap-3">
+                    <div class="bg-primary bg-opacity-10 rounded-3 p-3"><i class="fas fa-user-cog text-primary"></i></div>
+                    <div>
+                        <div class="fw-semibold">My Settings</div>
+                        <div class="text-muted small">Module access & account</div>
+                    </div>
+                </div>
+            </div>
+        </a>
+    </div>
+    {% if employee %}
+    <div class="col-12 col-md-6 col-lg-4">
+        <a href="{% url 'hr:self_service_profile' %}" class="text-decoration-none text-body">
+            <div class="card border-0 shadow-sm h-100 profile-link-card">
+                <div class="card-body d-flex align-items-center gap-3">
+                    <div class="bg-success bg-opacity-10 rounded-3 p-3"><i class="fas fa-clock text-success"></i></div>
+                    <div>
+                        <div class="fw-semibold">Clock in / out</div>
+                        <div class="text-muted small">Record attendance</div>
+                    </div>
+                </div>
+            </div>
+        </a>
+    </div>
+    <div class="col-12 col-md-6 col-lg-4">
+        <a href="{% url 'hr:attendance_records_self' %}" class="text-decoration-none text-body">
+            <div class="card border-0 shadow-sm h-100 profile-link-card">
+                <div class="card-body d-flex align-items-center gap-3">
+                    <div class="bg-info bg-opacity-10 rounded-3 p-3"><i class="fas fa-calendar-check text-info"></i></div>
+                    <div>
+                        <div class="fw-semibold">My attendance</div>
+                        <div class="text-muted small">View attendance history</div>
+                    </div>
+                </div>
+            </div>
+        </a>
+    </div>
+    <div class="col-12 col-md-6 col-lg-4">
+        <a href="{% url 'hr:self_service_payslips' %}" class="text-decoration-none text-body">
+            <div class="card border-0 shadow-sm h-100 profile-link-card">
+                <div class="card-body d-flex align-items-center gap-3">
+                    <div class="bg-warning bg-opacity-10 rounded-3 p-3"><i class="fas fa-file-invoice-dollar text-warning"></i></div>
+                    <div>
+                        <div class="fw-semibold">My payslips</div>
+                        <div class="text-muted small">Download salary slips</div>
+                    </div>
+                </div>
+            </div>
+        </a>
+    </div>
+    <div class="col-12 col-md-6 col-lg-4">
+        <a href="{% url 'hr:self_service_documents' %}" class="text-decoration-none text-body">
+            <div class="card border-0 shadow-sm h-100 profile-link-card">
+                <div class="card-body d-flex align-items-center gap-3">
+                    <div class="bg-secondary bg-opacity-10 rounded-3 p-3"><i class="fas fa-id-card text-secondary"></i></div>
+                    <div>
+                        <div class="fw-semibold">My documents</div>
+                        <div class="text-muted small">Visa & passport expiry</div>
+                    </div>
+                </div>
+            </div>
+        </a>
+    </div>
+    <div class="col-12 col-md-6 col-lg-4">
+        <a href="{% url 'hr:self_service_leave' %}" class="text-decoration-none text-body">
+            <div class="card border-0 shadow-sm h-100 profile-link-card">
+                <div class="card-body d-flex align-items-center gap-3">
+                    <div class="bg-danger bg-opacity-10 rounded-3 p-3"><i class="fas fa-umbrella-beach text-danger"></i></div>
+                    <div>
+                        <div class="fw-semibold">My leave</div>
+                        <div class="text-muted small">Apply and track leave</div>
+                    </div>
+                </div>
+            </div>
+        </a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

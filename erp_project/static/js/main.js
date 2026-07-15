@@ -31,7 +31,9 @@ function toggleInlineForm(formId) {
     if (form) {
         form.classList.toggle('show');
         if (form.classList.contains('show')) {
-            form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            const navOffset = 72;
+            const top = form.getBoundingClientRect().top + window.pageYOffset - navOffset;
+            window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
             // Focus first input
             const firstInput = form.querySelector('input:not([type="hidden"]), select, textarea');
             if (firstInput) {

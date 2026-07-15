@@ -402,6 +402,10 @@
                         <span class="addr-to-detail-label">Status</span>
                         <span class="addr-to-detail-value">{{ po.get_status_display }}</span>
                     </div>
+                    <div class="addr-to-detail-row">
+                        <span class="addr-to-detail-label">Currency</span>
+                        <span class="addr-to-detail-value">{{ currency }}</span>
+                    </div>
                     {% if po.vendor.vendor_number %}
                     <div class="addr-to-detail-row">
                         <span class="addr-to-detail-label">Supplier ID</span>
@@ -457,7 +461,7 @@
                     <th class="text-right" style="width: 100px;">Unit Price</th>
                     <th class="text-center" style="width: 60px;">VAT %</th>
                     <th class="text-right" style="width: 90px;">VAT Amt</th>
-                    <th class="text-right" style="width: 110px;">Total (AED)</th>
+                    <th class="text-right" style="width: 110px;">Total ({{ currency }})</th>
                 </tr>
             </thead>
             <tbody>
@@ -483,21 +487,21 @@
             <div class="totals-table">
                 <div class="totals-row subtotal">
                     <span class="totals-label">Subtotal (excl. VAT)</span>
-                    <span class="totals-value">AED {{ po.subtotal|floatformat:2 }}</span>
+                    <span class="totals-value">{{ currency }} {{ po.subtotal|floatformat:2 }}</span>
                 </div>
                 {% for rate, amounts in vat_summary.items %}
                 <div class="totals-row vat-row">
                     <span class="totals-label">VAT @ {{ rate|floatformat:0 }}%</span>
-                    <span class="totals-value">AED {{ amounts.vat|floatformat:2 }}</span>
+                    <span class="totals-value">{{ currency }} {{ amounts.vat|floatformat:2 }}</span>
                 </div>
                 {% endfor %}
                 <div class="totals-row">
                     <span class="totals-label">Total VAT</span>
-                    <span class="totals-value">AED {{ po.vat_amount|floatformat:2 }}</span>
+                    <span class="totals-value">{{ currency }} {{ po.vat_amount|floatformat:2 }}</span>
                 </div>
                 <div class="totals-row total">
                     <span class="totals-label">Grand total</span>
-                    <span class="totals-value">AED {{ po.total_amount|floatformat:2 }}</span>
+                    <span class="totals-value">{{ currency }} {{ po.total_amount|floatformat:2 }}</span>
                 </div>
             </div>
         </div>
@@ -522,7 +526,7 @@
                 {% if po.terms_and_conditions %}
                 {{ po.terms_and_conditions|linebreaks }}
                 {% else %}
-                <strong>Currency:</strong> UAE Dirham (AED)
+                <strong>Currency:</strong> {{ currency_label }}
                 {% if po.vendor.payment_terms %}<br><strong>Payment terms (supplier):</strong> {{ po.vendor.payment_terms }}{% endif %}
                 {% if company.email %}<br><strong>Buyer contact:</strong> {{ company.email }}{% endif %}
                 {% endif %}

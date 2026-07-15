@@ -31,16 +31,6 @@ def build_pr_pdf_context(request, pr):
     """Context dict for purchase/pr_pdf.html."""
     company = CompanySettings.get_settings()
 
-    try:
-        amount_whole = int(pr.total_amount)
-        amount_decimal = int((pr.total_amount - amount_whole) * 100)
-        amount_words = _number_to_words(amount_whole)
-        if amount_decimal > 0:
-            amount_words += f' and {amount_decimal}/100'
-        amount_words += ' Dirhams Only'
-    except Exception:
-        amount_words = ''
-
     logo_absolute_url = ''
     if company.logo:
         logo_absolute_url = request.build_absolute_uri(company.logo.url)
@@ -55,7 +45,6 @@ def build_pr_pdf_context(request, pr):
     return {
         'pr': pr,
         'company': company,
-        'amount_words': amount_words,
         'logo_absolute_url': logo_absolute_url,
         'pdf_image_1_url': pdf_image_1_url,
         'pdf_image_2_url': pdf_image_2_url,

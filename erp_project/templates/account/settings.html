@@ -56,6 +56,21 @@
     <div class="col-12 col-lg-8">
         <div class="row g-3">
             <div class="col-12 col-md-6">
+                <a href="{% url 'account:my_profile' %}" class="text-decoration-none text-body">
+                    <div class="card border-0 shadow-sm h-100 settings-link-card">
+                        <div class="card-body d-flex align-items-start gap-3">
+                            <div class="bg-secondary bg-opacity-10 rounded-3 p-3">
+                                <i class="fas fa-user text-secondary fs-4"></i>
+                            </div>
+                            <div>
+                                <h5 class="fw-semibold mb-1">My Profile</h5>
+                                <p class="text-muted small mb-0">View your employment details, leave balances, and self-service links.</p>
+                            </div>
+                        </div>
+                    </div>
+                </a>
+            </div>
+            <div class="col-12 col-md-6">
                 <a href="{% url 'account:module_requests' %}" class="text-decoration-none text-body">
                     <div class="card border-0 shadow-sm h-100 settings-link-card">
                         <div class="card-body d-flex align-items-start gap-3">

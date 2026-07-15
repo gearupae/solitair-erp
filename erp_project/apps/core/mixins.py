@@ -5,6 +5,7 @@ from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.contrib import messages
 from django.shortcuts import redirect
 from apps.core.utils import PermissionChecker
+from apps.core.nav_config import get_user_home_url, minimal_nav_enabled
 
 
 class PermissionRequiredMixin(LoginRequiredMixin, UserPassesTestMixin):
@@ -34,6 +35,11 @@ class PermissionRequiredMixin(LoginRequiredMixin, UserPassesTestMixin):
     
     def handle_no_permission(self):
         messages.error(self.request, 'You do not have permission to access this page.')
+        if minimal_nav_enabled():
+            home = get_user_home_url(self.request.user)
+            if home and home != self.request.path:
+                return redirect(home)
+            return redirect('account:my_profile')
         return redirect('dashboard')
 
 

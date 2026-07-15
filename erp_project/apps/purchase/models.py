@@ -13,6 +13,7 @@ from django.core.exceptions import ValidationError
 from decimal import Decimal
 from apps.core.models import BaseModel
 from apps.core.utils import generate_number
+from apps.core.currencies import CURRENCY_CHOICES, normalize_currency_code
 
 
 class Vendor(BaseModel):
@@ -210,7 +211,15 @@ class PurchaseRequestItem(models.Model):
 
 
 class PurchaseRequestAttachment(models.Model):
-    """Attachments for purchase requests (files + optional vendor quote fields)."""
+    """Attachments for purchase requests (supporting docs or vendor quotes)."""
+
+    KIND_SUPPORTING = 'supporting'
+    KIND_VENDOR_QUOTE = 'vendor_quote'
+    KIND_CHOICES = [
+        (KIND_SUPPORTING, 'Supporting document'),
+        (KIND_VENDOR_QUOTE, 'Vendor quote'),
+    ]
+
     purchase_request = models.ForeignKey(
         PurchaseRequest,
         on_delete=models.CASCADE,
@@ -218,6 +227,11 @@ class PurchaseRequestAttachment(models.Model):
     )
     file = models.FileField(upload_to='purchase_request_attachments/%Y/%m/')
     filename = models.CharField(max_length=255, blank=True)
+    kind = models.CharField(
+        max_length=20,
+        choices=KIND_CHOICES,
+        default=KIND_SUPPORTING,
+    )
     vendor = models.CharField(max_length=500, blank=True, default='')
     total_price = models.DecimalField(
         max_digits=15,
@@ -301,6 +315,7 @@ class PurchaseOrder(BaseModel):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft')
     notes = models.TextField(blank=True)
     terms_and_conditions = models.TextField(blank=True)
+    currency = models.CharField(max_length=3, choices=CURRENCY_CHOICES, default='AED')
 
     # Amounts
     subtotal = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
@@ -316,6 +331,7 @@ class PurchaseOrder(BaseModel):
     def save(self, *args, **kwargs):
         if not self.po_number:
             self.po_number = generate_number('PURCHASE_ORDER', PurchaseOrder, 'po_number')
+        self.currency = normalize_currency_code(self.currency)
         super().save(*args, **kwargs)
     
     def calculate_totals(self):

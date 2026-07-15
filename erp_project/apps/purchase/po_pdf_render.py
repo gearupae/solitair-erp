@@ -4,6 +4,7 @@ Shared Purchase Order PDF context + WeasyPrint rendering (used by po_pdf view an
 from django.template.loader import get_template
 
 from apps.settings_app.models import CompanySettings
+from apps.core.currencies import CURRENCY_WORDS, CURRENCY_NAMES, normalize_currency_code
 
 
 def _number_to_words(n):
@@ -32,6 +33,7 @@ def _number_to_words(n):
 def build_po_pdf_context(request, po):
     """Context dict for purchase/po_pdf.html (HTML or PDF)."""
     company = CompanySettings.get_settings()
+    currency = normalize_currency_code(getattr(po, 'currency', None) or company.currency)
 
     try:
         amount_whole = int(po.total_amount)
@@ -39,7 +41,7 @@ def build_po_pdf_context(request, po):
         amount_words = _number_to_words(amount_whole)
         if amount_decimal > 0:
             amount_words += f' and {amount_decimal}/100'
-        amount_words += ' Dirhams Only'
+        amount_words += f' {CURRENCY_WORDS.get(currency, currency)} Only'
     except Exception:
         amount_words = ''
 
@@ -58,6 +60,8 @@ def build_po_pdf_context(request, po):
     return {
         'po': po,
         'company': company,
+        'currency': currency,
+        'currency_label': CURRENCY_NAMES.get(currency, currency),
         'amount_words': amount_words,
         'vat_summary': vat_summary,
         'logo_absolute_url': logo_absolute_url,

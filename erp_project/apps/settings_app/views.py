@@ -20,6 +20,7 @@ from .models import (
     CompanySettings,
     AuditLog,
     ModulePermission,
+    ModuleFeaturePermission,
     ApprovalConfiguration,
     ApprovalConfigurationLevel,
     Company,
@@ -29,6 +30,8 @@ from .models import (
 )
 from .forms import UserForm, RoleForm, CompanySettingsForm, CompanyForm
 from apps.core.mixins import PermissionRequiredMixin
+from apps.core.nav_config import minimal_nav_module_choices
+from apps.purchase.feature_permissions import PURCHASE_FEATURES
 from apps.hr.models import Employee
 
 from apps.settings_app.stripe_views import (
@@ -203,8 +206,9 @@ class RolePermissionView(PermissionRequiredMixin, TemplateView):
         context['role'] = role
         context['title'] = f'Permissions for {role.name}'
         
-        # Get all available modules
-        context['modules'] = ModulePermission.MODULE_CHOICES
+        modules = minimal_nav_module_choices(ModulePermission.MODULE_CHOICES)
+        context['modules'] = modules
+        context['app_minimal_nav'] = len(modules) < len(ModulePermission.MODULE_CHOICES)
         
         # Get current permissions for this role
         current_permissions = {}
@@ -216,7 +220,7 @@ class RolePermissionView(PermissionRequiredMixin, TemplateView):
                 'delete': mp.can_delete,
             }
         context['current_permissions'] = current_permissions
-        context['alerts_sections'] = [
+        all_alerts_sections = [
             ('contracts', 'Contracts & AMC — expiry alerts'),
             ('support', 'Support — unattended tickets'),
             ('crm', 'Leads — unassigned / stale pipeline'),
@@ -224,20 +228,37 @@ class RolePermissionView(PermissionRequiredMixin, TemplateView):
             ('projects', 'Projects, tasks, expenses, inspections'),
             ('projects', 'Operations & scheduling (uses Projects view)'),
             ('purchase', 'Purchase — PR, PO, vendor bills'),
+            ('service_request', 'Service requests — pending approvals'),
             ('hr', 'HR — leave & recruitment approvals'),
             ('inventory', 'Material & consumable requests'),
         ]
+        visible_codes = {code for code, _ in modules}
+        context['alerts_sections'] = [
+            (code, label) for code, label in all_alerts_sections if code in visible_codes
+        ]
+        context['purchase_features'] = PURCHASE_FEATURES
+        feature_permissions = {}
+        for fp in role.feature_permissions.filter(module='purchase'):
+            feature_permissions[fp.feature] = {
+                'view': fp.can_view,
+                'create': fp.can_create,
+                'edit': fp.can_edit,
+                'delete': fp.can_delete,
+            }
+        context['current_feature_permissions'] = feature_permissions
 
         return context
     
     def post(self, request, *args, **kwargs):
         role = get_object_or_404(Role, pk=self.kwargs['pk'])
-        
-        # Clear existing module permissions
-        ModulePermission.objects.filter(role=role).delete()
+        modules = minimal_nav_module_choices(ModulePermission.MODULE_CHOICES)
+        module_codes = [code for code, _ in modules]
+
+        # Replace permissions only for modules shown on this page.
+        ModulePermission.objects.filter(role=role, module__in=module_codes).delete()
         
         # Add new permissions based on form data
-        for module_code, module_name in ModulePermission.MODULE_CHOICES:
+        for module_code, module_name in modules:
             can_view = request.POST.get(f'{module_code}_view') == 'on'
             can_create = request.POST.get(f'{module_code}_create') == 'on'
             can_edit = request.POST.get(f'{module_code}_edit') == 'on'
@@ -253,6 +274,24 @@ class RolePermissionView(PermissionRequiredMixin, TemplateView):
                     can_edit=can_edit,
                     can_delete=can_delete,
                 )
+        
+        ModuleFeaturePermission.objects.filter(role=role, module='purchase').delete()
+        if 'purchase' in module_codes:
+            for feature_code, _feature_label in PURCHASE_FEATURES:
+                can_view = request.POST.get(f'purchase_feature_{feature_code}_view') == 'on'
+                can_create = request.POST.get(f'purchase_feature_{feature_code}_create') == 'on'
+                can_edit = request.POST.get(f'purchase_feature_{feature_code}_edit') == 'on'
+                can_delete = request.POST.get(f'purchase_feature_{feature_code}_delete') == 'on'
+                if any([can_view, can_create, can_edit, can_delete]):
+                    ModuleFeaturePermission.objects.create(
+                        role=role,
+                        module='purchase',
+                        feature=feature_code,
+                        can_view=can_view,
+                        can_create=can_create,
+                        can_edit=can_edit,
+                        can_delete=can_delete,
+                    )
         
         messages.success(request, f'Permissions for {role.name} updated successfully.')
         return redirect('settings:role_list')

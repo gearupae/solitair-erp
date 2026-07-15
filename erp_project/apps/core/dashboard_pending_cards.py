@@ -287,11 +287,45 @@ def _support_card(user) -> dict | None:
     )
 
 
+def _purchase_request_card(user) -> dict | None:
+    from apps.purchase.models import PurchaseRequest
+    from apps.purchase.pr_approval_rules import user_can_act_on_purchase_request, user_is_any_pr_approver
+
+    if not user_is_any_pr_approver(user):
+        return None
+
+    pending_qs = (
+        PurchaseRequest.objects.filter(is_active=True, status='pending')
+        .select_related('requested_by')
+        .order_by('-updated_at')
+    )
+    pending = [pr for pr in pending_qs if user_can_act_on_purchase_request(user, pr)]
+    items = [
+        {
+            'label': pr.pr_number,
+            'detail': pr.requested_by.get_full_name() or pr.requested_by.username,
+            'link': reverse('purchase:pr_detail', args=[pr.pk]),
+        }
+        for pr in pending
+    ]
+    return _card(
+        key='purchase_request',
+        title='Purchase request',
+        icon='fa-clipboard-list',
+        color='warning',
+        pending_count=len(pending),
+        link=f'{reverse("purchase:pr_list")}?status=pending',
+        items=items,
+        empty_label='No pending approvals',
+    )
+
+
 def get_dashboard_pending_cards(user) -> list[dict]:
     builders = (
         _lead_card,
         _estimate_card,
         _project_card,
+        _purchase_request_card,
         _inspection_card,
         _operation_card,
         _support_card,

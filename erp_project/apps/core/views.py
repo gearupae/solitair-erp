@@ -40,6 +40,12 @@ def notifications_mark_all_read(request):
 @login_required
 def dashboard(request):
     """Main dashboard view."""
+    from django.conf import settings
+    from apps.core.nav_config import get_user_home_url, minimal_nav_enabled
+
+    if minimal_nav_enabled() or getattr(settings, 'APP_MINIMAL_NAV', False):
+        return redirect(get_user_home_url(request.user))
+
     from calendar import monthrange
     from decimal import Decimal
     from django.db.models import Count, Sum

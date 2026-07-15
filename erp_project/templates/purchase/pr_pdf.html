@@ -373,8 +373,6 @@
                     <th>Description</th>
                     <th class="text-center" style="width:48px;">Qty</th>
                     <th class="text-center" style="width:52px;">Unit</th>
-                    <th class="text-right" style="width:80px;">Est. price</th>
-                    <th class="text-right" style="width:80px;">Total</th>
                 </tr>
             </thead>
             <tbody>
@@ -384,32 +382,14 @@
                     <td class="item-description">{{ item.formatted_line_display }}</td>
                     <td class="text-center">{{ item.quantity|floatformat:2 }}</td>
                     <td class="text-center">{{ item.get_unit_display }}</td>
-                    <td class="text-right">{{ item.estimated_price|floatformat:2 }}</td>
-                    <td class="text-right">{{ item.total|floatformat:2 }}</td>
                 </tr>
                 {% empty %}
                 <tr>
-                    <td colspan="6" style="text-align:center;padding:20px;color:var(--silver);">No line items</td>
+                    <td colspan="4" style="text-align:center;padding:20px;color:var(--silver);">No line items</td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
-
-        <div class="totals-section">
-            <div class="totals-table">
-                <div class="totals-row total">
-                    <span class="totals-label">Estimated total</span>
-                    <span class="totals-value">AED {{ pr.total_amount|floatformat:2 }}</span>
-                </div>
-            </div>
-        </div>
-
-        {% if amount_words %}
-        <div class="amount-words">
-            <div class="amount-words-label">Amount in words</div>
-            <div>{{ amount_words }}</div>
-        </div>
-        {% endif %}
 
         {% if pr.notes %}
         <div class="notes-section">

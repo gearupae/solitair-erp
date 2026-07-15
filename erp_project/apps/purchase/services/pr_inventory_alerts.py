@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from django.db.models import Q
 
-from apps.purchase.models import ItemPurchaseReceiptHistory, PurchaseOrderItem, PurchaseRequest
+from apps.purchase.models import ItemPurchaseReceiptHistory, PurchaseOrderItem, PurchaseRequest, PurchaseRequestAttachment, PurchaseRequestAttachment
 
 
 def _variance_pct(reference: Decimal | float | None, compare: Decimal | float | None) -> float | None:
@@ -137,7 +137,9 @@ def build_pr_inventory_purchase_alerts(pr: PurchaseRequest) -> list[dict]:
     """
     from apps.inventory.serial_stock import item_available_qty
 
-    attachments = list(pr.attachments.order_by('id'))
+    attachments = list(
+        pr.attachments.filter(kind=PurchaseRequestAttachment.KIND_VENDOR_QUOTE).order_by('id')
+    )
     alerts: list[dict] = []
 
     for line in pr.items.select_related('inventory_item').order_by('id'):

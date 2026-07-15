@@ -11,8 +11,12 @@
     </nav>
     <h4 class="mb-0 fw-bold">{{ title }}</h4>
     <p class="text-muted small mb-0">Module <strong>View</strong> permission controls which sections appear on <a href="{% url 'settings:alerts_hub' %}">Settings → Alerts</a>.</p>
+    {% if app_minimal_nav %}
+    <p class="text-muted small mb-0">Showing modules enabled for this deployment: Purchase, Service Request, HR, and Settings.</p>
+    {% endif %}
 </div>
 
+{% if alerts_sections %}
 <div class="alert alert-info border-0 shadow-sm mb-4">
     <div class="fw-semibold mb-2"><i class="fas fa-bell me-2"></i>Alerts hub visibility</div>
     <p class="small mb-2">Users see alert sections only for modules where this role has <strong>View</strong> checked below:</p>
@@ -22,6 +26,7 @@
         {% endfor %}
     </ul>
 </div>
+{% endif %}
 
 <form method="post">
     {% csrf_token %}
@@ -120,6 +125,53 @@
                                 </button>
                             </td>
                         </tr>
+                        {% if module_code == 'purchase' %}
+                        {% for feature_code, feature_name in purchase_features %}
+                        {% with fp=current_feature_permissions|get_item:feature_code %}
+                        <tr data-module="purchase" data-feature="{{ feature_code }}" class="table-light">
+                            <td class="ps-4 text-muted">
+                                <i class="fas fa-level-up-alt fa-rotate-90 me-2"></i>{{ feature_name }}
+                            </td>
+                            <td class="text-center">
+                                <div class="form-check d-flex justify-content-center">
+                                    <input type="checkbox" class="form-check-input perm-checkbox feature-perm view-perm"
+                                           name="purchase_feature_{{ feature_code }}_view" id="purchase_feature_{{ feature_code }}_view"
+                                           {% if fp.view %}checked{% endif %}>
+                                </div>
+                            </td>
+                            <td class="text-center">
+                                <div class="form-check d-flex justify-content-center">
+                                    <input type="checkbox" class="form-check-input perm-checkbox feature-perm create-perm"
+                                           name="purchase_feature_{{ feature_code }}_create" id="purchase_feature_{{ feature_code }}_create"
+                                           {% if fp.create %}checked{% endif %}>
+                                </div>
+                            </td>
+                            <td class="text-center">
+                                <div class="form-check d-flex justify-content-center">
+                                    <input type="checkbox" class="form-check-input perm-checkbox feature-perm edit-perm"
+                                           name="purchase_feature_{{ feature_code }}_edit" id="purchase_feature_{{ feature_code }}_edit"
+                                           {% if fp.edit %}checked{% endif %}>
+                                </div>
+                            </td>
+                            <td class="text-center">
+                                <div class="form-check d-flex justify-content-center">
+                                    <input type="checkbox" class="form-check-input perm-checkbox feature-perm delete-perm"
+                                           name="purchase_feature_{{ feature_code }}_delete" id="purchase_feature_{{ feature_code }}_delete"
+                                           {% if fp.delete %}checked{% endif %}>
+                                </div>
+                            </td>
+                            <td class="text-center">
+                                <button type="button" class="btn btn-sm btn-outline-success me-1" onclick="selectFeatureRow('{{ feature_code }}')" title="Select All">
+                                    <i class="fas fa-check"></i>
+                                </button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="clearFeatureRow('{{ feature_code }}')" title="Clear All">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            </td>
+                        </tr>
+                        {% endwith %}
+                        {% endfor %}
+                        {% endif %}
                         {% endwith %}
                         {% endfor %}
                     </tbody>
@@ -129,6 +181,7 @@
     </div>
     
     <!-- Quick Permission Presets -->
+    {% if not app_minimal_nav %}
     <div class="card border-0 shadow-sm mb-4">
         <div class="card-header bg-white py-3">
             <h6 class="mb-0 fw-bold">
@@ -155,6 +208,25 @@
             </div>
         </div>
     </div>
+    {% else %}
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white py-3">
+            <h6 class="mb-0 fw-bold">
+                <i class="fas fa-magic me-2 text-primary"></i>Quick Presets
+            </h6>
+        </div>
+        <div class="card-body">
+            <div class="d-flex flex-wrap gap-2">
+                <button type="button" class="btn btn-outline-success" onclick="presetProcurementStaff()">
+                    <i class="fas fa-truck me-1"></i>Procurement staff
+                </button>
+                <button type="button" class="btn btn-outline-primary" onclick="presetHrMasterData()">
+                    <i class="fas fa-id-card me-1"></i>HR master data
+                </button>
+            </div>
+        </div>
+    </div>
+    {% endif %}
     
     <div class="card border-0 shadow-sm">
         <div class="card-body">
@@ -170,14 +242,26 @@
 <script>
 // Select all permissions for a specific row (module)
 function selectRow(module) {
-    document.querySelectorAll(`tr[data-module="${module}"] .perm-checkbox`).forEach(cb => {
+    document.querySelectorAll(`tr[data-module="${module}"]:not([data-feature]) .perm-checkbox`).forEach(cb => {
         cb.checked = true;
     });
 }
 
 // Clear all permissions for a specific row (module)
 function clearRow(module) {
-    document.querySelectorAll(`tr[data-module="${module}"] .perm-checkbox`).forEach(cb => {
+    document.querySelectorAll(`tr[data-module="${module}"]:not([data-feature]) .perm-checkbox`).forEach(cb => {
+        cb.checked = false;
+    });
+}
+
+function selectFeatureRow(feature) {
+    document.querySelectorAll(`tr[data-feature="${feature}"] .perm-checkbox`).forEach(cb => {
+        cb.checked = true;
+    });
+}
+
+function clearFeatureRow(feature) {
+    document.querySelectorAll(`tr[data-feature="${feature}"] .perm-checkbox`).forEach(cb => {
         cb.checked = false;
     });
 }
@@ -252,6 +336,19 @@ function presetProjectManager() {
     selectRow('documents');
     // CRM - view
     document.getElementById('crm_view').checked = true;
+}
+
+function presetProcurementStaff() {
+    clearAll();
+    selectRow('purchase');
+    ['vendors', 'pr', 'po', 'grn', 'rfq', 'bills'].forEach(function (feature) {
+        selectFeatureRow(feature);
+    });
+}
+
+function presetHrMasterData() {
+    clearAll();
+    selectRow('hr');
 }
 </script>
 {% endblock %}

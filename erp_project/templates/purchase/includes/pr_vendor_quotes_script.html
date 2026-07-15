@@ -1,0 +1,119 @@
+{% if can_manage_vendor_quotes %}
+<script>
+(function() {
+    const CSRF = document.querySelector('[name=csrfmiddlewaretoken]')?.value || '';
+    const UPLOAD_URL = "{{ pr_vendor_upload_url|escapejs }}";
+    const OTHER_UPLOAD_URL = "{{ pr_procurement_upload_url|escapejs }}";
+    const UPDATE_URL_PATTERN = "{{ pr_vendor_update_url_pattern|escapejs }}";
+    const saveTimers = {};
+
+    function updateUrl(id) {
+        return UPDATE_URL_PATTERN.replace('__ATT_ID__', String(id));
+    }
+
+    function showSaveHint(text) {
+        const el = document.getElementById('vendor-quote-save-hint');
+        if (!el) return;
+        el.style.display = 'inline-block';
+        el.textContent = text;
+        if (text === 'Saved') {
+            setTimeout(() => { el.style.display = 'none'; }, 2000);
+        }
+    }
+
+    function scheduleSave(tr) {
+        const id = tr.getAttribute('data-attachment-id');
+        if (!id) return;
+        clearTimeout(saveTimers[id]);
+        showSaveHint('Saving…');
+        saveTimers[id] = setTimeout(() => {
+            const vendor = tr.querySelector('.quote-vendor')?.value ?? '';
+            const totalEl = tr.querySelector('.quote-total');
+            const totalRaw = totalEl ? totalEl.value.trim() : '';
+            fetch(updateUrl(id), {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': CSRF,
+                },
+                body: JSON.stringify({
+                    vendor: vendor,
+                    total_price: totalRaw === '' ? null : totalRaw,
+                }),
+            })
+                .then(r => r.json().then(data => ({ ok: r.ok, data })))
+                .then(({ ok, data }) => {
+                    if (!ok || !data.ok) {
+                        if (window.toastr) toastr.error(data.error || 'Could not save.');
+                        showSaveHint('');
+                        return;
+                    }
+                    showSaveHint('Saved');
+                })
+                .catch(() => {
+                    if (window.toastr) toastr.error('Network error while saving.');
+                    showSaveHint('');
+                });
+        }, 450);
+    }
+
+    function bindRow(tr) {
+        tr.querySelectorAll('.quote-vendor, .quote-total').forEach(inp => {
+            inp.addEventListener('input', () => scheduleSave(tr));
+            inp.addEventListener('change', () => scheduleSave(tr));
+        });
+    }
+
+    document.querySelectorAll('#vendor-quote-tbody tr[data-attachment-id]').forEach(bindRow);
+
+    async function uploadFiles(inputEl, url, reloadOnSuccess) {
+        if (!inputEl.files || !inputEl.files.length) return;
+        const fileList = Array.from(inputEl.files);
+        inputEl.disabled = true;
+        let uploaded = 0;
+        const failed = [];
+
+        for (const f of fileList) {
+            const fd = new FormData();
+            fd.append('files', f);
+            try {
+                const resp = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'X-CSRFToken': CSRF },
+                    body: fd,
+                });
+                const data = await resp.json();
+                if (!resp.ok || !data.ok) {
+                    throw new Error(data.error || ('Failed: ' + f.name));
+                }
+                uploaded += 1;
+            } catch (err) {
+                failed.push(err.message || String(err));
+            }
+        }
+
+        if (uploaded === 0) {
+            if (window.toastr) toastr.error(failed[0] || 'Upload failed.');
+        } else if (failed.length) {
+            if (window.toastr) toastr.warning(uploaded + ' file(s) uploaded. Some failed.');
+            if (reloadOnSuccess) window.location.reload();
+        } else {
+            if (window.toastr) toastr.success(uploaded === 1 ? 'File uploaded.' : uploaded + ' files uploaded.');
+            if (reloadOnSuccess) window.location.reload();
+        }
+        inputEl.disabled = false;
+        inputEl.value = '';
+    }
+
+    const fileInput = document.getElementById('pr-vendor-file-input');
+    if (fileInput) {
+        fileInput.addEventListener('change', () => uploadFiles(fileInput, UPLOAD_URL, true));
+    }
+
+    const otherInput = document.getElementById('pr-other-file-input');
+    if (otherInput) {
+        otherInput.addEventListener('change', () => uploadFiles(otherInput, OTHER_UPLOAD_URL, true));
+    }
+})();
+</script>
+{% endif %}

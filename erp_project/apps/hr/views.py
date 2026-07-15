@@ -131,6 +131,54 @@ def _employee_hr_profile_form(request, employee=None, *, prefix='hrp'):
     return EmployeeHRProfileForm(instance=instance, prefix=prefix)
 
 
+def _save_employee_related_forms(request, form, *, save_main):
+    """
+    Persist employee + compliance/bank/HR profile forms atomically.
+    Returns (employee, invalid_context). invalid_context is set when a sub-form fails.
+    """
+    from apps.hr.forms_extended import UAEComplianceForm
+    from apps.hr.models_extended import UAECompliance
+
+    invalid_context = None
+    employee = None
+
+    with transaction.atomic():
+        employee = save_main()
+        _provision_employee_login_if_needed(request, form, employee)
+        uc, _ = UAECompliance.objects.get_or_create(employee=employee)
+        uf = UAEComplianceForm(request.POST, instance=uc, prefix='uae')
+        if not uf.is_valid():
+            transaction.set_rollback(True)
+            invalid_context = {'uae_form': uf}
+        else:
+            uf.save()
+            bf = EmployeeBankDetailForm(
+                request.POST, instance=getattr(employee, 'bank_detail', None)
+            )
+            if not bf.is_valid():
+                transaction.set_rollback(True)
+                invalid_context = {
+                    'bank_form': bf,
+                    'uae_form': UAEComplianceForm(request.POST, instance=uc, prefix='uae'),
+                }
+            else:
+                bf.save_for_employee(employee)
+                _sync_employee_hr_profile(employee)
+                hpf = _employee_hr_profile_form(request, employee)
+                if not hpf.is_valid():
+                    transaction.set_rollback(True)
+                    invalid_context = {
+                        'hr_profile_form': hpf,
+                        'uae_form': UAEComplianceForm(request.POST, instance=uc, prefix='uae'),
+                    }
+                else:
+                    hpf.save()
+
+    if invalid_context:
+        return None, invalid_context
+    return employee, None
+
+
 class EmployeeListView(PermissionRequiredMixin, ListView):
     model = Employee
     template_name = 'hr/employee_list.html'
@@ -249,42 +297,13 @@ class EmployeeCreateView(CreatePermissionMixin, CreateView):
             ctx['uae_form'] = UAEComplianceForm(request.POST, prefix='uae')
             return self.render_to_response(ctx)
 
-        from apps.hr.forms_extended import UAEComplianceForm
-        from apps.hr.models_extended import UAECompliance
-
-        try:
-            with transaction.atomic():
-                employee = form.save()
-                _provision_employee_login_if_needed(request, form, employee)
-                uc, _ = UAECompliance.objects.get_or_create(employee=employee)
-                uf = UAEComplianceForm(request.POST, instance=uc, prefix='uae')
-                if not uf.is_valid():
-                    transaction.set_rollback(True)
-                    ctx = self.get_context_data(form=form)
-                    ctx['uae_form'] = uf
-                    return self.render_to_response(ctx)
-                uf.save()
-                bf = EmployeeBankDetailForm(
-                    request.POST, instance=getattr(employee, 'bank_detail', None)
-                )
-                if not bf.is_valid():
-                    transaction.set_rollback(True)
-                    ctx = self.get_context_data(form=form)
-                    ctx['bank_form'] = bf
-                    ctx['uae_form'] = UAEComplianceForm(request.POST, instance=uc, prefix='uae')
-                    return self.render_to_response(ctx)
-                bf.save_for_employee(employee)
-                _sync_employee_hr_profile(employee)
-                hpf = _employee_hr_profile_form(request, employee)
-                if not hpf.is_valid():
-                    transaction.set_rollback(True)
-                    ctx = self.get_context_data(form=form)
-                    ctx['hr_profile_form'] = hpf
-                    ctx['uae_form'] = UAEComplianceForm(request.POST, instance=uc, prefix='uae')
-                    return self.render_to_response(ctx)
-                hpf.save()
-        except Exception:
-            raise
+        employee, invalid_context = _save_employee_related_forms(
+            request, form, save_main=form.save
+        )
+        if invalid_context:
+            ctx = self.get_context_data(form=form)
+            ctx.update(invalid_context)
+            return self.render_to_response(ctx)
 
         messages.success(request, 'Employee created.')
         return redirect(self.success_url)
@@ -363,42 +382,13 @@ class EmployeeUpdateView(UpdatePermissionMixin, UpdateView):
             ctx['uae_form'] = UAEComplianceForm(request.POST, instance=uc, prefix='uae')
             return self.render_to_response(ctx)
 
-        from apps.hr.forms_extended import UAEComplianceForm
-        from apps.hr.models_extended import UAECompliance
-
-        try:
-            with transaction.atomic():
-                employee = form.save()
-                _provision_employee_login_if_needed(request, form, employee)
-                uc, _ = UAECompliance.objects.get_or_create(employee=employee)
-                uf = UAEComplianceForm(request.POST, instance=uc, prefix='uae')
-                if not uf.is_valid():
-                    transaction.set_rollback(True)
-                    ctx = self.get_context_data(form=form)
-                    ctx['uae_form'] = uf
-                    return self.render_to_response(ctx)
-                uf.save()
-                bf = EmployeeBankDetailForm(
-                    request.POST, instance=getattr(employee, 'bank_detail', None)
-                )
-                if not bf.is_valid():
-                    transaction.set_rollback(True)
-                    ctx = self.get_context_data(form=form)
-                    ctx['bank_form'] = bf
-                    ctx['uae_form'] = UAEComplianceForm(request.POST, instance=uc, prefix='uae')
-                    return self.render_to_response(ctx)
-                bf.save_for_employee(employee)
-                _sync_employee_hr_profile(employee)
-                hpf = _employee_hr_profile_form(request, employee)
-                if not hpf.is_valid():
-                    transaction.set_rollback(True)
-                    ctx = self.get_context_data(form=form)
-                    ctx['hr_profile_form'] = hpf
-                    ctx['uae_form'] = UAEComplianceForm(request.POST, instance=uc, prefix='uae')
-                    return self.render_to_response(ctx)
-                hpf.save()
-        except Exception:
-            raise
+        employee, invalid_context = _save_employee_related_forms(
+            request, form, save_main=form.save
+        )
+        if invalid_context:
+            ctx = self.get_context_data(form=form)
+            ctx.update(invalid_context)
+            return self.render_to_response(ctx)
 
         messages.success(request, 'Employee updated.')
         self.object = employee
@@ -933,13 +923,22 @@ class DepartmentListView(PermissionRequiredMixin, ListView):
     permission_type = 'view'
     
     def get_queryset(self):
-        return Department.objects.filter(is_active=True)
-    
+        return (
+            Department.objects.filter(is_active=True)
+            .select_related('manager')
+            .annotate(
+                employee_count=Count('employees', filter=Q(employees__is_active=True)),
+                designation_count=Count('designations', filter=Q(designations__is_active=True)),
+            )
+            .order_by('name')
+        )
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['title'] = 'Departments'
         context['form'] = DepartmentForm()
         context['can_create'] = self.request.user.is_superuser or PermissionChecker.has_permission(self.request.user, 'hr', 'create')
+        context['can_delete'] = self.request.user.is_superuser or PermissionChecker.has_permission(self.request.user, 'hr', 'delete')
         return context
     
     def post(self, request, *args, **kwargs):
@@ -978,6 +977,9 @@ class DesignationListView(PermissionRequiredMixin, ListView):
         context['can_create'] = self.request.user.is_superuser or PermissionChecker.has_permission(
             self.request.user, 'hr', 'create'
         )
+        context['can_delete'] = self.request.user.is_superuser or PermissionChecker.has_permission(
+            self.request.user, 'hr', 'delete'
+        )
         role_names = getattr(self, '_role_names', set())
         for desig in context['designations']:
             desig.has_matching_role = (desig.name or '').lower() in role_names
@@ -994,6 +996,41 @@ class DesignationListView(PermissionRequiredMixin, ListView):
         else:
             messages.error(request, 'Could not save designation. Check department and name.')
         return redirect('hr:designation_list')
+
+
+@login_required
+@require_POST
+def department_delete(request, pk):
+    if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'hr', 'delete')):
+        messages.error(request, 'Permission denied.')
+        return redirect('hr:department_list')
+    dept = get_object_or_404(Department, pk=pk, is_active=True)
+    if Employee.objects.filter(department=dept, is_active=True).exists():
+        messages.error(request, f'Cannot delete {dept.name}: active employees are assigned to this department.')
+        return redirect('hr:department_list')
+    if Designation.objects.filter(department=dept, is_active=True).exists():
+        messages.error(request, f'Cannot delete {dept.name}: remove its designations first.')
+        return redirect('hr:department_list')
+    dept.is_active = False
+    dept.save(update_fields=['is_active', 'updated_at'])
+    messages.success(request, f'Department "{dept.name}" deleted.')
+    return redirect('hr:department_list')
+
+
+@login_required
+@require_POST
+def designation_delete(request, pk):
+    if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'hr', 'delete')):
+        messages.error(request, 'Permission denied.')
+        return redirect('hr:designation_list')
+    desig = get_object_or_404(Designation, pk=pk, is_active=True)
+    if Employee.objects.filter(designation=desig, is_active=True).exists():
+        messages.error(request, f'Cannot delete {desig.name}: active employees have this designation.')
+        return redirect('hr:designation_list')
+    desig.is_active = False
+    desig.save(update_fields=['is_active', 'updated_at'])
+    messages.success(request, f'Designation "{desig.name}" deleted.')
+    return redirect('hr:designation_list')
 
 
 class LeaveRequestListView(PermissionRequiredMixin, ListView):

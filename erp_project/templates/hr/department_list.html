@@ -20,16 +20,28 @@
     <div class="card-body p-0">
         <div class="table-responsive">
             <table class="table table-hover mb-0">
-                <thead><tr><th>Code</th><th>Name</th><th>Manager</th><th>Employees</th></tr></thead>
+                <thead><tr><th>Code</th><th>Name</th><th>Manager</th><th>Employees</th>{% if can_delete %}<th class="text-end">Actions</th>{% endif %}</tr></thead>
                 <tbody>
                     {% for dept in departments %}
                     <tr>
                         <td class="fw-medium">{{ dept.code }}</td>
                         <td>{{ dept.name }}</td>
                         <td>{{ dept.manager.get_full_name|default:"-" }}</td>
-                        <td>{{ dept.employees.count }}</td>
+                        <td>{{ dept.employee_count }}</td>
+                        {% if can_delete %}
+                        <td class="text-end text-nowrap">
+                            {% if dept.employee_count == 0 and dept.designation_count == 0 %}
+                            <form method="post" action="{% url 'hr:department_delete' dept.pk %}" class="d-inline" onsubmit="return confirm('Delete department {{ dept.name }}?');">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-action btn-outline-danger btn-sm" title="Delete"><i class="fas fa-trash"></i></button>
+                            </form>
+                            {% else %}
+                            <span class="text-muted small" title="Remove employees and designations first">In use</span>
+                            {% endif %}
+                        </td>
+                        {% endif %}
                     </tr>
-                    {% empty %}<tr><td colspan="4" class="text-center py-5 text-muted"><i class="fas fa-sitemap fa-3x mb-3 d-block"></i>No departments</td></tr>{% endfor %}
+                    {% empty %}<tr><td colspan="{% if can_delete %}5{% else %}4{% endif %}" class="text-center py-5 text-muted"><i class="fas fa-sitemap fa-3x mb-3 d-block"></i>No departments</td></tr>{% endfor %}
                 </tbody>
             </table>
         </div>

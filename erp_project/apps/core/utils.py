@@ -173,3 +173,33 @@ class PermissionChecker:
         
         return permissions
 
+    @staticmethod
+    def has_feature_permission(user, module, feature, permission_type):
+        """Check submenu/feature permission; falls back to module permission when unset."""
+        if not user or not user.is_authenticated:
+            return False
+        if user.is_superuser:
+            return True
+        if not PermissionChecker.has_permission(user, module, 'view'):
+            return False
+
+        from apps.settings_app.models import UserRole, ModuleFeaturePermission
+
+        user_roles = UserRole.objects.filter(user=user, is_active=True).values_list('role_id', flat=True)
+        feature_qs = ModuleFeaturePermission.objects.filter(
+            role_id__in=user_roles,
+            module__iexact=module,
+        )
+        if not feature_qs.exists():
+            return PermissionChecker.has_permission(user, module, permission_type)
+
+        if permission_type == 'approve':
+            permission_type = 'edit'
+        permission_field = f'can_{permission_type}'
+        return feature_qs.filter(feature=feature, **{permission_field: True}).exists()
+
+    @staticmethod
+    def role_has_feature_permissions(role, module):
+        from apps.settings_app.models import ModuleFeaturePermission
+        return ModuleFeaturePermission.objects.filter(role=role, module__iexact=module).exists()
+

@@ -81,9 +81,8 @@ class PurchaseRequestForm(forms.ModelForm):
 class PurchaseRequestItemForm(forms.ModelForm):
     class Meta:
         model = PurchaseRequestItem
-        fields = ['inventory_item', 'brand', 'model', 'description', 'quantity', 'unit', 'estimated_price']
+        fields = ['inventory_item', 'brand', 'model', 'description', 'quantity', 'unit']
         widgets = {
-            'estimated_price': forms.NumberInput(attrs={'step': '0.01', 'min': '0'}),
             'quantity': forms.NumberInput(attrs={'step': '1', 'min': '0'}),
             'description': forms.Textarea(attrs={'rows': 2, 'placeholder': 'Specs, notes, or item details…'}),
             'brand': forms.TextInput(attrs={'placeholder': 'Choose or type brand'}),
@@ -121,8 +120,6 @@ class PurchaseRequestItemForm(forms.ModelForm):
                     css += ' item-description'
                 elif name == 'quantity':
                     css += ' item-qty'
-                elif name == 'estimated_price':
-                    css += ' item-cost'
                 field.widget.attrs['class'] = css
 
         if not self.instance.pk:
@@ -130,9 +127,6 @@ class PurchaseRequestItemForm(forms.ModelForm):
 
         self.fields['quantity'].widget.attrs.update(
             {'class': 'form-control form-control-sm item-qty', 'step': '1', 'min': '0'}
-        )
-        self.fields['estimated_price'].widget.attrs.update(
-            {'class': 'form-control form-control-sm item-cost', 'step': '0.01', 'min': '0'}
         )
         self.fields['brand'].widget.attrs.update(
             {'class': 'form-control form-control-sm item-brand', 'list': 'pr-brand-datalist'}
@@ -147,9 +141,7 @@ class PurchaseRequestItemForm(forms.ModelForm):
         qty = cleaned.get('quantity')
         if qty is None:
             qty = Decimal('0')
-        price = cleaned.get('estimated_price')
-        if price is None:
-            price = Decimal('0')
+        cleaned['estimated_price'] = Decimal('0')
 
         brand = (cleaned.get('brand') or '').strip()
         model = (cleaned.get('model') or '').strip()
@@ -173,7 +165,7 @@ class PurchaseRequestItemForm(forms.ModelForm):
         if self.instance.pk and (self.instance.description or self.instance.brand or self.instance.model):
             return cleaned
 
-        if qty > 0 or price > 0:
+        if qty > 0:
             raise forms.ValidationError(
                 'Select an inventory item or enter brand, model, or description for each line.'
             )
@@ -194,8 +186,7 @@ class BasePurchaseRequestItemFormSet(forms.BaseInlineFormSet):
                     for field in ('brand', 'model', 'description')
                 )
                 qty = cd.get('quantity') or 0
-                price = cd.get('estimated_price') or 0
-                if not has_detail and not qty and not price:
+                if not has_detail and not qty:
                     return True
         return False
 
@@ -215,7 +206,7 @@ class PurchaseOrderForm(forms.ModelForm):
     
     class Meta:
         model = PurchaseOrder
-        fields = ['vendor', 'purchase_request', 'service_request', 'order_date', 'expected_delivery_date', 'status', 'notes', 'terms_and_conditions']
+        fields = ['vendor', 'purchase_request', 'service_request', 'order_date', 'expected_delivery_date', 'status', 'currency', 'notes', 'terms_and_conditions']
         widgets = {
             'order_date': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}, format='%Y-%m-%d'),
             'expected_delivery_date': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}, format='%Y-%m-%d'),
@@ -257,6 +248,7 @@ class PurchaseOrderForm(forms.ModelForm):
 
         self.fields['status'].widget.attrs['class'] = 'form-select'
         self.fields['status'].choices = PurchaseOrder.STATUS_CHOICES
+        self.fields['currency'].widget.attrs['class'] = 'form-select'
         self.fields['expected_delivery_date'].required = False
         self.fields['notes'].required = False
         self.fields['terms_and_conditions'].required = False

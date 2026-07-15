@@ -30,12 +30,64 @@
 <div class="page-header">
     <nav aria-label="breadcrumb">
         <ol class="breadcrumb mb-2">
+            {% if convert_pr %}
+            <li class="breadcrumb-item"><a href="{% url 'purchase:pr_list' %}">Purchase Requests</a></li>
+            <li class="breadcrumb-item"><a href="{% url 'purchase:pr_detail' convert_pr.pk %}">{{ convert_pr.pr_number }}</a></li>
+            <li class="breadcrumb-item active">Convert to PO</li>
+            {% else %}
             <li class="breadcrumb-item"><a href="{% url 'purchase:po_list' %}">Purchase Orders</a></li>
             <li class="breadcrumb-item active">{{ title }}</li>
+            {% endif %}
         </ol>
     </nav>
     <h4 class="mb-0 fw-bold">{{ title }}</h4>
+    {% if convert_pr %}
+    <p class="text-muted small mb-0 mt-1">
+        Requested by {{ convert_pr.requested_by.get_full_name|default:convert_pr.requested_by.username }}
+        · {{ convert_pr.get_status_display }}
+    </p>
+    {% endif %}
 </div>
+
+{% if convert_pr %}
+<div class="alert alert-primary mb-4">
+    <strong><i class="fas fa-clipboard-check me-2"></i>Procurement conversion.</strong>
+    Upload vendor quotes, select the awarded vendor, enter unit prices on each line, then create the purchase order.
+</div>
+
+<div class="card mb-4">
+    <div class="card-header"><h6 class="mb-0 fw-semibold">Requested items (from {{ convert_pr.pr_number }})</h6></div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Item</th>
+                        <th>Brand / Model</th>
+                        <th class="text-end">Qty</th>
+                        <th>Unit</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in convert_pr.items.all %}
+                    <tr>
+                        <td>{{ item.formatted_line_display }}</td>
+                        <td class="text-muted small">{{ item.brand|default:"—" }}{% if item.model %} / {{ item.model }}{% endif %}</td>
+                        <td class="text-end">{{ item.quantity }}</td>
+                        <td>{{ item.get_unit_display }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="4" class="text-muted text-center py-3">No line items.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+{% include 'purchase/includes/pr_vendor_quotes_panel.html' %}
+{% include 'purchase/includes/pr_other_attachments_panel.html' %}
+{% endif %}
 
 {% if form.errors and form.errors.items %}
 <div class="alert alert-danger mb-4">
@@ -62,6 +114,9 @@
 
 <form method="post">
     {% csrf_token %}
+    {% if convert_pr and form.purchase_request %}
+    {{ form.purchase_request }}
+    {% endif %}
     
     <div class="card mb-4">
         <div class="card-header"><h6 class="mb-0 fw-semibold">Order Details</h6></div>
@@ -82,7 +137,7 @@
                     {{ form.expected_delivery_date }}
                     {% if form.expected_delivery_date.errors %}<div class="text-danger small">{{ form.expected_delivery_date.errors|join:", " }}</div>{% endif %}
                 </div>
-                {% if 'purchase_request' in form.fields %}
+                {% if 'purchase_request' in form.fields and not convert_pr %}
                 <div class="col-md-4">
                     <label class="form-label">From PR</label>
                     {{ form.purchase_request }}
@@ -111,6 +166,11 @@
                     {% if form.status.errors %}<div class="text-danger small">{{ form.status.errors|join:", " }}</div>{% endif %}
                 </div>
                 <div class="col-md-4">
+                    <label class="form-label">Currency</label>
+                    {{ form.currency }}
+                    {% if form.currency.errors %}<div class="text-danger small">{{ form.currency.errors|join:", " }}</div>{% endif %}
+                </div>
+                <div class="col-md-4">
                     <label class="form-label">Notes</label>
                     {{ form.notes }}
                     {% if form.notes.errors %}<div class="text-danger small">{{ form.notes.errors|join:", " }}</div>{% endif %}
@@ -121,7 +181,7 @@
     
     <div class="card mb-4">
         <div class="card-header d-flex justify-content-between align-items-center">
-            <h6 class="mb-0 fw-semibold">Line Items</h6>
+            <h6 class="mb-0 fw-semibold">{% if convert_pr %}PO line items — enter unit prices{% else %}Line Items{% endif %}</h6>
             <button type="button" class="btn btn-sm btn-primary" onclick="addItemRow()">
                 <i class="fas fa-plus me-1"></i>Add Item
             </button>
@@ -208,17 +268,17 @@
                     <tfoot>
                         <tr>
                             <td colspan="8" class="text-end">Subtotal:</td>
-                            <td class="text-end fw-medium" id="subtotal">0.00</td>
+                            <td class="text-end fw-medium"><span id="poCurrencyPrefix">{{ form.currency.value|default:"AED" }}</span> <span id="subtotal">0.00</span></td>
                             <td></td>
                         </tr>
                         <tr>
                             <td colspan="8" class="text-end">VAT:</td>
-                            <td class="text-end fw-medium" id="vatTotal">0.00</td>
+                            <td class="text-end fw-medium"><span class="po-currency-prefix">{{ form.currency.value|default:"AED" }}</span> <span id="vatTotal">0.00</span></td>
                             <td></td>
                         </tr>
                         <tr>
                             <td colspan="8" class="text-end fw-bold">Total:</td>
-                            <td class="text-end fw-bold" id="grandTotal">0.00</td>
+                            <td class="text-end fw-bold"><span class="po-currency-prefix">{{ form.currency.value|default:"AED" }}</span> <span id="grandTotal">0.00</span></td>
                             <td></td>
                         </tr>
                     </tfoot>
@@ -245,7 +305,12 @@
         </div>
     </div>
     
-    <button type="submit" class="btn btn-primary"><i class="fas fa-save me-2"></i>Save</button>
+    <button type="submit" class="btn btn-primary">
+        <i class="fas fa-save me-2"></i>{% if convert_pr %}Create Purchase Order{% else %}Save{% endif %}
+    </button>
+    {% if convert_pr %}
+    <a href="{% url 'purchase:pr_detail' convert_pr.pk %}" class="btn btn-light">Cancel</a>
+    {% endif %}
     <a href="{% url 'purchase:po_list' %}" class="btn btn-light">Cancel</a>
 </form>
 {% endblock %}
@@ -738,8 +803,10 @@ $(function() {
     
     {% if preselect_pr %}
     const preselectPr = '{{ preselect_pr }}';
-    if (preselectPr && prSelect && document.querySelector('#id_purchase_request option[value="' + preselectPr + '"]')) {
-        prSelect.value = preselectPr;
+    if (preselectPr) {
+        if (prSelect) {
+            prSelect.value = preselectPr;
+        }
         if (srSelect) srSelect.value = '';
         loadPRItems(preselectPr);
     }
@@ -753,6 +820,18 @@ $(function() {
         loadSRItems(preselectSr);
     }
     {% endif %}
+
+    const currencySelect = document.getElementById('id_currency');
+    function updatePoCurrencyPrefix() {
+        const code = currencySelect?.value || 'AED';
+        document.querySelectorAll('.po-currency-prefix, #poCurrencyPrefix').forEach(function (el) {
+            el.textContent = code;
+        });
+    }
+    if (currencySelect) {
+        currencySelect.addEventListener('change', updatePoCurrencyPrefix);
+        updatePoCurrencyPrefix();
+    }
 
     const poTermsTemplates = {{ po_terms_templates_json|safe }};
     function setupPoTermsTemplateSelect() {
@@ -782,4 +861,7 @@ $(function() {
     setupPoTermsTemplateSelect();
 });
 </script>
+{% if convert_pr %}
+{% include 'purchase/includes/pr_vendor_quotes_script.html' %}
+{% endif %}
 {% endblock %}

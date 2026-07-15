@@ -1,0 +1,26 @@
+<div class="card mb-4">
+    <div class="card-header">
+        <h6 class="mb-0 fw-semibold">Other procurement attachments</h6>
+    </div>
+    <div class="card-body">
+        <p class="text-muted small mb-2">
+            Optional supporting documents (PDF, Word, images) for this conversion.
+        </p>
+        {% if can_manage_vendor_quotes %}
+        <div class="mb-3">
+            <label class="form-label small fw-semibold">Add files</label>
+            <input type="file" id="pr-other-file-input" class="form-control form-control-sm" multiple
+                   accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp,.gif">
+        </div>
+        {% endif %}
+        <ul class="mb-0" id="pr-other-attachments-list">
+            {% for att in procurement_other_attachments %}
+            <li class="mb-1">
+                <a href="{{ att.file.url }}" target="_blank" rel="noopener">{{ att.filename|default:att.file.name }}</a>
+            </li>
+            {% empty %}
+            <li class="text-muted" id="pr-other-empty">No other attachments yet.</li>
+            {% endfor %}
+        </ul>
+    </div>
+</div>

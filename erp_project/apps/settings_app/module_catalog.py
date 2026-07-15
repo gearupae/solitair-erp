@@ -1,4 +1,5 @@
 """Display metadata for ERP modules (icons, colors)."""
+from apps.core.nav_config import minimal_nav_module_choices
 from apps.settings_app.models import ModulePermission
 
 # Admin/system modules — not shown on the user request page.
@@ -86,7 +87,7 @@ MODULE_DISPLAY = {
 def get_module_catalog(include_admin=False):
     """Return ordered list of module cards for display."""
     catalog = []
-    for code, label in ModulePermission.MODULE_CHOICES:
+    for code, label in minimal_nav_module_choices(ModulePermission.MODULE_CHOICES):
         if not include_admin and code in EXCLUDED_FROM_REQUEST:
             continue
         meta = MODULE_DISPLAY.get(code, {

@@ -3,8 +3,10 @@ Purchase Views - Vendors, Purchase Requests, Purchase Orders, Vendor Bills, Expe
 All purchase transactions post to accounting module as single source of truth.
 """
 from django.shortcuts import render, redirect, get_object_or_404
+from django import forms
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
+from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.views.generic import ListView, CreateView, UpdateView, DetailView, TemplateView
 from django.urls import reverse, reverse_lazy
 from django.db.models import Q, Sum, Prefetch
@@ -33,7 +35,19 @@ from .forms import (
     ExpenseClaimForm, ExpenseClaimItemFormSet, ExpenseClaimPaymentForm,
     RecurringExpenseForm
 )
-from .pr_approval_rules import annotate_pr_approval_actions, user_can_act_on_purchase_request
+from .pr_approval_rules import (
+    annotate_pr_approval_actions,
+    user_can_act_on_purchase_request,
+    user_can_convert_pr_to_po,
+    user_can_delete_pr,
+    user_can_edit_pr,
+    user_can_procurement_return_pr,
+    user_can_view_purchase_requests,
+    user_is_pr_approver_portal,
+    user_is_procurement_department_member,
+    user_is_procurement_staff,
+    user_is_pr_requester,
+)
 from apps.core.mixins import PermissionRequiredMixin, CreatePermissionMixin, UpdatePermissionMixin
 from apps.core.utils import PermissionChecker
 
@@ -120,6 +134,37 @@ def _pr_inventory_stock_notices(pr):
     return build_pr_inventory_purchase_alerts(pr)
 
 
+PR_SUPPORTING_DOC_EXTENSIONS = frozenset({'.doc', '.docx', '.jpg', '.jpeg', '.png'})
+
+
+def _pr_supporting_attachment_error(request) -> str | None:
+    """Reject vendor quote file types on PR create/edit (quotes belong on PR detail)."""
+    invalid = []
+    for f in request.FILES.getlist('attachments'):
+        ext = Path(f.name).suffix.lower()
+        if ext not in PR_SUPPORTING_DOC_EXTENSIONS:
+            invalid.append(f.name)
+    if not invalid:
+        return None
+    names = ', '.join(invalid)
+    return (
+        f'Vendor quotes cannot be uploaded here ({names}). '
+        'Use PDF or Excel on the PR detail page after saving.'
+    )
+
+
+def _save_pr_supporting_attachments(request, pr) -> None:
+    """Persist supporting documents from PR create/edit form."""
+    for f in request.FILES.getlist('attachments'):
+        PurchaseRequestAttachment.objects.create(
+            purchase_request=pr,
+            file=f,
+            filename=f.name,
+            uploaded_by=request.user,
+            kind=PurchaseRequestAttachment.KIND_SUPPORTING,
+        )
+
+
 def _save_vendor_bill_attachments(request, bill):
     """Persist uploaded files from `attachments` multi-file input."""
     uploaded = request.FILES.getlist('attachments')
@@ -135,13 +180,35 @@ def _save_vendor_bill_attachments(request, bill):
 
 
 def _can_manage_pr_vendor_attachments(user, pr) -> bool:
+    """Vendor quotes and procurement files — procurement department only after approval."""
     if not user.is_authenticated:
         return False
     if user.is_superuser:
         return True
-    if pr.requested_by_id == user.id:
-        return True
-    return PermissionChecker.has_permission(user, 'purchase', 'edit')
+    return user_is_procurement_department_member(user) and pr.status in ('approved', 'converted')
+
+
+def _pr_vendor_quote_ui_context(user, pr) -> dict:
+    """Shared context for vendor quote upload panels (PR detail & convert-to-PO)."""
+    quote_qs = pr.attachments.filter(kind=PurchaseRequestAttachment.KIND_VENDOR_QUOTE)
+    _ph = 999_999_999
+    return {
+        'can_manage_vendor_quotes': _can_manage_pr_vendor_attachments(user, pr),
+        'quote_attachments': quote_qs.order_by('id'),
+        'procurement_other_attachments': pr.attachments.filter(
+            kind=PurchaseRequestAttachment.KIND_SUPPORTING
+        ).order_by('id'),
+        'pr_vendor_upload_url': reverse(
+            'purchase:pr_vendor_attachment_upload', args=[pr.pk]
+        ),
+        'pr_procurement_upload_url': reverse(
+            'purchase:pr_procurement_attachment_upload', args=[pr.pk]
+        ),
+        'pr_vendor_update_url_pattern': reverse(
+            'purchase:pr_vendor_attachment_update',
+            args=[pr.pk, _ph],
+        ).replace(str(_ph), '__ATT_ID__'),
+    }
 
 
 def _serialize_pr_vendor_attachment(att):
@@ -256,12 +323,24 @@ def vendor_delete(request, pk):
 
 # ============ PURCHASE REQUEST VIEWS ============
 
-class PurchaseRequestListView(PermissionRequiredMixin, ListView):
+class PurchaseRequestAccessMixin(LoginRequiredMixin, UserPassesTestMixin):
+    """Purchase module view, or configured PR approver (approval portal)."""
+
+    def test_func(self):
+        return user_can_view_purchase_requests(self.request.user)
+
+    def handle_no_permission(self):
+        from apps.core.nav_config import get_user_home_url, minimal_nav_enabled
+        messages.error(self.request, 'You do not have permission to access purchase requests.')
+        if minimal_nav_enabled():
+            return redirect(get_user_home_url(self.request.user))
+        return redirect('dashboard')
+
+
+class PurchaseRequestListView(PurchaseRequestAccessMixin, ListView):
     model = PurchaseRequest
     template_name = 'purchase/pr_list.html'
     context_object_name = 'purchase_requests'
-    module_name = 'purchase'
-    permission_type = 'view'
     paginate_by = 25
     
     def get_queryset(self):
@@ -271,6 +350,12 @@ class PurchaseRequestListView(PermissionRequiredMixin, ListView):
         from apps.core.visibility import filter_purchase_requests_for_user
 
         queryset = filter_purchase_requests_for_user(queryset, self.request.user)
+        if user_is_pr_approver_portal(self.request.user):
+            queryset = queryset.filter(status='pending')
+            pending_ids = [
+                pr.pk for pr in queryset if user_can_act_on_purchase_request(self.request.user, pr)
+            ]
+            queryset = queryset.filter(pk__in=pending_ids)
         search = self.request.GET.get('search')
         if search:
             queryset = queryset.filter(pr_number__icontains=search)
@@ -281,12 +366,20 @@ class PurchaseRequestListView(PermissionRequiredMixin, ListView):
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['title'] = 'Purchase Requests'
+        portal = user_is_pr_approver_portal(self.request.user)
+        context['title'] = 'Purchase requests for approval' if portal else 'Purchase Requests'
+        context['is_pr_approver_portal'] = portal
         context['status_choices'] = PurchaseRequest.STATUS_CHOICES
         context['can_create'] = self.request.user.is_superuser or PermissionChecker.has_permission(self.request.user, 'purchase', 'create')
         context['can_edit'] = self.request.user.is_superuser or PermissionChecker.has_permission(self.request.user, 'purchase', 'edit')
         context['can_delete'] = self.request.user.is_superuser or PermissionChecker.has_permission(self.request.user, 'purchase', 'delete')
-        context['can_convert'] = self.request.user.is_superuser or PermissionChecker.has_permission(self.request.user, 'purchase', 'create')
+        context['can_convert'] = (
+            self.request.user.is_superuser
+            or (
+                user_is_procurement_department_member(self.request.user)
+                and PermissionChecker.has_permission(self.request.user, 'purchase', 'create')
+            )
+        )
         context['today'] = date.today().isoformat()
         annotate_pr_approval_actions(self.request.user, context.get('purchase_requests', []))
         return context
@@ -319,11 +412,13 @@ class PurchaseRequestCreateView(CreatePermissionMixin, CreateView):
         self.object = None
         form = self.get_form()
         items_formset = PurchaseRequestItemFormSet(request.POST)
-        
-        if form.is_valid() and items_formset.is_valid():
+        attachment_error = _pr_supporting_attachment_error(request)
+
+        if form.is_valid() and items_formset.is_valid() and not attachment_error:
             return self.form_valid(form, items_formset)
-        else:
-            return self.form_invalid(form, items_formset)
+        if attachment_error:
+            messages.error(request, attachment_error)
+        return self.form_invalid(form, items_formset)
     
     def form_valid(self, form, items_formset):
         form.instance.requested_by = self.request.user
@@ -331,14 +426,7 @@ class PurchaseRequestCreateView(CreatePermissionMixin, CreateView):
         items_formset.instance = self.object
         items_formset.save()
         self.object.calculate_total()
-        # Save attachments
-        for f in self.request.FILES.getlist('attachments'):
-            PurchaseRequestAttachment.objects.create(
-                purchase_request=self.object,
-                file=f,
-                filename=f.name,
-                uploaded_by=self.request.user
-            )
+        _save_pr_supporting_attachments(self.request, self.object)
         messages.success(self.request, f'Purchase Request {self.object.pr_number} created.')
         return redirect(self.success_url)
     
@@ -348,11 +436,27 @@ class PurchaseRequestCreateView(CreatePermissionMixin, CreateView):
         )
 
 
-class PurchaseRequestUpdateView(UpdatePermissionMixin, UpdateView):
+class PurchaseRequestUpdateView(LoginRequiredMixin, UpdateView):
     model = PurchaseRequest
     form_class = PurchaseRequestForm
     template_name = 'purchase/pr_form.html'
     module_name = 'purchase'
+
+    def dispatch(self, request, *args, **kwargs):
+        self.object = self.get_object()
+        if not user_can_edit_pr(request.user, self.object):
+            messages.error(
+                request,
+                'This purchase request cannot be edited. Approved requests are under procurement control.',
+            )
+            return redirect('purchase:pr_detail', pk=self.object.pk)
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_queryset(self):
+        qs = PurchaseRequest.objects.filter(is_active=True)
+        from apps.core.visibility import filter_purchase_requests_for_user
+
+        return filter_purchase_requests_for_user(qs, self.request.user)
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -375,25 +479,20 @@ class PurchaseRequestUpdateView(UpdatePermissionMixin, UpdateView):
         self.object = self.get_object()
         form = self.get_form()
         items_formset = PurchaseRequestItemFormSet(request.POST, instance=self.object)
-        
-        if form.is_valid() and items_formset.is_valid():
+        attachment_error = _pr_supporting_attachment_error(request)
+
+        if form.is_valid() and items_formset.is_valid() and not attachment_error:
             return self.form_valid(form, items_formset)
-        else:
-            return self.form_invalid(form, items_formset)
+        if attachment_error:
+            messages.error(request, attachment_error)
+        return self.form_invalid(form, items_formset)
     
     def form_valid(self, form, items_formset):
         self.object = form.save()
         items_formset.instance = self.object
         items_formset.save()
         self.object.calculate_total()
-        # Save new attachments
-        for f in self.request.FILES.getlist('attachments'):
-            PurchaseRequestAttachment.objects.create(
-                purchase_request=self.object,
-                file=f,
-                filename=f.name,
-                uploaded_by=self.request.user
-            )
+        _save_pr_supporting_attachments(self.request, self.object)
         messages.success(self.request, f'Purchase Request {self.object.pr_number} updated.')
         return redirect('purchase:pr_list')
     
@@ -403,12 +502,10 @@ class PurchaseRequestUpdateView(UpdatePermissionMixin, UpdateView):
         )
 
 
-class PurchaseRequestDetailView(PermissionRequiredMixin, DetailView):
+class PurchaseRequestDetailView(PurchaseRequestAccessMixin, DetailView):
     model = PurchaseRequest
     template_name = 'purchase/pr_detail.html'
     context_object_name = 'pr'
-    module_name = 'purchase'
-    permission_type = 'view'
 
     def get_queryset(self):
         qs = (
@@ -424,33 +521,32 @@ class PurchaseRequestDetailView(PermissionRequiredMixin, DetailView):
         context = super().get_context_data(**kwargs)
         context['title'] = f'PR: {self.object.pr_number}'
         context['pr_inventory_stock_notices'] = _pr_inventory_stock_notices(self.object)
-        context['can_edit'] = (
-            (self.request.user.is_superuser or
-             PermissionChecker.has_permission(self.request.user, 'purchase', 'edit'))
-            and (self.object.status in ['draft', 'returned'] or
-                 (self.request.user.is_superuser and self.object.status == 'approved'))
-        )
+        context['can_edit'] = user_can_edit_pr(self.request.user, self.object)
         context['can_submit'] = context['can_edit'] and self.object.status in ['draft', 'returned']
         can_act = user_can_act_on_purchase_request(self.request.user, self.object)
         context['can_approve'] = can_act
         context['can_reject'] = can_act
         context['can_return'] = can_act
-        context['can_convert'] = (
-            self.request.user.is_superuser or
-            PermissionChecker.has_permission(self.request.user, 'purchase', 'create')
-        ) and self.object.status == 'approved'
+        context['can_procurement_return'] = user_can_procurement_return_pr(
+            self.request.user, self.object
+        )
+        context['is_under_procurement_control'] = self.object.status == 'approved'
+        context['is_pr_requester'] = user_is_pr_requester(self.request.user, self.object)
+        context['can_view_pr_commercial'] = user_is_procurement_department_member(
+            self.request.user
+        ) and self.object.status in ('approved', 'converted')
+        context['can_convert'] = user_can_convert_pr_to_po(self.request.user, self.object)
         context['can_manage_vendor_quotes'] = _can_manage_pr_vendor_attachments(
             self.request.user, self.object
         )
-        context['quote_attachments'] = self.object.attachments.order_by('id')
-        context['pr_vendor_upload_url'] = reverse(
-            'purchase:pr_vendor_attachment_upload', args=[self.object.pk]
+        quote_qs = self.object.attachments.filter(
+            kind=PurchaseRequestAttachment.KIND_VENDOR_QUOTE
         )
-        _ph = 999_999_999
-        context['pr_vendor_update_url_pattern'] = reverse(
-            'purchase:pr_vendor_attachment_update',
-            args=[self.object.pk, _ph],
-        ).replace(str(_ph), '__ATT_ID__')
+        context['supporting_attachments'] = self.object.attachments.filter(
+            kind=PurchaseRequestAttachment.KIND_SUPPORTING
+        ).order_by('id')
+        context['quote_attachments'] = quote_qs.order_by('id')
+        context.update(_pr_vendor_quote_ui_context(self.request.user, self.object))
         from apps.inventory.utils import get_openai_api_key, is_ai_available
 
         context['openai_configured'] = is_ai_available()
@@ -460,7 +556,7 @@ class PurchaseRequestDetailView(PermissionRequiredMixin, DetailView):
         context['pr_vendor_analyze_status_url'] = reverse(
             'purchase:pr_vendor_quote_analyze_status', args=[self.object.pk]
         )
-        context['has_quote_attachments'] = self.object.attachments.exists()
+        context['has_quote_attachments'] = quote_qs.exists()
         context['show_vendor_quote_ai'] = True
         context['pr_pdf_url'] = reverse('purchase:pr_pdf', args=[self.object.pk])
 
@@ -503,11 +599,7 @@ def pr_pdf(request, pk):
     )
     if not user_can_access_purchase_request(request.user, pr):
         messages.error(request, 'Permission denied.')
-        return redirect('purchase:pr_list')
-
-    if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'purchase', 'view')):
-        messages.error(request, 'Permission denied.')
-        return redirect('purchase:pr_list')
+        return redirect('dashboard')
 
     context = build_pr_pdf_context(request, pr)
     output_format = request.GET.get('format', 'html')
@@ -557,6 +649,7 @@ def pr_vendor_attachment_upload(request, pk):
                 file=f,
                 filename=f.name,
                 uploaded_by=request.user,
+                kind=PurchaseRequestAttachment.KIND_VENDOR_QUOTE,
             )
             created.append(att)
         except Exception as exc:
@@ -781,6 +874,43 @@ def pr_reject(request, pk):
 
 
 @login_required
+def pr_procurement_return(request, pk):
+    """Send an approved PR back to the requester for revision (procurement only)."""
+    pr = get_object_or_404(PurchaseRequest, pk=pk, is_active=True)
+    if not user_can_procurement_return_pr(request.user, pr):
+        messages.error(request, 'Only the procurement department can return an approved purchase request.')
+        return redirect('purchase:pr_detail', pk=pk)
+    if request.method == 'POST':
+        comment = request.POST.get('comment', '').strip()
+        if not comment:
+            messages.error(request, 'Please enter a comment or justification.')
+            return redirect('purchase:pr_detail', pk=pk)
+        pr.status = 'returned'
+        pr.rejection_reason = comment
+        pr.save(update_fields=['status', 'rejection_reason', 'updated_at'])
+        from apps.settings_app.models import ApprovalAuditLog, Notification
+        ApprovalAuditLog.objects.create(
+            module='purchase_request',
+            reference=pr.pr_number,
+            approver=request.user,
+            action='return',
+            comment=comment,
+        )
+        Notification.create(
+            user=pr.requested_by,
+            title='Purchase Request Returned by Procurement',
+            message=(
+                f'Purchase Request {pr.pr_number} was returned for revision by procurement. '
+                f'{comment[:100]}{"..." if len(comment) > 100 else ""}'
+            ),
+            link=f'/purchase/requests/{pr.pk}/',
+        )
+        messages.success(request, f'PR {pr.pr_number} returned to requester for revision.')
+        return redirect('purchase:pr_detail', pk=pk)
+    return redirect('purchase:pr_detail', pk=pk)
+
+
+@login_required
 def pr_return(request, pk):
     """Return purchase request for revision with comment."""
     pr = get_object_or_404(PurchaseRequest, pk=pk)
@@ -816,34 +946,61 @@ def pr_return(request, pk):
 
 @login_required
 def pr_delete(request, pk):
-    pr = get_object_or_404(PurchaseRequest, pk=pk)
-    if request.user.is_superuser or PermissionChecker.has_permission(request.user, 'purchase', 'delete'):
-        pr.is_active = False
-        pr.save()
-        messages.success(request, f'PR {pr.pr_number} deleted.')
-    else:
-        messages.error(request, 'Permission denied.')
+    pr = get_object_or_404(PurchaseRequest, pk=pk, is_active=True)
+    if not user_can_delete_pr(request.user, pr):
+        messages.error(
+            request,
+            'This purchase request cannot be deleted. Approved requests are under procurement control.',
+        )
+        return redirect('purchase:pr_detail', pk=pk)
+    pr.is_active = False
+    pr.save(update_fields=['is_active', 'updated_at'])
+    messages.success(request, f'PR {pr.pr_number} deleted.')
     return redirect('purchase:pr_list')
 
 
 @login_required
-def pr_convert(request, pk):
-    """Redirect to PO create with PR pre-selected. Only for approved PRs."""
-    pr = get_object_or_404(PurchaseRequest, pk=pk)
-    if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'purchase', 'create')):
-        messages.error(request, 'Permission denied.')
-        return redirect('purchase:pr_list')
-    if pr.status != 'approved':
-        messages.error(request, 'Only approved Purchase Requests can be converted to Purchase Order.')
-        return redirect('purchase:pr_detail', pk=pk)
-    url = reverse('purchase:po_create') + '?pr=' + str(pr.pk)
-    return redirect(url)
+@require_POST
+def pr_procurement_attachment_upload(request, pk):
+    """Procurement uploads other supporting files (images, Word, PDF) during PO conversion."""
+    pr = get_object_or_404(PurchaseRequest, pk=pk, is_active=True)
+    if not _can_manage_pr_vendor_attachments(request.user, pr):
+        return JsonResponse({'ok': False, 'error': 'Permission denied.'}, status=403)
+    allowed_ext = {'.pdf', '.doc', '.docx', '.png', '.jpg', '.jpeg', '.webp', '.gif'}
+    files = request.FILES.getlist('files')
+    if not files:
+        return JsonResponse({'ok': False, 'error': 'No files uploaded.'}, status=400)
+    for f in files:
+        ext = Path(f.name).suffix.lower()
+        if ext not in allowed_ext:
+            return JsonResponse(
+                {
+                    'ok': False,
+                    'error': f'File type not allowed: {f.name}. Use PDF, Word, or images.',
+                },
+                status=400,
+            )
+    created = []
+    for f in files:
+        att = PurchaseRequestAttachment.objects.create(
+            purchase_request=pr,
+            file=f,
+            filename=f.name,
+            uploaded_by=request.user,
+            kind=PurchaseRequestAttachment.KIND_SUPPORTING,
+        )
+        created.append({'id': att.pk, 'filename': att.filename or f.name, 'file_url': att.file.url})
+    return JsonResponse({'ok': True, 'attachments': created})
 
 
 @login_required
 def pr_items_json(request, pk):
     """Return PR items as JSON for AJAX requests."""
+    from apps.core.visibility import user_can_access_purchase_request
+
     pr = get_object_or_404(PurchaseRequest, pk=pk)
+    if not user_can_access_purchase_request(request.user, pr):
+        return JsonResponse({'error': 'Permission denied.'}, status=403)
     items = []
     for item in pr.items.all():
         items.append({
@@ -944,10 +1101,12 @@ class PurchaseOrderCreateView(CreatePermissionMixin, CreateView):
     module_name = 'purchase'
 
     def get_initial(self):
-        from apps.settings_app.models import PurchaseOrderTermsTemplate
+        from apps.settings_app.models import PurchaseOrderTermsTemplate, CompanySettings
 
         initial = super().get_initial()
         initial['terms_and_conditions'] = PurchaseOrderTermsTemplate.get_default_body()
+        company = CompanySettings.get_settings()
+        initial['currency'] = (company.currency or 'AED').upper()
         return initial
     
     def get_context_data(self, **kwargs):
@@ -1003,6 +1162,66 @@ class PurchaseOrderCreateView(CreatePermissionMixin, CreateView):
         return self.render_to_response(
             self.get_context_data(form=form, items_formset=items_formset)
         )
+
+
+class PRConvertToPOView(PurchaseOrderCreateView):
+    """Procurement converts an approved PR to PO — vendor, prices, and quote uploads."""
+
+    def dispatch(self, request, *args, **kwargs):
+        self.convert_pr = get_object_or_404(
+            PurchaseRequest.objects.filter(is_active=True).prefetch_related('items__inventory_item'),
+            pk=kwargs['pk'],
+        )
+        from apps.core.visibility import user_can_access_purchase_request
+
+        if not user_can_access_purchase_request(request.user, self.convert_pr):
+            from django.http import Http404
+            raise Http404()
+        if not user_can_convert_pr_to_po(request.user, self.convert_pr):
+            messages.error(
+                request,
+                'Only procurement staff can convert approved purchase requests to a purchase order.',
+            )
+            return redirect('purchase:pr_detail', pk=self.convert_pr.pk)
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_initial(self):
+        initial = super().get_initial()
+        analysis = self.convert_pr.vendor_quote_analysis or {}
+        currency = (analysis.get('currency') or '').strip().upper()
+        if currency:
+            from apps.core.currencies import VALID_CURRENCY_CODES
+            if currency in VALID_CURRENCY_CODES:
+                initial['currency'] = currency
+        return initial
+
+    def get_form(self, form_class=None):
+        form = super().get_form(form_class)
+        if 'purchase_request' in form.fields:
+            form.fields['purchase_request'].widget = forms.HiddenInput()
+            form.fields['purchase_request'].initial = self.convert_pr.pk
+            form.fields['purchase_request'].queryset = PurchaseRequest.objects.filter(
+                pk=self.convert_pr.pk
+            )
+        return form
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['convert_pr'] = self.convert_pr
+        context['preselect_pr'] = str(self.convert_pr.pk)
+        context['title'] = f'Convert {self.convert_pr.pr_number} to Purchase Order'
+        context.update(_pr_vendor_quote_ui_context(self.request, self.convert_pr))
+        return context
+
+    def form_valid(self, form, items_formset):
+        form.instance.purchase_request = self.convert_pr
+        if 'purchase_request' in form.cleaned_data:
+            form.cleaned_data['purchase_request'] = self.convert_pr
+        response = super().form_valid(form, items_formset)
+        return response
+
+    def get_success_url(self):
+        return reverse('purchase:po_detail', kwargs={'pk': self.object.pk})
 
 
 class PurchaseOrderUpdateView(UpdatePermissionMixin, UpdateView):

@@ -33,6 +33,10 @@ NAV_HIDDEN_MODULES = frozenset(
     code.strip() for code in _nav_hidden_raw.split(',') if code.strip()
 )
 
+# Minimal nav: only Purchase + HR core (employees, departments, designations).
+# Set APP_MINIMAL_NAV=false in .env to restore the full menu.
+APP_MINIMAL_NAV = config('APP_MINIMAL_NAV', default=True, cast=bool)
+
 # OpenAI (inventory AI forecasting) — env takes precedence over DB-stored key
 OPENAI_API_KEY = config('OPENAI_API_KEY', default='')
 OPENAI_MODEL = config('OPENAI_MODEL', default='gpt-5.4-mini')
@@ -138,6 +142,8 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'apps.core.middleware.AuditMiddleware',
+    'apps.core.middleware.MinimalNavMiddleware',
+    'apps.core.middleware.PurchaseFeatureMiddleware',
 ]
 
 ROOT_URLCONF = 'erp_project.urls'

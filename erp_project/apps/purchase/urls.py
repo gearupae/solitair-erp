@@ -25,15 +25,21 @@ urlpatterns = [
     path('requests/<int:pk>/edit/', views.PurchaseRequestUpdateView.as_view(), name='pr_edit'),
     path('requests/<int:pk>/submit/', views.pr_submit, name='pr_submit'),
     path('requests/<int:pk>/return/', views.pr_return, name='pr_return'),
+    path('requests/<int:pk>/procurement-return/', views.pr_procurement_return, name='pr_procurement_return'),
     path('requests/<int:pk>/delete/', views.pr_delete, name='pr_delete'),
     path('requests/<int:pk>/approve/', views.pr_approve, name='pr_approve'),
     path('requests/<int:pk>/reject/', views.pr_reject, name='pr_reject'),
-    path('requests/<int:pk>/convert/', views.pr_convert, name='pr_convert'),
+    path('requests/<int:pk>/convert/', views.PRConvertToPOView.as_view(), name='pr_convert'),
     path('requests/<int:pk>/items/', views.pr_items_json, name='pr_items_json'),
     path(
         'requests/<int:pk>/vendor-attachments/upload/',
         views.pr_vendor_attachment_upload,
         name='pr_vendor_attachment_upload',
+    ),
+    path(
+        'requests/<int:pk>/procurement-attachments/upload/',
+        views.pr_procurement_attachment_upload,
+        name='pr_procurement_attachment_upload',
     ),
     path(
         'requests/<int:pk>/vendor-attachments/<int:attachment_id>/',

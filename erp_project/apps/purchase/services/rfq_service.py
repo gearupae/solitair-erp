@@ -106,11 +106,14 @@ def convert_awards_to_pos(rfq: RFQ, user) -> list:
         by_supplier.setdefault(aw.supplier_id, []).append(aw)
 
     pos = []
+    from apps.settings_app.models import CompanySettings
+    default_currency = (CompanySettings.get_settings().currency or 'AED').upper()
     for supplier_id, supplier_awards in by_supplier.items():
         po = PurchaseOrder.objects.create(
             vendor_id=supplier_id,
             order_date=date.today(),
             status='draft',
+            currency=default_currency,
             created_by=user,
             notes=f'From RFQ {rfq.rfq_number}',
         )

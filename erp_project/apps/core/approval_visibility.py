@@ -67,14 +67,17 @@ def estimate_approver_records_q(user):
     return _estimate_approver_status_q() & amount_q
 
 
+PR_APPROVER_VISIBLE_STATUSES = frozenset({'pending', 'approved', 'rejected'})
+
+
 def purchase_request_approver_records_q(user):
     """PRs the user may see as configured approver."""
     config = ApprovalConfiguration.objects.filter(module='purchase_request', is_active=True).first()
     if not config:
         return Q(pk__in=[])
-    pending = Q(status='pending')
+    visible = Q(status__in=PR_APPROVER_VISIBLE_STATUSES)
     amount_q = _build_amount_tier_q(config, user, 'total_amount')
-    return pending & amount_q
+    return visible & amount_q
 
 
 def project_approver_records_q(user):
@@ -120,11 +123,12 @@ def user_is_estimate_approver_for(user, estimate):
 
 
 def user_is_purchase_request_approver_for(user, purchase_request):
-    from apps.purchase.pr_approval_rules import user_can_act_on_purchase_request
+    from apps.purchase.pr_approval_rules import get_configured_pr_approver
 
-    if not purchase_request or purchase_request.status != 'pending':
+    if not purchase_request or purchase_request.status not in PR_APPROVER_VISIBLE_STATUSES:
         return False
-    return user_can_act_on_purchase_request(user, purchase_request)
+    approver = get_configured_pr_approver(purchase_request)
+    return approver is not None and approver.pk == user.pk
 
 
 def user_is_project_approver_for(user, project):

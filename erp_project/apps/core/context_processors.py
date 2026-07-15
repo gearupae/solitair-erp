@@ -3,6 +3,7 @@ Context processors for the ERP system.
 """
 from django.conf import settings
 
+from apps.core.nav_config import minimal_nav_enabled
 from apps.core.utils import PermissionChecker
 from apps.core.visibility import crm_show_my_leads_label
 from apps.hr.models import Employee
@@ -17,10 +18,13 @@ def global_context(request):
         'app_name': 'Gearup ERP',
         'current_year': __import__('datetime').datetime.now().year,
         'nav_hidden_modules': settings.NAV_HIDDEN_MODULES,
+        'app_minimal_nav': minimal_nav_enabled(),
         'static_css_version': getattr(settings, 'STATIC_CSS_VERSION', '1'),
     }
     
     if request.user.is_authenticated:
+        from apps.purchase.feature_permissions import get_user_purchase_feature_access
+        context['purchase_feature_access'] = get_user_purchase_feature_access(request.user)
         context['user_permissions'] = PermissionChecker.get_user_permissions(request.user)
         context['is_superuser'] = request.user.is_superuser
         context['header_linked_employee'] = Employee.objects.filter(
@@ -37,13 +41,17 @@ def global_context(request):
         from apps.settings_app.alerts_hub import user_can_access_alerts_hub
         context['can_access_ceo_dashboard'] = user_can_access_ceo_dashboard(request.user)
         context['can_access_alerts_hub'] = user_can_access_alerts_hub(request.user)
+        from apps.core.nav_config import get_user_home_url
+        context['user_home_url'] = get_user_home_url(request.user)
     else:
+        context['purchase_feature_access'] = {}
         context['header_notifications'] = []
         context['unread_notification_count'] = 0
         context['header_linked_employee'] = None
         context['crm_sales_rep_only'] = False
         context['can_access_ceo_dashboard'] = False
         context['can_access_alerts_hub'] = False
+        context['user_home_url'] = '/login/'
 
     return context
 

@@ -608,6 +608,41 @@ def _operations_section(user, today) -> dict | None:
     )
 
 
+def _pr_approval_section(user) -> dict | None:
+    """Pending PR approvals for configured approvers without purchase module access."""
+    from apps.purchase.models import PurchaseRequest
+    from apps.purchase.pr_approval_rules import user_can_act_on_purchase_request, user_is_pr_approver_portal
+
+    if not user_is_pr_approver_portal(user):
+        return None
+
+    pending_qs = PurchaseRequest.objects.filter(is_active=True, status='pending').order_by('-updated_at')
+    pending = [pr for pr in pending_qs if user_can_act_on_purchase_request(user, pr)]
+
+    return _section(
+        key='purchase_approval',
+        module='purchase',
+        title='Purchase approvals',
+        icon='fa-clipboard-check',
+        groups=[
+            _group(
+                title='Purchase requests awaiting your approval',
+                link=f'{reverse("purchase:pr_list")}?status=pending',
+                items=[
+                    _item(
+                        label=pr.pr_number,
+                        detail=pr.requested_by.get_full_name() if pr.requested_by_id else '—',
+                        link=reverse('purchase:pr_detail', args=[pr.pk]),
+                        severity='warning',
+                    )
+                    for pr in pending[:PREVIEW_LIMIT]
+                ],
+                total_count=len(pending),
+            ),
+        ],
+    )
+
+
 def _purchase_section(user) -> dict | None:
     if not _can(user, 'purchase'):
         return None
@@ -819,6 +854,7 @@ def build_alerts_hub(user) -> dict:
         lambda: _projects_section(user, today),
         lambda: _operations_section(user, today),
         lambda: _purchase_section(user),
+        lambda: _pr_approval_section(user),
         lambda: _hr_section(user),
         lambda: _inventory_section(user),
     )

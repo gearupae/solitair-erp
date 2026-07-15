@@ -132,6 +132,14 @@ def filter_purchase_requests_for_user(queryset, user):
     if not user_data_scope_restricted(user, 'purchase'):
         return queryset
     from apps.core.approval_visibility import purchase_request_approver_records_q
+    from apps.core.utils import PermissionChecker
+    from apps.purchase.pr_approval_rules import user_is_procurement_department_member
+
+    if (
+        user_is_procurement_department_member(user)
+        and PermissionChecker.has_permission(user, 'purchase', 'view')
+    ):
+        return queryset
 
     own_q = Q(created_by=user) | Q(requested_by=user)
     return queryset.filter(own_q | purchase_request_approver_records_q(user))
@@ -141,6 +149,14 @@ def user_can_access_purchase_request(user, purchase_request):
     if not purchase_request:
         return False
     if not user_data_scope_restricted(user, 'purchase'):
+        return True
+    from apps.core.utils import PermissionChecker
+    from apps.purchase.pr_approval_rules import user_is_procurement_department_member
+
+    if (
+        user_is_procurement_department_member(user)
+        and PermissionChecker.has_permission(user, 'purchase', 'view')
+    ):
         return True
     if purchase_request.created_by_id == user.id or purchase_request.requested_by_id == user.id:
         return True

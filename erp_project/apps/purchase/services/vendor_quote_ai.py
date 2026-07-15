@@ -28,6 +28,12 @@ PIPELINE_VERSION = 'gearup-ai-read-v4'
 RUNNING_STALE_MINUTES = 15
 CACHE_PREFIX = 'pr_vendor_quote_ai:'
 RUNNING_PREFIX = 'pr_vendor_quote_ai:running:'
+
+
+def _vendor_quote_attachments(pr: PurchaseRequest) -> list[PurchaseRequestAttachment]:
+    return list(
+        pr.attachments.filter(kind=PurchaseRequestAttachment.KIND_VENDOR_QUOTE).order_by('id')
+    )
 PHASE_PREFIX = 'pr_vendor_quote_ai:phase:'
 RESULT_PREFIX = 'pr_vendor_quote_ai:result:'
 
@@ -378,7 +384,7 @@ def _fetch_analysis_from_openai(
 
 
 def get_cached_pr_quote_analysis(pr: PurchaseRequest) -> dict | None:
-    attachments = list(pr.attachments.order_by('id'))
+    attachments = _vendor_quote_attachments(pr)
     if not attachments:
         return None
 
@@ -406,7 +412,7 @@ def get_vendor_quote_analysis_status(pr: PurchaseRequest) -> dict:
             'vendor_quote_analysis_run_key',
         ],
     )
-    attachments = list(pr.attachments.order_by('id'))
+    attachments = _vendor_quote_attachments(pr)
     if not attachments:
         return {'ok': False, 'status': 'idle', 'error': 'No quote files attached.'}
 
@@ -433,7 +439,11 @@ def get_vendor_quote_analysis_status(pr: PurchaseRequest) -> dict:
 
 def analyze_vendor_quotes(pr: PurchaseRequest, *, force: bool = False) -> dict:
     """Extract quote files and return AI comparison (OpenAI required)."""
-    attachments = list(pr.attachments.select_related('uploaded_by').order_by('id'))
+    attachments = list(
+        pr.attachments.filter(kind=PurchaseRequestAttachment.KIND_VENDOR_QUOTE)
+        .select_related('uploaded_by')
+        .order_by('id')
+    )
     if not attachments:
         return {
             'ok': False,
@@ -538,7 +548,7 @@ def _run_analysis_worker(pr_pk: int, force: bool) -> None:
             if not result.get('ok'):
                 _clear_analysis_running(pr_pk)
             pr = PurchaseRequest.objects.get(pk=pr_pk, is_active=True)
-            attachments = list(pr.attachments.order_by('id'))
+            attachments = _vendor_quote_attachments(pr)
             analysis_key = _analysis_cache_key(pr, attachments)
             cache.delete(_running_cache_key(pr.pk, analysis_key))
         except Exception:
@@ -548,7 +558,7 @@ def _run_analysis_worker(pr_pk: int, force: bool) -> None:
 
 def start_vendor_quote_analysis_async(pr: PurchaseRequest, *, force: bool = False) -> dict:
     """Start analysis in a background thread; return immediately."""
-    attachments = list(pr.attachments.order_by('id'))
+    attachments = _vendor_quote_attachments(pr)
     if not attachments:
         return {
             'ok': False,
