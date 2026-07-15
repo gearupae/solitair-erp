@@ -116,7 +116,12 @@ def designations_queryset(department_id=None, include_designation_id=None):
 
 def designation_option_rows(queryset):
     return [
-        {'id': d.pk, 'department_id': d.department_id, 'name': d.name}
+        {
+            'id': d.pk,
+            'department_id': d.department_id,
+            'name': d.name,
+            'label': f'{d.name} ({d.department.name})' if d.department_id else d.name,
+        }
         for d in queryset
     ]
 

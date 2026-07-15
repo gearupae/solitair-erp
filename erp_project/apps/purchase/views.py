@@ -179,6 +179,36 @@ def _save_vendor_bill_attachments(request, bill):
         )
 
 
+def _po_item_formset_from_pr(pr):
+    """Build an empty-PO item formset prefilled from a purchase request's lines."""
+    from apps.finance.models import TaxCode
+    from .forms import PurchaseOrderItemForm, BasePurchaseOrderItemFormSet
+
+    default_tax = TaxCode.objects.filter(is_active=True, is_default=True).first()
+    initial = []
+    for item in pr.items.select_related('inventory_item').all():
+        initial.append({
+            'inventory_item': item.inventory_item_id,
+            'brand': item.brand or '',
+            'model': item.model or '',
+            'description': item.description or '',
+            'quantity': item.quantity,
+            'unit_price': item.estimated_price or Decimal('0.00'),
+            'tax_code': default_tax.pk if default_tax else None,
+            'is_vat_inclusive': False,
+        })
+    extra = max(len(initial), 1)
+    FormSet = forms.inlineformset_factory(
+        PurchaseOrder,
+        PurchaseOrderItem,
+        form=PurchaseOrderItemForm,
+        formset=BasePurchaseOrderItemFormSet,
+        extra=extra,
+        can_delete=True,
+    )
+    return FormSet(initial=initial)
+
+
 def _can_manage_pr_vendor_attachments(user, pr) -> bool:
     """Vendor quotes and procurement files — procurement department only after approval."""
     if not user.is_authenticated:
@@ -1210,7 +1240,10 @@ class PRConvertToPOView(PurchaseOrderCreateView):
         context['convert_pr'] = self.convert_pr
         context['preselect_pr'] = str(self.convert_pr.pk)
         context['title'] = f'Convert {self.convert_pr.pr_number} to Purchase Order'
-        context.update(_pr_vendor_quote_ui_context(self.request, self.convert_pr))
+        context.update(_pr_vendor_quote_ui_context(self.request.user, self.convert_pr))
+        # Prefill PO lines from PR on the server (do not rely on AJAX alone).
+        if not self.request.POST and 'items_formset' not in kwargs:
+            context['items_formset'] = _po_item_formset_from_pr(self.convert_pr)
         return context
 
     def form_valid(self, form, items_formset):
@@ -1358,9 +1391,10 @@ class PurchaseOrderDetailView(PermissionRequiredMixin, DetailView):
         bill_summary = vendor_bill_retention_summary_rows(context['po_vendor_bills'])
         context['po_bill_retention_rows'] = bill_summary['rows']
         context['po_total_retention'] = bill_summary['total_retention']
+        # Bill only after PO is confirmed (or further along: receive / partial).
         context['can_create_bill'] = (
             context['can_edit']
-            and self.object.status != 'cancelled'
+            and self.object.status in ('confirmed', 'partial_received', 'received')
             and self.object.items.exists()
         )
         from apps.inventory.utils import get_openai_api_key, is_ai_available
@@ -1486,8 +1520,11 @@ def po_convert_to_bill(request, pk):
     if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'purchase', 'create')):
         messages.error(request, 'Permission denied.')
         return redirect('purchase:po_detail', pk=pk)
-    if po.status == 'cancelled':
-        messages.error(request, 'Cannot create a bill from a cancelled PO.')
+    if po.status not in ('confirmed', 'partial_received', 'received'):
+        messages.error(
+            request,
+            'Confirm the purchase order before converting it to a vendor bill.',
+        )
         return redirect('purchase:po_detail', pk=pk)
     if not po.items.exists():
         messages.error(request, 'Add line items to the PO before converting to a vendor bill.')

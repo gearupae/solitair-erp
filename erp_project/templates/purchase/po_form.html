@@ -801,7 +801,7 @@ $(function() {
         });
     }
     
-    {% if preselect_pr %}
+    {% if preselect_pr and not convert_pr %}
     const preselectPr = '{{ preselect_pr }}';
     if (preselectPr) {
         if (prSelect) {
@@ -810,6 +810,14 @@ $(function() {
         if (srSelect) srSelect.value = '';
         loadPRItems(preselectPr);
     }
+    {% endif %}
+    {% if convert_pr %}
+    // PR→PO convert: lines are prefilled server-side; just refresh totals.
+    document.querySelectorAll('#itemsBody .item-row').forEach(function (row) {
+        const qty = row.querySelector('.item-qty');
+        if (qty) calculateRowTotal(qty);
+    });
+    calculateTotals();
     {% endif %}
     
     {% if preselect_sr %}

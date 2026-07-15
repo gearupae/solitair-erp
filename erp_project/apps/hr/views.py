@@ -354,8 +354,14 @@ class EmployeeUpdateView(UpdatePermissionMixin, UpdateView):
             dept_id = self.object.department_id
 
         include_desig = self.object.designation_id if self.object.designation_id else None
+        # Pass all designations for client-side filter by department (include current even if dept mismatch).
         context['designations'] = designations_queryset(None, include_desig)
         context['designation_options'] = designation_option_rows(context['designations'])
+        if form is None:
+            form = context.get('form')
+        if form is not None and hasattr(form, 'fields') and 'designation' in form.fields:
+            # Keep ModelChoiceField options aligned with filtered list so POST validation succeeds.
+            form.fields['designation'].queryset = designations_queryset(dept_id, include_desig)
         # Also pass roles for reference
         context['roles'] = roles
         uae_form = kwargs.get('uae_form')

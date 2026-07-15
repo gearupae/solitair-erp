@@ -389,13 +389,18 @@
         desigEl.appendChild(blank);
 
         allOptions.forEach(function (row) {
-            if (deptId && String(row.department_id) !== String(deptId)) {
+            var matchesDept = !deptId || String(row.department_id) === String(deptId);
+            var isCurrent = selected && String(selected) === String(row.id);
+            if (!matchesDept && !isCurrent) {
                 return;
             }
             var opt = document.createElement('option');
             opt.value = String(row.id);
-            opt.textContent = row.name;
-            if (selected && String(selected) === String(row.id)) {
+            opt.textContent = row.label || row.name;
+            if (!matchesDept && isCurrent) {
+                opt.textContent += ' (other department)';
+            }
+            if (isCurrent) {
                 opt.selected = true;
             }
             desigEl.appendChild(opt);
