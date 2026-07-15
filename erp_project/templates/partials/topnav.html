@@ -822,6 +822,11 @@
                                 <i class="fas fa-building me-2"></i>Company
                             </a>
                         </li>
+                        <li>
+                            <a class="dropdown-item {% if '/settings/approval-configuration' in request.path %}active{% endif %}" href="{% url 'settings:approval_configuration' %}">
+                                <i class="fas fa-check-double me-2"></i>Approval Configuration
+                            </a>
+                        </li>
                         {% if not app_minimal_nav %}
                         <li>
                             <a class="dropdown-item" href="{% url 'settings:crm_kanban' %}">
@@ -868,12 +873,6 @@
                         <li>
                             <a class="dropdown-item" href="{% url 'settings:audit_log' %}">
                                 <i class="fas fa-history me-2"></i>Audit Log
-                            </a>
-                        </li>
-                        <li><hr class="dropdown-divider"></li>
-                        <li>
-                            <a class="dropdown-item" href="{% url 'settings:approval_configuration' %}">
-                                <i class="fas fa-check-double me-2"></i>Approval Configuration
                             </a>
                         </li>
                         {% endif %}

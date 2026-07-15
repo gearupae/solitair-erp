@@ -723,7 +723,16 @@ class ApprovalConfigurationView(PermissionRequiredMixin, TemplateView):
 
         context = super().get_context_data(**kwargs)
         context['title'] = 'Approval Configuration'
-        context['module_choices'] = ApprovalConfiguration.MODULE_CHOICES
+        modules = ApprovalConfiguration.MODULE_CHOICES
+        from apps.core.nav_config import minimal_nav_enabled
+        if minimal_nav_enabled():
+            allowed = {
+                'purchase_request',
+                'service_request',
+                'vendor_bill',
+            }
+            modules = [(code, name) for code, name in modules if code in allowed]
+        context['module_choices'] = modules
         context['approval_type_choices'] = ApprovalConfiguration.APPROVAL_TYPE_CHOICES
         context['users'] = (
             User.objects.filter(is_active=True)
@@ -731,7 +740,7 @@ class ApprovalConfigurationView(PermissionRequiredMixin, TemplateView):
         )
         
         config_list = []
-        for module_code, module_name in ApprovalConfiguration.MODULE_CHOICES:
+        for module_code, module_name in modules:
             config = ApprovalConfiguration.objects.filter(module=module_code, is_active=True).first()
             levels = list(config.levels.all().order_by('order', 'amount_threshold')) if config else []
             config_list.append({
