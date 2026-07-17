@@ -340,6 +340,40 @@ class VendorUpdateView(UpdatePermissionMixin, UpdateView):
 
 
 @login_required
+def vendor_detail(request, pk):
+    """Vendor detail under Purchase (works in minimal nav mode)."""
+    vendor = get_object_or_404(Vendor, pk=pk, is_active=True)
+    if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'purchase', 'view')):
+        messages.error(request, 'Permission denied.')
+        return redirect('purchase:vendor_list')
+
+    from apps.advances.views import _vendor_purchased_items
+    from apps.purchase.po_retention import vendor_bill_retention_summary_rows
+
+    recent_orders = PurchaseOrder.objects.filter(
+        vendor=vendor, is_active=True
+    ).order_by('-created_at')[:10]
+    recent_bills = VendorBill.objects.filter(
+        vendor=vendor, is_active=True
+    ).select_related('purchase_order', 'project').order_by('-created_at')[:10]
+    retention_bills = VendorBill.objects.filter(
+        vendor=vendor, is_active=True, retention_amount__gt=0,
+    ).exclude(status='cancelled').select_related('purchase_order', 'project').order_by('-bill_date', '-pk')
+    bill_retention_summary = vendor_bill_retention_summary_rows(retention_bills)
+
+    return render(request, 'purchase/vendor_detail.html', {
+        'title': f'Vendor: {vendor.name}',
+        'vendor': vendor,
+        'recent_orders': recent_orders,
+        'recent_bills': recent_bills,
+        'purchased_items': _vendor_purchased_items(vendor),
+        'bill_retention_rows': bill_retention_summary['rows'],
+        'vendor_total_retention': bill_retention_summary['total_retention'],
+        'can_edit': request.user.is_superuser or PermissionChecker.has_permission(request.user, 'purchase', 'edit'),
+    })
+
+
+@login_required
 def vendor_delete(request, pk):
     vendor = get_object_or_404(Vendor, pk=pk)
     if request.user.is_superuser or PermissionChecker.has_permission(request.user, 'purchase', 'delete'):
@@ -1112,14 +1146,20 @@ class PurchaseOrderListView(PermissionRequiredMixin, ListView):
         context['can_edit'] = self.request.user.is_superuser or PermissionChecker.has_permission(self.request.user, 'purchase', 'edit')
         context['can_delete'] = self.request.user.is_superuser or PermissionChecker.has_permission(self.request.user, 'purchase', 'delete')
         context['today'] = date.today().isoformat()
-        
-        # Calculate metrics
-        all_pos = PurchaseOrder.objects.filter(is_active=True)
+
+        from apps.core.visibility import filter_purchase_orders_for_user
+
+        all_pos = filter_purchase_orders_for_user(
+            PurchaseOrder.objects.filter(is_active=True),
+            self.request.user,
+        )
         context['total_pos'] = all_pos.count()
         context['total_amount'] = all_pos.aggregate(total=Sum('total_amount'))['total'] or 0
-        context['pending_pos'] = all_pos.filter(status__in=['draft', 'sent', 'confirmed', 'partial_received']).count()
+        context['pending_pos'] = all_pos.filter(
+            status__in=['draft', 'pending_approval', 'sent', 'confirmed', 'partial_received', 'returned']
+        ).count()
         context['confirmed_pos'] = all_pos.filter(status='confirmed').count()
-        
+
         return context
 
 
@@ -1262,6 +1302,15 @@ class PurchaseOrderUpdateView(UpdatePermissionMixin, UpdateView):
     form_class = PurchaseOrderForm
     template_name = 'purchase/po_form.html'
     module_name = 'purchase'
+
+    def dispatch(self, request, *args, **kwargs):
+        po = self.get_object()
+        from .po_approval_rules import po_status_allows_edit
+
+        if not po_status_allows_edit(po):
+            messages.error(request, 'This PO cannot be edited in its current status.')
+            return redirect('purchase:po_detail', pk=po.pk)
+        return super().dispatch(request, *args, **kwargs)
     
     def get_context_data(self, **kwargs):
         from apps.finance.models import TaxCode
@@ -1353,7 +1402,19 @@ class PurchaseOrderDetailView(PermissionRequiredMixin, DetailView):
 
         context = super().get_context_data(**kwargs)
         context['title'] = f'PO: {self.object.po_number}'
-        context['can_edit'] = self.request.user.is_superuser or PermissionChecker.has_permission(self.request.user, 'purchase', 'edit')
+        has_edit = self.request.user.is_superuser or PermissionChecker.has_permission(
+            self.request.user, 'purchase', 'edit'
+        )
+        from .po_approval_rules import (
+            po_status_allows_edit,
+            purchase_order_approval_enabled,
+            user_can_act_on_purchase_order,
+            user_can_confirm_purchase_order,
+        )
+
+        approval_enabled = purchase_order_approval_enabled()
+        context['approval_enabled'] = approval_enabled
+        context['can_edit'] = has_edit and po_status_allows_edit(self.object)
         company = CompanySettings.get_settings()
         context['po_email_hint'] = outgoing_mail_hint(company)
         context['can_send_po_email'] = (
@@ -1374,13 +1435,18 @@ class PurchaseOrderDetailView(PermissionRequiredMixin, DetailView):
         context['po_email_default_to'] = ve
 
         context['can_receive_po'] = (
-            context['can_edit'] and purchase_order_can_receive(self.object)
+            has_edit and purchase_order_can_receive(self.object)
         )
-        context['can_confirm_po'] = (
-            context['can_edit']
-            and self.object.status == 'draft'
+        context['can_submit'] = (
+            has_edit
+            and approval_enabled
+            and self.object.status in ('draft', 'returned')
             and self.object.items.exists()
         )
+        context['can_approve'] = user_can_act_on_purchase_order(self.request.user, self.object)
+        context['can_reject'] = context['can_approve']
+        context['can_return'] = context['can_approve']
+        context['can_confirm_po'] = user_can_confirm_purchase_order(self.request.user, self.object)
         context['po_receive_url'] = reverse('purchase:po_receive', args=[self.object.pk])
         from .po_retention import po_retention_percent_label, vendor_bill_retention_summary_rows
         from .po_retention_forms import PurchaseOrderRetentionForm
@@ -1393,7 +1459,7 @@ class PurchaseOrderDetailView(PermissionRequiredMixin, DetailView):
         context['po_total_retention'] = bill_summary['total_retention']
         # Bill only after PO is confirmed (or further along: receive / partial).
         context['can_create_bill'] = (
-            context['can_edit']
+            has_edit
             and self.object.status in ('confirmed', 'partial_received', 'received')
             and self.object.items.exists()
         )
@@ -1406,7 +1472,14 @@ class PurchaseOrderDetailView(PermissionRequiredMixin, DetailView):
         context['ai_analysis_auto_run'] = is_ai_analysis_auto_run(AiModuleKnowledge.MODULE_PURCHASE_ORDER)
         context['po_ai_evaluate_url'] = reverse('purchase:po_ai_evaluate', args=[self.object.pk])
         evaluation = run_po_compliance(self.object, full_run=False)
-        context['ai_compliance_auto_fetch'] = context['ai_analysis_auto_run'] and not evaluation.get('from_cache')
+        can_run_po_compliance = PermissionChecker.has_feature_permission(
+            self.request.user, 'purchase', 'po', 'view'
+        )
+        context['ai_compliance_auto_fetch'] = (
+            can_run_po_compliance
+            and context['ai_analysis_auto_run']
+            and not evaluation.get('from_cache')
+        )
         auto_compliance_on_detail(
             self.request.user,
             'purchase_order',
@@ -1562,8 +1635,16 @@ def po_convert_to_bill(request, pk):
 @require_POST
 def po_confirm(request, pk):
     """Mark a draft PO as confirmed so goods can be received."""
+    from .po_approval_rules import purchase_order_approval_enabled, user_can_confirm_purchase_order
+
     po = get_object_or_404(PurchaseOrder.objects.filter(is_active=True), pk=pk)
-    if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'purchase', 'edit')):
+    if purchase_order_approval_enabled():
+        messages.error(
+            request,
+            'Purchase order approval is configured — submit this PO for approval instead of confirming directly.',
+        )
+        return redirect('purchase:po_detail', pk=pk)
+    if not user_can_confirm_purchase_order(request.user, po):
         messages.error(request, 'Permission denied.')
         return redirect('purchase:po_detail', pk=pk)
     if po.status != 'draft':
@@ -1578,6 +1659,151 @@ def po_confirm(request, pk):
         request,
         f'PO {po.po_number} confirmed. You can now receive goods into inventory.',
     )
+    return redirect('purchase:po_detail', pk=pk)
+
+
+@login_required
+def po_submit(request, pk):
+    """Submit purchase order for approval."""
+    from .po_approval_rules import purchase_order_approval_enabled
+
+    po = get_object_or_404(PurchaseOrder.objects.filter(is_active=True), pk=pk)
+    if not purchase_order_approval_enabled():
+        messages.error(request, 'Purchase order approval is not configured in Settings.')
+        return redirect('purchase:po_detail', pk=pk)
+    if not (request.user.is_superuser or PermissionChecker.has_permission(request.user, 'purchase', 'edit')):
+        messages.error(request, 'Permission denied.')
+        return redirect('purchase:po_detail', pk=pk)
+    if po.status not in ('draft', 'returned'):
+        messages.error(request, 'Only draft or returned POs can be submitted for approval.')
+        return redirect('purchase:po_detail', pk=pk)
+    if not po.items.exists():
+        messages.error(request, 'Add line items before submitting for approval.')
+        return redirect('purchase:po_detail', pk=pk)
+
+    po.status = 'pending_approval'
+    po.rejection_reason = ''
+    po.save(update_fields=['status', 'rejection_reason', 'updated_at'])
+
+    from apps.settings_app.models import ApprovalConfiguration, Notification
+    ApprovalConfiguration.notify_approver(po, 'purchase_order')
+    if po.created_by_id:
+        Notification.create(
+            user=po.created_by,
+            title='Purchase Order Submitted',
+            message=f'Purchase order {po.po_number} has been submitted for approval.',
+            link=f'/purchase/orders/{po.pk}/',
+        )
+    messages.success(request, f'PO {po.po_number} submitted for approval.')
+    return redirect('purchase:po_detail', pk=pk)
+
+
+@login_required
+def po_approve(request, pk):
+    from .po_approval_rules import user_can_act_on_purchase_order
+
+    po = get_object_or_404(PurchaseOrder.objects.filter(is_active=True), pk=pk)
+    if po.status != 'pending_approval':
+        messages.error(request, 'Only POs pending approval can be approved.')
+        return redirect('purchase:po_detail', pk=pk)
+    if not user_can_act_on_purchase_order(request.user, po):
+        messages.error(request, 'Only the configured approver can approve this PO.')
+        return redirect('purchase:po_detail', pk=pk)
+
+    po.status = 'confirmed'
+    po.rejection_reason = ''
+    po.save(update_fields=['status', 'rejection_reason', 'updated_at'])
+
+    from apps.settings_app.models import ApprovalAuditLog, Notification
+    ApprovalAuditLog.objects.create(
+        module='purchase_order',
+        reference=po.po_number,
+        approver=request.user,
+        action='approve',
+        comment='',
+    )
+    if po.created_by_id:
+        Notification.create(
+            user=po.created_by,
+            title='Purchase Order Approved',
+            message=f'PO {po.po_number} has been approved. You can now receive goods into inventory.',
+            link=f'/purchase/orders/{po.pk}/',
+        )
+    messages.success(request, f'PO {po.po_number} approved.')
+    return redirect('purchase:po_detail', pk=pk)
+
+
+@login_required
+def po_reject(request, pk):
+    from .po_approval_rules import user_can_act_on_purchase_order
+
+    po = get_object_or_404(PurchaseOrder.objects.filter(is_active=True), pk=pk)
+    if not user_can_act_on_purchase_order(request.user, po):
+        messages.error(request, 'Only the configured approver can reject this PO.')
+        return redirect('purchase:po_list')
+    if po.status != 'pending_approval':
+        messages.error(request, 'Only POs pending approval can be rejected.')
+        return redirect('purchase:po_detail', pk=pk)
+    if request.method == 'POST':
+        comment = request.POST.get('comment', '').strip()
+        po.status = 'rejected'
+        po.rejection_reason = comment
+        po.save(update_fields=['status', 'rejection_reason', 'updated_at'])
+        from apps.settings_app.models import ApprovalAuditLog, Notification
+        ApprovalAuditLog.objects.create(
+            module='purchase_order',
+            reference=po.po_number,
+            approver=request.user,
+            action='reject',
+            comment=comment,
+        )
+        if po.created_by_id:
+            Notification.create(
+                user=po.created_by,
+                title='Purchase Order Rejected',
+                message=f'PO {po.po_number} has been rejected.'
+                + (f' Reason: {comment[:100]}...' if comment else ''),
+                link=f'/purchase/orders/{po.pk}/',
+            )
+        messages.success(request, f'PO {po.po_number} rejected.')
+        return redirect('purchase:po_list')
+    return redirect('purchase:po_detail', pk=pk)
+
+
+@login_required
+def po_return(request, pk):
+    from .po_approval_rules import user_can_act_on_purchase_order
+
+    po = get_object_or_404(PurchaseOrder.objects.filter(is_active=True), pk=pk)
+    if not user_can_act_on_purchase_order(request.user, po):
+        messages.error(request, 'Only the configured approver can return this PO.')
+        return redirect('purchase:po_detail', pk=pk)
+    if po.status != 'pending_approval':
+        messages.error(request, 'Only POs pending approval can be returned.')
+        return redirect('purchase:po_detail', pk=pk)
+    if request.method == 'POST':
+        comment = request.POST.get('comment', '').strip()
+        po.status = 'returned'
+        po.rejection_reason = comment
+        po.save(update_fields=['status', 'rejection_reason', 'updated_at'])
+        from apps.settings_app.models import ApprovalAuditLog, Notification
+        ApprovalAuditLog.objects.create(
+            module='purchase_order',
+            reference=po.po_number,
+            approver=request.user,
+            action='return',
+            comment=comment,
+        )
+        if po.created_by_id:
+            Notification.create(
+                user=po.created_by,
+                title='Purchase Order Returned',
+                message=f'PO {po.po_number} was returned for revision.'
+                + (f' Comment: {comment[:100]}...' if comment else ''),
+                link=f'/purchase/orders/{po.pk}/',
+            )
+        messages.success(request, f'PO {po.po_number} returned for revision.')
+        return redirect('purchase:po_detail', pk=pk)
     return redirect('purchase:po_detail', pk=pk)
 
 

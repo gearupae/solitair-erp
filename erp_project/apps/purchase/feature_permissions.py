@@ -35,6 +35,9 @@ def purchase_feature_for_path(path: str) -> str | None:
 
 
 def permission_type_for_request(method: str, path: str) -> str:
+    # Read-only analysis endpoints use view permission (e.g. approvers without edit).
+    if '/ai-evaluate/' in path or '/vendor-quotes/analyze/' in path:
+        return 'view'
     if method in ('POST', 'PUT', 'PATCH', 'DELETE'):
         if '/create/' in path or path.endswith('/create'):
             return 'create'

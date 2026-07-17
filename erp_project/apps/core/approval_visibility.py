@@ -80,6 +80,26 @@ def purchase_request_approver_records_q(user):
     return visible & amount_q
 
 
+PO_APPROVER_VISIBLE_STATUSES = frozenset({
+    'pending_approval',
+    'confirmed',
+    'partial_received',
+    'received',
+    'rejected',
+    'returned',
+})
+
+
+def purchase_order_approver_records_q(user):
+    """POs the user may see as configured approver."""
+    config = ApprovalConfiguration.objects.filter(module='purchase_order', is_active=True).first()
+    if not config:
+        return Q(pk__in=[])
+    visible = Q(status__in=PO_APPROVER_VISIBLE_STATUSES)
+    amount_q = _build_amount_tier_q(config, user, 'total_amount')
+    return visible & amount_q
+
+
 def project_approver_records_q(user):
     """Projects the user may see as configured completion approver (pending or completed)."""
     config = ApprovalConfiguration.objects.filter(module='project', is_active=True).first()
@@ -128,6 +148,15 @@ def user_is_purchase_request_approver_for(user, purchase_request):
     if not purchase_request or purchase_request.status not in PR_APPROVER_VISIBLE_STATUSES:
         return False
     approver = get_configured_pr_approver(purchase_request)
+    return approver is not None and approver.pk == user.pk
+
+
+def user_is_purchase_order_approver_for(user, purchase_order):
+    from apps.purchase.po_approval_rules import get_configured_po_approver
+
+    if not purchase_order or purchase_order.status not in PO_APPROVER_VISIBLE_STATUSES:
+        return False
+    approver = get_configured_po_approver(purchase_order)
     return approver is not None and approver.pk == user.pk
 
 

@@ -320,6 +320,250 @@ def _purchase_request_card(user) -> dict | None:
     )
 
 
+def _hr_leave_card(user) -> dict | None:
+    if not _can(user, 'hr'):
+        return None
+    from apps.hr.models import LeaveRequest
+
+    pending = list(
+        LeaveRequest.objects.filter(status='pending')
+        .select_related('employee')
+        .order_by('-created_at')[:50]
+    )
+    items = [
+        {
+            'label': lr.employee.full_name if lr.employee_id else 'Employee',
+            'detail': lr.get_leave_type_display() if hasattr(lr, 'get_leave_type_display') else 'Leave',
+            'link': reverse('hr:leave_detail', args=[lr.pk]),
+        }
+        for lr in pending
+    ]
+    return _card(
+        key='hr_leave',
+        title='HR leave',
+        icon='fa-calendar-check',
+        color='success',
+        pending_count=len(pending),
+        link=reverse('hr:leave_list'),
+        items=items,
+        empty_label='No pending leave',
+    )
+
+
+def _inventory_material_card(user) -> dict | None:
+    if not _can(user, 'inventory'):
+        return None
+    from apps.inventory.models import ConsumableRequest
+
+    pending = list(
+        ConsumableRequest.objects.filter(
+            is_active=True,
+            request_kind='material',
+            status__in=('submitted', 'pending', 'partially_issued'),
+        )
+        .select_related('requested_by')
+        .order_by('-updated_at')[:50]
+    )
+    items = [
+        {
+            'label': req.request_number,
+            'detail': req.requested_by.get_full_name() if req.requested_by_id else '—',
+            'link': reverse('inventory:consumable_request_detail', args=[req.pk]),
+        }
+        for req in pending
+    ]
+    return _card(
+        key='inventory_request',
+        title='Material request',
+        icon='fa-boxes',
+        color='info',
+        pending_count=len(pending),
+        link=reverse('inventory:consumable_request_list'),
+        items=items,
+        empty_label='No pending requests',
+    )
+
+
+def _can_purchase_feature(user, feature: str, permission_type: str = 'view') -> bool:
+    return PermissionChecker.has_feature_permission(user, 'purchase', feature, permission_type)
+
+
+def _purchase_pr_pending_card(user) -> dict | None:
+    if not _can(user, 'purchase') or not _can_purchase_feature(user, 'pr'):
+        return None
+    from apps.core.visibility import filter_purchase_requests_for_user
+    from apps.purchase.models import PurchaseRequest
+
+    pending_qs = filter_purchase_requests_for_user(
+        PurchaseRequest.objects.filter(is_active=True, status='pending')
+        .select_related('requested_by')
+        .order_by('-updated_at'),
+        user,
+    )
+    pending = list(pending_qs[:50])
+    items = [
+        {
+            'label': pr.pr_number,
+            'detail': pr.requested_by.get_full_name() or pr.requested_by.username,
+            'link': reverse('purchase:pr_detail', args=[pr.pk]),
+        }
+        for pr in pending[:PREVIEW_LIMIT]
+    ]
+    return _card(
+        key='purchase_pr',
+        title='Purchase requests',
+        icon='fa-clipboard-list',
+        color='warning',
+        pending_count=len(pending),
+        link=f'{reverse("purchase:pr_list")}?status=pending',
+        items=items,
+        empty_label='No PRs awaiting approval',
+    )
+
+
+def _purchase_po_open_card(user) -> dict | None:
+    if not _can(user, 'purchase') or not _can_purchase_feature(user, 'po'):
+        return None
+    from apps.core.visibility import filter_purchase_orders_for_user
+    from apps.purchase.models import PurchaseOrder
+
+    today = timezone.localdate()
+    po_qs = filter_purchase_orders_for_user(
+        PurchaseOrder.objects.filter(is_active=True)
+        .exclude(status__in=('received', 'cancelled'))
+        .select_related('vendor')
+        .order_by('-updated_at'),
+        user,
+    )
+    open_pos = list(po_qs[:50])
+    items = []
+    for po in open_pos[:PREVIEW_LIMIT]:
+        detail_parts = [po.get_status_display(), po.vendor.name]
+        if po.expected_delivery_date and po.expected_delivery_date < today:
+            detail_parts.append('Past delivery date')
+        items.append(
+            {
+                'label': po.po_number,
+                'detail': ' · '.join(detail_parts),
+                'link': reverse('purchase:po_detail', args=[po.pk]),
+            },
+        )
+    return _card(
+        key='purchase_po',
+        title='Purchase orders',
+        icon='fa-file-invoice',
+        color='primary',
+        pending_count=len(open_pos),
+        link=reverse('purchase:po_list'),
+        items=items,
+        empty_label='No open purchase orders',
+    )
+
+
+def _purchase_bills_card(user) -> dict | None:
+    if not _can(user, 'purchase') or not _can_purchase_feature(user, 'bills'):
+        return None
+    from django.db.models import F
+
+    from apps.purchase.models import VendorBill
+
+    today = timezone.localdate()
+    overdue = list(
+        VendorBill.objects.filter(
+            is_active=True,
+            status__in=('posted', 'partial', 'overdue'),
+            due_date__lt=today,
+        )
+        .filter(total_amount__gt=F('paid_amount'))
+        .select_related('vendor')
+        .order_by('due_date')[:50]
+    )
+    draft_bills = list(
+        VendorBill.objects.filter(is_active=True, status='draft')
+        .select_related('vendor')
+        .order_by('-updated_at')[:50]
+    )
+    pending_count = len(overdue) + len(draft_bills)
+    items = []
+    for bill in overdue[:PREVIEW_LIMIT]:
+        items.append(
+            {
+                'label': bill.bill_number,
+                'detail': f'Overdue · {bill.vendor.name}',
+                'link': reverse('purchase:bill_detail', args=[bill.pk]),
+            },
+        )
+    remaining = PREVIEW_LIMIT - len(items)
+    for bill in draft_bills[: max(0, remaining)]:
+        items.append(
+            {
+                'label': bill.bill_number,
+                'detail': f'Draft · {bill.vendor.name}',
+                'link': reverse('purchase:bill_detail', args=[bill.pk]),
+            },
+        )
+    return _card(
+        key='vendor_bills',
+        title='Vendor bills',
+        icon='fa-file-invoice-dollar',
+        color='danger' if overdue else 'secondary',
+        pending_count=pending_count,
+        link=reverse('purchase:bill_list'),
+        items=items,
+        empty_label='No overdue or draft bills',
+    )
+
+
+def _inventory_low_stock_card(user) -> dict | None:
+    if not _can(user, 'inventory'):
+        return None
+    from apps.inventory.models import Item
+
+    low_stock = [
+        item
+        for item in Item.objects.filter(is_active=True, item_type='product').order_by('item_code')
+        if item.is_low_stock
+    ][:50]
+    items = [
+        {
+            'label': item.item_code,
+            'detail': f'{item.total_stock:g} on hand · min {item.minimum_stock:g}',
+            'link': reverse('inventory:item_detail', args=[item.pk]),
+        }
+        for item in low_stock[:PREVIEW_LIMIT]
+    ]
+    return _card(
+        key='inventory_stock',
+        title='Low stock',
+        icon='fa-boxes',
+        color='info',
+        pending_count=len(low_stock),
+        link=reverse('inventory:reorder_report'),
+        items=items,
+        empty_label='No low stock items',
+    )
+
+
+def _purchase_queue_card(user) -> dict | None:
+    """Alias for full dashboard compatibility."""
+    return _purchase_pr_pending_card(user)
+
+
+def get_minimal_dashboard_pending_cards(user) -> list[dict]:
+    """Pending action cards for modules active in minimal deployment."""
+    cards = []
+    for builder in (
+        _purchase_pr_pending_card,
+        _purchase_po_open_card,
+        _purchase_bills_card,
+        _inventory_low_stock_card,
+    ):
+        card = builder(user)
+        if card is not None:
+            cards.append(card)
+    return cards
+
+
 def get_dashboard_pending_cards(user) -> list[dict]:
     builders = (
         _lead_card,

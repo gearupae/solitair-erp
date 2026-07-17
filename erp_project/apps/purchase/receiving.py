@@ -21,7 +21,14 @@ from .models import (
 def purchase_order_can_receive(po: PurchaseOrder) -> bool:
     if not getattr(po, 'is_active', True):
         return False
-    if po.status in ('cancelled', 'received', 'draft'):
+    if po.status in (
+        'cancelled',
+        'received',
+        'draft',
+        'pending_approval',
+        'returned',
+        'rejected',
+    ):
         return False
     return po.status in ('sent', 'confirmed', 'partial_received')
 

@@ -655,6 +655,7 @@ class ApprovalConfiguration(BaseModel):
     
     MODULE_CHOICES = [
         ('purchase_request', 'Purchase Request'),
+        ('purchase_order', 'Purchase Order'),
         ('inventory_request', 'Consumable / Inventory Request'),
         ('service_request', 'Service Request'),
         ('estimate', 'Sales Estimate'),
@@ -732,6 +733,7 @@ class ApprovalConfiguration(BaseModel):
                 or getattr(request_obj, 'project_code', None)
                 or getattr(request_obj, 'sr_number', None)
                 or getattr(request_obj, 'pr_number', None)
+                or getattr(request_obj, 'po_number', None)
                 or getattr(request_obj, 'bill_number', None)
                 or getattr(request_obj, 'request_number', None)
                 or str(request_obj.pk)
@@ -740,6 +742,7 @@ class ApprovalConfiguration(BaseModel):
             link_map = {
                 'service_request': f'/service-request/{pk}/' if pk else '',
                 'purchase_request': f'/purchase/requests/{pk}/' if pk else '',
+                'purchase_order': f'/purchase/orders/{pk}/' if pk else '',
                 'inventory_request': f'/inventory/consumables/{pk}/' if pk else '',
                 'estimate': f'/sales/estimates/{pk}/' if pk else '',
                 'project': f'/projects/{pk}/' if pk else '',
@@ -762,6 +765,8 @@ class ApprovalConfiguration(BaseModel):
                 msg = f'Recruitment request {ref} requires your approval.'
             elif module == 'vendor_bill':
                 msg = f'Vendor bill {ref} requires your approval before posting. Amount: AED {amount:,.2f}'
+            elif module == 'purchase_order':
+                msg = f'Purchase order {ref} requires your approval before goods can be received. Amount: AED {amount:,.2f}'
             else:
                 msg = f'{ref} requires your approval. Amount: AED {amount:,.2f}'
             Notification.create(

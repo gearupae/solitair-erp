@@ -41,10 +41,13 @@ def notifications_mark_all_read(request):
 def dashboard(request):
     """Main dashboard view."""
     from django.conf import settings
-    from apps.core.nav_config import get_user_home_url, minimal_nav_enabled
+    from apps.core.nav_config import minimal_nav_enabled
 
     if minimal_nav_enabled() or getattr(settings, 'APP_MINIMAL_NAV', False):
-        return redirect(get_user_home_url(request.user))
+        from apps.core.minimal_dashboard import build_minimal_dashboard_context
+
+        context = build_minimal_dashboard_context(request.user)
+        return render(request, 'core/minimal_dashboard.html', context)
 
     from calendar import monthrange
     from decimal import Decimal

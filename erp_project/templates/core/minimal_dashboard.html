@@ -1,0 +1,186 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .pending-action-card .card-body {
+        min-height: 11.5rem;
+    }
+    .pending-action-card__list-wrap {
+        min-height: 5.5rem;
+        max-height: 7.5rem;
+        overflow-y: auto;
+    }
+    .pending-action-card__empty {
+        min-height: 5.5rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        padding: 0.75rem;
+        border-radius: 0.375rem;
+        background: #f8fafc;
+        border: 1px dashed #e2e8f0;
+        color: #64748b;
+        font-size: 0.8125rem;
+    }
+    .minimal-dashboard-single-card {
+        max-width: 720px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+    <div>
+        <h4 class="mb-1 fw-bold">{{ title }}</h4>
+        <p class="text-muted mb-0">{{ dashboard_subtitle }}</p>
+    </div>
+    {% if dashboard_quick_links %}
+    <div class="d-flex gap-2 flex-wrap">
+        {% for link in dashboard_quick_links %}
+        <a href="{{ link.url }}" class="btn btn-outline-secondary btn-sm"><i class="fas {{ link.icon }} me-1"></i>{{ link.label }}</a>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+
+{% if module_summaries %}
+<div class="row row-cols-1 row-cols-sm-2 g-4 mb-4 {{ module_summary_cols }}{% if module_summaries|length == 1 %} minimal-dashboard-single-card{% endif %}">
+    {% for mod in module_summaries %}
+    <div class="col">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <div class="d-flex align-items-start justify-content-between gap-2 mb-3">
+                    <div class="d-flex align-items-center">
+                        <div class="bg-{{ mod.color }} bg-opacity-10 rounded-3 p-3 me-3">
+                            <i class="fas {{ mod.icon }} text-{{ mod.color }} fs-4"></i>
+                        </div>
+                        <div>
+                            <p class="text-muted mb-1 small text-uppercase fw-semibold">{{ mod.title }}</p>
+                            <h3 class="mb-0 fw-bold">{{ mod.total }}</h3>
+                            <p class="text-muted small mb-0">{{ mod.total_label }}</p>
+                        </div>
+                    </div>
+                    <a class="btn btn-sm btn-light" href="{{ mod.link }}">Open</a>
+                </div>
+                <h6 class="small text-muted text-uppercase mb-2">Summary</h6>
+                <ul class="list-group list-group-flush rounded border">
+                    {% for row in mod.rows %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center py-2 px-3">
+                        <span>{{ row.label }}</span>
+                        <span class="badge bg-light text-dark border">{{ row.count }}</span>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+{% if dashboard_pending_cards %}
+<div class="mb-4">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <h5 class="mb-0 fw-semibold">
+            <i class="fas fa-tasks text-primary me-2"></i>Pending actions
+        </h5>
+        <span class="small text-muted">Items that need your attention</span>
+    </div>
+    <div class="row row-cols-1 row-cols-sm-2 g-3 {{ pending_card_cols }}{% if dashboard_pending_cards|length == 1 %} minimal-dashboard-single-card{% endif %}">
+        {% for card in dashboard_pending_cards %}
+        <div class="col">
+            <div class="card border-0 shadow-sm h-100 pending-action-card{% if card.has_pending %} border-{{ card.color }} border-opacity-50{% endif %}">
+                <div class="card-body d-flex flex-column">
+                    <div class="d-flex align-items-start justify-content-between gap-2 mb-2">
+                        <div class="d-flex align-items-center gap-2 min-w-0">
+                            <div class="bg-{{ card.color }} bg-opacity-10 rounded-3 p-2 flex-shrink-0">
+                                <i class="fas {{ card.icon }} text-{{ card.color }}"></i>
+                            </div>
+                            <div class="min-w-0">
+                                <h6 class="mb-1 fw-semibold text-truncate">{{ card.title }}</h6>
+                                {% if card.has_pending %}
+                                <span class="badge bg-{{ card.color }}">{{ card.pending_count }} pending</span>
+                                {% else %}
+                                <span class="text-muted small">{{ card.empty_label }}</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <a class="btn btn-sm btn-light flex-shrink-0" href="{{ card.link }}">Open</a>
+                    </div>
+                    <div class="pending-action-card__list-wrap flex-grow-1">
+                        {% if card.items %}
+                        <ul class="list-group list-group-flush border rounded small mb-0">
+                            {% for item in card.items %}
+                            <li class="list-group-item py-2 px-2">
+                                <a href="{{ item.link }}" class="text-decoration-none fw-medium d-block text-truncate">{{ item.label }}</a>
+                                {% if item.detail %}<div class="text-muted text-truncate">{{ item.detail }}</div>{% endif %}
+                            </li>
+                            {% endfor %}
+                        </ul>
+                        {% else %}
+                        <div class="pending-action-card__empty h-100">{{ card.empty_label }}</div>
+                        {% endif %}
+                    </div>
+                    {% if card.remaining_count %}
+                    <p class="text-muted small mb-0 mt-2">+ {{ card.remaining_count }} more</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+{% if compliance_alerts %}
+<div class="row g-4 mb-4">
+    <div class="col-12">
+        <div class="card border-0 shadow-sm border-danger border-opacity-25">
+            <div class="card-header bg-transparent border-0 py-3 d-flex flex-wrap justify-content-between align-items-center gap-2">
+                <h5 class="mb-0 fw-semibold">
+                    <i class="fas fa-robot text-danger me-2"></i>Gearup Agent
+                </h5>
+                <span class="small text-muted">{{ compliance_alerts|length }} issue{% if compliance_alerts|length != 1 %}s{% endif %}</span>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive overflow-auto" style="max-height: 24rem;">
+                    <table class="table table-hover mb-0 align-middle">
+                        <thead class="sticky-top bg-white">
+                            <tr>
+                                <th>Module</th>
+                                <th>Record</th>
+                                <th>Issue</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in compliance_alerts %}
+                            <tr>
+                                <td>
+                                    <span class="badge {% if row.severity == 'amber' %}bg-warning text-dark{% else %}bg-danger text-white{% endif %}">
+                                        {{ row.module_label }}
+                                    </span>
+                                </td>
+                                <td class="fw-medium">{{ row.record_label }}</td>
+                                <td>
+                                    <div class="fw-semibold small">{{ row.title }}</div>
+                                    {% if row.detail %}<div class="text-muted small">{{ row.detail|truncatechars:160 }}</div>{% endif %}
+                                </td>
+                                <td class="text-end">
+                                    <a class="btn btn-sm btn-light" href="{{ row.link }}"><i class="fas fa-external-link-alt me-1"></i>Open</a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

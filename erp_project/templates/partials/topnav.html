@@ -206,6 +206,14 @@
                         <i class="fas fa-truck me-1"></i>Purchase
                     </a>
                     <ul class="dropdown-menu dropdown-menu-dark">
+                        {% if is_superuser or 'purchase' in user_permissions %}
+                        <li>
+                            <a class="dropdown-item" href="{% url 'purchase:dashboard' %}">
+                                <i class="fas fa-chart-line me-2"></i>Dashboard
+                            </a>
+                        </li>
+                        <li><hr class="dropdown-divider"></li>
+                        {% endif %}
                         {% if purchase_feature_access.vendors.view %}
                         <li>
                             <a class="dropdown-item" href="{% url 'purchase:vendor_list' %}">
@@ -643,7 +651,7 @@
                 {% endif %}{% endif %}{% endif %}
                 
                 <!-- Inventory -->
-                {% if not app_minimal_nav %}{% if is_superuser or 'inventory' in user_permissions %}
+                {% if is_superuser or 'inventory' in user_permissions %}
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle {% if 'inventory' in request.path or 'stock-take' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown">
                         <i class="fas fa-boxes me-1"></i>Inventory
@@ -699,6 +707,7 @@
                                 <i class="fas fa-building-circle-arrow-right me-2"></i>Inter-entity Transfers
                             </a>
                         </li>
+                        {% if not app_minimal_nav %}
                         <li><hr class="dropdown-divider"></li>
                         <li class="dropdown-header">Item Request</li>
                         <li>
@@ -736,6 +745,7 @@
                                 <i class="fas fa-coins me-2"></i>Monthly Cost
                             </a>
                         </li>
+                        {% endif %}
                         <li><hr class="dropdown-divider"></li>
                         <li>
                             <a class="dropdown-item reports-trigger" href="#" id="inventoryReportsTrigger">
@@ -745,7 +755,7 @@
                         </li>
                     </ul>
                 </li>
-                {% endif %}{% endif %}
+                {% endif %}
                 
                 <!-- Reports -->
                 {% if not app_minimal_nav %}{% if is_superuser or 'reports' in user_permissions %}
@@ -788,12 +798,12 @@
                                 <i class="fas fa-user-cog me-2"></i>My Settings
                             </a>
                         </li>
+                        {% endif %}
                         <li>
                             <a class="dropdown-item {% if '/account/modules' in request.path %}active{% endif %}" href="{% url 'account:module_requests' %}">
                                 <i class="fas fa-th-large me-2"></i>Request Modules
                             </a>
                         </li>
-                        {% endif %}
                         {% if is_superuser or 'settings' in user_permissions or can_access_alerts_hub %}
                         <li><hr class="dropdown-divider"></li>
                         {% if can_access_alerts_hub and not app_minimal_nav %}
@@ -1089,6 +1099,7 @@
         <i class="fas fa-exclamation-triangle me-2"></i>Reconciliation Exceptions
     </a>
 </div>
+{% endif %}
 
 <!-- Inventory Reports Panel (flyout from Inventory menu) -->
 <div id="inventoryReportsPanel" class="nav-reports-panel">
@@ -1137,6 +1148,7 @@
     </a>
 </div>
 
+{% if not app_minimal_nav %}
 <!-- CRM Reports Panel (flyout from CRM menu) -->
 <div id="crmReportsPanel" class="nav-reports-panel">
     <h6 class="dropdown-header">CRM Reports</h6>

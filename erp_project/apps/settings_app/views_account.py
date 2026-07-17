@@ -10,6 +10,11 @@ from apps.hr.models import Employee
 from apps.hr.models_extended import EmployeeHRProfile
 from apps.purchase.email_outbound import email_sent_via_console, outgoing_mail_hint
 from apps.settings_app.models import CompanySettings, ModuleAccessRequest, ModulePermission, UserRole
+from apps.core.nav_config import (
+    MINIMAL_NAV_DEPLOYED_MODULE_CODES,
+    MINIMAL_NAV_MENU_MODULE_CODES,
+    minimal_nav_enabled,
+)
 from apps.settings_app.module_catalog import get_module_catalog
 from apps.settings_app.module_request_email import send_module_access_request_email
 
@@ -33,7 +38,10 @@ def _build_module_cards(user):
     cards = []
     for item in get_module_catalog():
         code = item['code']
-        has_access = _user_has_module_access(user, code)
+        if minimal_nav_enabled():
+            has_access = code in MINIMAL_NAV_MENU_MODULE_CODES
+        else:
+            has_access = _user_has_module_access(user, code)
         request_sent = code in sent
         cards.append({
             **item,
@@ -135,6 +143,10 @@ def submit_module_request(request):
 
     if module_code not in valid_codes:
         messages.error(request, 'Invalid module selected.')
+        return redirect('account:module_requests')
+
+    if minimal_nav_enabled() and module_code in MINIMAL_NAV_DEPLOYED_MODULE_CODES:
+        messages.info(request, 'This module is already enabled in your deployment.')
         return redirect('account:module_requests')
 
     if _user_has_module_access(request.user, module_code):

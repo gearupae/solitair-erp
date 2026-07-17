@@ -29,7 +29,13 @@ def _stripe():
 def stripe_configured() -> bool:
     return bool(
         (getattr(settings, 'STRIPE_SECRET_KEY', None) or '').strip()
-        and (getattr(settings, 'STRIPE_PUBLISHABLE_KEY', None) or '').strip()
+        and (getattr(settings, 'STRIPE_AI_PRODUCT_ID', None) or '').strip()
+    )
+
+
+def stripe_card_payments_available() -> bool:
+    return stripe_configured() and bool(
+        (getattr(settings, 'STRIPE_PUBLISHABLE_KEY', None) or '').strip()
     )
 
 

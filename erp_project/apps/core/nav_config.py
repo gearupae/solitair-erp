@@ -10,6 +10,8 @@ def minimal_nav_enabled() -> bool:
 MINIMAL_NAV_ALLOWED_PREFIXES = (
     '/purchase/',
     '/service-request/',
+    '/inventory/',
+    '/stock-take/',
     '/hr/employees/',
     '/hr/departments/',
     '/hr/designations/',
@@ -27,8 +29,27 @@ MINIMAL_NAV_ALLOWED_PATHS = (
 MINIMAL_NAV_MODULE_CODES = frozenset({
     'purchase',
     'service_request',
+    'inventory',
     'hr',
     'settings',
+})
+
+# Modules already enabled in minimal deployment (roles, URLs, permissions).
+MINIMAL_NAV_DEPLOYED_MODULE_CODES = MINIMAL_NAV_MODULE_CODES - frozenset({'settings'})
+
+# Top-level nav modules shown as "In use" on Request Modules (not submenus like Service Request).
+MINIMAL_NAV_MENU_MODULE_CODES = frozenset({
+    'purchase',
+    'inventory',
+    'hr',
+})
+
+# Approval Configuration modules shown in minimal deployment (Purchase + vendor bill).
+MINIMAL_NAV_APPROVAL_MODULE_CODES = frozenset({
+    'purchase_request',
+    'service_request',
+    'vendor_bill',
+    'purchase_order',
 })
 
 
@@ -37,6 +58,13 @@ def minimal_nav_module_choices(module_choices):
     if not minimal_nav_enabled():
         return list(module_choices)
     return [(code, label) for code, label in module_choices if code in MINIMAL_NAV_MODULE_CODES]
+
+
+def minimal_nav_approval_module_choices(module_choices):
+    """Limit approval configuration to modules used in minimal deployment mode."""
+    if not minimal_nav_enabled():
+        return list(module_choices)
+    return [(code, label) for code, label in module_choices if code in MINIMAL_NAV_APPROVAL_MODULE_CODES]
 
 
 def path_allowed_in_minimal_nav(path: str, *, is_superuser: bool = False) -> bool:
@@ -61,7 +89,10 @@ def get_user_home_url(user) -> str:
     from apps.core.utils import PermissionChecker
 
     if user.is_superuser:
-        return reverse('purchase:pr_list')
+        return reverse('dashboard')
+
+    if PermissionChecker.has_permission(user, 'purchase', 'view'):
+        return reverse('dashboard')
 
     purchase_destinations = [
         ('pr', 'purchase:pr_list'),

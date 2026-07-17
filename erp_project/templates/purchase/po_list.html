@@ -134,6 +134,12 @@
                         <td>
                             {% if po.status == 'draft' %}
                             <span class="badge bg-secondary">Draft</span>
+                            {% elif po.status == 'pending_approval' %}
+                            <span class="badge" style="background:#fef3c7;color:#92400e;">Pending Approval</span>
+                            {% elif po.status == 'returned' %}
+                            <span class="badge" style="background:#ffedd5;color:#9a3412;">Returned</span>
+                            {% elif po.status == 'rejected' %}
+                            <span class="badge" style="background:#fee2e2;color:#991b1b;">Rejected</span>
                             {% elif po.status == 'sent' %}
                             <span class="badge" style="background:#dbeafe;color:#1e40af;">Sent</span>
                             {% elif po.status == 'confirmed' %}

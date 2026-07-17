@@ -58,15 +58,22 @@
             <span class="text-muted">{{ po.vendor.name }}</span>
         </div>
         <div class="d-flex flex-wrap gap-2">
-            <a href="{% url 'purchase:po_pdf' po.pk %}" class="btn btn-outline-danger" target="_blank" rel="noopener">
-                <i class="fas fa-file-pdf me-2"></i>PDF / Print
-            </a>
-            <a href="{% url 'purchase:po_pdf' po.pk %}?format=pdf" class="btn btn-outline-success" target="_blank" rel="noopener">
-                <i class="fas fa-download me-2"></i>Download PDF
+            <a href="{% url 'purchase:po_pdf' po.pk %}?format=pdf" class="btn btn-outline-danger" target="_blank" rel="noopener">
+                <i class="fas fa-file-pdf me-2"></i>PDF
             </a>
             {% if can_create_bill %}
             <a href="{% url 'purchase:po_convert_bill' po.pk %}" class="btn btn-warning" onclick="return confirm('Create a draft vendor bill from this PO?');">
                 <i class="fas fa-file-invoice-dollar me-2"></i>Convert to vendor bill
+            </a>
+            {% endif %}
+            {% if can_submit %}
+            <a href="{% url 'purchase:po_submit' po.pk %}" class="btn btn-primary" onclick="return confirm('Submit this PO for approval?');">
+                <i class="fas fa-paper-plane me-2"></i>Submit for Approval
+            </a>
+            {% endif %}
+            {% if can_approve %}
+            <a href="{% url 'purchase:po_approve' po.pk %}" class="btn btn-success" onclick="return confirm('Confirm this purchase order so goods can be received?');">
+                <i class="fas fa-check-circle me-2"></i>Confirm PO
             </a>
             {% endif %}
             {% if can_receive_po %}
@@ -90,6 +97,39 @@
     </div>
 </div>
 
+{% if po.rejection_reason %}
+<div class="alert alert-warning">
+    <strong><i class="fas fa-comment-alt me-2"></i>Comment from approver:</strong><br>
+    {{ po.rejection_reason }}
+</div>
+{% endif %}
+
+{% if can_reject or can_return %}
+<div class="card mb-4 border-warning">
+    <div class="card-body">
+        <h6 class="fw-semibold mb-3">Approver actions</h6>
+        <div class="row g-3">
+            <div class="col-md-6">
+                <form method="post" action="{% url 'purchase:po_reject' po.pk %}">
+                    {% csrf_token %}
+                    <label class="form-label small">Reject PO</label>
+                    <textarea name="comment" class="form-control mb-2" rows="2" placeholder="Enter rejection reason..."></textarea>
+                    <button type="submit" class="btn btn-outline-danger btn-sm">Reject</button>
+                </form>
+            </div>
+            <div class="col-md-6">
+                <form method="post" action="{% url 'purchase:po_return' po.pk %}">
+                    {% csrf_token %}
+                    <label class="form-label small">Return for revision</label>
+                    <textarea name="comment" class="form-control mb-2" rows="2" placeholder="Enter revision notes..."></textarea>
+                    <button type="submit" class="btn btn-outline-warning btn-sm">Return</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 <div class="row g-4">
     <div class="col-lg-8">
         {% if po.status == 'draft' %}
@@ -97,8 +137,22 @@
             <i class="fas fa-info-circle mt-1"></i>
             <div>
                 <strong>Draft purchase order.</strong>
+                {% if approval_enabled %}
+                Submit the PO for approval first — once approved, the green <strong>Receive items</strong> button will appear.
+                {% else %}
                 Confirm the PO first — then the green <strong>Receive items</strong> button will appear so you can register stock (and model numbers for serial-tracked items).
+                {% endif %}
             </div>
+        </div>
+        {% elif po.status == 'pending_approval' %}
+        <div class="alert alert-warning d-flex align-items-start gap-2 mb-4">
+            <i class="fas fa-clock mt-1"></i>
+            <div><strong>Pending approval.</strong> Only the configured approver can confirm this PO before goods can be received.</div>
+        </div>
+        {% elif po.status == 'returned' %}
+        <div class="alert alert-warning d-flex align-items-start gap-2 mb-4">
+            <i class="fas fa-undo mt-1"></i>
+            <div><strong>Returned for revision.</strong> Update the PO and submit again for approval.</div>
         </div>
         {% endif %}
         <div class="card mb-4">
@@ -254,6 +308,12 @@
                 <h6 class="text-muted mb-3">Status</h6>
                 {% if po.status == 'draft' %}
                 <span class="badge bg-secondary fs-6">Draft</span>
+                {% elif po.status == 'pending_approval' %}
+                <span class="badge fs-6" style="background:#fef3c7;color:#92400e;">Pending Approval</span>
+                {% elif po.status == 'returned' %}
+                <span class="badge fs-6" style="background:#ffedd5;color:#9a3412;">Returned</span>
+                {% elif po.status == 'rejected' %}
+                <span class="badge fs-6" style="background:#fee2e2;color:#991b1b;">Rejected</span>
                 {% elif po.status == 'sent' %}
                 <span class="badge fs-6" style="background:#dbeafe;color:#1e40af;">Sent</span>
                 {% elif po.status == 'confirmed' %}
@@ -301,7 +361,7 @@
                     </div>
                     <div class="text-end">
                         <div class="fw-semibold">AED {{ bill.total_amount|floatformat:2 }}</div>
-                        {% if bill.retention_amount > 0 %}
+                        {% if not app_minimal_nav and bill.retention_amount > 0 %}
                         <div class="text-danger small">Retention AED {{ bill.retention_amount|floatformat:2 }}</div>
                         {% endif %}
                     </div>
@@ -311,6 +371,7 @@
         </div>
         {% endif %}
 
+        {% if not app_minimal_nav %}
         <div class="card mb-4" id="po-project-retention-card">
             <div class="card-header bg-transparent py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
                 <h6 class="mb-0 fw-semibold"><i class="fas fa-hand-holding-usd me-2 text-dark"></i>Project retention</h6>
@@ -390,6 +451,7 @@
                 </div>
             </div>
         </div>
+        {% endif %}
         {% endif %}
 
         {% include 'includes/ai_evaluate_card.html' with prefix='po' openai_configured=openai_configured ai_evaluation=po_ai_evaluation ai_analysis_auto_run=ai_analysis_auto_run %}

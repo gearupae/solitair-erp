@@ -275,6 +275,7 @@
                     <h6 class="fw-semibold mb-3">Recharge</h6>
 
                     <ul class="nav nav-pills mb-3" id="aiPayTabs" role="tablist">
+                        {% if stripe_card_payments_available %}
                         <li class="nav-item" role="presentation">
                             <button class="nav-link active" id="card-tab" data-bs-toggle="pill" data-bs-target="#card-pay-pane" type="button" role="tab">
                                 <i class="fas fa-credit-card me-1"></i>Pay with card
@@ -285,9 +286,17 @@
                                 <i class="fab fa-stripe me-1"></i>Stripe checkout
                             </button>
                         </li>
+                        {% else %}
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active" id="hosted-tab" data-bs-toggle="pill" data-bs-target="#hosted-pay-pane" type="button" role="tab">
+                                <i class="fab fa-stripe me-1"></i>Stripe checkout
+                            </button>
+                        </li>
+                        {% endif %}
                     </ul>
 
                     <div class="tab-content">
+                        {% if stripe_card_payments_available %}
                         <div class="tab-pane fade show active" id="card-pay-pane" role="tabpanel">
                             <label class="form-label">Amount ({{ object.currency|default:"AED" }})</label>
                             <div class="input-group mb-2">
@@ -309,8 +318,9 @@
                             </div>
                             <div class="alert alert-danger alert-permanent d-none py-2 small mb-0" id="stripe-card-error"></div>
                         </div>
+                        {% endif %}
 
-                        <div class="tab-pane fade" id="hosted-pay-pane" role="tabpanel">
+                        <div class="tab-pane fade{% if not stripe_card_payments_available %} show active{% endif %}" id="hosted-pay-pane" role="tabpanel">
                             <label class="form-label">Amount ({{ object.currency|default:"AED" }})</label>
                             <div class="input-group mb-3">
                                 <span class="input-group-text">{{ object.currency|default:"AED" }}</span>
@@ -326,7 +336,7 @@
                 </div>
                 {% else %}
                 <div class="alert alert-warning mb-0">
-                    Stripe is not configured. Add <code>STRIPE_SECRET_KEY</code>, <code>STRIPE_PUBLISHABLE_KEY</code>, and <code>STRIPE_AI_PRODUCT_ID</code> to <code>.env</code>.
+                    Stripe is not configured. Add <code>STRIPE_SECRET_KEY</code> and <code>STRIPE_AI_PRODUCT_ID</code> to <code>.env</code> (optional: <code>STRIPE_PUBLISHABLE_KEY</code> for inline card payments).
                 </div>
                 {% endif %}
             </div>

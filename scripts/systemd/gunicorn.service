@@ -1,0 +1,18 @@
+[Unit]
+Description=Gunicorn daemon for Solitair ERP
+After=network.target
+
+[Service]
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/solitair/erp_project
+Environment="PATH=/var/www/solitair/venv/bin"
+ExecStart=/var/www/solitair/venv/bin/gunicorn \
+    --workers 3 \
+    --timeout 120 \
+    --bind 127.0.0.1:8001 \
+    erp_project.wsgi:application
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

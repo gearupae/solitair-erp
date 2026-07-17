@@ -1,0 +1,235 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block content %}
+<div class="page-header">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb mb-2">
+            <li class="breadcrumb-item"><a href="{% url 'purchase:vendor_list' %}">Vendors</a></li>
+            <li class="breadcrumb-item active">{{ vendor.vendor_number }}</li>
+        </ol>
+    </nav>
+    <div class="d-flex justify-content-between align-items-center">
+        <div>
+            <h4 class="mb-1 fw-bold">{{ vendor.name }}</h4>
+            <span class="text-muted">{{ vendor.vendor_number }}</span>
+        </div>
+        <div>
+            {% if can_edit %}
+            <a href="{% url 'purchase:vendor_edit' vendor.pk %}" class="btn btn-primary">
+                <i class="fas fa-edit me-2"></i>Edit
+            </a>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-8">
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-transparent py-3">
+                <h6 class="mb-0 fw-semibold"><i class="fas fa-industry me-2 text-primary"></i>Vendor Information</h6>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label text-muted small">Vendor Name</label>
+                        <p class="fw-medium mb-0">{{ vendor.name }}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label text-muted small">Contact Person</label>
+                        <p class="mb-0">{{ vendor.contact_person|default:"—" }}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label text-muted small">Email</label>
+                        <p class="mb-0">
+                            {% if vendor.email %}
+                            <a href="mailto:{{ vendor.email }}" class="text-decoration-none">{{ vendor.email }}</a>
+                            {% else %}—{% endif %}
+                        </p>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label text-muted small">Phone</label>
+                        <p class="mb-0">{{ vendor.phone|default:"—" }}</p>
+                    </div>
+                    {% if vendor.trn %}
+                    <div class="col-md-6">
+                        <label class="form-label text-muted small">TRN</label>
+                        <p class="fw-medium mb-0">{{ vendor.trn }}</p>
+                    </div>
+                    {% endif %}
+                    {% if vendor.location_link %}
+                    <div class="col-md-6">
+                        <label class="form-label text-muted small">Location</label>
+                        <p class="mb-0">
+                            <a href="{{ vendor.location_link }}" target="_blank" rel="noopener" class="text-decoration-none">
+                                <i class="fas fa-map-marker-alt me-1"></i>Open map
+                            </a>
+                        </p>
+                    </div>
+                    {% endif %}
+                    {% if vendor.address %}
+                    <div class="col-12">
+                        <label class="form-label text-muted small">Address</label>
+                        <p class="mb-0">{{ vendor.address|linebreaks }}</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-transparent py-3 d-flex justify-content-between align-items-center">
+                <h6 class="mb-0 fw-semibold"><i class="fas fa-boxes me-2 text-primary"></i>Purchased items</h6>
+                <span class="badge bg-light text-dark border">{{ purchased_items|length }} item{{ purchased_items|length|pluralize }}</span>
+            </div>
+            <div class="card-body p-0">
+                {% if purchased_items %}
+                <ul class="list-group list-group-flush">
+                    {% for row in purchased_items %}
+                    <li class="list-group-item d-flex justify-content-between align-items-start py-2 px-3">
+                        <div>
+                            <span class="fw-medium">{{ row.label }}</span>
+                            {% if row.last_po_pk %}
+                            <div class="text-muted small">Last PO: <a href="{% url 'purchase:po_detail' row.last_po_pk %}">{{ row.last_po_number }}</a></div>
+                            {% endif %}
+                        </div>
+                        <span class="text-muted small">Qty {{ row.total_qty|floatformat:0 }}</span>
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <div class="text-center py-4 text-muted">
+                    <p class="mb-0 small">No purchase order line items for this vendor yet.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        {% if recent_orders %}
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-transparent py-3">
+                <h6 class="mb-0 fw-semibold"><i class="fas fa-file-alt me-2 text-primary"></i>Recent Purchase Orders</h6>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0 align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th class="ps-3">PO Number</th>
+                                <th>Date</th>
+                                <th class="text-end pe-3">Amount</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for po in recent_orders %}
+                            <tr>
+                                <td class="ps-3">
+                                    <a href="{% url 'purchase:po_detail' po.pk %}" class="text-decoration-none">{{ po.po_number }}</a>
+                                </td>
+                                <td>{{ po.order_date|date:"d/m/Y" }}</td>
+                                <td class="text-end pe-3">{{ po.currency }} {{ po.total_amount|floatformat:2|intcomma }}</td>
+                                <td><span class="badge bg-secondary-subtle text-secondary">{{ po.get_status_display }}</span></td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if recent_bills %}
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-transparent py-3">
+                <h6 class="mb-0 fw-semibold"><i class="fas fa-file-invoice-dollar me-2 text-primary"></i>Recent Bills</h6>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0 align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th class="ps-3">Bill Number</th>
+                                <th>Date</th>
+                                <th class="text-end">Total</th>
+                                <th class="text-end pe-3">Balance Due</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for bill in recent_bills %}
+                            <tr>
+                                <td class="ps-3">
+                                    <a href="{% url 'purchase:bill_detail' bill.pk %}" class="text-decoration-none">{{ bill.bill_number }}</a>
+                                </td>
+                                <td>{{ bill.bill_date|date:"d/m/Y" }}</td>
+                                <td class="text-end">AED {{ bill.total_amount|floatformat:2|intcomma }}</td>
+                                <td class="text-end pe-3 fw-semibold">AED {{ bill.balance|floatformat:2|intcomma }}</td>
+                                <td><span class="badge bg-secondary-subtle text-secondary">{{ bill.get_status_display }}</span></td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if bill_retention_rows %}
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-transparent py-3">
+                <h6 class="mb-0 fw-semibold"><i class="fas fa-hand-holding-usd me-2 text-primary"></i>Vendor bill retention</h6>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0 align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th class="ps-3">Bill</th>
+                                <th>PO</th>
+                                <th class="text-end">Gross total</th>
+                                <th class="text-end">Retention</th>
+                                <th class="text-end pe-3">Payable</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in bill_retention_rows %}
+                            <tr>
+                                <td class="ps-3">
+                                    <a href="{% url 'purchase:bill_detail' row.bill_pk %}" class="text-decoration-none fw-medium">{{ row.bill_number }}</a>
+                                </td>
+                                <td class="text-muted small">{{ row.po_number }}</td>
+                                <td class="text-end">AED {{ row.gross_total|floatformat:2|intcomma }}</td>
+                                <td class="text-end text-danger">AED {{ row.retention_amount|floatformat:2|intcomma }}</td>
+                                <td class="text-end pe-3">AED {{ row.payable_amount|floatformat:2|intcomma }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-body">
+                <div class="d-flex justify-content-between mb-3">
+                    <span class="text-muted">Status</span>
+                    {% if vendor.status == 'active' %}
+                    <span class="badge badge-active">Active</span>
+                    {% else %}
+                    <span class="badge badge-inactive">Inactive</span>
+                    {% endif %}
+                </div>
+                <div class="d-flex justify-content-between">
+                    <span class="text-muted">Vendor #</span>
+                    <span class="fw-semibold">{{ vendor.vendor_number }}</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

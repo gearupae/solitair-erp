@@ -173,7 +173,11 @@
             </ol>
         </nav>
         <h4 class="mb-1 fw-bold">Request Modules</h4>
+        {% if app_minimal_nav %}
+        <p class="text-muted mb-0">Modules in your deployment and additional modules you can request.</p>
+        {% else %}
         <p class="text-muted mb-0">Request access to modules you need for your role.</p>
+        {% endif %}
     </div>
     <a href="{% url 'account:settings' %}" class="btn btn-light">
         <i class="fas fa-arrow-left me-2"></i>Back to Settings
@@ -183,7 +187,7 @@
 <div class="modules-toolbar">
     <div class="modules-filters" role="group" aria-label="Filter modules">
         <button type="button" class="modules-filter-btn is-active" data-filter="all">All <span class="opacity-75">({{ stats.total_count }})</span></button>
-        <button type="button" class="modules-filter-btn" data-filter="active">My modules <span class="opacity-75">({{ stats.active_count }})</span></button>
+        <button type="button" class="modules-filter-btn" data-filter="active">In use <span class="opacity-75">({{ stats.active_count }})</span></button>
         <button type="button" class="modules-filter-btn" data-filter="available">Available <span class="opacity-75">({{ stats.available_count }})</span></button>
         {% if stats.sent_count %}
         <button type="button" class="modules-filter-btn" data-filter="sent">Request sent <span class="opacity-75">({{ stats.sent_count }})</span></button>

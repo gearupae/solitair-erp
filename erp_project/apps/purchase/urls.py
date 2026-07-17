@@ -14,6 +14,7 @@ urlpatterns = [
 
     # Vendors
     path('vendors/', views.VendorListView.as_view(), name='vendor_list'),
+    path('vendors/<int:pk>/', views.vendor_detail, name='vendor_detail'),
     path('vendors/<int:pk>/edit/', views.VendorUpdateView.as_view(), name='vendor_edit'),
     path('vendors/<int:pk>/delete/', views.vendor_delete, name='vendor_delete'),
     
@@ -63,6 +64,10 @@ urlpatterns = [
     path('orders/<int:pk>/', views.PurchaseOrderDetailView.as_view(), name='po_detail'),
     path('orders/<int:pk>/receive/', views.po_receive, name='po_receive'),
     path('orders/<int:pk>/confirm/', views.po_confirm, name='po_confirm'),
+    path('orders/<int:pk>/submit/', views.po_submit, name='po_submit'),
+    path('orders/<int:pk>/approve/', views.po_approve, name='po_approve'),
+    path('orders/<int:pk>/reject/', views.po_reject, name='po_reject'),
+    path('orders/<int:pk>/return/', views.po_return, name='po_return'),
     path('orders/<int:pk>/pdf/', views.po_pdf, name='po_pdf'),
     path('orders/<int:pk>/ai-evaluate/', views.po_ai_evaluate, name='po_ai_evaluate'),
     path('orders/<int:pk>/send-email/', views.po_send_email, name='po_send_email'),

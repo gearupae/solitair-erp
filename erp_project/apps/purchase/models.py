@@ -268,6 +268,9 @@ class PurchaseOrder(BaseModel):
     """
     STATUS_CHOICES = [
         ('draft', 'Draft'),
+        ('pending_approval', 'Pending Approval'),
+        ('returned', 'Returned for Revision'),
+        ('rejected', 'Rejected'),
         ('sent', 'Sent'),
         ('confirmed', 'Confirmed'),
         ('partial_received', 'Partially Received'),
@@ -313,6 +316,7 @@ class PurchaseOrder(BaseModel):
     order_date = models.DateField()
     expected_delivery_date = models.DateField(null=True, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft')
+    rejection_reason = models.TextField(blank=True)
     notes = models.TextField(blank=True)
     terms_and_conditions = models.TextField(blank=True)
     currency = models.CharField(max_length=3, choices=CURRENCY_CHOICES, default='AED')

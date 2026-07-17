@@ -379,12 +379,13 @@ class CompanySettingsView(PermissionRequiredMixin, UpdateView):
 
         from apps.inventory.utils import get_ai_wallet_summary, is_ai_available
         from apps.settings_app.models import AiCreditPurchase, AiTokenUsageLog
-        from apps.settings_app.stripe_ai_credits import stripe_configured
+        from apps.settings_app.stripe_ai_credits import stripe_card_payments_available, stripe_configured
 
         wallet = get_ai_wallet_summary()
         context['ai_wallet'] = wallet
         context['ai_available'] = is_ai_available()
         context['stripe_configured'] = stripe_configured()
+        context['stripe_card_payments_available'] = stripe_card_payments_available()
         context['stripe_publishable_key'] = getattr(django_settings, 'STRIPE_PUBLISHABLE_KEY', '')
         context['ai_tokens_per_unit'] = getattr(django_settings, 'AI_TOKENS_PER_CURRENCY_UNIT', 90764)
         context['ai_recharge_min'] = getattr(django_settings, 'AI_RECHARGE_MIN_AMOUNT', '5')
@@ -723,15 +724,9 @@ class ApprovalConfigurationView(PermissionRequiredMixin, TemplateView):
 
         context = super().get_context_data(**kwargs)
         context['title'] = 'Approval Configuration'
-        modules = ApprovalConfiguration.MODULE_CHOICES
-        from apps.core.nav_config import minimal_nav_enabled
-        if minimal_nav_enabled():
-            allowed = {
-                'purchase_request',
-                'service_request',
-                'vendor_bill',
-            }
-            modules = [(code, name) for code, name in modules if code in allowed]
+        from apps.core.nav_config import minimal_nav_approval_module_choices
+
+        modules = minimal_nav_approval_module_choices(ApprovalConfiguration.MODULE_CHOICES)
         context['module_choices'] = modules
         context['approval_type_choices'] = ApprovalConfiguration.APPROVAL_TYPE_CHOICES
         context['users'] = (
@@ -761,6 +756,11 @@ class ApprovalConfigurationView(PermissionRequiredMixin, TemplateView):
         
         if module not in dict(ApprovalConfiguration.MODULE_CHOICES):
             messages.error(request, 'Invalid module selected.')
+            return redirect('settings:approval_configuration')
+
+        from apps.core.nav_config import MINIMAL_NAV_APPROVAL_MODULE_CODES, minimal_nav_enabled
+        if minimal_nav_enabled() and module not in MINIMAL_NAV_APPROVAL_MODULE_CODES:
+            messages.error(request, 'This approval module is not available in the current app mode.')
             return redirect('settings:approval_configuration')
 
         if module == 'leave':

@@ -168,9 +168,10 @@ def user_can_access_purchase_request(user, purchase_request):
 def filter_purchase_orders_for_user(queryset, user):
     if not user_data_scope_restricted(user, 'purchase'):
         return queryset
-    return queryset.filter(
-        Q(created_by=user) | Q(purchase_request__requested_by=user)
-    )
+    from apps.core.approval_visibility import purchase_order_approver_records_q
+
+    own_q = Q(created_by=user) | Q(purchase_request__requested_by=user)
+    return queryset.filter(own_q | purchase_order_approver_records_q(user)).distinct()
 
 
 def user_can_access_purchase_order(user, purchase_order):
@@ -181,4 +182,8 @@ def user_can_access_purchase_order(user, purchase_order):
     if purchase_order.created_by_id == user.id:
         return True
     pr = purchase_order.purchase_request
-    return pr is not None and pr.requested_by_id == user.id
+    if pr is not None and pr.requested_by_id == user.id:
+        return True
+    from apps.core.approval_visibility import user_is_purchase_order_approver_for
+
+    return user_is_purchase_order_approver_for(user, purchase_order)
