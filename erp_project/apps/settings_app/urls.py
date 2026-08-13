@@ -53,6 +53,7 @@ urlpatterns = [
     path('ceo/api/yesterday/', views_ceo.ceo_api_yesterday, name='ceo_api_yesterday'),
     path('ceo/api/operations/', views_ceo.ceo_api_operations, name='ceo_api_operations'),
     path('forecast/', views_forecast.ForecastView.as_view(), name='forecast'),
+    path('user-guide/', views.UserGuideView.as_view(), name='user_guide'),
 ]
 
 

@@ -959,3 +959,20 @@ class SubGroupExpenseTypeSettingsView(PermissionRequiredMixin, TemplateView):
 
         return redirect('settings:sub_group_expense_types')
 
+
+class UserGuideView(LoginRequiredMixin, View):
+    """Serve the static HTML user guide (Settings menu)."""
+
+    def get(self, request, *args, **kwargs):
+        from django.conf import settings as django_settings
+        from django.http import HttpResponse, HttpResponseNotFound
+        from pathlib import Path
+
+        guide_path = Path(django_settings.BASE_DIR) / 'static' / 'docs' / 'user_guide.html'
+        if not guide_path.is_file():
+            return HttpResponseNotFound('User guide is not available yet.')
+        return HttpResponse(
+            guide_path.read_text(encoding='utf-8'),
+            content_type='text/html; charset=utf-8',
+        )
+

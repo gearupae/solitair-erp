@@ -70,6 +70,8 @@ def minimal_nav_approval_module_choices(module_choices):
 def path_allowed_in_minimal_nav(path: str, *, is_superuser: bool = False) -> bool:
     if path.startswith('/static/') or path.startswith('/media/'):
         return True
+    if path.startswith('/settings/user-guide'):
+        return True
     if path in MINIMAL_NAV_ALLOWED_PATHS:
         return True
     if any(path.startswith(prefix) for prefix in MINIMAL_NAV_ALLOWED_PREFIXES):

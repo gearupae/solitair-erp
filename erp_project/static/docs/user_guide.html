@@ -1,0 +1,780 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Solitair ERP — User Guide</title>
+  <style>
+    :root {
+      --bg: #f4f6f8;
+      --paper: #ffffff;
+      --text: #1a1a1a;
+      --muted: #5c6670;
+      --accent: #111827;
+      --border: #e5e7eb;
+      --code-bg: #f3f4f6;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-size: 16px;
+      line-height: 1.65;
+      color: var(--text);
+      background: var(--bg);
+    }
+    .erp-back {
+      background: #111827;
+      color: #fff;
+      padding: 10px 24px;
+      font-size: 0.9rem;
+    }
+    .erp-back a { color: #93c5fd; text-decoration: none; }
+    .erp-back a:hover { text-decoration: underline; }
+    .page {
+      max-width: 920px;
+      margin: 0 auto;
+      padding: 32px 24px 64px;
+    }
+    .cover {
+      background: linear-gradient(135deg, #111827 0%, #374151 100%);
+      color: #ffffff;
+      padding: 48px 40px;
+      border-radius: 16px;
+      margin-bottom: 32px;
+    }
+    .cover h1 {
+      margin: 0 0 8px;
+      font-size: 2rem;
+      color: #ffffff;
+    }
+    .cover p {
+      margin: 0;
+      color: #ffffff;
+      opacity: 0.92;
+    }
+    .content {
+      background: var(--paper);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 40px 48px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.06);
+    }
+    .content h1, .content h2, .content h3, .content h4 {
+      color: var(--accent);
+      line-height: 1.25;
+    }
+    .content h1 {
+      font-size: 1.75rem;
+      margin-top: 2.5rem;
+      border-bottom: 2px solid var(--border);
+      padding-bottom: .4rem;
+    }
+    .content h1:first-child { margin-top: 0; }
+    .content h2 { font-size: 1.35rem; margin-top: 2rem; }
+    .content h3 { font-size: 1.1rem; margin-top: 1.5rem; color: #374151; }
+    .content p, .content li { color: #374151; }
+    .content a { color: #2563eb; }
+    .content hr { border: none; border-top: 1px solid var(--border); margin: 2rem 0; }
+    .content img {
+      max-width: 100%;
+      height: auto;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin: 1rem 0 1.5rem;
+      box-shadow: 0 4px 12px rgba(0,0,0,.08);
+    }
+    .content table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1rem 0 1.5rem;
+      font-size: 0.95rem;
+    }
+    .content th, .content td {
+      border: 1px solid var(--border);
+      padding: 10px 12px;
+      text-align: left;
+    }
+    .content th { background: #f9fafb; font-weight: 600; }
+    .content code {
+      background: var(--code-bg);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 0.9em;
+    }
+    .content pre {
+      background: #111827;
+      color: #f9fafb;
+      padding: 16px 20px;
+      border-radius: 8px;
+      overflow-x: auto;
+      font-size: 0.9rem;
+    }
+    .content pre code { background: none; padding: 0; color: inherit; }
+    .content ul, .content ol { padding-left: 1.4rem; }
+    .content li { margin-bottom: 0.35rem; }
+  </style>
+</head>
+<body>
+  <div class="erp-back"><a href="/">&larr; Back to Solitair ERP</a></div>
+  <div class="page">
+    <div class="cover">
+      <h1>Solitair ERP — User Guide</h1>
+      <p>Purchase · HR · Inventory · Settings &nbsp;|&nbsp; https://solitair.telldb.com</p>
+    </div>
+    <div class="content">
+      <p>This guide explains how to use each section visible in the Solitair menu: <strong>Purchase</strong>, <strong>HR</strong>, <strong>Inventory</strong>, and <strong>Settings</strong> (admin only). Screenshots were taken from the live system at <a href="https://solitair.telldb.com">https://solitair.telldb.com</a>.</p>
+<hr />
+<h2 id="table-of-contents">Table of contents</h2>
+<ol>
+<li><a href="#1-getting-started">Getting started</a></li>
+<li><a href="#2-dashboard-home">Dashboard (Home)</a></li>
+<li><a href="#3-purchase-module">Purchase module</a></li>
+<li><a href="#4-hr-module">HR module</a></li>
+<li><a href="#5-inventory-module">Inventory module</a></li>
+<li><a href="#6-settings-administrators">Settings (Administrators)</a></li>
+<li><a href="#7-your-account">Your account</a></li>
+<li><a href="#8-recommended-workflows">Recommended workflows</a></li>
+<li><a href="#9-permissions--access">Permissions &amp; access</a></li>
+</ol>
+<hr />
+<h2 id="1-getting-started">1. Getting started</h2>
+<h3 id="login">Login</h3>
+<ol>
+<li>Open <strong>https://solitair.telldb.com</strong></li>
+<li>Enter your <strong>username</strong> and <strong>password</strong></li>
+<li>Click <strong>Sign In</strong></li>
+</ol>
+<p>After login you land on the <strong>Dashboard</strong>, which summarizes Purchase, HR, and Inventory activity.</p>
+<h3 id="main-navigation">Main navigation</h3>
+<p>The top menu shows only the modules enabled for Solitair:</p>
+<table>
+<thead>
+<tr>
+<th>Menu</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Purchase</strong></td>
+<td>Vendors, requests, orders, receipts, bills, expenses</td>
+</tr>
+<tr>
+<td><strong>HR</strong></td>
+<td>Employees, departments, designations</td>
+</tr>
+<tr>
+<td><strong>Inventory</strong></td>
+<td>Items, stock, movements, stock take, reports</td>
+</tr>
+<tr>
+<td><strong>Settings</strong> (gear icon)</td>
+<td>Users, roles, company, approvals — <strong>superuser only</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Use the <strong>bell</strong> icon for notifications and the <strong>user menu</strong> (top right) for profile and logout.</p>
+<hr />
+<h2 id="2-dashboard-home">2. Dashboard (Home)</h2>
+<p><img alt="Dashboard" src="/static/docs/user-guide/screenshots/01-dashboard.png" /></p>
+<p>The dashboard is your home page. It shows:</p>
+<ul>
+<li><strong>Purchase</strong> — PRs awaiting approval, draft/approved PRs, open POs</li>
+<li><strong>HR</strong> — active, inactive, and terminated employee counts</li>
+<li><strong>Inventory</strong> — warehouses, total items, low-stock alerts</li>
+</ul>
+<h3 id="how-to-use-it">How to use it</h3>
+<ol>
+<li>Review <strong>Pending actions</strong> at the bottom for items needing attention (PRs, POs, bills, low stock).</li>
+<li>Click <strong>Open</strong> on any card to jump directly to that module.</li>
+<li>Use the quick links (<strong>Purchase</strong>, <strong>HR</strong>, <strong>Inventory</strong>) in the top-right of the dashboard header.</li>
+</ol>
+<p><strong>Tip:</strong> Check the dashboard at the start of each day to see approvals and stock issues.</p>
+<hr />
+<h2 id="3-purchase-module">3. Purchase module</h2>
+<p>Purchase covers the full procurement cycle: request → order → receive → bill.</p>
+<h3 id="31-purchase-dashboard">3.1 Purchase Dashboard</h3>
+<p><img alt="Purchase Dashboard" src="/static/docs/user-guide/screenshots/02-purchase-dashboard.png" /></p>
+<p><strong>Menu:</strong> Purchase → Dashboard</p>
+<p>Use this page for a procurement overview — pending PRs, POs, vendor bills, and KPIs. Open it when you need a snapshot before diving into lists.</p>
+<hr />
+<h3 id="32-vendors">3.2 Vendors</h3>
+<p><img alt="Vendors" src="/static/docs/user-guide/screenshots/03-purchase-vendors.png" /></p>
+<p><strong>Menu:</strong> Purchase → Vendors<br />
+<strong>URL:</strong> <code>/purchase/vendors/</code></p>
+<p>Maintain your supplier master data here.</p>
+<h4 id="how-to-add-a-vendor">How to add a vendor</h4>
+<ol>
+<li>Click <strong>Add Vendor</strong> (or the inline form toggle).</li>
+<li>Fill in: vendor name, contact name, email, phone, address, status.</li>
+<li>Click <strong>Save</strong>.</li>
+</ol>
+<h4 id="how-to-manage-vendors">How to manage vendors</h4>
+<table>
+<thead>
+<tr>
+<th>Action</th>
+<th>Steps</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Search</strong></td>
+<td>Use the search box and click <strong>Search</strong></td>
+</tr>
+<tr>
+<td><strong>View</strong></td>
+<td>Click <strong>View</strong> in the Actions column</td>
+</tr>
+<tr>
+<td><strong>Edit</strong></td>
+<td>Open the vendor → <strong>Edit</strong>, update fields → <strong>Save</strong></td>
+</tr>
+<tr>
+<td><strong>Deactivate</strong></td>
+<td>Edit vendor and set status to inactive</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Best practice:</strong> Create vendors before raising purchase requests or POs so they can be selected in dropdowns.</p>
+<hr />
+<h3 id="33-purchase-requests-pr">3.3 Purchase Requests (PR)</h3>
+<p><img alt="Purchase Requests" src="/static/docs/user-guide/screenshots/04-purchase-requests.png" /></p>
+<p><strong>Menu:</strong> Purchase → Purchase Requests<br />
+<strong>URL:</strong> <code>/purchase/requests/</code></p>
+<p>Internal requisitions before a PO is issued.</p>
+<h4 id="how-to-create-a-pr">How to create a PR</h4>
+<ol>
+<li>Click <strong>+ Create PR</strong>.</li>
+<li>Enter header details: required-by date, notes, etc.</li>
+<li>Add <strong>line items</strong> — select inventory items, quantities, and estimated costs.</li>
+<li><strong>Save</strong> as draft or <strong>Submit</strong> for approval.</li>
+</ol>
+<h4 id="pr-statuses">PR statuses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Draft</strong></td>
+<td>Still being edited; not sent for approval</td>
+</tr>
+<tr>
+<td><strong>Submitted / Pending</strong></td>
+<td>Waiting for approver</td>
+</tr>
+<tr>
+<td><strong>Approved</strong></td>
+<td>Can be converted to a Purchase Order</td>
+</tr>
+<tr>
+<td><strong>Rejected</strong></td>
+<td>Returned to requester for correction</td>
+</tr>
+</tbody>
+</table>
+<h4 id="after-approval">After approval</h4>
+<ul>
+<li>Open the approved PR → <strong>Convert to PO</strong> to create a purchase order with prefilled lines.</li>
+</ul>
+<p><strong>Filter tip:</strong> Use <strong>All Status</strong> and the search box to find PRs by number or requester.</p>
+<hr />
+<h3 id="34-service-requests">3.4 Service Requests</h3>
+<p><img alt="Service Requests" src="/static/docs/user-guide/screenshots/05-service-requests.png" /></p>
+<p><strong>Menu:</strong> Purchase → Service Requests<br />
+<strong>URL:</strong> <code>/service-request/</code></p>
+<p>For non-stock work or services (maintenance, consulting, etc.) that are not inventory items.</p>
+<h4 id="how-to-use">How to use</h4>
+<ol>
+<li>Click <strong>Create</strong> to add a new service request.</li>
+<li>Describe the service, quantity/cost, and required date.</li>
+<li>Submit for approval (if configured in Settings → Approval Configuration).</li>
+<li>Track status in the list — filter by status as needed.</li>
+</ol>
+<hr />
+<h3 id="35-purchase-orders-po">3.5 Purchase Orders (PO)</h3>
+<p><img alt="Purchase Orders" src="/static/docs/user-guide/screenshots/06-purchase-orders.png" /></p>
+<p><strong>Menu:</strong> Purchase → Purchase Orders<br />
+<strong>URL:</strong> <code>/purchase/orders/</code></p>
+<p>Formal orders sent to vendors.</p>
+<h4 id="how-to-create-a-po">How to create a PO</h4>
+<p><strong>Option A — From an approved PR</strong></p>
+<ol>
+<li>Open the approved PR.</li>
+<li>Click <strong>Convert to PO</strong>.</li>
+<li>Confirm vendor, lines, and delivery date → <strong>Save</strong>.</li>
+</ol>
+<p><strong>Option B — Direct PO</strong></p>
+<ol>
+<li>Click <strong>+ Create PO</strong>.</li>
+<li>Select <strong>vendor</strong>, order date, expected delivery.</li>
+<li>Add line items (items, qty, unit price).</li>
+<li>Save and submit for approval if required.</li>
+</ol>
+<h4 id="po-summary-cards">PO summary cards</h4>
+<ul>
+<li><strong>Total Purchase Orders</strong> — count of all POs</li>
+<li><strong>Total Amount</strong> — combined PO value (AED)</li>
+<li><strong>Pending POs</strong> — orders awaiting action</li>
+</ul>
+<h4 id="typical-po-actions">Typical PO actions</h4>
+<table>
+<thead>
+<tr>
+<th>Action</th>
+<th>When to use</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>View / Edit</strong></td>
+<td>Update draft PO before sending</td>
+</tr>
+<tr>
+<td><strong>Approve</strong></td>
+<td>Approver confirms the order</td>
+</tr>
+<tr>
+<td><strong>Send to vendor</strong></td>
+<td>Email/print PO to supplier</td>
+</tr>
+<tr>
+<td><strong>Receive goods</strong></td>
+<td>Create GRN when items arrive</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h3 id="36-goods-receipt-notes-grn">3.6 Goods Receipt Notes (GRN)</h3>
+<p><img alt="Goods Receipt" src="/static/docs/user-guide/screenshots/07-goods-receipt.png" /></p>
+<p><strong>Menu:</strong> Purchase → Goods Receipt Notes<br />
+<strong>URL:</strong> <code>/purchase/grn/</code></p>
+<p>Record physical receipt of goods against a PO. This updates inventory stock.</p>
+<h4 id="how-to-receive-goods">How to receive goods</h4>
+<ol>
+<li>Click <strong>Create GRN</strong> (or receive from an open PO detail page).</li>
+<li>Select the <strong>Purchase Order</strong>.</li>
+<li>Enter received quantities per line (partial receipts are supported).</li>
+<li>Save/post the GRN.</li>
+</ol>
+<p><strong>Important:</strong> Stock levels in Inventory → Stock Levels update after GRN is posted.</p>
+<hr />
+<h3 id="37-rfq-competitive-analysis">3.7 RFQ / Competitive Analysis</h3>
+<p><img alt="RFQ" src="/static/docs/user-guide/screenshots/08-rfq.png" /></p>
+<p><strong>Menu:</strong> Purchase → RFQ / Competitive Analysis<br />
+<strong>URL:</strong> <code>/purchase/rfq/</code></p>
+<p>Request and compare quotes from multiple vendors before awarding a PO.</p>
+<h4 id="how-to-use_1">How to use</h4>
+<ol>
+<li>Create an <strong>RFQ</strong> with items and quantities.</li>
+<li>Attach vendor quotes or enter quote details.</li>
+<li>Compare prices and terms.</li>
+<li><strong>Award</strong> to the selected vendor → convert to PO.</li>
+</ol>
+<p>Use this when you need competitive bidding rather than a single-vendor PR.</p>
+<hr />
+<h3 id="38-vendor-bills">3.8 Vendor Bills</h3>
+<p><img alt="Vendor Bills" src="/static/docs/user-guide/screenshots/09-vendor-bills.png" /></p>
+<p><strong>Menu:</strong> Purchase → Vendor Bills<br />
+<strong>URL:</strong> <code>/purchase/bills/</code></p>
+<p>Accounts-payable invoices from vendors.</p>
+<h4 id="how-to-create-a-bill">How to create a bill</h4>
+<ol>
+<li>Click <strong>Create Bill</strong>.</li>
+<li>Link to a <strong>PO</strong> (recommended) or enter vendor manually.</li>
+<li>Enter bill number, bill date, due date, line amounts, VAT if applicable.</li>
+<li>Save → submit for <strong>approval</strong> if configured.</li>
+</ol>
+<h4 id="bill-workflow">Bill workflow</h4>
+<pre><code>Draft → Submitted → Approved → Paid
+</code></pre>
+<p>Match bill amounts to the PO and GRN before approving.</p>
+<hr />
+<h3 id="39-expense-claims">3.9 Expense Claims</h3>
+<p><img alt="Expense Claims" src="/static/docs/user-guide/screenshots/10-expense-claims.png" /></p>
+<p><strong>Menu:</strong> Purchase → Expense Claims<br />
+<strong>URL:</strong> <code>/purchase/expense-claims/</code></p>
+<p>Employee expense reimbursements (travel, supplies, etc.).</p>
+<h4 id="how-to-submit-a-claim">How to submit a claim</h4>
+<ol>
+<li>Create a new expense claim.</li>
+<li>Add line items: date, category, description, amount, receipt attachment.</li>
+<li>Submit for manager approval.</li>
+<li>Finance/approver reviews and approves for payment.</li>
+</ol>
+<p>Attach receipts for VAT recoverable expenses.</p>
+<hr />
+<h3 id="310-recurring-expenses">3.10 Recurring Expenses</h3>
+<p><img alt="Recurring Expenses" src="/static/docs/user-guide/screenshots/11-recurring-expenses.png" /></p>
+<p><strong>Menu:</strong> Purchase → Recurring Expenses<br />
+<strong>URL:</strong> <code>/purchase/recurring-expenses/</code></p>
+<p>Set up repeating vendor expenses (rent, subscriptions, utilities).</p>
+<h4 id="how-to-use_2">How to use</h4>
+<ol>
+<li>Create a recurring expense template: vendor, amount, frequency, start date.</li>
+<li>The system generates bills or reminders on schedule.</li>
+<li>Review and approve generated entries like normal vendor bills.</li>
+</ol>
+<hr />
+<h2 id="4-hr-module">4. HR module</h2>
+<p>In Solitair mode, HR covers <strong>master data</strong> only: employees, departments, and designations. Leave, payroll, and recruitment are not shown in the menu.</p>
+<h3 id="41-employees">4.1 Employees</h3>
+<p><img alt="Employees" src="/static/docs/user-guide/screenshots/12-hr-employees.png" /></p>
+<p><strong>Menu:</strong> HR → Employees<br />
+<strong>URL:</strong> <code>/hr/employees/</code></p>
+<p>Central employee directory.</p>
+<h4 id="how-to-add-an-employee">How to add an employee</h4>
+<ol>
+<li>Click <strong>Add Employee</strong>.</li>
+<li>Fill in: name, email, phone, department, designation, join date, status, salary (if used).</li>
+<li>Optionally link to a <strong>system user</strong> for ERP login.</li>
+<li>Save.</li>
+</ol>
+<h4 id="employee-detail-page">Employee detail page</h4>
+<p>From the list, click an employee to:</p>
+<ul>
+<li>View/edit profile and documents</li>
+<li>See assigned projects (if used elsewhere)</li>
+<li>Update employment status (active / inactive / terminated)</li>
+</ul>
+<p><strong>Tip:</strong> Set up <strong>Departments</strong> and <strong>Designations</strong> first so dropdowns are populated.</p>
+<hr />
+<h3 id="42-departments">4.2 Departments</h3>
+<p><img alt="Departments" src="/static/docs/user-guide/screenshots/13-hr-departments.png" /></p>
+<p><strong>Menu:</strong> HR → Departments<br />
+<strong>URL:</strong> <code>/hr/departments/</code></p>
+<p>Organizational units (e.g. Operations, Procurement, Admin).</p>
+<h4 id="how-to-use_3">How to use</h4>
+<ol>
+<li>Click <strong>Add Department</strong>.</li>
+<li>Enter department name and optional department head.</li>
+<li>Save.</li>
+</ol>
+<p>Assign employees to departments when creating or editing employee records.</p>
+<hr />
+<h3 id="43-designations">4.3 Designations</h3>
+<p><img alt="Designations" src="/static/docs/user-guide/screenshots/14-hr-designations.png" /></p>
+<p><strong>Menu:</strong> HR → Designations<br />
+<strong>URL:</strong> <code>/hr/designations/</code></p>
+<p>Job titles linked to departments (e.g. Purchase Officer, Store Keeper).</p>
+<h4 id="how-to-use_4">How to use</h4>
+<ol>
+<li>Click <strong>Add Designation</strong>.</li>
+<li>Enter title and select <strong>Department</strong>.</li>
+<li>Save.</li>
+</ol>
+<p>Use consistent designations — they appear on employee profiles and reports.</p>
+<hr />
+<h2 id="5-inventory-module">5. Inventory module</h2>
+<p>Inventory manages items, warehouses, stock levels, movements, and physical counts.</p>
+<h3 id="51-items">5.1 Items</h3>
+<p><img alt="Items" src="/static/docs/user-guide/screenshots/15-inventory-items.png" /></p>
+<p><strong>Menu:</strong> Inventory → Items<br />
+<strong>URL:</strong> <code>/inventory/items/</code></p>
+<p>Master catalog of all stock and consumable items.</p>
+<h4 id="how-to-add-an-item">How to add an item</h4>
+<ol>
+<li>Click <strong>+ Add Item</strong>.</li>
+<li>Enter: name, category, group, unit of measure, purchase/selling price.</li>
+<li>Optionally upload an <strong>image</strong>.</li>
+<li>Set initial stock or receive via GRN later.</li>
+<li>Save.</li>
+</ol>
+<h4 id="list-features">List features</h4>
+<ul>
+<li><strong>Total Items</strong> and <strong>Low Stock Items</strong> summary cards</li>
+<li>Filter by category, type, or group</li>
+<li><strong>Export CSV</strong> for external analysis</li>
+<li><strong>Groups</strong> shortcut to manage item groups</li>
+</ul>
+<hr />
+<h3 id="52-item-groups">5.2 Item Groups</h3>
+<p><img alt="Item Groups" src="/static/docs/user-guide/screenshots/16-inventory-groups.png" /></p>
+<p><strong>Menu:</strong> Inventory → Item Groups<br />
+<strong>URL:</strong> <code>/inventory/groups/</code></p>
+<p>Group related items for reporting and ordering (e.g. "Office Supplies", "Safety Equipment").</p>
+<p>Create groups before assigning items, or use <strong>Groups</strong> from the Items page.</p>
+<hr />
+<h3 id="53-categories">5.3 Categories</h3>
+<p><img alt="Categories" src="/static/docs/user-guide/screenshots/17-inventory-categories.png" /></p>
+<p><strong>Menu:</strong> Inventory → Categories<br />
+<strong>URL:</strong> <code>/inventory/categories/</code></p>
+<p>Hierarchical classification of items. Supports parent/child categories.</p>
+<p>Use categories for filters on the Items list and inventory reports.</p>
+<hr />
+<h3 id="54-warehouses">5.4 Warehouses</h3>
+<p><img alt="Warehouses" src="/static/docs/user-guide/screenshots/18-inventory-warehouses.png" /></p>
+<p><strong>Menu:</strong> Inventory → Warehouses<br />
+<strong>URL:</strong> <code>/inventory/warehouses/</code></p>
+<p>Storage locations (main store, site store, etc.).</p>
+<h4 id="how-to-use_5">How to use</h4>
+<ol>
+<li>Add each physical location as a warehouse.</li>
+<li>When receiving goods (GRN) or transferring stock, specify the warehouse.</li>
+<li>Stock Levels show quantity <strong>per warehouse</strong>.</li>
+</ol>
+<hr />
+<h3 id="55-stock-levels">5.5 Stock Levels</h3>
+<p><img alt="Stock Levels" src="/static/docs/user-guide/screenshots/19-inventory-stock.png" /></p>
+<p><strong>Menu:</strong> Inventory → Stock Levels<br />
+<strong>URL:</strong> <code>/inventory/stock/</code></p>
+<p>Real-time on-hand quantities by item and warehouse.</p>
+<h4 id="how-to-use_6">How to use</h4>
+<ul>
+<li>Review daily for <strong>low stock</strong> items (also flagged on Dashboard).</li>
+<li>Click an item to see movement history.</li>
+<li>Use with <strong>Reorder / Low-Stock</strong> report for replenishment planning.</li>
+</ul>
+<hr />
+<h3 id="56-movements">5.6 Movements</h3>
+<p><img alt="Movements" src="/static/docs/user-guide/screenshots/20-inventory-movements.png" /></p>
+<p><strong>Menu:</strong> Inventory → Movements<br />
+<strong>URL:</strong> <code>/inventory/movements/</code></p>
+<p>Audit trail of all stock in/out (GRN receipts, transfers, adjustments, issues).</p>
+<p>Use this to investigate discrepancies or trace when stock changed.</p>
+<hr />
+<h3 id="57-stock-transfer">5.7 Stock Transfer</h3>
+<p><img alt="Stock Transfer" src="/static/docs/user-guide/screenshots/21-inventory-transfers.png" /></p>
+<p><strong>Menu:</strong> Inventory → Stock Transfer<br />
+<strong>URL:</strong> <code>/inventory/transfers/</code></p>
+<p>Move stock between warehouses.</p>
+<h4 id="how-to-transfer">How to transfer</h4>
+<ol>
+<li>Create a new transfer.</li>
+<li>Select <strong>from</strong> and <strong>to</strong> warehouse.</li>
+<li>Add items and quantities.</li>
+<li>Confirm/post the transfer.</li>
+</ol>
+<hr />
+<h3 id="58-stock-adjustment">5.8 Stock Adjustment</h3>
+<p><img alt="Stock Adjustment" src="/static/docs/user-guide/screenshots/22-inventory-adjustment.png" /></p>
+<p><strong>Menu:</strong> Inventory → Stock Adjustment<br />
+<strong>URL:</strong> <code>/inventory/stock/adjustment/</code></p>
+<p>Correct quantities after damage, loss, or count variances.</p>
+<h4 id="how-to-adjust">How to adjust</h4>
+<ol>
+<li>Select warehouse and item.</li>
+<li>Enter adjustment quantity (+ or −) and reason.</li>
+<li>Save — movement is logged automatically.</li>
+</ol>
+<p><strong>Note:</strong> Prefer <strong>Stock Take</strong> for full physical counts; use adjustment for one-off corrections.</p>
+<hr />
+<h3 id="59-stock-take">5.9 Stock Take</h3>
+<p><img alt="Stock Take" src="/static/docs/user-guide/screenshots/23-stock-take.png" /></p>
+<p><strong>Menu:</strong> Inventory → Stock Take<br />
+<strong>URL:</strong> <code>/stock-take/</code></p>
+<p>Physical inventory verification sessions.</p>
+<h4 id="how-to-run-a-stock-take">How to run a stock take</h4>
+<ol>
+<li>Click <strong>+ New session</strong>.</li>
+<li>Enter client/location and date.</li>
+<li>Scan or enter counted quantities (supports barcode/camera on supported devices).</li>
+<li>Complete the session — variances can be adjusted.</li>
+</ol>
+<p>Stock take is <strong>independent of stock movements</strong> — it is a dedicated count workflow.</p>
+<hr />
+<h3 id="510-inventory-reports">5.10 Inventory Reports</h3>
+<p><img alt="Inventory Reports" src="/static/docs/user-guide/screenshots/24-inventory-reports.png" /></p>
+<p><strong>Menu:</strong> Inventory → Reports (flyout panel)</p>
+<p>Available reports in Solitair:</p>
+<table>
+<thead>
+<tr>
+<th>Report</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Inventory Reports</strong></td>
+<td>Hub for consumables reporting</td>
+</tr>
+<tr>
+<td><strong>Consumables Dashboard</strong></td>
+<td>Overview of consumable usage</td>
+</tr>
+<tr>
+<td><strong>Monthly Requests / Consumption / Cost</strong></td>
+<td>Period trends</td>
+</tr>
+<tr>
+<td><strong>Inventory Aging</strong></td>
+<td>How long stock has been held</td>
+</tr>
+<tr>
+<td><strong>Reorder / Low-Stock</strong></td>
+<td>Items below minimum level</td>
+</tr>
+<tr>
+<td><strong>Slow-Moving &amp; Dead Stock</strong></td>
+<td>Obsolete or slow items</td>
+</tr>
+<tr>
+<td><strong>FIFO Valuation</strong></td>
+<td>Inventory value</td>
+</tr>
+<tr>
+<td><strong>Demand vs Supply Gap</strong></td>
+<td>Planning gaps</td>
+</tr>
+<tr>
+<td><strong>AI Forecast Report</strong></td>
+<td>AI-assisted demand forecast (requires OpenAI key)</td>
+</tr>
+</tbody>
+</table>
+<p>Open any report, set date filters if shown, and use <strong>Export</strong> where available.</p>
+<hr />
+<h2 id="6-settings-administrators">6. Settings (Administrators)</h2>
+<p>The <strong>Settings</strong> gear icon is visible to <strong>superusers</strong> only. Regular users manage their profile from the user menu.</p>
+<h3 id="61-users">6.1 Users</h3>
+<p><img alt="Users" src="/static/docs/user-guide/screenshots/25-settings-users.png" /></p>
+<p><strong>Menu:</strong> Settings → Users<br />
+<strong>URL:</strong> <code>/settings/users/</code></p>
+<p>Create and manage ERP login accounts.</p>
+<h4 id="how-to-add-a-user">How to add a user</h4>
+<ol>
+<li>Click <strong>Add User</strong>.</li>
+<li>Enter username, email, password, name.</li>
+<li>Assign a <strong>Role</strong> (controls menu access).</li>
+<li>Activate the account.</li>
+</ol>
+<p>Deactivate users instead of deleting when someone leaves.</p>
+<hr />
+<h3 id="62-roles-permissions">6.2 Roles &amp; Permissions</h3>
+<p><img alt="Roles" src="/static/docs/user-guide/screenshots/26-settings-roles.png" /></p>
+<p><strong>Menu:</strong> Settings → Roles<br />
+<strong>URL:</strong> <code>/settings/roles/</code></p>
+<p>Define what each role can view, create, edit, delete, and approve.</p>
+<h4 id="solitair-modules-in-permissions">Solitair modules in permissions</h4>
+<ul>
+<li><strong>Purchase</strong> (with feature toggles: vendors, PR, PO, GRN, RFQ, bills, etc.)</li>
+<li><strong>Service Request</strong></li>
+<li><strong>Inventory</strong></li>
+<li><strong>HR</strong></li>
+<li><strong>Settings</strong></li>
+</ul>
+<p>Click <strong>Permissions</strong> on a role to open the permission matrix. Grant only what each job function needs.</p>
+<hr />
+<h3 id="63-company-settings">6.3 Company Settings</h3>
+<p><img alt="Company Settings" src="/static/docs/user-guide/screenshots/27-settings-company.png" /></p>
+<p><strong>Menu:</strong> Settings → Company<br />
+<strong>URL:</strong> <code>/settings/company/</code></p>
+<p>Configure:</p>
+<ul>
+<li>Company name, logo, address, phone, email, tax ID</li>
+<li>Currency (AED), date format, timezone</li>
+<li><strong>SMTP email</strong> for sending POs and notifications</li>
+<li>Number series prefixes (PR, PO, INV, etc.)</li>
+</ul>
+<p>Upload your logo here — it appears on documents and the login page.</p>
+<hr />
+<h3 id="64-approval-configuration">6.4 Approval Configuration</h3>
+<p><img alt="Approval Configuration" src="/static/docs/user-guide/screenshots/28-settings-approval.png" /></p>
+<p><strong>Menu:</strong> Settings → Approval Configuration<br />
+<strong>URL:</strong> <code>/settings/approval-configuration/</code></p>
+<p>Set approvers for Solitair workflows:</p>
+<table>
+<thead>
+<tr>
+<th>Document</th>
+<th>Configuration</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Purchase Request</strong></td>
+<td>Single or multi-level approver</td>
+</tr>
+<tr>
+<td><strong>Purchase Order</strong></td>
+<td>Approver before PO is issued</td>
+</tr>
+<tr>
+<td><strong>Service Request</strong></td>
+<td>Approver for service work</td>
+</tr>
+<tr>
+<td><strong>Vendor Bill</strong></td>
+<td>Approver before bill is posted/paid</td>
+</tr>
+</tbody>
+</table>
+<p>For each section:</p>
+<ol>
+<li>Choose <strong>Approval Type</strong> (Single Level or Multi-Level by amount).</li>
+<li>Search and select the <strong>Approver</strong> (by name or email).</li>
+<li>Click <strong>Save … Config</strong>.</li>
+</ol>
+<p>If no approver is set, documents may <strong>auto-approve</strong> depending on system rules.</p>
+<hr />
+<h3 id="65-request-modules">6.5 Request Modules</h3>
+<p><img alt="Request Modules" src="/static/docs/user-guide/screenshots/29-account-modules.png" /></p>
+<p><strong>Menu:</strong> Settings → Request Modules<br />
+<strong>URL:</strong> <code>/account/modules/</code></p>
+<p>Shows modules <strong>in use</strong> (Purchase, Inventory, HR) and modules you can <strong>request</strong> (CRM, Sales, Finance, Projects, etc.).</p>
+<p>Use <strong>Request access</strong> to ask an administrator to enable additional ERP modules.</p>
+<hr />
+<h2 id="7-your-account">7. Your account</h2>
+<h3 id="my-profile">My Profile</h3>
+<p><img alt="My Profile" src="/static/docs/user-guide/screenshots/30-account-profile.png" /></p>
+<p><strong>Menu:</strong> User menu (top right) → <strong>My Profile</strong><br />
+<strong>URL:</strong> <code>/account/profile/</code></p>
+<p>View your name, email, linked employee record, and role summary.</p>
+<h3 id="my-settings">My Settings</h3>
+<p><strong>Menu:</strong> User menu → <strong>My Settings</strong><br />
+<strong>URL:</strong> <code>/account/</code></p>
+<p>Change password, timezone, and language preferences.</p>
+<h3 id="notifications">Notifications</h3>
+<p>Click the <strong>bell</strong> icon to see alerts for approvals, low stock, and document updates. Click a notification to open the related record.</p>
+<hr />
+<h2 id="8-recommended-workflows">8. Recommended workflows</h2>
+<h3 id="standard-procurement-stock-items">Standard procurement (stock items)</h3>
+<pre><code>1. Setup: Vendors + Inventory Items + Warehouses
+2. Purchase Request (PR) → Submit → Approve
+3. Convert PR → Purchase Order (PO) → Approve → Send to vendor
+4. Goods Receipt (GRN) when items arrive → Stock updated
+5. Vendor Bill → Match to PO/GRN → Approve → Pay
+</code></pre>
+<h3 id="service-non-stock-work">Service / non-stock work</h3>
+<pre><code>1. Service Request → Approve
+2. Vendor Bill (or PO if applicable) → Approve
+</code></pre>
+<h3 id="new-employee-setup">New employee setup</h3>
+<pre><code>1. Create Department (if new)
+2. Create Designation
+3. Create Employee record
+4. Settings → Users → Create login + assign Role
+</code></pre>
+<h3 id="monthly-inventory-review">Monthly inventory review</h3>
+<pre><code>1. Dashboard → check Low stock
+2. Stock Levels → review quantities
+3. Reports → Reorder / Aging / Slow-moving
+4. Stock Take session (if physical count needed)
+5. Stock Adjustment for variances
+</code></pre>
+<hr />
+<h2 id="9-permissions-access">9. Permissions &amp; access</h2>
+<ul>
+<li>Every menu item checks your <strong>role permissions</strong>. If you cannot see a button or page, contact an administrator.</li>
+<li><strong>View</strong> = see lists and details  </li>
+<li><strong>Create</strong> = add new records  </li>
+<li><strong>Edit</strong> = change existing records  </li>
+<li><strong>Delete</strong> = remove records  </li>
+<li><strong>Approve</strong> = approve PRs, POs, bills, etc.</li>
+</ul>
+<p>Administrators configure permissions under <strong>Settings → Roles → Permissions</strong>.</p>
+<hr />
+<h2 id="need-more-modules">Need more modules?</h2>
+<p>CRM, Sales, Finance, Projects, Documents, Assets, and Reports are available in the full ERP. Use <strong>Settings → Request Modules</strong> to request access, or contact your system administrator.</p>
+<hr />
+<p><em>Document generated for Solitair ERP — Purchase · HR · Inventory deployment.</em></p>
+    </div>
+  </div>
+</body>
+</html>

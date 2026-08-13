@@ -786,12 +786,18 @@
             <!-- Right Side -->
             <ul class="navbar-nav">
                 <!-- Settings Dropdown (Icon only to save space) -->
-                {% if user.is_authenticated %}{% if not app_minimal_nav or is_superuser %}
+                {% if user.is_authenticated %}
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle {% if 'settings' in request.path or '/account/' in request.path or '/mes/' in request.path %}active{% endif %}" href="#" data-bs-toggle="dropdown" title="Settings">
                         <i class="fas fa-cog"></i>
                     </a>
                     <ul class="dropdown-menu dropdown-menu-dark dropdown-menu-end settings-dropdown">
+                        <li>
+                            <a class="dropdown-item {% if '/settings/user-guide' in request.path %}active{% endif %}" href="{% url 'settings:user_guide' %}">
+                                <i class="fas fa-book me-2"></i>User Guide
+                            </a>
+                        </li>
+                        {% if not app_minimal_nav or is_superuser %}
                         {% if not app_minimal_nav %}
                         <li>
                             <a class="dropdown-item {% if '/account/' in request.path and '/account/modules' not in request.path %}active{% endif %}" href="{% url 'account:settings' %}">
@@ -890,7 +896,7 @@
                         {% endif %}
                     </ul>
                 </li>
-                {% endif %}{% endif %}
+                {% endif %}
                 
                 <!-- Notifications (in-app; see apps.settings_app.Notification) -->
                 {% if user.is_authenticated %}
