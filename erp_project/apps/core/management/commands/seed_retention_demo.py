@@ -5,7 +5,7 @@ purchase orders, retention invoices, and vendor bills.
 Safe to re-run: uses DEMO-RET-* markers and skips existing rows.
 
 Run on production:
-  cd /var/www/gearuperp/erp_project && source ../venv/bin/activate
+  cd /var/www/solitair/erp_project && source ../venv/bin/activate
   python manage.py seed_retention_demo
   python manage.py seed_retention_demo --with-base   # also run alnajah + HR demo if needed
 """

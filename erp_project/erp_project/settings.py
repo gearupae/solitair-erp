@@ -68,7 +68,7 @@ AI_USD_TO_AED = config('AI_USD_TO_AED', default='3.6725')
 
 ALLOWED_HOSTS = config(
     'ALLOWED_HOSTS',
-    default='localhost,127.0.0.1,89.167.54.227,gear.telldb.com',
+    default='localhost,127.0.0.1,178.105.89.41,solitair.telldb.com,www.solitair.telldb.com',
     cast=Csv(),
 )
 
@@ -78,8 +78,9 @@ CSRF_TRUSTED_ORIGINS = config(
     'CSRF_TRUSTED_ORIGINS',
     default=(
         'http://127.0.0.1:8001,http://localhost:8001,'
-        'http://89.167.54.227,https://89.167.54.227,'
-        'http://gear.telldb.com,https://gear.telldb.com'
+        'http://178.105.89.41,https://178.105.89.41,'
+        'http://solitair.telldb.com,https://solitair.telldb.com,'
+        'http://www.solitair.telldb.com,https://www.solitair.telldb.com'
     ),
     cast=Csv(),
 )

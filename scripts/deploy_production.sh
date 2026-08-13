@@ -1,22 +1,21 @@
 #!/usr/bin/env bash
-# Deploy Gearup ERP to production over SSH + rsync.
+# Deploy Solitair ERP to production over SSH + rsync.
 # - Never uploads local .env (server keeps its own secrets).
 # - By default syncs code only; use --with-db to also push SQLite (dev/small setups).
 #
 # Usage:
-#   export DEPLOY_HOST=root@89.167.54.227
-#   export DEPLOY_PATH=/var/www/gearuperp
-#   export RSYNC_RSH='ssh -i ~/.ssh/your_key -o IdentitiesOnly=yes'
+#   export DEPLOY_HOST=root@178.105.89.41
+#   export DEPLOY_PATH=/var/www/solitair
 #   export DEPLOY_SSH_OPTS='-i ~/.ssh/your_key -o IdentitiesOnly=yes'
+#   export RSYNC_RSH="ssh ${DEPLOY_SSH_OPTS}"
 #   ./scripts/deploy_production.sh
 #   ./scripts/deploy_production.sh --with-db
-#   DEPLOY_RUN_PIP=1 ./scripts/deploy_production.sh   # optional pip install on server
 #
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-HOST="${DEPLOY_HOST:-root@89.167.54.227}"
-REMOTE="${DEPLOY_PATH:-/var/www/gearuperp}"
+HOST="${DEPLOY_HOST:-root@178.105.89.41}"
+REMOTE="${DEPLOY_PATH:-/var/www/solitair}"
 SSH_OPTS="${DEPLOY_SSH_OPTS:--o StrictHostKeyChecking=accept-new}"
 RSYNC_SSH="${RSYNC_RSH:-ssh ${SSH_OPTS}}"
 WITH_DB=false
@@ -28,8 +27,8 @@ for arg in "$@"; do
     --with-media) WITH_MEDIA=true ;;
     -h|--help)
       echo "Usage: $0 [--with-db] [--with-media]"
-      echo "  DEPLOY_HOST (default root@89.167.54.227)  DEPLOY_PATH (default /var/www/gearuperp)"
-      echo "  Git repo: https://github.com/gearupae/gearuperp.git"
+      echo "  DEPLOY_HOST (default root@178.105.89.41)  DEPLOY_PATH (default /var/www/solitair)"
+      echo "  Git repo: https://github.com/gearupae/solitair-erp.git"
       echo "  --with-db     Sync erp_project/db.sqlite3 to server (backs up server DB first)"
       echo "  --with-media  Sync erp_project/media/ to server"
       exit 0
@@ -93,8 +92,8 @@ cd "\${APP}/erp_project"
 python manage.py migrate --no-input
 python manage.py collectstatic --no-input --clear
 systemctl restart gunicorn
-if [[ -f "\${APP}/scripts/nginx/gearuperp.conf" ]]; then
-  cp "\${APP}/scripts/nginx/gearuperp.conf" /etc/nginx/sites-enabled/gearuperp
+if [[ -f "\${APP}/scripts/nginx/solitair.conf" ]]; then
+  cp "\${APP}/scripts/nginx/solitair.conf" /etc/nginx/sites-enabled/solitair
   nginx -t && systemctl reload nginx
 fi
 sleep 1

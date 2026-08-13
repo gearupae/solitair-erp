@@ -1,8 +1,8 @@
-# Deploy to Hetzner (Gearup ERP production)
+# Deploy to Hetzner (Solitair ERP production)
 
-**Server:** `root@89.167.54.227`  
-**Git repo:** https://github.com/gearupae/gearuperp.git  
-**App path:** `/var/www/gearuperp`
+**Server:** `root@178.105.89.41`  
+**Git repo:** https://github.com/gearupae/solitair-erp.git  
+**App path:** `/var/www/solitair`
 
 This is the recommended flow so you do **not** paste GitHub tokens on the server and you **do not** overwrite production `.env`.
 
@@ -11,8 +11,8 @@ This is the recommended flow so you do **not** paste GitHub tokens on the server
 From the repo root:
 
 ```bash
-export DEPLOY_HOST=root@89.167.54.227
-export DEPLOY_PATH=/var/www/gearuperp
+export DEPLOY_HOST=root@178.105.89.41
+export DEPLOY_PATH=/var/www/solitair
 
 # Code only (keeps server db.sqlite3 and .env)
 ./scripts/deploy_production.sh
@@ -30,9 +30,9 @@ What the script does:
 
 Ensure on the server:
 
-- App lives at `/var/www/gearuperp` with `venv/` and `erp_project/`.
+- App lives at `/var/www/solitair` with `venv/` and `erp_project/`.
 - `erp_project/.env` exists **once**, edited on the server (use `.env.example` as a template).
-- `gunicorn` systemd unit points at `WorkingDirectory=/var/www/gearuperp/erp_project` (or your layout).
+- `gunicorn` systemd unit points at `WorkingDirectory=/var/www/solitair/erp_project`.
 
 ## 2. Optional: `git pull` on the server (no PAT in URLs)
 
@@ -41,8 +41,8 @@ HTTPS + personal access token on the server is fragile (tokens expire, leak in l
 ### On the server
 
 ```bash
-ssh-keygen -t ed25519 -f ~/.ssh/github_gearuperp_deploy -N "" -C "gearuperp-hetzner-deploy"
-cat ~/.ssh/github_gearuperp_deploy.pub
+ssh-keygen -t ed25519 -f ~/.ssh/github_solitair_deploy -N "" -C "solitair-hetzner-deploy"
+cat ~/.ssh/github_solitair_deploy.pub
 ```
 
 Add GitHub's host key once (avoids "Host key verification failed"):
@@ -53,7 +53,7 @@ ssh-keyscan -t ed25519,rsa github.com >> ~/.ssh/known_hosts
 
 ### In GitHub
 
-Repo **gearupae/gearuperp** → **Settings** → **Deploy keys** → **Add deploy key**  
+Repo **gearupae/solitair-erp** → **Settings** → **Deploy keys** → **Add deploy key**  
 Paste the public key. Enable **Allow write access** only if this server must `git push` (usually leave read-only).
 
 ### SSH config on the server
@@ -61,19 +61,19 @@ Paste the public key. Enable **Allow write access** only if this server must `gi
 `~/.ssh/config`:
 
 ```
-Host github.com-gearuperp
+Host github.com-solitair
     HostName github.com
     User git
-    IdentityFile ~/.ssh/github_gearuperp_deploy
+    IdentityFile ~/.ssh/github_solitair_deploy
     IdentitiesOnly yes
 ```
 
 ### Point the repo at GitHub over SSH
 
 ```bash
-cd /var/www/gearuperp
-git config --global --add safe.directory /var/www/gearuperp
-git remote set-url origin git@github.com-gearuperp:gearupae/gearuperp.git
+cd /var/www/solitair
+git config --global --add safe.directory /var/www/solitair
+git remote set-url origin git@github.com-solitair:gearupae/solitair-erp.git
 git fetch origin
 git checkout main
 git reset --hard origin/main

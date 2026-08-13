@@ -1,8 +1,8 @@
-# Deploy Local Data to Main Server (Gearup ERP)
+# Deploy Local Data to Main Server (Solitair ERP)
 
-**Server:** `root@89.167.54.227`  
-**App path:** `/var/www/gearuperp`  
-**Git repo:** https://github.com/gearupae/gearuperp.git
+**Server:** `root@178.105.89.41`  
+**App path:** `/var/www/solitair`  
+**Git repo:** https://github.com/gearupae/solitair-erp.git
 
 For **full production deploy** (code, no `.env` overwrite, optional DB), use from repo root:
 
@@ -24,12 +24,12 @@ To replace the main server database with your local data:
 
 2. **Copy to server**:
    ```bash
-   scp erp_project/db.sqlite3 root@89.167.54.227:/var/www/gearuperp/erp_project/
+   scp erp_project/db.sqlite3 root@178.105.89.41:/var/www/solitair/erp_project/
    ```
 
 3. **On the server**, stop the app, replace the DB, run migrations, restart:
    ```bash
-   cd /var/www/gearuperp/erp_project
+   cd /var/www/solitair/erp_project
    # Backup existing server DB first (optional)
    mv db.sqlite3 db.sqlite3.old
    # Copy the uploaded file as db.sqlite3 (or it was uploaded directly)

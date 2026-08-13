@@ -5,7 +5,7 @@ inventory items with groups, vendors, purchase requests/orders).
 Safe to re-run: uses DEMO-AN-* identifiers and skips existing rows.
 
 Run on production:
-  cd /var/www/alnajahfireerp/erp_project && source ../venv/bin/activate
+  cd /var/www/solitair/erp_project && source ../venv/bin/activate
   python manage.py seed_alnajah_demo
   python manage.py seed_hr_demo   # HR employees (separate idempotent command)
 """

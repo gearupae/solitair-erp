@@ -3,7 +3,7 @@ Seed demo fleet vehicles (with other documents) and project gate passes.
 Safe to re-run: skips rows that already exist (by plate or SEED-* reference).
 
 Run on production after deploy:
-  cd /var/www/alnajahfireerp/erp_project && source ../venv/bin/activate && python manage.py seed_fleet_gatepass_demo
+  cd /var/www/solitair/erp_project && source ../venv/bin/activate && python manage.py seed_fleet_gatepass_demo
 """
 from datetime import date, timedelta
 

@@ -29,7 +29,7 @@ A minimal, modular ERP system built with Django 5.x, Bootstrap 5, and PostgreSQL
 
 1. **Clone the repository**
    ```bash
-   cd /path/to/gearuperp
+   cd /path/to/solitair-erp
    ```
 
 2. **Create virtual environment**
